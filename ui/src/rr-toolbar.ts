@@ -1,6 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { COMPACT_MAX_HEIGHT_PX, compactStripStyles } from './layout.js';
+import { lookTokens, railButtonStyles } from './look.js';
 import { supportsFileSystemAccess } from './persistence.js';
 import '@shoelace-style/shoelace/dist/components/icon-button/icon-button.js';
 import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
@@ -50,6 +51,8 @@ export class RRToolbar extends LitElement {
   @property({ attribute: false }) redoLabel: string | null = null;
 
   static styles = [
+    lookTokens,
+    railButtonStyles,
     css`
     :host {
       display: flex;
@@ -64,7 +67,7 @@ export class RRToolbar extends LitElement {
          to change together or the column stays as wide as it was. */
       gap: 0.5em;
       padding: 0.6em 0.3em;
-      background-color: #064e3b; /* Explicit dark green */
+      background-color: var(--rail);
       width: 78px;
       user-select: none;
       box-shadow: 2px 0 8px rgba(0, 0, 0, 0.3);
@@ -81,7 +84,7 @@ export class RRToolbar extends LitElement {
       flex-direction: column;
       gap: 0.45em;
       padding: 0.35em 0;
-      background-color: #059669; /* Explicit medium green */
+      background-color: var(--rail-group);
       border-radius: 8px;
       width: calc(100% - 8px);
       align-items: center;
@@ -106,15 +109,6 @@ export class RRToolbar extends LitElement {
     sl-icon-button[disabled]:hover {
       transform: none;
     }
-
-    sl-icon-button::part(base) {
-      color: white;
-    }
-
-    sl-icon-button::part(base):hover {
-      color: var(--sl-color-neutral-100);
-    }
-
   `,
 
     // The turn itself, shared with rr-tool-palette. After the rules above,

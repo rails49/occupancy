@@ -3,6 +3,7 @@ import { customElement, property, query } from 'lit/decorators.js';
 import '@shoelace-style/shoelace/dist/components/icon-button/icon-button.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
+import { lookTokens } from './look.js';
 import './rr-settings-dialog.js';
 import type { RRSettingsDialog } from './rr-settings-dialog.js';
 import type { MissingRequirement } from './requiredMetadata.js';
@@ -57,12 +58,17 @@ export class RRHeader extends LitElement {
 
   @query('rr-settings-dialog') settingsDialog!: RRSettingsDialog;
 
-  static styles = css`
+  static styles = [
+    lookTokens,
+    css`
+    /* The band. One value in both themes, which is the whole reason it is a
+       token: it was --sl-color-primary-600 until #148, and that moves with
+       the Shoelace theme the work pane follows. */
     :host {
       display: block;
       height: 60px;
-      background-color: var(--sl-color-primary-600);
-      color: white;
+      background-color: var(--band);
+      color: var(--band-ink);
       box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
       z-index: 100;
     }
@@ -101,11 +107,16 @@ export class RRHeader extends LitElement {
 
     sl-icon-button {
       font-size: 1.5rem;
-      color: white;
+      color: var(--band-ink);
     }
 
+    /* Dimmed ink, not a Shoelace colour. The hover was --sl-color-primary-100
+       while the dark theme was the only one linked; now that the operating
+       system decides (#148) that would flip from dark blue to near-white on a
+       band that has not moved. Translucent white is the same gesture in either
+       theme, and the .modes rules below already use it. */
     sl-icon-button::part(base):hover {
-      color: var(--sl-color-primary-100);
+      color: rgba(255, 255, 255, 0.7);
     }
 
     .modes {
@@ -124,9 +135,10 @@ export class RRHeader extends LitElement {
     .modes sl-icon-button.active::part(base) {
       background: rgba(255, 255, 255, 0.22);
       border-radius: 50%;
-      color: white;
+      color: var(--band-ink);
     }
-  `;
+  `,
+  ];
 
   private _onSelectView(mode: ViewMode) {
     if (mode === this.viewMode) return;

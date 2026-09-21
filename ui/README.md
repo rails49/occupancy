@@ -126,6 +126,8 @@ rr-app                          ← shell: owns the archive and the view mode
 > [#95]: https://github.com/rails49/occupancy/issues/95
 > [#118]: https://github.com/rails49/occupancy/issues/118
 > [#139]: https://github.com/rails49/occupancy/issues/139
+> [#148]: https://github.com/rails49/occupancy/issues/148
+> [#149]: https://github.com/rails49/occupancy/issues/149
 
 ## State and data flow
 
@@ -1373,6 +1375,31 @@ amber, not red — the refusal banner is already red and carries the button that
 
 ---
 
+### `look.ts`
+
+The look rules' values, as this UI expresses them ([#148], [#149]). Four rails49 UIs are bound to the
+same six values and to nothing else; they are decided in `rails49/.github` and travel as a **copied
+file, not a package**. `look/tokens.css` is that file verbatim, `look/README.md` records the commit
+it came from, and `look/values.test.ts` asserts the two agree.
+
+| Export | Description |
+|---|---|
+| `lookTokens` | `CSSResult`. Declares `--band`, `--band-ink`, `--rail`, `--rail-group` and `--rail-button` on `:host`. **Include it first** in the `static styles` of every component that draws chrome — `rr-header`, `rr-toolbar`, `rr-tool-palette`, `rr-editor-view` |
+| `railButtonStyles` | `CSSResult`. The rail's buttons, as both elements that carry them draw them: `--rail-button` applied as a **floor rather than a size**, and a hover tint that does not move with the theme. Used by `rr-toolbar` and `rr-tool-palette` — the two halves of one rail — for the reason `compactStripStyles` is shared between the same pair |
+
+The chrome keeps these values in **both themes**, which is the whole reason they are tokens: the band
+was `--sl-color-primary-600` and moved with the Shoelace theme, and the rail was two hex literals
+whose provenance was a comment reading "explicit dark green". A hover tint on either is
+`rgba(255, 255, 255, 0.7)` rather than an `--sl-*` colour for the same reason.
+
+`--rail-turns` is deliberately absent — a media query cannot read a custom property, so the reflow
+height is `COMPACT_MAX_HEIGHT_PX` in `layout.ts` and the values test compares that number instead.
+
+**The values test runs outside the required gate**, by ADR-0005: it is not under `tests/`, so
+`pnpm test` and `bin/test.sh` do not run it. `pnpm --filter @occupancy/ui test:look` does.
+
+---
+
 ### `layout.ts`
 
 The height at which the editor's chrome reflows, and the rules the two elements that reflow with it
@@ -1380,7 +1407,7 @@ share. Not a stylesheet of general layout helpers — one agreement between thre
 
 | Export | Description |
 |---|---|
-| `COMPACT_MAX_HEIGHT_PX` | Window height at or below which the editor's sidebar reflows into a horizontal strip. `650` |
+| `COMPACT_MAX_HEIGHT_PX` | Window height at or below which the editor's sidebar reflows into a horizontal strip. `640` — the look rules' `--rail-turns`, not this repo's number (#148); see `look/README.md` |
 | `compactStripStyles` | `CSSResult`. The turn itself — the rules `rr-toolbar` and `rr-tool-palette` state identically. **Append after the component's own rules**; it overrides them at equal specificity, so order is what makes it win |
 
 Three components reflow together at this height — `rr-editor-view` turns its sidebar column into a
@@ -1398,6 +1425,11 @@ palette buttons and the gate reason under them — and the header takes 60px abo
 window where the column exactly fills the space with nothing to spare ([#42], [#53]). That state
 rather than the calibrated arrangement: an archive is uncalibrated before it is calibrated, so the
 taller arrangement is the one a user meets first.
+
+**The number is the look rules' `--rail-turns` since [#148], not this repository's to pick.** It moved
+650 → 640 on the way in, which the derivation still clears — the margin over the 631px measurement
+narrows to 9px, and the reflow still happens before the column runs out of window. A measurement that
+ever exceeded it is a reason to raise the rules rather than to set a local number. See `look.ts`.
 
 **The measurement moves when the column's density does.** [#53] cut the spacing and the sidebar went
 from 721px to 571px, so the constant came down from `800` with it — a density change invalidates

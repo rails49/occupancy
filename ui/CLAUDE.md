@@ -652,9 +652,43 @@ labels; two copies would let a sensor read `occupied` while sitting visibly outs
 
 Import components one file at a time — `@shoelace-style/shoelace/dist/components/<name>/<name>.js` —
 never the package barrel; the barrel pulls the whole library into the bundle. Type-only imports from
-`@shoelace-style/shoelace` are fine. The dark theme is applied in `index.html`
-(`<body class="sl-theme-dark">` + `dist/themes/dark.css`); components inherit `--sl-*` tokens, so use
-those rather than hardcoding new colors.
+`@shoelace-style/shoelace` are fine. **Both themes are linked in `index.html` and
+`prefers-color-scheme` decides** (#148); there is no toggle. The mechanism is the `media` attribute
+on each link — `light.css` declares on `:root`, `dark.css` on `.sl-theme-dark`, so the class on
+`<html>` is static and inert whenever the dark sheet's media does not match. Components inherit
+`--sl-*` tokens, so use those rather than hardcoding new colors.
+
+**The work panes are still written for dark** — `rr-diagnostics-*`, `rr-thumbnail-bar`,
+`rr-live-view` and `rr-editor-view`'s `.main-content` all carry hardcoded near-black backgrounds and
+light ink. Light mode therefore renders Shoelace's controls light against panes that are not. That
+is a known gap left by #148, which asked for the link and nothing more; converting the panes is its
+own piece of work, filed as #151.
+
+### The look rules (#148, #149)
+
+Four rails49 UIs are bound to the same six values — `--band`, `--band-ink`, `--rail`, `--rail-group`,
+`--rail-button` and the reflow height — and to nothing else. They are decided in `rails49/.github`
+([ADR-0003](https://github.com/rails49/.github/blob/main/docs/adr/0003-the-look-rules-bind-place-colour-and-small-screens-not-code.md),
+[LOOK.md](https://github.com/rails49/.github/blob/main/docs/LOOK.md)) and travel as a **copied file,
+not a package** (ADR-0005).
+
+* `src/look.ts` is how this UI expresses them: `lookTokens`, one `CSSResult` declaring five custom
+  properties on `:host`, included **first** in the `static styles` of `rr-header`, `rr-toolbar`,
+  `rr-tool-palette` and `rr-editor-view`. The band was `--sl-color-primary-600` and the rail two hex
+  literals commented "explicit dark green"; that is what the tokens replace.
+* `railButtonStyles` beside it carries the rail's buttons — `--rail-button` as a floor rather than a
+  size, and a hover tint that does not move with the theme. Shared by `rr-toolbar` and
+  `rr-tool-palette` for the reason `compactStripStyles` is: they are two halves of one rail, and two
+  copies of the rules drift.
+* The sixth value is `COMPACT_MAX_HEIGHT_PX` in `src/layout.ts`, because a media query cannot read a
+  custom property. **640 is the rules' number now, not this repo's** — see the derivation there.
+* `look/tokens.css` is the upstream file verbatim, `look/README.md` records the commit it came from,
+  and `look/values.test.ts` asserts the two agree. It never fetches.
+* **That test runs outside the required gate**, by ADR-0005: it is not under `tests/`, so `pnpm test`
+  and `bin/test.sh` do not run it. `pnpm --filter @occupancy/ui test:look` does.
+
+Chrome colours do not move with the theme — that is what makes them tokens. A hover tint on the band
+or the rail is `rgba(255, 255, 255, 0.7)` rather than an `--sl-*` colour for the same reason.
 
 ## Coding standards
 

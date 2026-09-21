@@ -43,6 +43,7 @@ import type { PendingCar } from './carMarker.js';
 import { classChoices, rootClass } from './vocabulary.js';
 import type { ClassChoice } from './vocabulary.js';
 import { COMPACT_MAX_HEIGHT_PX } from './layout.js';
+import { lookTokens } from './look.js';
 import { revealTarget } from './history.js';
 import type {
   EditHistory,
@@ -654,7 +655,9 @@ export class RREditorView extends LitElement {
   @query('rr-sensor-dialog') private _sensorDialog!: RRSensorDialog;
   @query('rr-context-menu') private _contextMenu!: RRContextMenu;
 
-  static styles = css`
+  static styles = [
+    lookTokens,
+    css`
     :host {
       display: flex;
       flex-grow: 1;
@@ -671,9 +674,9 @@ export class RREditorView extends LitElement {
          touches only rr-toolbar leaves the column exactly as wide as it was. */
       width: 78px;
       flex-shrink: 0;
-      /* The same dark green the toolbar and the palette sit on, so the column
-         reads as one strip however much of it the two elements fill. */
-      background-color: #064e3b;
+      /* The same rail the toolbar and the palette sit on, so the column reads
+         as one strip however much of it the two elements fill. */
+      background-color: var(--rail);
       overflow-y: auto;
     }
 
@@ -848,7 +851,8 @@ export class RREditorView extends LitElement {
         padding: 0.3rem 1rem;
       }
     }
-  `;
+  `,
+  ];
 
   /**
    * Where the tool state is settled — **before** the render that shows it.

@@ -1,45 +1,67 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="sl-theme-dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Railroad Occupancy UI</title>
     
-    <!-- Shoelace Theme -->
-    <link rel="stylesheet" href="/node_modules/@shoelace-style/shoelace/dist/themes/dark.css" />
+    <!--
+      Both Shoelace themes are linked and `prefers-color-scheme` decides; there
+      is no toggle (LOOK.md § Theme, #148). The media query is the whole
+      mechanism: `light.css` declares on `:root`, `dark.css` on `.sl-theme-dark`
+      — which is why the class below is static and always present. Whichever
+      sheet the media query switches off takes its rules with it, so the class
+      is inert in light and load-bearing in dark, with no script to run and
+      nothing to get wrong on a cached load.
+
+      The chrome does not follow this. The band and the rail keep one value in
+      both themes; see `src/look.ts`.
+    -->
+    <link
+      rel="stylesheet"
+      media="(prefers-color-scheme: light)"
+      href="/node_modules/@shoelace-style/shoelace/dist/themes/light.css"
+    />
+    <link
+      rel="stylesheet"
+      media="(prefers-color-scheme: dark)"
+      href="/node_modules/@shoelace-style/shoelace/dist/themes/dark.css"
+    />
 
     <style>
       :root {
         --rr-main-header-height: 60px;
       }
+      /* The page under the app, which is work pane rather than chrome, so it
+         follows the theme rather than keeping one value. */
       body {
         margin: 0;
         padding: 0;
         font-family: var(--sl-font-sans);
-        background: #000;
-        color: #eee;
+        background: var(--sl-color-neutral-0);
+        color: var(--sl-color-neutral-900);
         height: 100vh;
         overflow: hidden;
       }
-      
+
       /* Global scrollbar styling */
       ::-webkit-scrollbar {
         width: 8px;
         height: 8px;
       }
       ::-webkit-scrollbar-track {
-        background: #111;
+        background: var(--sl-color-neutral-100);
       }
       ::-webkit-scrollbar-thumb {
-        background: #333;
+        background: var(--sl-color-neutral-300);
         border-radius: 4px;
       }
       ::-webkit-scrollbar-thumb:hover {
-        background: #444;
+        background: var(--sl-color-neutral-400);
       }
     </style>
   </head>
-  <body class="sl-theme-dark">
+  <body>
     <rr-app></rr-app>
     <script type="module" src="/src/rr-app.ts"></script>
   </body>
