@@ -662,7 +662,7 @@ on each link — `light.css` declares on `:root`, `dark.css` on `.sl-theme-dark`
 `rr-live-view` and `rr-editor-view`'s `.main-content` all carry hardcoded near-black backgrounds and
 light ink. Light mode therefore renders Shoelace's controls light against panes that are not. That
 is a known gap left by #148, which asked for the link and nothing more; converting the panes is its
-own piece of work.
+own piece of work, filed as #151.
 
 ### The look rules (#148, #149)
 
