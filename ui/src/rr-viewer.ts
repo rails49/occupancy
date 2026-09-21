@@ -22,6 +22,7 @@ import {
 } from './geometry.js';
 import type { FrameSize, Rect, Size } from './geometry.js';
 import { highlightStyles } from './highlight.js';
+import { matteTokens } from './matte.js';
 import { isKnownClass } from './vocabulary.js';
 import type { CalibrationPoint, CarLabel, Point, Sensor } from '@occupancy/r49';
 import type { Detection, SensorState } from '@occupancy/detector';
@@ -42,7 +43,7 @@ export const viewerStyles = css`
     display: flex;
     align-items: center;
     justify-content: center;
-    background: #000;
+    background: var(--photo-matte);
     /* The zoom layer inside is transformed, so it grows past this box. The
        host clips too; saying it here keeps the clip beside the thing clipped. */
     overflow: hidden;
@@ -322,6 +323,7 @@ export interface ViewerContextMenuDetail extends Omit<ViewerPointerDetail, 'orig
 @customElement('rr-viewer')
 export class RrViewer extends LitElement {
   static styles = [
+    matteTokens,
     viewerStyles,
     calibrationMarkerStyles,
     sensorMarkerStyles,

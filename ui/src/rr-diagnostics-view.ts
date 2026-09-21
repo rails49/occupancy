@@ -92,21 +92,21 @@ export class RRDiagnosticsView extends LitElement {
       min-width: 0;
       height: 100%;
       overflow: hidden;
-      background: #0d0d0d;
-      color: #eee;
+      background: var(--sl-color-neutral-0);
+      color: var(--sl-color-neutral-900);
       font: 13px/1.45 var(--sl-font-sans, system-ui), sans-serif;
     }
 
     .notice {
       padding: 0.6rem 1rem;
-      background: #4a2f00;
-      color: #ffcc80;
+      background: var(--sl-color-warning-100);
+      color: var(--sl-color-warning-800);
       font-size: 0.9rem;
     }
 
     .notice.error {
-      background: #4a1512;
-      color: #ffb4a8;
+      background: var(--sl-color-danger-100);
+      color: var(--sl-color-danger-800);
     }
 
     .centre {
@@ -114,7 +114,7 @@ export class RRDiagnosticsView extends LitElement {
       max-width: 30rem;
       padding: 2rem;
       text-align: center;
-      color: #999;
+      color: var(--sl-color-neutral-600);
     }
 
     .progress {
@@ -124,7 +124,7 @@ export class RRDiagnosticsView extends LitElement {
     .progress p {
       display: flex;
       justify-content: space-between;
-      color: #aaa;
+      color: var(--sl-color-neutral-600);
     }
 
     rr-diagnostics-report,

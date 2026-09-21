@@ -58,15 +58,15 @@ export class RRStatsBar extends LitElement {
       position: absolute;
       top: 1rem;
       right: 1rem;
-      background: rgba(0, 0, 0, 0.7);
-      color: #0f0;
+      background: color-mix(in srgb, var(--sl-color-neutral-0) 70%, transparent);
+      color: var(--sl-color-success-700);
       padding: 0.5rem 1rem;
       border-radius: 4px;
       font-family: monospace;
       font-size: 0.9rem;
       pointer-events: none;
       z-index: 1000;
-      border: 1px solid rgba(0, 255, 0, 0.3);
+      border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
       backdrop-filter: blur(4px);
     }
 
@@ -77,14 +77,14 @@ export class RRStatsBar extends LitElement {
     }
 
     .label {
-      color: #aaa;
+      color: var(--sl-color-neutral-600);
     }
 
     /* The one row that changes colour. Amber rather than red: past the tolerance
        the live view is already showing a refusal banner, and a second red thing
        saying the same would compete with the button that acts on it. */
     .over {
-      color: #ffcc80;
+      color: var(--sl-color-warning-800);
     }
   `;
 

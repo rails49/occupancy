@@ -684,7 +684,7 @@ export class RREditorView extends LitElement {
       flex-grow: 1;
       display: flex;
       flex-direction: column;
-      background: #111;
+      background: var(--sl-color-neutral-0);
       position: relative;
     }
 

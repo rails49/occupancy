@@ -9,6 +9,7 @@ import {
   findingBounds,
 } from './diagnostics.js';
 import type { ArchiveDiagnostics, Finding, FindingKind, ImageDiagnostics } from './diagnostics.js';
+import { matteTokens } from './matte.js';
 import './rr-viewer.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/checkbox/checkbox.js';
@@ -62,12 +63,14 @@ export class RRDiagnosticsReport extends LitElement {
   @state() private _expanded: string | null = null;
   @state() private _onlyDisagreements = false;
 
-  static styles = css`
+  static styles = [
+    matteTokens,
+    css`
     :host {
       display: block;
       overflow-y: auto;
-      background: #0d0d0d;
-      color: #eee;
+      background: var(--sl-color-neutral-0);
+      color: var(--sl-color-neutral-900);
       font: 13px/1.45 var(--sl-font-sans, system-ui), sans-serif;
     }
 
@@ -80,23 +83,38 @@ export class RRDiagnosticsReport extends LitElement {
 
     .tile {
       flex: 1 1 9rem;
-      background: #161616;
-      border: 1px solid #262626;
-      border-top: 3px solid var(--tint, #444);
+      background: var(--sl-color-neutral-50);
+      border: 1px solid var(--sl-color-neutral-200);
+      border-top: 3px solid var(--tint, var(--sl-color-neutral-400));
       border-radius: 6px;
       padding: 0.6rem 0.75rem;
+    }
+
+    /* A finding's colour as **text**, pushed toward the pane's own ink far
+       enough to read on it. The kinds are one vocabulary shared with the boxes
+       drawn on the photograph (diagnostics.ts § KIND_COLOR), where a
+       saturated mid-tone is right against any image — but the same mid-tone as
+       small text on a white pane is not, and amber sets the number: #ffb300 is
+       1.9:1 on white and 4.1:1 once mixed. --sl-color-neutral-1000 is black
+       in the light theme and white in the dark one, so one declaration darkens
+       it under one preference and lightens it under the other. A swatch, a bar
+       segment and a border take the colour undiluted — a filled shape carries
+       at any lightness, and diluting it would put two greens on one screen. */
+    .tile .n,
+    .crop .cap b,
+    td.kind {
+      color: color-mix(in srgb, var(--tint, var(--kind)) 65%, var(--sl-color-neutral-1000));
     }
 
     .tile .n {
       font-size: 1.9rem;
       font-weight: 700;
       line-height: 1.1;
-      color: var(--tint, #eee);
       font-variant-numeric: tabular-nums;
     }
 
     .tile .t {
-      color: #999;
+      color: var(--sl-color-neutral-600);
       font-size: 0.75rem;
     }
 
@@ -106,12 +124,12 @@ export class RRDiagnosticsReport extends LitElement {
       margin: 0 1.25rem 0.4rem;
       border-radius: 6px;
       overflow: hidden;
-      background: #222;
+      background: var(--sl-color-neutral-200);
     }
 
     .legend {
       margin: 0 1.25rem 0.75rem;
-      color: #888;
+      color: var(--sl-color-neutral-600);
       font-size: 0.75rem;
       display: flex;
       gap: 0.9rem;
@@ -128,7 +146,7 @@ export class RRDiagnosticsReport extends LitElement {
     }
 
     .flag {
-      color: #ffcc80;
+      color: var(--sl-color-warning-800);
     }
 
     .controls {
@@ -137,8 +155,8 @@ export class RRDiagnosticsReport extends LitElement {
       gap: 1.5rem;
       margin: 0 1.25rem 0.75rem;
       padding: 0.6rem 0.75rem;
-      background: #141414;
-      border: 1px solid #262626;
+      background: var(--sl-color-neutral-50);
+      border: 1px solid var(--sl-color-neutral-200);
       border-radius: 6px;
       flex-wrap: wrap;
     }
@@ -168,8 +186,8 @@ export class RRDiagnosticsReport extends LitElement {
       font-size: 0.68rem;
       text-transform: uppercase;
       letter-spacing: 0.04em;
-      color: #888;
-      border-bottom: 1px solid #333;
+      color: var(--sl-color-neutral-600);
+      border-bottom: 1px solid var(--sl-color-neutral-200);
       cursor: pointer;
       white-space: nowrap;
       user-select: none;
@@ -188,22 +206,22 @@ export class RRDiagnosticsReport extends LitElement {
     }
 
     th[aria-sort] {
-      color: var(--sl-color-primary-400, #74b8ff);
+      color: var(--sl-color-primary-600);
     }
 
     td {
       text-align: right;
       padding: 0.35rem 0.6rem;
-      border-bottom: 1px solid #1c1c1c;
+      border-bottom: 1px solid var(--sl-color-neutral-100);
       font-variant-numeric: tabular-nums;
     }
 
     tr.row:hover td {
-      background: #171717;
+      background: var(--sl-color-neutral-50);
     }
 
     tr.row[data-open='true'] td {
-      background: #1b1b1b;
+      background: var(--sl-color-neutral-100);
     }
 
     .name {
@@ -218,17 +236,21 @@ export class RRDiagnosticsReport extends LitElement {
       height: 1.6rem;
       object-fit: cover;
       border-radius: 3px;
-      background: #000;
+      background: var(--photo-matte);
       flex-shrink: 0;
     }
 
     .zero {
-      color: #444;
+      color: var(--sl-color-neutral-500);
+    }
+
+    .strong {
+      font-weight: 700;
     }
 
     .crops td {
       padding: 0 0.6rem 0.9rem;
-      background: #131313;
+      background: var(--sl-color-neutral-50);
     }
 
     .crop-strip {
@@ -241,11 +263,11 @@ export class RRDiagnosticsReport extends LitElement {
     .crop {
       width: 13rem;
       flex-shrink: 0;
-      border: 1px solid #2c2c2c;
-      border-top: 3px solid var(--kind, #666);
+      border: 1px solid var(--sl-color-neutral-200);
+      border-top: 3px solid var(--kind, var(--sl-color-neutral-400));
       border-radius: 5px;
       overflow: hidden;
-      background: #000;
+      background: var(--photo-matte);
       text-align: left;
     }
 
@@ -256,26 +278,26 @@ export class RRDiagnosticsReport extends LitElement {
 
     .crop .cap {
       padding: 0.3rem 0.45rem;
-      background: #171717;
+      background: var(--sl-color-neutral-50);
     }
 
     .crop .cap b {
-      color: var(--kind, #eee);
       display: block;
       font-size: 0.75rem;
     }
 
     .crop .cap span {
-      color: #999;
+      color: var(--sl-color-neutral-600);
       font-size: 0.7rem;
     }
 
     .empty {
       padding: 2.5rem;
       text-align: center;
-      color: #666;
+      color: var(--sl-color-neutral-600);
     }
-  `;
+  `,
+  ];
 
   private _sorted(images: readonly ImageDiagnostics[]): ImageDiagnostics[] {
     const rows = this._onlyDisagreements ? images.filter(i => i.disagreements > 0) : [...images];
@@ -350,7 +372,7 @@ export class RRDiagnosticsReport extends LitElement {
 
     return html`
       <div class="scorecard">
-        <div class="tile" style="--tint:#eee">
+        <div class="tile" style="--tint:var(--sl-color-neutral-900)">
           <div class="n">${diagnostics.images.length}</div>
           <div class="t">images · ${diagnostics.labels} labels</div>
         </div>
@@ -453,7 +475,7 @@ export class RRDiagnosticsReport extends LitElement {
   private _renderRow(image: ImageDiagnostics) {
     const open = this._expanded === image.filename;
     const cell = (n: number, kind: FindingKind) =>
-      html`<td class=${n === 0 ? 'zero' : ''} style=${n ? `color:${KIND_COLOR[kind]}` : ''}>
+      html`<td class=${n === 0 ? 'zero' : 'kind'} style=${n ? `--kind:${KIND_COLOR[kind]}` : ''}>
         ${n}
       </td>`;
     const disagreeing = image.findings.filter(f => f.kind !== 'agreed');
@@ -475,7 +497,7 @@ export class RRDiagnosticsReport extends LitElement {
           </div>
         </td>
         <td>${image.labels.length}</td>
-        <td style=${image.disagreements ? 'font-weight:700' : 'color:#444'}>
+        <td class=${image.disagreements ? 'strong' : 'zero'}>
           ${image.disagreements}
         </td>
         ${cell(image.counts.missed, 'missed')} ${cell(image.counts.phantom, 'phantom')}
