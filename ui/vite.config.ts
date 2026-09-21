@@ -81,7 +81,13 @@ const serveProtoFixtures = {
 
 const includeModels = fs.existsSync(path.resolve(__dirname, DETECTOR_MODEL_DIR));
 
-const config: VitestConfig = {
+/**
+ * Exported so `vitest.look.config.ts` can take everything but the include
+ * pattern from here rather than restating it. It restated three keys once and
+ * silently dropped a fourth — `resolve.dedupe`, without which two copies of Lit
+ * reach a test that reads `static styles` off decorated classes.
+ */
+export const config: VitestConfig = {
   base: '/',
   plugins: [
     viteStaticCopy({

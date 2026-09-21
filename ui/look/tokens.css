@@ -1,0 +1,29 @@
+/*
+ * The look rules' values. The source: nothing generates this file and nothing
+ * generates it from anything. docs/LOOK.md says what each token means and who
+ * is bound by it; this file says what the value is, and the two never restate
+ * each other (ADR-0005).
+ *
+ * No UI installs this file. A consumer copies it verbatim to a fixed path of
+ * its own, records the commit it came from, and keeps a test asserting that
+ * the values it actually draws with equal this copy's. The copy is inert:
+ * nothing imports it, the test reads it. How a consumer expresses these values
+ * in its own code is free (ADR-0003).
+ */
+
+:root {
+  /* The chrome keeps these values in both themes. Red on the chrome means
+     stop or a fault and nothing else. */
+  --band: #1d4ed8;
+  --band-ink: #ffffff;
+  --rail: #064e3b;
+  --rail-group: #059669;
+
+  /* Every button on the rail: the minimum a thumb needs. */
+  --rail-button: 44px;
+
+  /* Window height below which the rail becomes a horizontal strip. A media
+     query cannot read a custom property, so a consumer reads this value into
+     whatever form its own breakpoint needs. */
+  --rail-turns: 640px;
+}

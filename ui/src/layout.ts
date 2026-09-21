@@ -39,11 +39,21 @@ import { css } from 'lit';
  * Set above the measurement, not at it. 631 is where the column fills the
  * window with nothing to spare, and the measurement moves with the font and the
  * engine: the same baseline state read 721px when #42 measured it and 708px
- * when #53 did, in a different browser. The ~19px margin is sized to swallow
- * that spread, and keeps the reflow ahead of the clipping rather than level
- * with it.
+ * when #53 did, in a different browser. The margin is what swallows that
+ * spread, and keeps the reflow ahead of the clipping rather than level with it.
+ *
+ * **The number is no longer this repository's to choose** (#148). It is the
+ * look rules' `--rail-turns`, one of six values four rails49 UIs are bound to,
+ * and it arrives as a copied file rather than a package (#149) — see
+ * `../look/README.md`. It moved 650 → 640 on the way in, which the derivation
+ * above still clears: the margin over the 631px measurement narrows from ~19px
+ * to 9px, the reflow still happens before the column runs out of window, and a
+ * measurement that ever exceeded it would be a reason to raise the rules rather
+ * than to set a local number. It is absent from `look.ts` because a media query
+ * cannot read a custom property, which is why it is a number here and why the
+ * values test compares it separately.
  */
-export const COMPACT_MAX_HEIGHT_PX = 650;
+export const COMPACT_MAX_HEIGHT_PX = 640;
 
 /**
  * The half of the reflow `rr-toolbar` and `rr-tool-palette` state identically:

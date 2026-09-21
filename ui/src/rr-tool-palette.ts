@@ -1,6 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { COMPACT_MAX_HEIGHT_PX, compactStripStyles } from './layout.js';
+import { lookTokens, railButtonStyles } from './look.js';
 import '@shoelace-style/shoelace/dist/components/icon-button/icon-button.js';
 import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
 
@@ -98,6 +99,8 @@ export class RRToolPalette extends LitElement {
   @property({ type: Boolean }) calibrated = false;
 
   static styles = [
+    lookTokens,
+    railButtonStyles,
     css`
     :host {
       display: flex;
@@ -119,7 +122,7 @@ export class RRToolPalette extends LitElement {
       flex-direction: column;
       gap: 0.4em;
       padding: 0.3em 0;
-      background-color: #059669; /* Explicit medium green, as rr-toolbar's */
+      background-color: var(--rail-group);
       border-radius: 8px;
       width: calc(100% - 8px);
       align-items: center;
@@ -134,14 +137,6 @@ export class RRToolPalette extends LitElement {
 
     sl-icon-button:hover {
       transform: scale(1.1);
-    }
-
-    sl-icon-button::part(base) {
-      color: white;
-    }
-
-    sl-icon-button::part(base):hover {
-      color: var(--sl-color-neutral-100);
     }
 
     /* The active tool, which is the one piece of state a palette has to make
