@@ -93,13 +93,12 @@ def main() -> None:
         "the run ends when the model stops learning rather than when the clock does.",
     )
     parser.add_argument(
-        "--batch", type=int, default=4, help="Small: 8 GB of RAM, no CUDA."
+        "--batch", type=int, default=4, help="Not yet sized for the M2; see #128."
     )
     parser.add_argument(
         "--device",
-        default="cpu",
-        help="cpu, mps, or a CUDA index. mps on an Intel Mac is unreliable; cpu is the default "
-        "for a reason.",
+        default="mps",
+        help="cpu, mps, or a CUDA index.",
     )
     parser.add_argument("--name", default="tracer", help="Run directory under runs/.")
     args = parser.parse_args()

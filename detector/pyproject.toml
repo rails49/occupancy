@@ -7,20 +7,12 @@ license = "AGPL-3.0-only"
 authors = [
     { name = "Bernhard Boser", email = "bernhard.e.boser@gmail.com" }
 ]
-# Upper bound, not just a floor. torch 2.2.2 is the last release with a macOS
-# x86_64 wheel and it stops at cp312, so 3.13 would resolve to a source build
-# that does not exist. Lift the cap with the pins below, together.
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.12"
 dependencies = [
-    # Pinned, not floored, and all three for the same reason: this is a 2017
-    # x86_64 Mac and each is the last release still shipping a wheel for it.
-    # See issue #3 and detector/README.md § Why these pins.
-    "torch==2.2.2",
-    "torchvision==0.17.2",
-    "onnxruntime==1.23.2",
-    # torch 2.2.2 is built against the NumPy 1.x C API and aborts at import
-    # under 2.x.
-    "numpy<2",
+    "torch>=2.11.0",
+    "torchvision>=0.26.0",
+    "onnxruntime>=1.25.1",
+    "numpy>=2.4.4",
     "ultralytics>=8.4.115",
     "onnx>=1.16.0",
     # Declared, not left to Ultralytics' `requirements: AutoUpdate`, which pip

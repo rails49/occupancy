@@ -56,23 +56,10 @@ pnpm test
 
 # Run Python linting and formatting. uv is guaranteed present: the lib/config
 # gate above already hard-failed without it.
-#
-# One loop over two independent uv projects, skipped per project rather than as
-# a block: they pin torch in opposite directions on purpose (classifier/resnet
-# tracks current, detector pins 2.2.2 for macOS x86_64), so on any given machine
-# one may resolve while the other does not. A shared skip would silently drop
-# the checks for the project that *does* work.
 echo "🐍 Running Python checks..."
 for project in classifier/resnet detector; do
-  # Resolve the environment first; gracefully skip if deps are incompatible with
-  # the current platform (recent onnxruntime has no macOS x86_64 wheel; torch
-  # 2.2.2 has no arm64 one). All other failures are still fatal.
-  if ! (cd "$project" && uv sync --quiet 2>/dev/null); then
-    echo "⚠️  $project: environment could not be resolved on this platform. Skipping."
-    continue
-  fi
   echo "   $project"
-  (cd "$project" && uv run ruff check . && uv run black --check . && uv run pyright)
+  (cd "$project" && uv sync --quiet && uv run ruff check . && uv run black --check . && uv run pyright)
   # Only detector has tests, and only for one thing: the letterbox it writes a
   # second copy of because the browser needs the same arithmetic in TypeScript
   # (issue #100). Guarded by the directory rather than by project name so a

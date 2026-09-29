@@ -128,6 +128,7 @@ rr-app                          ← shell: owns the archive and the view mode
 > [#139]: https://github.com/rails49/occupancy/issues/139
 > [#148]: https://github.com/rails49/occupancy/issues/148
 > [#149]: https://github.com/rails49/occupancy/issues/149
+> [#151]: https://github.com/rails49/occupancy/issues/151
 
 ## State and data flow
 
@@ -1397,6 +1398,25 @@ height is `COMPACT_MAX_HEIGHT_PX` in `layout.ts` and the values test compares th
 
 **The values test runs outside the required gate**, by ADR-0005: it is not under `tests/`, so
 `pnpm test` and `bin/test.sh` do not run it. `pnpm --filter @occupancy/ui test:look` does.
+
+---
+
+### `matte.ts`
+
+The one colour a work pane may state outright ([#151]).
+
+| Export | Description |
+|---|---|
+| `matteTokens` | `CSSResult`. Declares `--photo-matte` on `:host`. **Include it first** in the `static styles` of the components that mat a photograph — `rr-viewer`, `rr-thumbnail-bar`, `rr-diagnostics-report` |
+
+The panes follow the theme and `tests/theme.test.ts` asserts that no pane module carries a hex
+literal at all; this is the black that survives it, and it is a token so a reader can tell a
+considered black from one that was never converted. It sits **behind a photograph or a video
+frame**, and black is what a photograph is matted against under either preference.
+
+`rr-viewer` is the one component that test does not scan, for the same reason: the matte behind the
+photograph and the zoom band over it are the whole of what it draws, so it has no pane surface, and
+its two colours are judged the way a marker ink is. See `ui/CLAUDE.md` § Shoelace for the rest.
 
 ---
 

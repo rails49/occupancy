@@ -1,5 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { matteTokens } from './matte.js';
 
 /**
  * Horizontal strip of image thumbnails for selecting and managing layout images.
@@ -40,15 +41,17 @@ export class RRThumbnailBar extends LitElement {
   @state() private _draggedIndex: number | null = null;
   @state() private _dropIndex: number | null = null;
 
-  static styles = css`
+  static styles = [
+    matteTokens,
+    css`
     :host {
       display: flex;
       align-items: center;
       height: 80px;
       padding: 0 1rem;
       gap: 1rem;
-      background-color: #1a1a1a;
-      border-bottom: 1px solid #333;
+      background-color: var(--sl-color-neutral-100);
+      border-bottom: 1px solid var(--sl-color-neutral-200);
       overflow-x: auto;
       user-select: none;
     }
@@ -58,7 +61,7 @@ export class RRThumbnailBar extends LitElement {
       height: 4px;
     }
     :host::-webkit-scrollbar-thumb {
-      background: #444;
+      background: var(--sl-color-neutral-300);
       border-radius: 2px;
     }
 
@@ -76,7 +79,7 @@ export class RRThumbnailBar extends LitElement {
       border: 2px solid transparent;
       border-radius: 4px;
       cursor: pointer;
-      background: #000;
+      background: var(--photo-matte);
       transition: border-color 0.2s;
     }
 
@@ -138,9 +141,9 @@ export class RRThumbnailBar extends LitElement {
       display: flex;
       align-items: center;
       justify-content: center;
-      border: 2px dashed #444;
+      border: 2px dashed var(--sl-color-neutral-400);
       border-radius: 4px;
-      color: #888;
+      color: var(--sl-color-neutral-500);
       cursor: pointer;
       font-size: 1.5rem;
       transition: all 0.2s;
@@ -149,7 +152,7 @@ export class RRThumbnailBar extends LitElement {
     .add-btn:hover {
       border-color: var(--sl-color-primary-500);
       color: var(--sl-color-primary-500);
-      background: #222;
+      background: var(--sl-color-neutral-200);
     }
 
     .thumbnail-wrapper.dragging {
@@ -161,7 +164,8 @@ export class RRThumbnailBar extends LitElement {
       outline-offset: 2px;
       border-radius: 4px;
     }
-  `;
+  `,
+  ];
 
   private _onSelect(index: number) {
     this.dispatchEvent(new CustomEvent('rr-image-select', {

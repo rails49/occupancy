@@ -52,8 +52,8 @@ export class RRApp extends LitElement {
       flex-direction: column;
       height: 100vh;
       overflow: hidden;
-      background: #000;
-      color: #eee;
+      background: var(--sl-color-neutral-0);
+      color: var(--sl-color-neutral-900);
     }
 
     main {

@@ -41,8 +41,8 @@ export class RRDiagnosticsQueue extends LitElement {
       flex-direction: column;
       height: 100%;
       min-height: 0;
-      background: #000;
-      color: #eee;
+      background: var(--sl-color-neutral-0);
+      color: var(--sl-color-neutral-900);
       font: 14px/1.45 var(--sl-font-sans, system-ui), sans-serif;
     }
 
@@ -51,8 +51,8 @@ export class RRDiagnosticsQueue extends LitElement {
       align-items: center;
       gap: 0.75rem;
       padding: 0.4rem 0.75rem;
-      background: #111;
-      border-bottom: 1px solid #2a2a2a;
+      background: var(--sl-color-neutral-100);
+      border-bottom: 1px solid var(--sl-color-neutral-200);
       flex-shrink: 0;
     }
 
@@ -61,7 +61,7 @@ export class RRDiagnosticsQueue extends LitElement {
     }
 
     header .flag {
-      color: #ffcc80;
+      color: var(--sl-color-warning-800);
       font-size: 0.8rem;
     }
 
@@ -84,28 +84,32 @@ export class RRDiagnosticsQueue extends LitElement {
       bottom: 1rem;
       transform: translateX(-50%);
       width: min(38rem, calc(100% - 2rem));
-      background: rgba(18, 18, 18, 0.94);
-      border: 1px solid #333;
-      border-left: 5px solid var(--kind, #888);
+      background: color-mix(in srgb, var(--sl-color-neutral-50) 94%, transparent);
+      border: 1px solid var(--sl-color-neutral-200);
+      border-left: 5px solid var(--kind, var(--sl-color-neutral-500));
       border-radius: 8px;
       padding: 0.7rem 1rem;
       box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7);
     }
 
+    /* The kind's colour as text, mixed toward the pane's own ink so it reads
+       on either theme — see rr-diagnostics-report.ts for the number. The
+       border-left above takes it undiluted, because a filled shape carries at
+       any lightness. */
     .card h2 {
       margin: 0 0 0.1rem;
       font-size: 1.05rem;
-      color: var(--kind, #eee);
+      color: color-mix(in srgb, var(--kind) 65%, var(--sl-color-neutral-1000));
     }
 
     .card p {
       margin: 0 0 0.35rem;
-      color: #bbb;
+      color: var(--sl-color-neutral-700);
     }
 
     .meta {
       font-size: 0.75rem;
-      color: #777;
+      color: var(--sl-color-neutral-600);
       display: flex;
       gap: 0.75rem;
       flex-wrap: wrap;
@@ -117,23 +121,23 @@ export class RRDiagnosticsQueue extends LitElement {
       justify-content: space-between;
       gap: 0.75rem;
       padding: 0.5rem 0.75rem;
-      background: #111;
-      border-top: 1px solid #2a2a2a;
+      background: var(--sl-color-neutral-100);
+      border-top: 1px solid var(--sl-color-neutral-200);
       flex-shrink: 0;
     }
 
     .counter {
-      color: #999;
+      color: var(--sl-color-neutral-600);
       font-size: 0.8rem;
     }
 
     .counter b {
-      color: #eee;
+      color: var(--sl-color-neutral-900);
     }
 
     .empty {
       margin: auto;
-      color: #888;
+      color: var(--sl-color-neutral-600);
       text-align: center;
     }
   `;

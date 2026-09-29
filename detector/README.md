@@ -2,8 +2,8 @@
 
 Fine-tunes an oriented-box detector on rolling stock and exports it for the
 browser. Sibling of `classifier/resnet/`, with its own `uv` environment — **do
-not merge the two**: that one pins fastai and a current torch, this one pins
-torch 2.2.2, and they cannot coexist.
+not merge the two**: each locks its own torch against its own framework
+(fastai there, Ultralytics here).
 
 Nothing here is published. `SPEC.md` § Accuracy: there is no held-out protocol
 and the fixture corpus sits below `layout.min_dpt`, so no number this produces
@@ -25,27 +25,6 @@ uv run python export_onnx.py
 
 `train.py` writes to `runs/`, `export_onnx.py` to `models/`. Both are
 gitignored, exactly as `classifier/resnet/models/` is.
-
-## Why these pins
-
-This is a 2017 x86_64 MacBook, and three dependencies are pinned to the **last
-release that still ships a wheel for it**. They are not floors and must move
-together:
-
-| pin | why |
-| :--- | :--- |
-| `torch==2.2.2` | last macOS x86_64 wheel; stops at cp312 |
-| `torchvision==0.17.2` | the pair torch 2.2.2 was built against |
-| `onnxruntime==1.23.2` | last macOS x86_64 wheel (needs macOS ≥ 13) |
-| `numpy<2` | torch 2.2.2 is built against the NumPy 1.x C API and aborts at import under 2.x |
-| `requires-python <3.13` | torch 2.2.2 has no cp313 wheel, so 3.13 resolves to a source build that does not exist |
-
-`classifier/resnet/` pins the *opposite* way — current torch, current
-onnxruntime — which is why `uv sync` fails there on this machine and
-`bin/test.sh` skips its Python checks. This project resolves, so its checks run.
-
-**These pins expire.** They exist for one machine; on Apple silicon every one of
-them lifts. See issue #3.
 
 ## Three export findings that are easy to rediscover the hard way
 

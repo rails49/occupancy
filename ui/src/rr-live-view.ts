@@ -141,7 +141,7 @@ export class RRLiveView extends LitElement {
       flex-grow: 1;
       height: 100%;
       position: relative;
-      background: #000;
+      background: var(--sl-color-neutral-0);
     }
 
     rr-viewer {
@@ -150,8 +150,8 @@ export class RRLiveView extends LitElement {
 
     .notice {
       padding: 0.5rem 1rem;
-      background: #4a2f00;
-      color: #ffcc80;
+      background: var(--sl-color-warning-100);
+      color: var(--sl-color-warning-800);
       font-size: 0.9rem;
     }
 
@@ -159,8 +159,8 @@ export class RRLiveView extends LitElement {
        report a capability that is missing, this reports an answer being
        withheld from a system that could otherwise give one. */
     .notice.refusing {
-      background: #5c1414;
-      color: #ffcdd2;
+      background: var(--sl-color-danger-100);
+      color: var(--sl-color-danger-800);
     }
 
     .notice button {
@@ -168,7 +168,7 @@ export class RRLiveView extends LitElement {
       padding: 0.15rem 0.6rem;
       font: inherit;
       color: inherit;
-      background: rgba(255, 255, 255, 0.12);
+      background: color-mix(in srgb, currentColor 12%, transparent);
       border: 1px solid currentColor;
       border-radius: 4px;
       cursor: pointer;

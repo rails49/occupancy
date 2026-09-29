@@ -658,11 +658,43 @@ on each link — `light.css` declares on `:root`, `dark.css` on `.sl-theme-dark`
 `<html>` is static and inert whenever the dark sheet's media does not match. Components inherit
 `--sl-*` tokens, so use those rather than hardcoding new colors.
 
-**The work panes are still written for dark** — `rr-diagnostics-*`, `rr-thumbnail-bar`,
-`rr-live-view` and `rr-editor-view`'s `.main-content` all carry hardcoded near-black backgrounds and
-light ink. Light mode therefore renders Shoelace's controls light against panes that are not. That
-is a known gap left by #148, which asked for the link and nothing more; converting the panes is its
-own piece of work, filed as #151.
+**The work panes follow the theme** (#151). Every surface and ink in `rr-app`, the three
+`rr-diagnostics-*` elements, `rr-thumbnail-bar`, `rr-stats-bar`, `rr-live-view` and
+`rr-editor-view`'s `.main-content` is an `--sl-*` neutral, which inverts when the operating system's
+preference changes. The vocabulary is the one `rr-editor-view` and `index.html` already used, and
+new code takes it rather than picking a fresh step: `neutral-0` a pane, `neutral-50` a raised card,
+`neutral-100` a bar, `neutral-200` a hairline, `neutral-500`/`600`/`700` graded ink, `neutral-900`
+the primary ink.
+
+**Warning and fault are Shoelace's too.** The notice bars, the incomplete flags and the alignment
+row past tolerance are `--sl-color-warning-100`/`-800`, and a refusal `--sl-color-danger-100`/`-800`
+— the pair `rr-editor-view`'s readout bars already used. They invert like the neutrals, so neither
+needs a second amber written for one theme; and both ends of those scales sit clear of the marker
+inks, which are saturated mid-tones stroked onto the photograph rather than a filled bar in a pane.
+
+**A finding's colour is text in three places** — the report's scorecard number and crop caption, and
+the queue card's heading — and `diagnostics.ts`'s `KIND_COLOR` is one vocabulary shared with the
+boxes drawn on the photograph, where a saturated mid-tone is right against any image. As small text
+on a white pane it is not: amber is 1.9:1 there. Those three mix it 65% toward
+`--sl-color-neutral-1000`, which is black under one preference and white under the other, so one
+declaration darkens it in light and lightens it in dark. A swatch, a bar segment and a border take
+it **undiluted** — a filled shape carries at any lightness, and diluting it would put two greens on
+one screen.
+
+**What the panes still state outright is three things, and all three sit off the pane.**
+`src/matte.ts`'s `--photo-matte` is the black a photograph or a video frame is matted against —
+`rr-viewer`'s viewport, a thumbnail, and the report's row image and crop card take it, and nothing
+else may. `rgba()` scrims and drop shadows stay: a shadow is an alpha over whatever is under it, and
+the fit control's scrim sits on the photograph. And `color: white` stays on a badge whose background
+is `--sl-color-danger-600` or `--sl-color-success-600` — a saturated fill that does not move with
+the theme, so neither may its ink.
+
+`tests/theme.test.ts` is the guard, and its scope is exactly **no hex literal in a pane module**,
+template included — the report set a tile's tint from an inline `style` attribute. It does not see
+`rgba()` or `white`, which is why those three are argued above rather than asserted. It runs inside
+the required gate, unlike `look/values.test.ts`: a literal creeping back is this repository's own
+regression rather than a decision taken elsewhere. jsdom does not paint (#109), so the result was
+judged by hand in both OS settings and no browser runner was added for it.
 
 ### The look rules (#148, #149)
 
