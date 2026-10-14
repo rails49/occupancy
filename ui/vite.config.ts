@@ -5,7 +5,7 @@ import type { InlineConfig } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import { ORT_WASM_BINARY, ortCopyTargets } from './ortAssets.js';
-import { DETECTOR_MODEL_DIR, detectorCopyTarget } from './modelAssets.js';
+import { detectorCopyTarget } from './modelAssets.js';
 
 interface VitestConfig extends UserConfig {
   test?: InlineConfig;
@@ -79,7 +79,7 @@ const serveProtoFixtures = {
   },
 };
 
-const includeModels = fs.existsSync(path.resolve(__dirname, DETECTOR_MODEL_DIR));
+const includeModels = fs.existsSync(path.resolve(__dirname, detectorCopyTarget.src));
 
 /**
  * Exported so `vitest.look.config.ts` can take everything but the include

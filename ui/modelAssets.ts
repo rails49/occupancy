@@ -29,8 +29,8 @@ export const DETECTOR_MODEL_FILE = 'detector_int8.ort';
 /**
  * Where `detector/export_onnx.py` writes, relative to `ui/`.
  *
- * Gitignored, and absent on a fresh clone: the copy target is conditional on
- * this directory existing, so a build with no local model succeeds and the live
+ * The model is gitignored, and absent on a fresh clone: the copy target is
+ * conditional on the file existing, so a build with no local model succeeds and the live
  * view reports every sensor `unknown` / `no-model` rather than failing to
  * start. That is the same shape the classifier's copy had, and it is what keeps
  * `bin/test.sh` runnable without downloading anything.
