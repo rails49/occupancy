@@ -1,4 +1,5 @@
 import { LitElement, html, css } from 'lit';
+import { lookTheme } from '@rails49/look';
 import type { TemplateResult } from 'lit';
 import { customElement, query, state } from 'lit/decorators.js';
 import '@shoelace-style/shoelace/dist/components/menu/menu.js';
@@ -77,7 +78,9 @@ export class RRContextMenu extends LitElement {
 
   @query('sl-menu') private _menu!: HTMLElement | null;
 
-  static styles = css`
+  static styles = [
+    lookTheme,
+    css`
     :host {
       /* Fixed, so the menu is placed in the same frame the cursor was reported
          in — a client coordinate. The custom properties are written once the
@@ -92,7 +95,8 @@ export class RRContextMenu extends LitElement {
       min-width: 12rem;
       box-shadow: var(--sl-shadow-large);
     }
-  `;
+  `,
+  ];
 
   /** Whether the menu is currently showing. */
   public get open(): boolean {

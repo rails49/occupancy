@@ -2,8 +2,8 @@ import { LitElement, html, css } from 'lit';
 import { customElement, property, query } from 'lit/decorators.js';
 import { VALID_SCALES } from '@occupancy/r49';
 import type { Layout } from '@occupancy/r49';
+import { lookTheme, type LookDialog } from '@rails49/look';
 import type { MissingRequirement } from './requiredMetadata.js';
-import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
 import '@shoelace-style/shoelace/dist/components/tab-group/tab-group.js';
 import '@shoelace-style/shoelace/dist/components/tab/tab.js';
 import '@shoelace-style/shoelace/dist/components/tab-panel/tab-panel.js';
@@ -13,7 +13,7 @@ import '@shoelace-style/shoelace/dist/components/option/option.js';
 import '@shoelace-style/shoelace/dist/components/spinner/spinner.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
-import type { SlDialog, SlInput, SlSelect } from '@shoelace-style/shoelace';
+import type { SlInput, SlSelect } from '@shoelace-style/shoelace';
 
 /**
  * The subset of `Layout` this dialog edits, plus the calibration it reads.
@@ -58,7 +58,7 @@ export class RRSettingsDialog extends LitElement {
    */
   @property({ type: Array }) requiredMissing: readonly MissingRequirement[] = [];
 
-  @query('sl-dialog') private _dialog!: SlDialog;
+  @query('look-dialog') private _dialog!: LookDialog;
 
   private get _blocking(): boolean {
     return this.requiredMissing.length > 0;
@@ -73,7 +73,9 @@ export class RRSettingsDialog extends LitElement {
     if (this._blocking && this._dialog && !this._dialog.open) this._dialog.show();
   }
 
-  static styles = css`
+  static styles = [
+    lookTheme,
+    css`
     .settings-grid {
       display: grid;
       grid-template-columns: auto 1fr;
@@ -148,7 +150,8 @@ export class RRSettingsDialog extends LitElement {
     .required li + li {
       margin-top: 0.35rem;
     }
-  `;
+  `,
+  ];
 
   public show() {
     this._dialog.show();
@@ -197,9 +200,9 @@ export class RRSettingsDialog extends LitElement {
 
   render() {
     return html`
-      <sl-dialog
+      <look-dialog
         label="Settings"
-        style="--width: 500px;"
+        size="medium"
         @sl-request-close=${(e: CustomEvent) => {
           // Every route out — the close button, Escape, a click on the overlay
           // — goes through here, so one guard covers all three.
@@ -274,7 +277,7 @@ export class RRSettingsDialog extends LitElement {
           @click=${() => this.hide()}
           >Close</sl-button
         >
-      </sl-dialog>
+      </look-dialog>
     `;
   }
 }

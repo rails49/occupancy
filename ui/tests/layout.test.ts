@@ -1,9 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { CSSResult, CSSResultGroup } from 'lit';
-import { COMPACT_MAX_HEIGHT_PX, compactStripStyles } from '../src/layout.js';
+import { TURN_HEIGHT_PX } from '@rails49/look';
 import { RREditorView } from '../src/rr-editor-view.js';
-import { RRToolbar } from '../src/rr-toolbar.js';
-import { RRToolPalette } from '../src/rr-tool-palette.js';
 
 /**
  * Flattens a component's `static styles` — one `css` literal or an array of
@@ -22,42 +20,17 @@ function cssTextOf(styles: CSSResultGroup | undefined): string {
 }
 
 /**
- * jsdom does not lay out, so none of this proves the reflow *fits*. That was
- * measured in a browser (#42) and cannot be re-measured here.
- *
- * What it does guard is the one hazard the reflow introduces: three components
- * switch at the same height, and a stylesheet that misses the breakpoint leaves
- * a vertical stack inside a horizontal strip — taller than the column it
- * replaced, which is the bug the reflow exists to fix.
+ * jsdom does not lay out, so none of this proves the strip *fits*. What it
+ * guards is that the editor gives back its readout bars' padding at the height
+ * look's rail lies down at (#42), and at no other.
  */
-describe('the compact-height reflow', () => {
-  const QUERY = `@media (max-height: ${COMPACT_MAX_HEIGHT_PX}px)`;
-
-  it.each([
-    ['rr-editor-view', RREditorView],
-    ['rr-toolbar', RRToolbar],
-    ['rr-tool-palette', RRToolPalette],
-  ])('%s reflows at the shared breakpoint', (_name, ctor) => {
-    expect(cssTextOf(ctor.styles)).toContain(QUERY);
-  });
-
-  it('states the turn once, in the shared rules both elements use', () => {
-    // The breakpoint agreeing is not the whole hazard: two copies of the rules
-    // *inside* the query could still drift while every component still
-    // switches at the same height.
-    expect(cssTextOf(compactStripStyles)).toContain(QUERY);
-    for (const ctor of [RRToolbar, RRToolPalette]) {
-      const styles = ctor.styles;
-      expect(Array.isArray(styles) && styles.includes(compactStripStyles)).toBe(true);
-    }
+describe('the editor turns with the rail', () => {
+  it('reflows at look\'s turn height', () => {
+    expect(cssTextOf(RREditorView.styles)).toContain(`@media (max-height: ${TURN_HEIGHT_PX}px)`);
   });
 
   it('carries no second, hardcoded breakpoint that could drift from it', () => {
-    for (const ctor of [RREditorView, RRToolbar, RRToolPalette]) {
-      const heightQueries = cssTextOf(ctor.styles).match(/max-height:\s*\d+px/g) ?? [];
-      for (const q of heightQueries) {
-        expect(q).toBe(`max-height: ${COMPACT_MAX_HEIGHT_PX}px`);
-      }
-    }
+    const heightQueries = cssTextOf(RREditorView.styles).match(/max-height:\s*\d+px/g) ?? [];
+    for (const q of heightQueries) expect(q).toBe(`max-height: ${TURN_HEIGHT_PX}px`);
   });
 });

@@ -1,4 +1,5 @@
 import { LitElement, html, css, nothing } from 'lit';
+import { lookTheme } from '@rails49/look';
 import { customElement, property, state } from 'lit/decorators.js';
 import type { Frame } from '@occupancy/detector';
 import {
@@ -64,6 +65,7 @@ export class RRDiagnosticsReport extends LitElement {
   @state() private _onlyDisagreements = false;
 
   static styles = [
+    lookTheme,
     matteTokens,
     css`
     :host {

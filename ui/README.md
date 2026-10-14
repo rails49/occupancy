@@ -39,18 +39,18 @@ Non-element modules use plain camelCase filenames with no prefix.
 
 ```
 rr-app                          ← shell: owns the archive and the view mode
-├── rr-header                   ← app bar: status slot, mode control, source link, settings gear
-│   └── rr-settings-dialog      ← layout metadata + required-metadata gate (sl-dialog)
+├── look-shell                  ← @rails49/look: the page
+│   ├── look-band               ← layout name and scale, bound file, settings gear
+│   └── look-rail               ← the views; in the editor, File, History and Tools
+├── rr-settings-dialog          ← layout metadata + required-metadata gate (look-dialog)
 ├── rr-editor-view              ← editor mode; images, DPT readout, calibration points, sensors, cars
-│   ├── rr-toolbar              ← vertical icon bar (file ops + undo/redo)
-│   ├── rr-tool-palette         ← active tool, and the calibration gate on the labeling ones
 │   ├── rr-viewer               ← SHARED: media + SVG overlay; reports pointer gestures
 │   │   ├── calibrationMarker.ts ← module, not an element: the labelled crosshair
 │   │   ├── sensorMarker.ts     ← module: the labelled diamond, recoloured by L1 state
 │   │   └── carMarker.ts        ← module: the authored chord + rectangle, and the L0 box
 │   ├── rr-thumbnail-bar        ← horizontal image selector strip
-│   ├── rr-calibration-dialog   ← asks for a point's x/y/z in mm (sl-dialog)
-│   ├── rr-sensor-dialog        ← asks for a sensor's optional name (sl-dialog)
+│   ├── rr-calibration-dialog   ← asks for a point's x/y/z in mm (look-dialog)
+│   ├── rr-sensor-dialog        ← asks for a sensor's optional name (look-dialog)
 │   └── rr-context-menu         ← right-click verbs on one object (sl-menu)
 ├── rr-live-view                ← live mode; owns the detector and the L0→L1 loop
 │   ├── rr-stats-bar            ← FPS / cars / occupied / inference / drift overlay
@@ -137,13 +137,13 @@ down as the `.archive` property; children report upward with bubbling `rr-*` cus
 
 ```
         .archive ↓                    ↑ rr-* events (bubbles: true, composed: true)
-rr-app ─────────── rr-editor-view ─────────── rr-viewer / rr-toolbar / rr-thumbnail-bar
+rr-app ─────────── rr-editor-view ─────────── rr-viewer / rr-thumbnail-bar
    │
    └─────────────── rr-live-view ───────────── rr-viewer / rr-stats-bar
 ```
 
-* **`rr-app` owns:** the archive, the **undo history**, the view mode, the status string, and file
-  new/open/save.
+* **`rr-app` owns:** the archive, the **undo history**, the view mode, the band and the rail, and
+  file new/open/save.
 * **`rr-editor-view` owns:** the current image index, blob URLs for the images, **the active tool**,
   the **chain in progress** (`EditorMode`, plus the cursor the rubber band follows), the click that
   is waiting on a coordinate or a name, and what the context menu is open on. It mutates the archive
@@ -177,7 +177,7 @@ call `this.requestUpdate()` explicitly.
 
 **Every manifest mutation goes through `history.record`** (see `history.ts`), so an edit made by
 reaching into `.archive` directly leaves an undo stack that is wrong rather than short. Children
-report a recorded edit upward with `rr-history-change`, which is what re-renders the toolbar's
+report a recorded edit upward with `rr-history-change`, which is what re-renders the rail's
 enabled state.
 
 ---
@@ -188,11 +188,12 @@ enabled state.
 
 Application shell. Owns the archive and routes between the two views.
 
-**Internal state** (no public properties): `_archive`, `_history`, `_viewMode` (`'editor' | 'live'`),
-`_status`, `_binding`. Starts with no archive loaded and no binding.
+**Internal state** (no public properties): `_archive`, `_history`, `_viewMode`
+(`'editor' | 'live' | 'diagnostics'`), `_editorState`, `_binding`. Starts with no archive loaded and
+no binding.
 
-**Handles:** `rr-view-toggle`, `rr-layout-change`, `rr-file-new`, `rr-file-open`, `rr-file-save`,
-`rr-undo`, `rr-redo`, `rr-history-change`, `rr-notify`.
+**Handles:** `look-view` and `look-press` from its own band and rail, `rr-layout-change`,
+`rr-camera-height-change`, `rr-editor-state`, `rr-history-change`, `rr-notify`.
 
 `rr-notify` is a child's transient message, toasted here because this is where toasts live. It is
 raised at `warning`, never `danger`: everything that reaches it is the editor **declining** to
@@ -204,48 +205,45 @@ Shoelace inputs are custom elements, so `target` is retargeted to the host and t
 hijack Cmd+Z mid-typing. A press with a drag still live returns nothing (see `history.ts`), and
 `_undo`/`_redo` already do nothing when the stack hands back no entry.
 
-* `rr-file-new` and `rr-file-open` **confirm before discarding unsaved changes** (`_history.isDirty`),
+* New and Open **confirm before discarding unsaved changes** (`_history.isDirty`),
   since replacing the archive takes the undo stack with it. **Closing or reloading the tab is guarded
   by the same predicate** ([#49]): a `beforeunload` listener registered in `connectedCallback` beside
   the keydown one, permanently, with `isDirty` checked at fire time. It calls `preventDefault()` *and*
   sets the legacy `returnValue`, and shares nothing with `_confirmDiscard()`, which answers with a
   boolean `beforeunload` cannot use — all it may do is cancel and let the browser ask, in wording
   nobody can set. Together these are the destructive acts undo cannot cover.
-* `rr-file-save` marks the history position saved rather than clearing it — undoing past a save is
+* Save marks the history position saved rather than clearing it — undoing past a save is
   legitimate, because the bytes on disk are unaffected.
 * Undo and redo reveal what they changed, in the order the invariant states ([#37]): `selectImage`
   on the **pending** entry's image, then the apply, then `syncFromArchive(filename, highlights)`,
-  which lights the objects the entry touched. `undoImage`/`redoImage` go down with the labels so the
-  editor can qualify the tooltips.
+  which lights the objects the entry touched.
 * **Undo is offered to the editor first** ([#33]): `_undo` awaits `rr-editor-view.interceptUndo()`
   and stops there when it returns true. A live chain is a wall undo cannot cross, and only the editor
   knows one is live — so the protocol is one question asked here rather than chain state pushed up.
   Redo is not offered: only undo is state-dependent (`../SPEC.md` § Undo and redo).
 
-* `rr-file-new` builds an empty **v4** manifest — layout `'New Layout'`, scale `N`, resolution
+* New builds an empty **v4** manifest — layout `'New Layout'`, scale `N`, resolution
   1920×1080, empty calibration points and no sensors. It **clears the binding**: the new archive is
   emphatically not the file that was open.
-* `rr-file-open` and `rr-file-save` go through `persistence.ts`, which owns the choice between
+* Open and Save go through `persistence.ts`, which owns the choice between
   overwriting a file and downloading a new generation ([#48]). The binding is set **only once the
   bytes parse** — a binding to a file that failed to load would aim the next save at an archive this
   session never held.
-* `rr-file-save` `export()`s and hands the bytes to `writeArchive`, with `detail.rebind` from the
-  toolbar meaning Save As. A dismissed picker returns early: nothing written, nothing marked, no
+* Save `export()`s and hands the bytes to `writeArchive`, with `look-press`'s `shiftKey` meaning
+  Save As. A dismissed picker returns early: nothing written, nothing marked, no
   toast. Everything else marks the history saved, including a download — the fallback did write a
   file, and refusing to mark it would leave a phone permanently dirty. The toast names the verb and
   the file, because "Saved to disk" would hide which of the two things just happened.
 * The **stem** is the binding's, falling back to `layout.name` for an archive that has never been
   saved. It does not follow a later rename: the file's identity is the file, and `layout.name` is
   metadata stored inside it.
-* The header's status carries the bound filename in a `.bound-file` span **only when a handle
-  exists** — that is exactly when Save would overwrite it. A binding without a handle names no file
-  that exists yet. The span is styled in `rr-app` because slotted content is this component's DOM.
-* It also carries the layout's **scale** in a `.layout-scale` span ([#52]), read out of the manifest
-  on every render so a scale changed in the settings dialog is the one shown. It is stated **only
-  once a manifest has been read**: the `N` the render falls back to is a placeholder giving
-  `rr-settings-dialog` something to render against — it matches that component's own default but is
-  not bound to it — and is an answer no archive gave, so with nothing open the header names no scale
-  rather than inventing one.
+* The band names the bound file in a `look-reading` **only when a handle exists** — that is exactly
+  when Save would overwrite it. A binding without a handle names no file that exists yet.
+* `look-about` carries the layout's name, or "occupancy" with nothing loaded, and its **scale** as
+  the detail ([#52]), read out of the manifest on every render so a scale changed in the settings
+  dialog is the one shown. The scale is stated **only once a manifest has been read**: the `N` the
+  settings dialog renders against is a placeholder, and an answer no archive gave.
+* Loading is a toast, not band text.
 * **Saving does not validate calibration.** The v3 check read `{p0, p1, size_mm}` structurally, which
   v4 has not — calibration is a list of points that legitimately starts empty, so "uncalibrated" is a
   state the editor reports rather than an error to refuse a save over.
@@ -254,41 +252,50 @@ Feedback is a Shoelace `sl-alert` toast (`_notify`), not `alert()`.
 
 ---
 
-### `rr-header`
+### The band and the rail
 
-Top app bar. Renders the mode control, the status slot, a source link, and the settings gear; hosts
-`rr-settings-dialog` and opens it imperatively via its `show()` method.
+`rr-app` declares the chrome on [`@rails49/look`](https://github.com/rails49/look)'s elements, which
+draw it; the app styles none of it, and `look-check` in `bin/test.sh` holds it to that. `look-gear`
+opens `rr-settings-dialog`. There is no source link and no unsaved mark.
 
-The source link is an `sl-icon-button` with an `href`, so it renders as an anchor rather than a
-button: `target="_blank"` opens the repository in a new tab and leaves this page — and the archive
-held in memory with it — untouched. The `rel` is Shoelace's, not ours (it emits
-`noreferrer noopener` on the anchor for any `target`), so the test asserts it there rather than on
-the host, where a `rel` attribute would be inert. The URL is a module constant, not a property; the
-element's interface is unchanged by it.
+The rail's first group is the three views — Label, Live, Diagnostics — each one click away and the
+current one marked ([#87]). A `look-view` event switches. Live and Diagnostics show the views alone;
+the editor adds three command groups:
 
-The mode control is a **segmented control, not a toggle** ([#87]). Two modes could cycle on one
-button because "the other one" is unambiguous; three cannot — from Live, a user wanting Diagnostics
-would have to guess whether the button steps forward or back, and one destination ends up two clicks
-away with nothing on screen saying which. So every mode is one click, and the control marks the mode
-you are **in** rather than showing the icon of where you would go next.
-
-| Property | Type | Description |
+| Group | Commands | |
 |---|---|---|
-| `viewMode` | `ViewMode` (`'editor' \| 'live' \| 'diagnostics'`) | Which mode is marked current |
-| `layout` | `object` | Passed through to `rr-settings-dialog` |
-| `requiredMissing` | `readonly MissingRequirement[]` | Passed through; non-empty makes the dialog a gate |
+| File | `#file-new`, `#file-open`, `#file-save` | A Shift-click on Save is Save As ([#48]) |
+| History | `#edit-undo` (`Mod+Z`), `#edit-redo` (`Shift+Mod+Z`) | Disabled when the stack is empty |
+| Tools | `#tool-calibration`, `#tool-sensor`, `#tool-car` | Only while a manifest is loaded; the active tool is `pressed` |
 
-| Slot | Content |
-|---|---|
-| `status` | Status text; falls back to "Occupancy UI" |
+Save As is a modifier rather than a button of its own: on a browser without the File System Access
+API it does exactly what Save does. The tooltip **names the modifier only where the browser can
+honour it**.
 
-**Emits:** `rr-view-change` — `{ mode: ViewMode }`. Clicking the current mode emits nothing.
+Undo and Redo are not a duplicate of the keys. Their **disabled state** is the only signal
+separating "the stack is empty" from "the undo landed on an image you are not looking at", and
+touch devices have no Cmd+Z at all. The tooltip names the edit, and the image when the entry lands
+on one not on screen: "Undo delete car — img_3.jpg".
+
+The tools are `tools.ts`'s `TOOLS`. The editor holds the active tool and reports it, with whether
+DPT resolves and the image on screen, on `rr-editor-state`; a press hands the tool back through
+`rr-editor-view.selectTool`. **While DPT is unresolved the sensor and car tools are disabled, and
+`GATE_REASON` is their tooltip.** It names **DPT** rather than the width rectangle: the rectangle
+is why the *car* tool is gated, but a sensor is a single point and would draw fine uncalibrated.
+Calibration itself is never gated: it is the tool that *produces* the DPT. The gate is on
+**existence, never completion** (`../SPEC.md` § Labeling Workflow), and it opens and closes live.
+
+> The sensor tool is gated with the car tool at [#31]'s request, one step beyond `../SPEC.md`
+> § Labeling Workflow ("sensors can be placed at any time"). `needsDpt` is per tool in `tools.ts`.
+
+At or below look's `TURN_HEIGHT_PX` the rail lies down as a strip along the top of the work pane
+([#42]).
 
 ---
 
 ### `rr-settings-dialog`
 
-Layout metadata, in an `sl-dialog` with a single "Layout" tab: name, scale (from `VALID_SCALES`),
+Layout metadata, in a medium `look-dialog` with a single "Layout" tab: name, scale (from `VALID_SCALES`),
 camera height, description, and contact. It is also the **required-metadata gate** ([#139]).
 
 | Property | Type | Description |
@@ -324,78 +331,6 @@ carry their own world coordinate instead.
 Classifier selection is **not implemented**: there is no classifier tab, and the
 `rr-classifier-change` event named in the source JSDoc is never fired. Classifier config comes from
 `models/config.json` at runtime and is deliberately not stored in the manifest.
-
----
-
-### `rr-toolbar`
-
-File actions and undo/redo. A column at the side of the editor, and **a row at or below
-`COMPACT_MAX_HEIGHT_PX`**, where it and the tool palette share a strip along the top instead
-([#42]). See `layout.ts`.
-
-| Property | Type | Description |
-|---|---|---|
-| `canUndo` | `boolean` | Enables the undo button |
-| `canRedo` | `boolean` | Enables the redo button |
-| `undoLabel` | `string \| null` | Phrase for the tooltip — "Undo delete image", or "Undo delete car — img_3.jpg" when the entry lands on another image. **Arrives qualified**: `rr-editor-view` composes it, since only it knows which image is on screen |
-| `redoLabel` | `string \| null` | As above, for redo |
-
-**Emits:** `rr-file-new`, `rr-file-open`, `rr-undo`, `rr-redo` (no detail), and `rr-file-save` with
-`{ rebind: boolean }` — true for a **Shift-click, which means Save As** ([#48]).
-
-Save As is a modifier rather than a sixth button for two reasons. The button count is load-bearing:
-`layout.ts` measures `COMPACT_MAX_HEIGHT_PX` from *five* toolbar buttons and three palette ones, so a
-sixth would need that breakpoint re-measured. And on a browser without the File System Access API,
-Save As does exactly what Save does — a visible control there would be a second button needing an
-explanation for why it changes nothing. The tooltip carries the discoverability, and **names the
-modifier only where the browser can honour it**.
-
-The buttons are not a duplicate of the keyboard shortcuts. Their **disabled state** is the only
-signal separating "the stack is empty" from "the undo landed on an image you are not looking at",
-and touch devices have no Cmd+Z at all.
-
-The v3 labeling tools (`track`, `train`, `coupling`, `other`, `delete`, `calibrate`) and the
-`rr-tool-select` event they fired are gone, along with `activeTool` and `disabled`. **The palette
-did not come back here**: [#31] gave it its own element, `rr-tool-palette` below, so file actions and
-tool selection stay separable.
-
----
-
-### `rr-tool-palette`
-
-Selects the active tool, and carries the **calibration gate**.
-
-| Property | Type | Description |
-|---|---|---|
-| `tool` | `EditorTool` (`'calibration' \| 'sensor' \| 'car'`) | The active tool. The editor owns it |
-| `calibrated` | `boolean` | Whether DPT resolves. False disables every gated tool |
-
-**Emits:** `rr-tool-select` `{ tool }`. Nothing is emitted for a disabled tool, or for the tool that
-is already active.
-
-**While `calibrated` is false the sensor and car tools are disabled and the reason is stated.** The
-reason names **DPT** rather than the width rectangle. The rectangle is why the *car* tool is gated —
-car width is derived rather than stored, so an uncalibrated archive cannot draw what tells a user
-whether a label covers the car — but a sensor is a single point and would draw fine uncalibrated, so
-blaming the rectangle would put a false reason on the one tool whose gating is a deliberate
-deviation. Calibration itself is never gated: it is the tool that *produces* the DPT.
-
-The reason lives in the page (`.gate-reason`), not in the buttons' tooltips: a disabled
-`sl-icon-button` takes no pointer events, so a tooltip on one never opens. The gate is on **existence, never completion** (`../SPEC.md`
-§ Labeling Workflow) — two points at a nonzero separation, which is exactly "`getDPT` returns a
-number" — and it opens and closes live, so an undone calibration disables the tools again.
-
-> The sensor tool is gated with the car tool at [#31]'s request, one step beyond `../SPEC.md`
-> § Labeling Workflow ("sensors can be placed at any time"). `needsDpt` is per tool in the source, so
-> that is one flag to flip if it is revisited.
-
-The `car` tool authors a two-click span through `rr-editor-view` ([#32]); this element only says
-which tool a click means.
-
-At or below `COMPACT_MAX_HEIGHT_PX` the palette lies down beside the toolbar in a strip along the
-top ([#42]), and the gate reason moves from under the buttons to beside them — at the same size,
-wrapped to a short measure, because a disabled control's stated reason has to stay legible at the
-size the control is hardest to reach at. See `layout.ts`.
 
 ---
 
@@ -913,11 +848,9 @@ authoring, the right-click menu, and the per-image completeness flag.
 |---|---|---|
 | `archive` | `R49Archive \| null` | |
 | `history` | `EditHistory \| null` | The undo stack; every mutation below runs through it |
-| `canUndo` / `canRedo` | `boolean` | Passed through to `rr-toolbar` |
-| `undoLabel` / `redoLabel` | `string \| null` | The pending edits' phrases. **Qualified here** before they reach `rr-toolbar` |
-| `undoImage` / `redoImage` | `string \| null` | The image each pending entry lands on, or `null` for a layout-scoped one. Compared against the image on screen to qualify the tooltip — "delete car — img_3.jpg" ([#37]) |
 
-**Emits:** `rr-history-change` after recording an edit, and `rr-notify` (`{ message }`) when the
+**Emits:** `rr-editor-state` (`{ tool, calibrated, image }`) when one of the three changes, for the
+rail; `rr-history-change` after recording an edit; and `rr-notify` (`{ message }`) when the
 **car tool** refuses a click for landing inside a car already labelled ([#43]) — a refusal that said
 nothing would read as a broken editor, and `rr-app` owns the toast.
 
@@ -933,18 +866,13 @@ nothing would read as a broken editor, and `rr-app` owns the toast.
 * `selectImage(filename)` — moves the selection and nothing else. Called by `rr-app` *before* the
   snapshot lands, which is the order the navigation invariant states: select, apply, highlight
   ([#37], `../SPEC.md` § Undo and redo).
+* `selectTool(tool)` — makes `tool` the active one, from the rail. A gated tool is demoted again
+  while DPT is unresolved.
+* `railState` — the `{ tool, calibrated, image }` that `rr-editor-state` carries.
 * `interceptUndo()` — `Promise<boolean>`. `rr-app` offers every undo here first, because **a live
   chain is a wall undo cannot cross** and only this component knows one is live ([#33]). See
   *Chaining* below.
 
-* **Layout.** A fixed 78px sidebar beside a flexible main column — and at or below
-  `COMPACT_MAX_HEIGHT_PX` a wrapping strip along the top above it, because the sidebar's two
-  elements need 571px stacked and a short window does not have it ([#42], re-measured in [#53]). The strip **reflows
-  rather than scrolls**: the column was already scrollable, but a flat green strip advertises
-  nothing and the platform's overlay scrollbar stays hidden until a scroll has begun, so the tool
-  palette — which decides what a click means — read as simply absent. The scroll is kept underneath
-  it as a floor, since the host clips and a strip that somehow outgrows the window must not become
-  unreachable. See `layout.ts`.
 * Creates blob URLs for every image in the manifest, revoking the previous set on reload.
 * Image add (camera or file), delete, and reorder go through the corresponding `R49Archive` methods,
   each wrapped in `history.record` with target `images`. Deletion passes `retain` so the image's
@@ -1072,7 +1000,7 @@ nothing would read as a broken editor, and `rr-app` owns the toast.
     subjects need no such guard: each carries an `id`, so the subject names it exactly however the
     list is replaced underneath — the delete is a filter by id, not a splice by position. A car's is
     scoped to its **image** rather than to `layout`, because cars are per image.
-* **The active tool, and the gate** ([#31]). `rr-tool-palette` reports `rr-tool-select`; this
+* **The active tool, and the gate** ([#31]). The rail calls `selectTool`; this
   component holds the tool and dispatches a click on it. A **placement in progress wins outright** —
   the second click of a car is what completes it. Otherwise a click on **empty image** runs the tool
   (calibration opens the dialog, sensor places a point, car takes an anchor) and a click **on an
@@ -1180,8 +1108,7 @@ nothing would read as a broken editor, and `rr-app` owns the toast.
   * **Zoom to fit** is an `sl-icon-button` overlaid on the viewer, present **only while zoomed** —
     "show zoom bars as needed", applied to the one control there is. Escape does the same, and
     `rr-context-menu` swallows the Escape that dismissed it so one keystroke closes one thing. It is
-    deliberately not a toolbar or palette button: `COMPACT_MAX_HEIGHT_PX` is measured from the
-    current button counts with 19px to spare, and a sixth button puts [#42]'s reflow back in play.
+    deliberately not a rail command.
   * **The cap is derived, not chosen**: one frame pixel per `DEFAULT_GRAB_RADIUS_SCREEN_PX` screen
     pixels, because coordinates are stored as whole pixels and past a fingertip-wide pixel further
     zoom buys precision the format cannot record. It also absorbs the accidental two-pixel drag with
@@ -1376,28 +1303,15 @@ amber, not red — the refusal banner is already red and carries the button that
 
 ---
 
-### `look.ts`
+### `tools.ts`
 
-The look rules' values, as this UI expresses them ([#148], [#149]). Four rails49 UIs are bound to the
-same six values and to nothing else; they are decided in `rails49/.github` and travel as a **copied
-file, not a package**. `look/tokens.css` is that file verbatim, `look/README.md` records the commit
-it came from, and `look/values.test.ts` asserts the two agree.
+The editor's tools, in one list that drives both the rail's buttons and the gate.
 
 | Export | Description |
 |---|---|
-| `lookTokens` | `CSSResult`. Declares `--band`, `--band-ink`, `--rail`, `--rail-group` and `--rail-button` on `:host`. **Include it first** in the `static styles` of every component that draws chrome — `rr-header`, `rr-toolbar`, `rr-tool-palette`, `rr-editor-view` |
-| `railButtonStyles` | `CSSResult`. The rail's buttons, as both elements that carry them draw them: `--rail-button` applied as a **floor rather than a size**, and a hover tint that does not move with the theme. Used by `rr-toolbar` and `rr-tool-palette` — the two halves of one rail — for the reason `compactStripStyles` is shared between the same pair |
-
-The chrome keeps these values in **both themes**, which is the whole reason they are tokens: the band
-was `--sl-color-primary-600` and moved with the Shoelace theme, and the rail was two hex literals
-whose provenance was a comment reading "explicit dark green". A hover tint on either is
-`rgba(255, 255, 255, 0.7)` rather than an `--sl-*` colour for the same reason.
-
-`--rail-turns` is deliberately absent — a media query cannot read a custom property, so the reflow
-height is `COMPACT_MAX_HEIGHT_PX` in `layout.ts` and the values test compares that number instead.
-
-**The values test runs outside the required gate**, by ADR-0005: it is not under `tests/`, so
-`pnpm test` and `bin/test.sh` do not run it. `pnpm --filter @occupancy/ui test:look` does.
+| `EditorTool` | `'calibration' \| 'sensor' \| 'car'` |
+| `TOOLS` | Each tool's icon, label and `needsDpt` |
+| `GATE_REASON` | The disabled tools' tooltip while DPT is unresolved |
 
 ---
 
@@ -1417,48 +1331,6 @@ frame**, and black is what a photograph is matted against under either preferenc
 `rr-viewer` is the one component that test does not scan, for the same reason: the matte behind the
 photograph and the zoom band over it are the whole of what it draws, so it has no pane surface, and
 its two colours are judged the way a marker ink is. See `ui/CLAUDE.md` § Shoelace for the rest.
-
----
-
-### `layout.ts`
-
-The height at which the editor's chrome reflows, and the rules the two elements that reflow with it
-share. Not a stylesheet of general layout helpers — one agreement between three components.
-
-| Export | Description |
-|---|---|
-| `COMPACT_MAX_HEIGHT_PX` | Window height at or below which the editor's sidebar reflows into a horizontal strip. `640` — the look rules' `--rail-turns`, not this repo's number (#148); see `look/README.md` |
-| `compactStripStyles` | `CSSResult`. The turn itself — the rules `rr-toolbar` and `rr-tool-palette` state identically. **Append after the component's own rules**; it overrides them at equal specificity, so order is what makes it win |
-
-Three components reflow together at this height — `rr-editor-view` turns its sidebar column into a
-strip along the top, `rr-toolbar` and `rr-tool-palette` turn their own contents sideways to sit in
-it — and they must switch at the same height or the reflow half-applies: **a horizontal strip
-holding two vertical stacks is taller than the column it replaced**, which is the bug being fixed.
-
-The value is interpolated into each component's `static styles`. A media query cannot read a custom
-property, so this is the one place a shared constant cannot reach across on its own; the agreement
-is asserted instead, in `tests/layout.test.ts`.
-
-The breakpoint is set above the measurement rather than at it. Stacked, the sidebar is 571px in the
-state that decides it — an archive open and **not yet calibrated**, so five toolbar buttons, three
-palette buttons and the gate reason under them — and the header takes 60px above, making 631px the
-window where the column exactly fills the space with nothing to spare ([#42], [#53]). That state
-rather than the calibrated arrangement: an archive is uncalibrated before it is calibrated, so the
-taller arrangement is the one a user meets first.
-
-**The number is the look rules' `--rail-turns` since [#148], not this repository's to pick.** It moved
-650 → 640 on the way in, which the derivation still clears — the margin over the 631px measurement
-narrows to 9px, and the reflow still happens before the column runs out of window. A measurement that
-ever exceeded it is a reason to raise the rules rather than to set a local number. See `look.ts`.
-
-**The measurement moves when the column's density does.** [#53] cut the spacing and the sidebar went
-from 721px to 571px, so the constant came down from `800` with it — a density change invalidates
-the derivation, and a breakpoint left standing over a column that no longer has that shape reflows
-a window the column would have fitted.
-
-`compactStripStyles` exists because the breakpoint agreeing is not the whole hazard — two copies of
-the rules *inside* the query could drift while all three components still switch at the same
-height. `tests/layout.test.ts` asserts both.
 
 ---
 

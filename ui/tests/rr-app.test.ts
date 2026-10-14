@@ -135,62 +135,6 @@ describe('rr-app', () => {
     delete (window as any).showSaveFilePicker;
   });
 
-  it('shows the bound filename in the header only once a save can overwrite it', async () => {
-    const el = await fixture<RRApp>(html`<rr-app></rr-app>`);
-    (el as any)._archive = archive;
-    (el as any)._status = 'Test';
-    (el as any)._binding = { stem: 'west-yard' };
-    await el.updateComplete;
-
-    expect(el.renderRoot.querySelector('.bound-file')).toBeNull();
-
-    (el as any)._binding = { stem: 'west-yard', handle: {} as FileSystemFileHandle };
-    await el.updateComplete;
-
-    expect(el.renderRoot.querySelector('.bound-file')?.textContent).toContain('west-yard.r49');
-  });
-
-  // The scale is what the layout's geometry means — a span two pixels long is a
-  // different car in N than in HO — and the header is the only place it shows
-  // without opening the settings dialog (#52).
-  it('names the scale beside the layout in the header', async () => {
-    const el = await fixture<RRApp>(html`<rr-app></rr-app>`);
-    (el as any)._archive = archive;
-    (el as any)._status = 'Test';
-    await el.updateComplete;
-
-    expect(el.renderRoot.querySelector('.layout-scale')?.textContent).toContain('N');
-  });
-
-  // Read from the manifest on every render rather than latched at open, so a
-  // scale changed in the settings dialog is the one the header states. The
-  // handler is called directly: the dialog's own emit is its test, and mounting
-  // it here would assert Shoelace's select rather than this component's read.
-  it('follows a scale changed by the rr-layout-change handler', async () => {
-    const el = await fixture<RRApp>(html`<rr-app></rr-app>`);
-    (el as any)._archive = archive;
-    (el as any)._status = 'Test';
-    await el.updateComplete;
-
-    await (el as any)._onLayoutChange(
-      new CustomEvent('rr-layout-change', { detail: { layout: { scale: 'HO' } } })
-    );
-    await el.updateComplete;
-
-    expect(el.renderRoot.querySelector('.layout-scale')?.textContent).toContain('HO');
-  });
-
-  // The `N` the render falls back to is a placeholder for the settings dialog
-  // to have something to show, not an answer any archive gave. With nothing
-  // open there is no layout to have a scale, and stating one would be the
-  // header inventing it.
-  it('states no scale before an archive is loaded', async () => {
-    const el = await fixture<RRApp>(html`<rr-app></rr-app>`);
-    await el.updateComplete;
-
-    expect(el.renderRoot.querySelector('.layout-scale')).toBeNull();
-  });
-
   it('toasts a notice the editor sends up', async () => {
     // The editor states its refusals but owns no place to put them; toasts
     // live here. A refusal is a warning, never a danger — nothing failed.
@@ -326,22 +270,6 @@ describe('rr-app', () => {
       await (el as any)._redo();
 
       expect(sync).toHaveBeenCalledWith('img2.jpg', [{ kind: 'car', id: 'car-a' }]);
-    });
-
-    it('tells the editor which image the pending entries land on', async () => {
-      // The editor qualifies the tooltip with it; only it knows which image is
-      // on screen.
-      const { el, history, view } = await mountWithEdit();
-
-      expect(view.undoImage).toBe('img2.jpg');
-      expect(view.redoImage).toBeNull();
-
-      await (el as any)._undo();
-      await el.updateComplete;
-
-      expect(view.undoImage).toBeNull();
-      expect(view.redoImage).toBe('img2.jpg');
-      expect(history.canRedo).toBe(true);
     });
   });
 

@@ -1,33 +1,10 @@
 <!doctype html>
-<html lang="en" class="sl-theme-dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Railroad Occupancy UI</title>
     
-    <!--
-      Both Shoelace themes are linked and `prefers-color-scheme` decides; there
-      is no toggle (LOOK.md § Theme, #148). The media query is the whole
-      mechanism: `light.css` declares on `:root`, `dark.css` on `.sl-theme-dark`
-      — which is why the class below is static and always present. Whichever
-      sheet the media query switches off takes its rules with it, so the class
-      is inert in light and load-bearing in dark, with no script to run and
-      nothing to get wrong on a cached load.
-
-      The chrome does not follow this. The band and the rail keep one value in
-      both themes; see `src/look.ts`.
-    -->
-    <link
-      rel="stylesheet"
-      media="(prefers-color-scheme: light)"
-      href="/node_modules/@shoelace-style/shoelace/dist/themes/light.css"
-    />
-    <link
-      rel="stylesheet"
-      media="(prefers-color-scheme: dark)"
-      href="/node_modules/@shoelace-style/shoelace/dist/themes/dark.css"
-    />
-
     <style>
       :root {
         --rr-main-header-height: 60px;

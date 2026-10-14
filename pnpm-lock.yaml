@@ -218,6 +218,9 @@ importers:
       '@occupancy/uid':
         specifier: workspace:*
         version: link:../lib/uid
+      '@rails49/look':
+        specifier: github:rails49/look#v0.4.0
+        version: https://codeload.github.com/rails49/look/tar.gz/d2fce728339f36a5ccda94474c9dc452208a4ee5(@shoelace-style/shoelace@2.20.1(@floating-ui/utils@0.2.11)(@types/react@19.2.14))(lit@3.3.2)
       '@shoelace-style/shoelace':
         specifier: ^2.20.1
         version: 2.20.1(@floating-ui/utils@0.2.11)(@types/react@19.2.14)
@@ -1089,6 +1092,14 @@ packages:
 
   '@protobufjs/utf8@1.1.1':
     resolution: {integrity: sha512-oOAWABowe8EAbMyWKM0tYDKi8Yaox52D+HWZhAIJqQXbqe0xI/GV7FhLWqlEKreMkfDjshR5FKgi3mnle0h6Eg==}
+
+  '@rails49/look@https://codeload.github.com/rails49/look/tar.gz/d2fce728339f36a5ccda94474c9dc452208a4ee5':
+    resolution: {tarball: https://codeload.github.com/rails49/look/tar.gz/d2fce728339f36a5ccda94474c9dc452208a4ee5}
+    version: 0.4.0
+    hasBin: true
+    peerDependencies:
+      '@shoelace-style/shoelace': ^2.20.1
+      lit: ^3.3.2
 
   '@rollup/rollup-android-arm-eabi@4.60.3':
     resolution: {integrity: sha512-x35CNW/ANXG3hE/EZpRU8MXX1JDN86hBb2wMGAtltkz7pc6cxgjpy1OMMfDosOQ+2hWqIkag/fGok1Yady9nGw==}
@@ -3365,6 +3376,11 @@ snapshots:
   '@protobufjs/pool@1.1.0': {}
 
   '@protobufjs/utf8@1.1.1': {}
+
+  '@rails49/look@https://codeload.github.com/rails49/look/tar.gz/d2fce728339f36a5ccda94474c9dc452208a4ee5(@shoelace-style/shoelace@2.20.1(@floating-ui/utils@0.2.11)(@types/react@19.2.14))(lit@3.3.2)':
+    dependencies:
+      '@shoelace-style/shoelace': 2.20.1(@floating-ui/utils@0.2.11)(@types/react@19.2.14)
+      lit: 3.3.2
 
   '@rollup/rollup-android-arm-eabi@4.60.3':
     optional: true

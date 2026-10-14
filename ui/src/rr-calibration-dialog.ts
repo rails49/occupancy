@@ -1,10 +1,10 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, queryAll, query, state } from 'lit/decorators.js';
 import type { WorldPoint } from '@occupancy/r49';
-import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
+import { lookTheme, type LookDialog } from '@rails49/look';
 import '@shoelace-style/shoelace/dist/components/input/input.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
-import type { SlDialog, SlInput } from '@shoelace-style/shoelace';
+import type { SlInput } from '@shoelace-style/shoelace';
 
 /** What a committed dialog reports: the world coordinate the user typed. */
 export interface CalibrationCommitDetail {
@@ -49,11 +49,13 @@ export class RRCalibrationDialog extends LitElement {
   /** Which field failed to parse, if any — the label, not the value. */
   @state() private _error: string | null = null;
 
-  @query('sl-dialog') private _dialog!: SlDialog;
+  @query('look-dialog') private _dialog!: LookDialog;
   /** The three coordinate fields, in {@link AXES} order. */
   @queryAll('sl-input') private _fields!: NodeListOf<SlInput>;
 
-  static styles = css`
+  static styles = [
+    lookTheme,
+    css`
     .coordinates {
       display: grid;
       grid-template-columns: auto 1fr;
@@ -78,7 +80,8 @@ export class RRCalibrationDialog extends LitElement {
       font-size: var(--sl-font-size-small);
       margin-top: 0.75rem;
     }
-  `;
+  `,
+  ];
 
   /**
    * Opens the dialog on a coordinate.
@@ -159,7 +162,7 @@ export class RRCalibrationDialog extends LitElement {
     const verb = this._mode === 'edit' ? 'Edit' : 'Place';
 
     return html`
-      <sl-dialog label="${verb} calibration point" style="--width: 420px;">
+      <look-dialog label="${verb} calibration point" size="small">
         <div class="hint">
           Where is this pixel on the layout, in millimetres? The origin is arbitrary
           but must be the same for every point in this layout.
@@ -180,7 +183,7 @@ export class RRCalibrationDialog extends LitElement {
         <sl-button id="calibration-confirm" slot="footer" variant="primary" @click=${this._onConfirm}>
           ${verb}
         </sl-button>
-      </sl-dialog>
+      </look-dialog>
     `;
   }
 }

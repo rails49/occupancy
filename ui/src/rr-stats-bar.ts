@@ -1,4 +1,5 @@
 import { LitElement, html, css } from 'lit';
+import { lookTheme } from '@rails49/look';
 import { customElement, property } from 'lit/decorators.js';
 
 /**
@@ -52,7 +53,9 @@ export class RRStatsBar extends LitElement {
    */
   @property({ type: Number }) alignmentTolerance: number | null = null;
 
-  static styles = css`
+  static styles = [
+    lookTheme,
+    css`
     :host {
       display: block;
       position: absolute;
@@ -86,7 +89,8 @@ export class RRStatsBar extends LitElement {
     .over {
       color: var(--sl-color-warning-800);
     }
-  `;
+  `,
+  ];
 
   /**
    * The alignment row: the measurement, and what it is being judged against.

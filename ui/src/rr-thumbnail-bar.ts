@@ -1,4 +1,5 @@
 import { LitElement, html, css } from 'lit';
+import { lookTheme } from '@rails49/look';
 import { customElement, property, state } from 'lit/decorators.js';
 import { matteTokens } from './matte.js';
 
@@ -42,6 +43,7 @@ export class RRThumbnailBar extends LitElement {
   @state() private _dropIndex: number | null = null;
 
   static styles = [
+    lookTheme,
     matteTokens,
     css`
     :host {
