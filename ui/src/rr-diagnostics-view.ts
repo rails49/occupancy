@@ -1,4 +1,5 @@
 import { LitElement, html, css } from 'lit';
+import { lookTheme } from '@rails49/look';
 import { customElement, property, state } from 'lit/decorators.js';
 import type { R49Archive } from '@occupancy/r49';
 import { getDPT } from '@occupancy/r49';
@@ -84,7 +85,9 @@ export class RRDiagnosticsView extends LitElement {
   private _abandon: AbortController | null = null;
   private _detector: Detector | null = null;
 
-  static styles = css`
+  static styles = [
+    lookTheme,
+    css`
     :host {
       display: flex;
       flex-direction: column;
@@ -132,7 +135,8 @@ export class RRDiagnosticsView extends LitElement {
       flex-grow: 1;
       min-height: 0;
     }
-  `;
+  `,
+  ];
 
   disconnectedCallback() {
     super.disconnectedCallback();

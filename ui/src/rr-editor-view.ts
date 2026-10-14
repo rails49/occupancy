@@ -42,8 +42,7 @@ import type {
 import type { PendingCar } from './carMarker.js';
 import { classChoices, rootClass } from './vocabulary.js';
 import type { ClassChoice } from './vocabulary.js';
-import { COMPACT_MAX_HEIGHT_PX } from './layout.js';
-import { lookTokens } from './look.js';
+import { lookTheme, TURN_HEIGHT_PX } from '@rails49/look';
 import { revealTarget } from './history.js';
 import type {
   EditHistory,
@@ -61,7 +60,7 @@ import type {
 } from './rr-viewer.js';
 import type { CalibrationCommitDetail, RRCalibrationDialog } from './rr-calibration-dialog.js';
 import type { SensorNameCommitDetail, RRSensorDialog } from './rr-sensor-dialog.js';
-import type { EditorTool, ToolSelectDetail } from './rr-tool-palette.js';
+import type { EditorTool } from './tools.js';
 import type {
   ContextMenuItem,
   ContextMenuSelectDetail,
@@ -73,8 +72,6 @@ import '@shoelace-style/shoelace/dist/components/icon-button/icon-button.js';
 import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
 import type { SlCheckbox } from '@shoelace-style/shoelace';
 import './rr-viewer.js';
-import './rr-toolbar.js';
-import './rr-tool-palette.js';
 import './rr-thumbnail-bar.js';
 import './rr-calibration-dialog.js';
 import './rr-sensor-dialog.js';
@@ -443,6 +440,20 @@ export interface NotifyDetail {
 }
 
 /**
+ * What the rail shows of the editor: the active tool, whether the gated tools
+ * are open, and the image on screen, which qualifies the undo tooltip.
+ *
+ * The rail is `rr-app`'s and the state is the editor's, so the editor reports
+ * it on `rr-editor-state` whenever it changes.
+ */
+export interface EditorStateDetail {
+  readonly tool: EditorTool;
+  readonly calibrated: boolean;
+  /** The filename on screen, or null when there is none. */
+  readonly image: string | null;
+}
+
+/**
  * Why the car tool refused a click, in one sentence.
  *
  * One string for both halves of the rule — a click on a car's **body** and one
@@ -455,9 +466,10 @@ const ALREADY_LABELED = 'That pixel is already inside a labeled car — a car is
  * Main editor view: opens an archive, manages its images, reports DPT, and
  * authors calibration points, sensors and cars.
  *
- * **A click means whatever the active tool means** (#31). `rr-tool-palette`
- * chooses between calibration, sensor and car; the palette **gates the labeling
- * tools on DPT resolving**, and this component enforces the same gate — the
+ * **A click means whatever the active tool means** (#31). The rail's Tools
+ * group chooses between calibration, sensor and car through {@link selectTool};
+ * the rail **gates the labeling tools on DPT resolving**, and this component
+ * enforces the same gate — the
  * tool snaps back to calibration the moment the DPT stops resolving, so a
  * deleted or undone calibration point cannot leave a gated tool live.
  *
@@ -509,21 +521,6 @@ export class RREditorView extends LitElement {
    * and nothing in the compiler catches that.
    */
   @property({ attribute: false }) history: EditHistory | null = null;
-  @property({ type: Boolean }) canUndo = false;
-  @property({ type: Boolean }) canRedo = false;
-  @property({ attribute: false }) undoLabel: string | null = null;
-  @property({ attribute: false }) redoLabel: string | null = null;
-  /**
-   * The image the pending undo would land on, or `null` for a layout-scoped
-   * entry that lands on none.
-   *
-   * Qualifying the tooltip with it is this component's job rather than
-   * `rr-toolbar`'s or `rr-app`'s, because it is the only one that knows **both**
-   * numbers: `rr-app` owns the stack and the editor owns which image is on
-   * screen. The toolbar is handed a finished phrase.
-   */
-  @property({ attribute: false }) undoImage: string | null = null;
-  @property({ attribute: false }) redoImage: string | null = null;
   @state() private _currentImageIndex = 0;
   @state() private _imageUrls: Map<string, string> = new Map();
   /**
@@ -656,28 +653,13 @@ export class RREditorView extends LitElement {
   @query('rr-context-menu') private _contextMenu!: RRContextMenu;
 
   static styles = [
-    lookTokens,
+    lookTheme,
     css`
     :host {
       display: flex;
       flex-grow: 1;
       height: 100%;
       overflow: hidden;
-    }
-
-    .sidebar {
-      display: flex;
-      flex-direction: column;
-      /* The toolbar's own width, stated here as well so the palette below it
-         wraps inside the same strip instead of widening the column to fit its
-         gate note on one line. Both are 78px since #53 — a density change that
-         touches only rr-toolbar leaves the column exactly as wide as it was. */
-      width: 78px;
-      flex-shrink: 0;
-      /* The same rail the toolbar and the palette sit on, so the column reads
-         as one strip however much of it the two elements fill. */
-      background-color: var(--rail);
-      overflow-y: auto;
     }
 
     .main-content {
@@ -706,9 +688,7 @@ export class RREditorView extends LitElement {
     }
 
     /* Present only while zoomed (#44) — "show zoom bars as needed", applied to
-       the one control there is. It sits on the glass rather than in the
-       sidebar because a sixth button in that strip puts #42's reflow
-       breakpoint back in play; see _renderFitControl. */
+       the one control there is. It sits on the glass; see _renderFitControl. */
     .fit-control {
       position: absolute;
       top: 0.5rem;
@@ -800,50 +780,11 @@ export class RREditorView extends LitElement {
       color: var(--sl-color-neutral-600);
     }
 
-    /* The sidebar reflows rather than scrolls (#42).
-     *
-     * Below the breakpoint the column does not fit — layout.ts carries the
-     * measurement — and what falls off the bottom is the tool palette, which
-     * is what decides whether a click places a calibration point, a sensor or
-     * a car. The column is scrollable, but a flat green strip advertises
-     * nothing and the platform's overlay scrollbar stays hidden until a scroll
-     * has already begun, so the tools read as simply absent.
-     *
-     * Of the two fixes the ticket offered — reflow, or scroll with a visible
-     * affordance — this is the reflow. A scroll hint would still leave the
-     * palette a gesture away from a control the editor is unusable without,
-     * and there is no shortage of *width* at these sizes: turning the strip
-     * sideways spends the axis the window still has. The toolbar and the tool
-     * palette turn with it at the same breakpoint; the strip wraps, so a
-     * window too narrow for one row costs a second row rather than a hidden
-     * button.
-     *
-     * The overflow-y: auto above is left inherited deliberately. The
-     * strip is meant to fit at every size the editor supports and did in
-     * every size measured — but "meant to" is not a guarantee across fonts and
-     * zoom levels, and the host clips, so removing the scroll would trade a
-     * hard-to-find control for an unreachable one. It is the floor under the
-     * reflow, not the design.
-     *
-     * The readout bars give back their vertical padding at the same time. They
-     * wrap to two lines at this width and were the other thing taking height
-     * from the viewer. */
-    @media (max-height: ${COMPACT_MAX_HEIGHT_PX}px) {
-      :host {
-        flex-direction: column;
-      }
-
-      .sidebar {
-        flex-direction: row;
-        flex-wrap: wrap;
-        align-items: center;
-        width: auto;
-        /* The column's shadow, turned through the same right angle as the
-           column: one edge for the whole strip, which is why rr-toolbar drops
-           its own here rather than drawing one down the strip's middle. */
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-      }
-
+    /* At look's turn height the rail lies down as a strip along the top of
+     * the work pane (#42). The readout bars give back their vertical padding
+     * at the same time: they wrap to two lines at this width and were the
+     * other thing taking height from the viewer. */
+    @media (max-height: ${TURN_HEIGHT_PX}px) {
       .dpt-bar,
       .frame-warning,
       .drift-warning,
@@ -887,6 +828,7 @@ export class RREditorView extends LitElement {
   }
 
   async updated(changedProperties: Map<string, unknown>) {
+    this._report();
     if (changedProperties.has('archive') && this.archive) {
       await this._refreshImageUrls();
       this._currentImageIndex = 0;
@@ -946,14 +888,45 @@ export class RREditorView extends LitElement {
   }
 
   /**
-   * A tool change abandons a car placement, and writes nothing.
+   * Makes `tool` the active one, from the rail. A gated tool chosen while the
+   * DPT is unresolved is demoted again by {@link _enforceGate}.
    *
-   * The anchor belongs to the tool that took it — leaving it live would make
-   * the next click with *another* tool complete a car the user stopped drawing.
+   * A tool change abandons a car placement, and writes nothing. The anchor
+   * belongs to the tool that took it — leaving it live would make the next
+   * click with *another* tool complete a car the user stopped drawing.
    */
-  private _onToolSelect(e: CustomEvent<ToolSelectDetail>) {
-    this._tool = e.detail.tool;
+  public selectTool(tool: EditorTool) {
+    if (tool === this._tool) return;
+    this._tool = tool;
     this._abandonPlacement();
+  }
+
+  /** What the rail shows of this editor. See {@link EditorStateDetail}. */
+  get railState(): EditorStateDetail {
+    return {
+      tool: this._tool,
+      calibrated: this._calibrated(),
+      image: this._currentImage()?.filename ?? null,
+    };
+  }
+
+  /** What `rr-editor-state` last carried, so it fires on a change only. */
+  private _reported: EditorStateDetail | null = null;
+
+  private _report() {
+    const now = this.railState;
+    const was = this._reported;
+    if (was && was.tool === now.tool && was.calibrated === now.calibrated && was.image === now.image) {
+      return;
+    }
+    this._reported = now;
+    this.dispatchEvent(
+      new CustomEvent<EditorStateDetail>('rr-editor-state', {
+        detail: now,
+        bubbles: true,
+        composed: true,
+      })
+    );
   }
 
   private async _refreshImageUrls() {
@@ -1877,8 +1850,8 @@ export class RREditorView extends LitElement {
   /**
    * A click on empty image, dispatched on the active tool.
    *
-   * The gate is re-checked here rather than trusted from the palette: the
-   * palette is a view of `_tool`, and a click is what actually writes. A gated
+   * The gate is re-checked here rather than trusted from the rail: the rail is
+   * a view of `_tool`, and a click is what actually writes. A gated
    * tool cannot be active — {@link _enforceGate} demotes it — so this is the
    * belt to that braces, not a second policy.
    */
@@ -2667,22 +2640,6 @@ export class RREditorView extends LitElement {
   }
 
   /**
-   * An edit's phrase, qualified with the image when it is not the one on
-   * screen — "delete car — img_3.jpg".
-   *
-   * The disabled state says the stack has a bottom; this says *where* the next
-   * undo will land. Without it "nothing happened" and "it happened on an image
-   * you are not looking at" read identically, which is the whole reason the
-   * buttons are not a duplicate of Cmd+Z (`SPEC.md` § Undo and redo) — and on a
-   * touch device, where the labeling actually happens, there is no Cmd+Z to be
-   * a duplicate of.
-   */
-  private _qualifiedLabel(label: string | null, image: string | null): string | null {
-    if (!label) return null;
-    return image && image !== this._currentImage()?.filename ? `${label} — ${image}` : label;
-  }
-
-  /**
    * The rubber band, or null when no chain is live.
    *
    * Before the pointer has moved it is the anchor twice over, which draws the
@@ -2698,11 +2655,8 @@ export class RREditorView extends LitElement {
    * Zoom to fit — present only while there is a zoom to leave, which is the
    * reporter's "show zoom bars as needed" applied to the one control there is.
    *
-   * On the viewer rather than in the sidebar, and deliberately **not** a
-   * toolbar or palette button: `COMPACT_MAX_HEIGHT_PX` is measured from the
-   * current button counts with 19px to spare (`layout.ts`), so a sixth button
-   * puts #42's reflow back in play. It is not a fourth `EditorTool` either —
-   * zoom is not a mode, and the editor has none.
+   * On the viewer rather than on the rail. It is not a fourth `EditorTool`
+   * either — zoom is not a mode, and the editor has none.
    */
   private _renderFitControl() {
     if (this._zoom === null) return '';
@@ -2724,26 +2678,9 @@ export class RREditorView extends LitElement {
     const src = currentImage ? this._imageUrls.get(currentImage.filename) : null;
 
     return html`
-      <div class="sidebar">
-        <rr-toolbar
-          .canUndo=${this.canUndo}
-          .canRedo=${this.canRedo}
-          .undoLabel=${this._qualifiedLabel(this.undoLabel, this.undoImage)}
-          .redoLabel=${this._qualifiedLabel(this.redoLabel, this.redoImage)}
-        ></rr-toolbar>
-
-        ${manifest
-          ? html`<rr-tool-palette
-              .tool=${this._tool}
-              ?calibrated=${this._calibrated()}
-              @rr-tool-select=${this._onToolSelect}
-            ></rr-tool-palette>`
-          : ''}
-      </div>
-
       <div class="main-content">
         ${!this.archive || !manifest
-          ? html`<div class="placeholder">No archive loaded. Use the toolbar to open an .r49 file.</div>`
+          ? html`<div class="placeholder">No archive loaded. Open an .r49 file from the rail.</div>`
           : html`
             ${this._renderDpt(manifest)}
 

@@ -17,7 +17,7 @@ without discussion.**
 
 The editor was reduced to what v4 supports (#19) — v3's point-marker authoring and `src/prototype/`
 are gone for good — and rebuilt one ticket at a time: calibration points (place, drag, delete via
-context menu), the tool palette and calibration gate, sensor authoring, car authoring, chaining,
+context menu), the tools and calibration gate, sensor authoring, car authoring, chaining,
 reclassify, and the completeness affordance are all built. Every authoring surface v4 asks for
 exists, but the editor is not finished — check GitHub Issues for what is open. **A missing
 affordance is usually a deferral, not a bug.** One gap is deliberate and stated in the code: a
@@ -91,9 +91,9 @@ and do not gate a feature on a handle existing.
   the download rather than failing. An overwrite has **no other safety net**: `createWritable`'s
   atomic swap is the decision, so no `.bak` file and no verification read — re-parsing every image
   on every save costs more than the failure it would guard.
-* **Save As is a Shift-click, not a sixth button.** `layout.ts` measures `COMPACT_MAX_HEIGHT_PX`
-  from *five* toolbar buttons, and on a browser without the API a Save As button would do exactly
-  what Save does. The tooltip names the modifier only where the browser can honour it.
+* **Save As is a Shift-click on Save, not a button of its own**, read from `look-press`'s
+  `shiftKey`. On a browser without the API a Save As button would do exactly what Save does. The
+  tooltip names the modifier only where the browser can honour it.
 
 ### Every manifest mutation goes through `history.record`
 
@@ -130,9 +130,9 @@ before it, which is worse than having no undo. Rules, from entries being scoped 
   which has no id. So an undone **add** lights nothing rather than throwing, and an edit arriving
   while the glow is up cannot leave it on a renumbered crosshair. The glow is `highlight.ts`,
   transient by a timer, and view state: it is written nowhere and survives no image change.
-* The toolbar's tooltip is **qualified with the image** when the entry lands on another one
-  ("Undo delete car — img_3.jpg"). `rr-editor-view` composes it, because `rr-app` owns the stack and
-  the editor owns which image is on screen; neither knows both.
+* The rail's Undo and Redo tooltips are **qualified with the image** when the entry lands on another
+  one ("Undo delete car — img_3.jpg"). `rr-app` owns the stack and composes the phrase from the
+  image on screen, which `rr-editor-view` reports on `rr-editor-state`.
 
 `SPEC.md` § Undo and redo carries the reasoning.
 
@@ -157,9 +157,9 @@ before it, which is worse than having no undo. Rules, from entries being scoped 
   touching the stack (`rr-app` owns undo and cannot see chain state). A live chain consumes
   **every** undo: further along it undoes the last car and walks the anchor back — but only if
   that undo actually removed the chain's car — and at the chain's start it clears the anchor and
-  touches no history. Known cosmetic lag: the toolbar's undo label reads the stack's `undoLabel`
-  and does not know about this wall; fixing it means feeding chain state to `rr-toolbar`, which no
-  ticket asks for.
+  touches no history. Known cosmetic lag: the rail's Undo label reads the stack's `undoLabel`
+  and does not know about this wall; fixing it means adding chain state to `rr-editor-state`, which
+  no ticket asks for.
 * A **coupling renders as one shared handle**, derived by `rr-viewer` from exact coincidence
   (`geometry.ts` § `couplerPoints` — the same rule the hit-test grabs by); the cars leave their own
   handles off at those ends. Dragging it is one entry moving every end under it.
@@ -209,18 +209,18 @@ class anywhere in `ui/` breaks the config→menu path while still typechecking. 
 
 ### The calibration gate
 
-* `rr-tool-palette` chooses the tool a click means and **disables the labeling tools while DPT is
-  unresolved, stating why** — naming DPT, not the width rectangle: car width is derived from DPT
+* The rail's Tools group chooses the tool a click means and **disables the labeling tools while DPT
+  is unresolved, with the reason as their tooltip** — naming DPT, not the width rectangle: car width is derived from DPT
   rather than stored, so an uncalibrated archive cannot draw the rectangle that is the only
   feedback a label covers the car.
 * The gate is on **existence, never completion** (`SPEC.md` § Labeling Workflow): `getDPT` returning
-  a number *is* the gate. It is enforced twice on purpose — the palette disables the buttons, and
+  a number *is* the gate. It is enforced twice on purpose — the rail disables the buttons, and
   `rr-editor-view.willUpdate` demotes a live tool back to calibration — because DPT can vanish
   through an **undo**, which `rr-app` applies straight into the archive with no editor handler
   seeing it.
 * The **sensor** tool is gated with the car tool, one step beyond `SPEC.md` § Labeling Workflow — a
   sensor point needs no DPT to draw, but #31 asked for both. `needsDpt` is per tool in
-  `rr-tool-palette.ts` if that is revisited.
+  `tools.ts` if that is revisited.
 * Sensors are **per layout**, carry **no provenance** (no model can propose where a human wants an
   answer), and their snowflake ids live in a namespace never compared with label ids. A sensor is
   placed unnamed: `name` is optional passthrough, never auto-generated, and the UI shows the `id`
@@ -652,11 +652,9 @@ labels; two copies would let a sensor read `occupied` while sitting visibly outs
 
 Import components one file at a time — `@shoelace-style/shoelace/dist/components/<name>/<name>.js` —
 never the package barrel; the barrel pulls the whole library into the bundle. Type-only imports from
-`@shoelace-style/shoelace` are fine. **Both themes are linked in `index.html` and
-`prefers-color-scheme` decides** (#148); there is no toggle. The mechanism is the `media` attribute
-on each link — `light.css` declares on `:root`, `dark.css` on `.sl-theme-dark`, so the class on
-`<html>` is static and inert whenever the dark sheet's media does not match. Components inherit
-`--sl-*` tokens, so use those rather than hardcoding new colors.
+`@shoelace-style/shoelace` are fine. **`@rails49/look/look.css`, imported by `rr-app.ts`, carries
+both themes and `prefers-color-scheme` decides**; there is no toggle. Components inherit `--sl-*`
+tokens, so use those rather than hardcoding new colors.
 
 **The work panes follow the theme** (#151). Every surface and ink in `rr-app`, the three
 `rr-diagnostics-*` elements, `rr-thumbnail-bar`, `rr-stats-bar`, `rr-live-view` and
@@ -692,35 +690,34 @@ the theme, so neither may its ink.
 `tests/theme.test.ts` is the guard, and its scope is exactly **no hex literal in a pane module**,
 template included — the report set a tile's tint from an inline `style` attribute. It does not see
 `rgba()` or `white`, which is why those three are argued above rather than asserted. It runs inside
-the required gate, unlike `look/values.test.ts`: a literal creeping back is this repository's own
-regression rather than a decision taken elsewhere. jsdom does not paint (#109), so the result was
+the required gate: a literal creeping back is this repository's own regression. jsdom does not paint (#109), so the result was
 judged by hand in both OS settings and no browser runner was added for it.
 
-### The look rules (#148, #149)
+### The chrome is `@rails49/look`'s (#161)
 
-Four rails49 UIs are bound to the same six values — `--band`, `--band-ink`, `--rail`, `--rail-group`,
-`--rail-button` and the reflow height — and to nothing else. They are decided in `rails49/.github`
-([ADR-0003](https://github.com/rails49/.github/blob/main/docs/adr/0003-the-look-rules-bind-place-colour-and-small-screens-not-code.md),
-[LOOK.md](https://github.com/rails49/.github/blob/main/docs/LOOK.md)) and travel as a **copied file,
-not a package** (ADR-0005).
+The band, the rail, the dialog shell and the Shoelace theme layer come from
+[`@rails49/look`](https://github.com/rails49/look), a git dependency pinned to a tag. A tag there
+opens a bump pull request here
+([rails49/look#10](https://github.com/rails49/look/issues/10)).
 
-* `src/look.ts` is how this UI expresses them: `lookTokens`, one `CSSResult` declaring five custom
-  properties on `:host`, included **first** in the `static styles` of `rr-header`, `rr-toolbar`,
-  `rr-tool-palette` and `rr-editor-view`. The band was `--sl-color-primary-600` and the rail two hex
-  literals commented "explicit dark green"; that is what the tokens replace.
-* `railButtonStyles` beside it carries the rail's buttons — `--rail-button` as a floor rather than a
-  size, and a hover tint that does not move with the theme. Shared by `rr-toolbar` and
-  `rr-tool-palette` for the reason `compactStripStyles` is: they are two halves of one rail, and two
-  copies of the rules drift.
-* The sixth value is `COMPACT_MAX_HEIGHT_PX` in `src/layout.ts`, because a media query cannot read a
-  custom property. **640 is the rules' number now, not this repo's** — see the derivation there.
-* `look/tokens.css` is the upstream file verbatim, `look/README.md` records the commit it came from,
-  and `look/values.test.ts` asserts the two agree. It never fetches.
-* **That test runs outside the required gate**, by ADR-0005: it is not under `tests/`, so `pnpm test`
-  and `bin/test.sh` do not run it. `pnpm --filter @occupancy/ui test:look` does.
-
-Chrome colours do not move with the theme — that is what makes them tokens. A hover tint on the band
-or the rail is `rgba(255, 255, 255, 0.7)` rather than an `--sl-*` colour for the same reason.
+* `rr-app` declares the chrome on look's elements. `look-band` holds `look-about` (the layout's
+  name, or "occupancy" with nothing loaded, and its scale), a `look-reading` naming the bound file
+  once Save would overwrite it, and `look-gear` for the settings dialog. `look-rail` holds the three
+  views, then, in the editor only, File, History and, while a manifest is loaded, Tools. Live and
+  Diagnostics have the views alone.
+* The rail is `rr-app`'s and the tool state is the editor's. The editor reports
+  `{ tool, calibrated, image }` on `rr-editor-state` when one of them changes, and `rr-app` hands a
+  chosen tool back through `selectTool`.
+* Status text is a toast, `rr-app`'s own `sl-alert`. There is no unsaved mark and no source link.
+* The settings, calibration and sensor dialogs are `look-dialog`s (`medium`, `small`, `small`),
+  still opened with `show()`. The discard confirm stays `window.confirm`.
+* Every component puts `lookTheme` first in its `static styles`: a `::part()` rule reaches only the
+  widgets in its own shadow root.
+* `look-check` in `bin/test.sh` fails on a selector naming a `look-` element, on setting a look
+  token or an `--sl-*` property, and on `sl-*::part()` in app code. `.fit-control::part(base)`
+  names a class, not a widget, and passes.
+* The editor's readout bars give back their padding at look's `TURN_HEIGHT_PX`, where the rail lies
+  down as a strip. `tests/layout.test.ts` holds them to that number.
 
 ## Coding standards
 

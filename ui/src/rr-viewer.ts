@@ -1,4 +1,5 @@
 import { LitElement, html, css, svg } from 'lit';
+import { lookTheme } from '@rails49/look';
 import type { SVGTemplateResult } from 'lit';
 import { customElement, property, state, query } from 'lit/decorators.js';
 import { renderCalibrationPoint, calibrationMarkerStyles } from './calibrationMarker.js';
@@ -323,6 +324,7 @@ export interface ViewerContextMenuDetail extends Omit<ViewerPointerDetail, 'orig
 @customElement('rr-viewer')
 export class RrViewer extends LitElement {
   static styles = [
+    lookTheme,
     matteTokens,
     viewerStyles,
     calibrationMarkerStyles,

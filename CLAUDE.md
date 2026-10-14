@@ -36,13 +36,13 @@ Run from the repo root unless noted. pnpm workspace + `uv` for Python.
 
 | Task | Command |
 | :--- | :--- |
-| Full check (typecheck + TS tests + Python lint) | `bin/test.sh` |
+| Full check (typecheck + TS tests + look-check + UI build + Python lint) | `bin/test.sh` |
 | Typecheck all packages | `pnpm typecheck` |
 | All TS tests | `pnpm test` |
 | Tests for one package | `pnpm --filter @occupancy/r49 test` |
 | A single test file | `pnpm --filter @occupancy/ui test tests/marker.test.ts` |
 | Watch mode (ui) | `pnpm --filter @occupancy/ui test:watch` |
-| The look-rules check (**not** in `bin/test.sh`, by decision) | `pnpm --filter @occupancy/ui test:look` |
+| The chrome check alone | `ui/node_modules/.bin/look-check ui/src ui/index.html` |
 | UI dev server | `pnpm --filter @occupancy/ui dev` (HTTPS via self-signed cert; `dev:http` for plain HTTP) |
 | Build UI | `pnpm build` |
 | Regenerate `config.json` **and `lib/config`** | `pnpm config:generate` (or `bin/generate_config.py`) |
@@ -154,17 +154,17 @@ The conversion's regression guard is **retired** (#67) — its job ended with th
 Lit + Shoelace + Vite. Per-component contracts are documented at length in `ui/README.md`; the load-bearing points:
 
 * All custom elements are prefixed `rr-` (railroad). Non-element modules use plain camelCase filenames (`carMarker.ts`, `capture.ts`).
-* **The chrome is not this repository's to design** (#148, #149). Four rails49 UIs are bound to the same six values — the band, its ink, the rail, a rail group, the rail button's 44px and the height the rail turns into a strip — and to nothing else; whole components and tool versions are explicitly free. They are decided in `rails49/.github` (ADR-0003, `docs/LOOK.md`) and travel as a **copied file, not a package** (ADR-0005): `ui/look/tokens.css` is that file verbatim, `ui/look/README.md` records the commit, and `ui/look/values.test.ts` asserts that what the UI draws with equals the copy. It never fetches, so it fails only on a local edit, and it sits **outside `ui/tests/` on purpose** — `pnpm test` and therefore `bin/test.sh` do not run it, because falling out of step with a decision taken elsewhere is not a reason to red-light a pull request about something else. This UI's expression of the values is `ui/src/look.ts` plus `COMPACT_MAX_HEIGHT_PX`, which is a number rather than a token because a media query cannot read one. Taking a change means replacing the copy, writing the new commit, and fixing what the test reports.
+* **The chrome is `@rails49/look`'s** (#161): the band, the rail, the dialog shell and the Shoelace theme layer, taken as a git dependency pinned to a tag. `rr-app` declares them on look's elements, every component puts `lookTheme` first in its `static styles`, and `look-check` in `bin/test.sh` fails on app code that styles the chrome. `ui/CLAUDE.md` § The chrome is look's has the details.
 * **The work panes are the other half of that rule, and they follow the theme** (#151). LOOK.md says
   "the work pane follows the theme; the chrome does not", and #148 delivered only the chrome half —
-  it linked both Shoelace themes under `prefers-color-scheme` and left every pane written for dark
+  it took both Shoelace themes under `prefers-color-scheme` and left every pane written for dark
   as hex literals, so light mode drew Shoelace's controls light against near-black panes. Every pane
   surface and ink is now an `--sl-*` token — neutrals for the greys, `--sl-color-warning-*` and
   `--sl-color-danger-*` for warning and fault — and the hexes that remain are argued in
   `ui/CLAUDE.md` § Shoelace: the matte behind a photograph, `rgba()` scrims and shadows, and white
   ink on a saturated badge. `ui/tests/theme.test.ts` guards the rule at exactly its stated width —
-  no pane module carries a hex at all — and unlike the look test it **is** in the required gate,
-  because a literal creeping back is this repository's own regression. jsdom does not paint, so
+  no pane module carries a hex at all — and it is in the required gate, because a literal creeping
+  back is this repository's own regression. jsdom does not paint, so
   legibility was judged by hand in both OS settings and no browser runner was added for it.
 * `rr-viewer` is shared by both the editor and live views — same component, `src` (image) in one, `stream` (video) in the other. Its media element and SVG overlay resolve to **one box** by construction (#41), so a marker lands on the pixel it names in either mode. It **reports pointer gestures but authors nothing**: typed `rr-pointer-*` events carry image-pixel coordinates, deciding what a gesture means is `rr-editor-view`'s job, and the arithmetic lives in the pure `ui/src/geometry.ts`. The editor's authoring surfaces — calibration points, sensors, car chaining with shared coupler handles, reclassify, the completeness affordance — and their invariants are documented in `ui/CLAUDE.md`.
 * `carMarker.ts`, `sensorMarker.ts` and `calibrationMarker.ts` are modules, not custom elements, because custom elements break the SVG namespace inside `<svg>`. Each one's renderer and styles must be used together. `carMarker.ts` draws both the authored car and the detector's L0 box — a detection is the same object seen from the other side, so it shares the ink and the winding rule (#85).

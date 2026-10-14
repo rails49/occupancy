@@ -1,4 +1,5 @@
 import { LitElement, html, css } from 'lit';
+import { lookTheme } from '@rails49/look';
 import { customElement, property, state } from 'lit/decorators.js';
 import type { Frame } from '@occupancy/detector';
 import { KIND_COLOR, KIND_LABEL, LABEL_INK, describeFinding, findingBounds } from './diagnostics.js';
@@ -35,7 +36,9 @@ export class RRDiagnosticsQueue extends LitElement {
   @state() private _cursor = 0;
   @state() private _zoomed = true;
 
-  static styles = css`
+  static styles = [
+    lookTheme,
+    css`
     :host {
       display: flex;
       flex-direction: column;
@@ -140,7 +143,8 @@ export class RRDiagnosticsQueue extends LitElement {
       color: var(--sl-color-neutral-600);
       text-align: center;
     }
-  `;
+  `,
+  ];
 
   connectedCallback() {
     super.connectedCallback();

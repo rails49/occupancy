@@ -1,9 +1,9 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, query, state } from 'lit/decorators.js';
-import '@shoelace-style/shoelace/dist/components/dialog/dialog.js';
+import { lookTheme, type LookDialog } from '@rails49/look';
 import '@shoelace-style/shoelace/dist/components/input/input.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
-import type { SlDialog, SlInput } from '@shoelace-style/shoelace';
+import type { SlInput } from '@shoelace-style/shoelace';
 
 /**
  * What a committed dialog reports: the name the user typed.
@@ -40,10 +40,12 @@ export class RRSensorDialog extends LitElement {
   /** The id shown as the fallback identity, or null while closed. */
   @state() private _id: string | null = null;
 
-  @query('sl-dialog') private _dialog!: SlDialog;
+  @query('look-dialog') private _dialog!: LookDialog;
   @query('sl-input') private _field!: SlInput;
 
-  static styles = css`
+  static styles = [
+    lookTheme,
+    css`
     .hint {
       color: var(--sl-color-neutral-500);
       font-size: var(--sl-font-size-small);
@@ -53,7 +55,8 @@ export class RRSensorDialog extends LitElement {
     .identity {
       font-family: var(--sl-font-mono);
     }
-  `;
+  `,
+  ];
 
   /**
    * Opens the dialog on a sensor's current name.
@@ -111,7 +114,7 @@ export class RRSensorDialog extends LitElement {
 
   render() {
     return html`
-      <sl-dialog label="Name sensor" style="--width: 420px;">
+      <look-dialog label="Name sensor" size="small">
         <div class="hint">
           Optional. Names are free text and need not be unique — consumers key on the
           sensor's id${this._id ? html`, <span class="identity">${this._id}</span>` : ''}, which is
@@ -131,7 +134,7 @@ export class RRSensorDialog extends LitElement {
         <sl-button id="sensor-name-confirm" slot="footer" variant="primary" @click=${this._onConfirm}>
           Save
         </sl-button>
-      </sl-dialog>
+      </look-dialog>
     `;
   }
 }

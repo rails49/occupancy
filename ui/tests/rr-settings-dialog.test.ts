@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fixture, html } from '@open-wc/testing';
+import { fixture, html, oneEvent, waitUntil } from '@open-wc/testing';
 import '../src/rr-settings-dialog.ts';
 import type { RRSettingsDialog } from '../src/rr-settings-dialog.ts';
 import type { MissingRequirement } from '../src/requiredMetadata.ts';
@@ -28,7 +28,7 @@ async function open(requiredMissing: MissingRequirement[] = [], layout: any = LA
   return el;
 }
 
-const dialogOf = (el: RRSettingsDialog) => el.shadowRoot!.querySelector('sl-dialog')! as any;
+const dialogOf = (el: RRSettingsDialog) => el.shadowRoot!.querySelector('look-dialog')!;
 
 describe('rr-settings-dialog', () => {
   describe('the required-metadata gate', () => {
@@ -40,7 +40,7 @@ describe('rr-settings-dialog', () => {
     it('opens itself when something is missing', async () => {
       // One rule covers New and Open both: a new archive has no camera height.
       const el = await open(NEEDS_HEIGHT);
-      expect(dialogOf(el).open).toBe(true);
+      await waitUntil(() => dialogOf(el).open, 'the gate did not open');
     });
 
     it('states every missing requirement', async () => {
@@ -86,11 +86,36 @@ describe('rr-settings-dialog', () => {
     it('does not reopen itself after the user closes a satisfied dialog', async () => {
       // The gate only ever opens; closing is the user's once satisfied.
       const el = await open([]);
-      el.show();
-      await el.updateComplete;
-      el.hide();
+      await el.show();
+      await el.hide();
       await el.updateComplete;
       expect(dialogOf(el).open).toBeFalsy();
+    });
+  });
+
+  describe('the layout fields', () => {
+    // sl-change, not sl-input: text fields commit on blur or Enter so that an
+    // edit is one undo entry rather than one per keystroke. See history.ts.
+    it('emits rr-layout-change when the name is committed', async () => {
+      const el = await open([]);
+      const nameInput = el.shadowRoot!.querySelector('sl-input')!;
+
+      nameInput.value = 'New Layout Name';
+      setTimeout(() => nameInput.dispatchEvent(new CustomEvent('sl-change')));
+
+      const ev = await oneEvent(el, 'rr-layout-change');
+      expect(ev.detail.layout.name).to.equal('New Layout Name');
+    });
+
+    it('emits rr-layout-change when a scale is selected', async () => {
+      const el = await open([]);
+      const scaleSelect = el.shadowRoot!.querySelector('sl-select')!;
+
+      scaleSelect.value = 'N';
+      setTimeout(() => scaleSelect.dispatchEvent(new CustomEvent('sl-change')));
+
+      const ev = await oneEvent(el, 'rr-layout-change');
+      expect(ev.detail.layout.scale).to.equal('N');
     });
   });
 

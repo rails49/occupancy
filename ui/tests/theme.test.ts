@@ -8,9 +8,9 @@ import { RRThumbnailBar } from '../src/rr-thumbnail-bar.js';
 import { RrViewer } from '../src/rr-viewer.js';
 
 // LOOK.md § Theme: **the work pane follows the theme; the chrome does not**
-// (#151). Both Shoelace themes are linked and `prefers-color-scheme` decides,
-// so a pane painted with an `--sl-*` neutral inverts with the operating system
-// and a pane painted with a hex does not.
+// (#151). look.css carries both Shoelace themes and `prefers-color-scheme`
+// decides, so a pane painted with an `--sl-*` neutral inverts with the
+// operating system and a pane painted with a hex does not.
 //
 // jsdom does not paint, so nothing here proves the result is *legible* — that
 // was judged by hand in both OS settings, and `ui/CLAUDE.md` § Testing (#109)
@@ -27,9 +27,8 @@ const SRC = path.resolve(__dirname, '../src');
  * zoom band over it — so it has no pane surface to follow the theme with, and
  * its two colours are judged the way a marker ink is.
  *
- * The chrome is absent for the opposite reason: `rr-header`, `rr-toolbar` and
- * `rr-tool-palette` keep one value in both themes by rule, and
- * `look/values.test.ts` is what holds them to it.
+ * The chrome is absent because it is `@rails49/look`'s, and `look-check` in
+ * `bin/test.sh` fails on app code that styles it.
  */
 const PANES = [
   'rr-app.ts',

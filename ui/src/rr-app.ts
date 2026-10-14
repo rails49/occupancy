@@ -1,18 +1,22 @@
-import { LitElement, html, css } from 'lit';
-import { customElement, state } from 'lit/decorators.js';
+import { LitElement, html, css, nothing } from 'lit';
+import { customElement, query, state } from 'lit/decorators.js';
 import { R49Archive, MANIFEST_VERSION, type Layout } from '@occupancy/r49';
+import '@rails49/look';
+import '@rails49/look/look.css';
+import { lookTheme, type LookPressDetail, type LookViewDetail } from '@rails49/look';
 import { missingLayoutMetadata } from './requiredMetadata.js';
 import { EditHistory, revealTarget, type HistoryEntry } from './history.js';
-import { openArchive, writeArchive, type FileBinding } from './persistence.js';
+import { openArchive, supportsFileSystemAccess, writeArchive, type FileBinding } from './persistence.js';
 // Shared with the diagnostics queue, which binds bare keys to `window` too —
 // see `keyboard.ts` for why the rule has one home.
 import { isTypingTarget } from './keyboard.js';
-import './rr-header.js';
-import type { ViewMode } from './rr-header.js';
+import { GATE_REASON, TOOLS } from './tools.js';
 import './rr-editor-view.js';
-import type { NotifyDetail, RREditorView } from './rr-editor-view.js';
+import type { EditorStateDetail, NotifyDetail, RREditorView } from './rr-editor-view.js';
 import './rr-live-view.js';
 import './rr-diagnostics-view.js';
+import './rr-settings-dialog.js';
+import type { RRSettingsDialog } from './rr-settings-dialog.js';
 import { setBasePath } from '@shoelace-style/shoelace/dist/utilities/base-path.js';
 import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
@@ -21,13 +25,43 @@ import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 setBasePath('/shoelace');
 
 /**
- * Top-level application shell.
+ * The three things the app can be doing: the rail's views, each one click away
+ * (#87), with the current one marked.
+ */
+const VIEW_MODES = [
+  { mode: 'editor', icon: 'image-fill', label: 'Label' },
+  { mode: 'live', icon: 'camera-video-fill', label: 'Live' },
+  { mode: 'diagnostics', icon: 'clipboard-data', label: 'Diagnostics' },
+] as const;
+
+export type ViewMode = (typeof VIEW_MODES)[number]['mode'];
+
+/**
+ * Save As is advertised only where it does something Save does not. Without
+ * the File System Access API every save is a fresh download, so naming the
+ * modifier there would promise a distinction the browser cannot make.
+ */
+function saveLabel(): string {
+  return supportsFileSystemAccess()
+    ? 'Save .r49 Archive (Shift-click: Save As…)'
+    : 'Save .r49 Archive';
+}
+
+/**
+ * Top-level application shell: look's band and rail around the current view.
  */
 @customElement('rr-app')
 export class RRApp extends LitElement {
   @state() private _archive: R49Archive | null = null;
   @state() private _viewMode: ViewMode = 'editor';
-  @state() private _status = 'No archive loaded';
+  /** What the editor last reported for the rail's Tools and History groups. */
+  @state() private _editorState: EditorStateDetail = {
+    tool: 'calibration',
+    calibrated: false,
+    image: null,
+  };
+
+  @query('rr-settings-dialog') private _settingsDialog!: RRSettingsDialog;
 
   /**
    * The file this session writes back to, or null for a layout that has never
@@ -46,31 +80,22 @@ export class RRApp extends LitElement {
    */
   private _history = new EditHistory();
 
-  static styles = css`
-    :host {
-      display: flex;
-      flex-direction: column;
-      height: 100vh;
-      overflow: hidden;
-      background: var(--sl-color-neutral-0);
-      color: var(--sl-color-neutral-900);
-    }
+  static styles = [
+    lookTheme,
+    css`
+      :host {
+        display: block;
+        background: var(--sl-color-neutral-0);
+        color: var(--sl-color-neutral-900);
+      }
 
-    main {
-      flex-grow: 1;
-      display: flex;
-      overflow: hidden;
-    }
-
-    /* Slotted into rr-header, so these are styled here — the slot's content is
-       this component's DOM. Lighter than the layout name: each qualifies the
-       name rather than competing with it. */
-    .bound-file,
-    .layout-scale {
-      font-weight: 400;
-      opacity: 0.75;
-    }
-  `;
+      main {
+        display: flex;
+        height: 100%;
+        overflow: hidden;
+      }
+    `,
+  ];
 
   /**
    * Helper to show a toast notification using Shoelace sl-alert
@@ -144,7 +169,7 @@ export class RRApp extends LitElement {
   /**
    * Cmd/Ctrl+Z and Cmd+Shift+Z / Ctrl+Y, editor view only.
    *
-   * The buttons in `rr-toolbar` are not a duplicate of this: they carry the
+   * The rail's Undo and Redo are not a duplicate of this: they carry the
    * disabled state, which is the only honest signal that the stack has a
    * bottom, and touch devices have no Cmd+Z at all.
    */
@@ -209,9 +234,6 @@ export class RRApp extends LitElement {
   private async _reveal(entry: HistoryEntry) {
     const view = this._editorView();
     await view?.syncFromArchive(revealTarget(entry), entry.highlights);
-    if (this._archive) {
-      this._status = this._archive.getManifest().layout.name || this._status;
-    }
     this.requestUpdate();
   }
 
@@ -251,7 +273,6 @@ export class RRApp extends LitElement {
       },
       images: []
     });
-    this._status = 'New Layout';
     this._binding = null;
     this._viewMode = 'editor';
     this._history.attach(this._archive);
@@ -271,13 +292,12 @@ export class RRApp extends LitElement {
 
     const { file, binding } = opened;
     try {
-      this._status = `Loading ${file.name}...`;
+      this._notify(`Loading ${file.name}…`, 'primary', 'hourglass-split');
       this._archive = await R49Archive.load(file);
       this._history.attach(this._archive);
       // Bound only once the bytes parse. A binding to a file that failed to
       // load would aim the next Save at an archive this session never held.
       this._binding = binding;
-      this._status = this._archive.getManifest().layout.name || file.name;
       this._notify(`Loaded ${file.name}`, 'success', 'file-earmark-check');
     } catch (err) {
       console.error('Failed to load archive', err);
@@ -292,7 +312,7 @@ export class RRApp extends LitElement {
   // DPT instead, and gating the labeling tools on it belongs to the editor
   // spec. See SPEC.md § Reference points.
   /**
-   * Save, and Save As when the toolbar reports a Shift-click (#48).
+   * Save, and Save As when the rail reports a Shift-click (#48).
    *
    * Where the bytes land is `persistence.ts`'s decision, not this component's:
    * an overwrite where the browser has a handle for it, a timestamped download
@@ -303,9 +323,8 @@ export class RRApp extends LitElement {
    * that has never been saved. It does not follow a later rename: the file's
    * identity is the file, and `layout.name` is metadata stored inside it.
    */
-  private async _onFileSave(e?: CustomEvent<{ rebind?: boolean }>) {
+  private async _onFileSave(rebind = false) {
     if (!this._archive) return;
-    const rebind = e?.detail?.rebind === true;
     try {
       const data = await this._archive.export();
       const stem = this._binding?.stem || this._archive.getManifest().layout.name || 'layout';
@@ -332,8 +351,12 @@ export class RRApp extends LitElement {
     }
   }
 
-  private _onViewChange(e: CustomEvent<{ mode: ViewMode }>) {
-    this._viewMode = e.detail.mode;
+  private _onViewChange(e: CustomEvent<LookViewDetail>) {
+    this._viewMode = e.detail.name as ViewMode;
+  }
+
+  private _onEditorState(e: CustomEvent<EditorStateDetail>) {
+    this._editorState = e.detail;
   }
 
   private async _onLayoutChange(e: CustomEvent) {
@@ -343,7 +366,6 @@ export class RRApp extends LitElement {
     await this._history.record(`edit ${field}`, { kind: 'layout' }, () => {
       manifest.layout = { ...manifest.layout, ...e.detail.layout };
     });
-    this._status = manifest.layout.name || this._status;
     this.requestUpdate();
   }
 
@@ -370,78 +392,171 @@ export class RRApp extends LitElement {
     this.requestUpdate();
   }
 
+  /**
+   * An edit's phrase, qualified with the image when it is not the one on
+   * screen — "delete car — img_3.jpg".
+   *
+   * The disabled state says the stack has a bottom; this says *where* the next
+   * undo will land. Without it "nothing happened" and "it happened on an image
+   * you are not looking at" read identically, which is the whole reason the
+   * buttons are not a duplicate of Cmd+Z (`SPEC.md` § Undo and redo) — and on a
+   * touch device, where the labeling actually happens, there is no Cmd+Z to be
+   * a duplicate of.
+   */
+  private _qualified(verb: string, label: string | null, entry: HistoryEntry | null): string {
+    if (!label) return verb;
+    const image = revealTarget(entry);
+    return image && image !== this._editorState.image
+      ? `${verb} ${label} — ${image}`
+      : `${verb} ${label}`;
+  }
+
+  /**
+   * The band: the layout's name and scale, and the file a save would land in.
+   *
+   * The scale is what the layout's geometry means (#52), and none is stated
+   * before an archive is open. The bound filename is shown only when Save
+   * would overwrite it: the question "where does my work go?" is asked before
+   * the click, and a toast answers it only afterwards. A binding without a
+   * handle names no file that exists yet, so it stays quiet.
+   */
+  private _renderBand(layout: Layout | null) {
+    return html`<look-band>
+      <look-about name=${layout?.name || 'occupancy'} detail=${layout?.scale ?? ''}></look-about>
+      ${this._binding?.handle
+        ? html`<look-reading>${this._binding.stem}.r49</look-reading>`
+        : nothing}
+      <look-gear @look-press=${() => this._settingsDialog.show()}></look-gear>
+    </look-band>`;
+  }
+
+  /** The rail: the views, then the editor's commands while it is shown. */
+  private _renderRail() {
+    return html`<look-rail @look-view=${this._onViewChange}>
+      ${VIEW_MODES.map(
+        ({ mode, icon, label }) => html`<look-view
+          name=${mode}
+          icon=${icon}
+          label=${label}
+          ?current=${this._viewMode === mode}
+        ></look-view>`
+      )}
+      ${this._viewMode === 'editor' ? this._renderEditorGroups() : nothing}
+    </look-rail>`;
+  }
+
+  /**
+   * File, History and, while a manifest is loaded, Tools.
+   *
+   * **While DPT is unresolved the labeling tools are disabled and the reason
+   * is their tooltip** — car width is derived from DPT rather than stored
+   * (`SPEC.md` § Location Data), so an uncalibrated archive cannot render the
+   * width rectangle that is the only feedback telling a user whether their
+   * clicks cover the car. The gate is on **existence, never on completion**
+   * (`SPEC.md` § Labeling Workflow), and the editor enforces it too.
+   */
+  private _renderEditorGroups() {
+    const { tool, calibrated } = this._editorState;
+    return html`
+      <look-group label="File">
+        <look-command
+          id="file-new"
+          icon="file-earmark-plus"
+          label="New .r49 Archive"
+          @look-press=${this._onFileNew}
+        ></look-command>
+        <look-command
+          id="file-open"
+          icon="folder2-open"
+          label="Open .r49 Archive"
+          @look-press=${this._onFileOpen}
+        ></look-command>
+        <look-command
+          id="file-save"
+          icon="floppy"
+          label=${saveLabel()}
+          @look-press=${(e: CustomEvent<LookPressDetail>) => this._onFileSave(e.detail.shiftKey)}
+        ></look-command>
+      </look-group>
+      <look-group label="History">
+        <look-command
+          id="edit-undo"
+          icon="arrow-counterclockwise"
+          label=${this._qualified('Undo', this._history.undoLabel, this._history.undoEntry)}
+          key="Mod+Z"
+          ?disabled=${!this._history.canUndo}
+          @look-press=${this._undo}
+        ></look-command>
+        <look-command
+          id="edit-redo"
+          icon="arrow-clockwise"
+          label=${this._qualified('Redo', this._history.redoLabel, this._history.redoEntry)}
+          key="Shift+Mod+Z"
+          ?disabled=${!this._history.canRedo}
+          @look-press=${this._redo}
+        ></look-command>
+      </look-group>
+      ${this._archive
+        ? html`<look-group label="Tools">
+            ${TOOLS.map(spec => {
+              const disabled = spec.needsDpt && !calibrated;
+              return html`<look-command
+                id="tool-${spec.tool}"
+                icon=${spec.icon}
+                label=${spec.label}
+                ?pressed=${spec.tool === tool}
+                ?disabled=${disabled}
+                reason=${disabled ? GATE_REASON : ''}
+                @look-press=${() => this._editorView()?.selectTool(spec.tool)}
+              ></look-command>`;
+            })}
+          </look-group>`
+        : nothing}
+    `;
+  }
+
   render() {
-    // Widened for the required-metadata gate, which reads `calibration` too.
-    let layout: Layout = { name: '', scale: 'N', calibration: { points: [] }, sensors: [] };
-    // Null until a manifest has actually been read (#52). The `N` above is a
-    // placeholder for the dialog to render against, not an answer any archive
-    // gave, so with nothing open the header states no scale rather than
-    // inventing one. Read on every render, so a scale changed in the dialog is
-    // the one shown.
-    let scale: Layout['scale'] | null = null;
+    // Null until a manifest has actually been read (#52).
+    let layout: Layout | null = null;
     try {
-      if (this._archive) {
-        layout = this._archive.getManifest().layout as any;
-        scale = layout.scale;
-      }
+      if (this._archive) layout = this._archive.getManifest().layout;
     } catch (e) {
       // Ignore if manifest not yet ready
     }
 
     return html`
-      <rr-header
-        .viewMode=${this._viewMode}
-        .layout=${layout}
-        .requiredMissing=${missingLayoutMetadata(this._archive ? layout : null)}
-        @rr-view-change=${this._onViewChange}
+      <look-shell>
+        ${this._renderBand(layout)} ${this._renderRail()}
+        <main>
+          ${this._viewMode === 'editor'
+            ? html`
+                <rr-editor-view
+                  .archive=${this._archive}
+                  .history=${this._history}
+                  @rr-editor-state=${this._onEditorState}
+                  @rr-history-change=${this._onHistoryChange}
+                  @rr-notify=${this._onNotify}
+                ></rr-editor-view>`
+            : this._viewMode === 'live'
+              ? html`<rr-live-view .archive=${this._archive}></rr-live-view>`
+              // Each mode is torn down when it leaves: the live view stops the
+              // camera, the diagnostics view abandons an in-flight sweep and
+              // releases its ORT session. Keeping them alive to preserve state
+              // would leave a camera light on, or twenty seconds of WASM running
+              // for a view nobody is looking at.
+              : html`<rr-diagnostics-view .archive=${this._archive}></rr-diagnostics-view>`
+          }
+        </main>
+      </look-shell>
+
+      <!-- The placeholder layout is for the dialog to render against, not an
+           answer any archive gave. -->
+      <rr-settings-dialog
+        .layout=${layout ?? { name: '', scale: 'N', calibration: { points: [] } }}
+        .requiredMissing=${missingLayoutMetadata(layout)}
         @rr-layout-change=${this._onLayoutChange}
         @rr-camera-height-change=${this._onCameraHeightChange}
-      >
-        <!-- Three things, each qualifying the one before: the layout's name,
-             the scale its geometry is read in (#52, resolved above), and the
-             file a save would land in. The bound filename is shown only when
-             Save would overwrite it: the question "where does my work go?" is
-             asked before the click, and a toast answers it only afterwards. A
-             binding without a handle names no file that exists yet, so it
-             stays quiet. -->
-        <span slot="status"
-          >${this._status}${scale ? html`<span class="layout-scale"> · ${scale}</span>` : ''}${this
-            ._binding?.handle
-            ? html`<span class="bound-file"> — ${this._binding.stem}.r49</span>`
-            : ''}</span
-        >
-      </rr-header>
-
-      <main>
-        ${this._viewMode === 'editor'
-          ? html`
-              <rr-editor-view
-                .archive=${this._archive}
-                .history=${this._history}
-                .canUndo=${this._history.canUndo}
-                .canRedo=${this._history.canRedo}
-                .undoLabel=${this._history.undoLabel}
-                .redoLabel=${this._history.redoLabel}
-                .undoImage=${revealTarget(this._history.undoEntry) ?? null}
-                .redoImage=${revealTarget(this._history.redoEntry) ?? null}
-                @rr-file-new=${this._onFileNew}
-                @rr-file-open=${this._onFileOpen}
-                @rr-file-save=${this._onFileSave}
-                @rr-history-change=${this._onHistoryChange}
-                @rr-notify=${this._onNotify}
-                @rr-undo=${this._undo}
-                @rr-redo=${this._redo}
-              ></rr-editor-view>`
-          : this._viewMode === 'live'
-            ? html`<rr-live-view .archive=${this._archive}></rr-live-view>`
-            // Each mode is torn down when it leaves: the live view stops the
-            // camera, the diagnostics view abandons an in-flight sweep and
-            // releases its ORT session. Keeping them alive to preserve state
-            // would leave a camera light on, or twenty seconds of WASM running
-            // for a view nobody is looking at.
-            : html`<rr-diagnostics-view .archive=${this._archive}></rr-diagnostics-view>`
-        }
-      </main>
+      ></rr-settings-dialog>
     `;
   }
 }

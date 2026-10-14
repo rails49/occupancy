@@ -1,4 +1,5 @@
 import { LitElement, html, css } from 'lit';
+import { lookTheme } from '@rails49/look';
 import { customElement, property, state, query } from 'lit/decorators.js';
 import type { R49Archive } from '@occupancy/r49';
 import { getDPT } from '@occupancy/r49';
@@ -134,7 +135,9 @@ export class RRLiveView extends LitElement {
   private _running = false;
   private _lastFrameTime = 0;
 
-  static styles = css`
+  static styles = [
+    lookTheme,
+    css`
     :host {
       display: flex;
       flex-direction: column;
@@ -173,7 +176,8 @@ export class RRLiveView extends LitElement {
       border-radius: 4px;
       cursor: pointer;
     }
-  `;
+  `,
+  ];
 
   protected willUpdate(changed: Map<string, unknown>) {
     if (changed.has('archive')) {

@@ -106,9 +106,9 @@ describe('rr-calibration-dialog', () => {
 
   it('names the gesture it is completing, so place and edit read differently', async () => {
     await el.show();
-    expect(el.shadowRoot!.querySelector('sl-dialog')!.getAttribute('label')).to.contain('Place');
+    expect(el.shadowRoot!.querySelector('look-dialog')!.getAttribute('label')).to.contain('Place');
 
     await el.show({ x: 1, y: 2, z: 3 }, { mode: 'edit' });
-    expect(el.shadowRoot!.querySelector('sl-dialog')!.getAttribute('label')).to.contain('Edit');
+    expect(el.shadowRoot!.querySelector('look-dialog')!.getAttribute('label')).to.contain('Edit');
   });
 });

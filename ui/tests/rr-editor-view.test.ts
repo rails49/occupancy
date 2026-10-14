@@ -9,9 +9,9 @@ import '../src/rr-editor-view.js';
 import { RREditorView } from '../src/rr-editor-view.js';
 import type { RRCalibrationDialog } from '../src/rr-calibration-dialog.js';
 import type { RRSensorDialog } from '../src/rr-sensor-dialog.js';
-import type { RRToolPalette, EditorTool } from '../src/rr-tool-palette.js';
+import type { EditorTool } from '../src/tools.js';
 import type { RRContextMenu } from '../src/rr-context-menu.js';
-import type { NotifyDetail } from '../src/rr-editor-view.js';
+import type { EditorStateDetail, NotifyDetail } from '../src/rr-editor-view.js';
 import type { SlCheckbox } from '@shoelace-style/shoelace';
 import type { Rect } from '../src/geometry.js';
 
@@ -126,7 +126,6 @@ describe('rr-editor-view', () => {
       <rr-editor-view .archive=${archive}></rr-editor-view>
     `);
 
-    expect(el.shadowRoot!.querySelector('rr-toolbar')).to.exist;
     expect(el.shadowRoot!.querySelector('rr-viewer')).to.exist;
     expect(el.shadowRoot!.querySelector('rr-thumbnail-bar')).to.exist;
   });
@@ -228,7 +227,6 @@ describe('rr-editor-view', () => {
       await el.updateComplete;
 
       expect(el.shadowRoot!.querySelector('rr-viewer')).to.exist;
-      expect(el.shadowRoot!.querySelector('rr-tool-palette')).to.exist;
     });
   });
 
@@ -380,7 +378,6 @@ describe('rr-editor-view', () => {
       // authoring on a heuristic would be worse than the disease.
       expect(warning(el)).to.exist;
       expect(el.shadowRoot!.querySelector('rr-viewer')).to.exist;
-      expect(el.shadowRoot!.querySelector('rr-tool-palette')).to.exist;
     });
 
     it('keeps each image its own verdict when the user browses away and back', async () => {
@@ -1350,29 +1347,49 @@ describe('rr-editor-view', () => {
     ];
   }
 
-  function paletteOf(el: RREditorView): RRToolPalette {
-    return el.shadowRoot!.querySelector('rr-tool-palette')!;
-  }
-
-  /** A palette selection, shaped the way `rr-tool-palette` reports one. */
+  /** A choice on the rail's Tools group, which `rr-app` hands to the editor. */
   async function selectTool(el: RREditorView, tool: EditorTool) {
-    paletteOf(el).dispatchEvent(
-      new CustomEvent('rr-tool-select', { detail: { tool }, bubbles: true, composed: true })
-    );
+    el.selectTool(tool);
     await el.updateComplete;
   }
 
-  describe('the tool palette and the calibration gate', () => {
-    it('offers the palette once an archive is open', async () => {
-      const el = await mount();
-      expect(paletteOf(el)).to.exist;
+  describe('the tools and the calibration gate', () => {
+    it('reports the tool, the gate and the image on screen to the rail', async () => {
+      const seen: EditorStateDetail[] = [];
+      const el = await fixture<RREditorView>(html`
+        <rr-editor-view
+          .archive=${archive}
+          @rr-editor-state=${(e: CustomEvent<EditorStateDetail>) => seen.push(e.detail)}
+        ></rr-editor-view>
+      `);
+      await el.updateComplete;
+
+      expect(seen).to.deep.equal([{ tool: 'calibration', calibrated: false, image: 'img1.jpg' }]);
+    });
+
+    it('reports again only when something the rail shows changes', async () => {
+      calibrate();
+      const seen: EditorStateDetail[] = [];
+      const el = await fixture<RREditorView>(html`
+        <rr-editor-view
+          .archive=${archive}
+          @rr-editor-state=${(e: CustomEvent<EditorStateDetail>) => seen.push(e.detail)}
+        ></rr-editor-view>
+      `);
+      await el.updateComplete;
+      el.requestUpdate();
+      await el.updateComplete;
+      expect(seen).to.have.length(1);
+
+      await selectTool(el, 'sensor');
+      expect(seen.at(-1)).to.deep.equal({ tool: 'sensor', calibrated: true, image: 'img1.jpg' });
     });
 
     it('opens an uncalibrated archive in calibration mode, with the rest gated', async () => {
       const el = await mount();
 
-      expect(paletteOf(el).tool).to.equal('calibration');
-      expect(paletteOf(el).calibrated).to.be.false;
+      expect(el.railState.tool).to.equal('calibration');
+      expect(el.railState.calibrated).to.be.false;
     });
 
     it('enables the labeling tools the moment a second point resolves DPT', async () => {
@@ -1380,13 +1397,13 @@ describe('rr-editor-view', () => {
 
       await clickAt(el, { x: 0, y: 0 });
       await commit(el, { x: 0, y: 0, z: 0 });
-      expect(paletteOf(el).calibrated).to.be.false;
+      expect(el.railState.calibrated).to.be.false;
 
       await clickAt(el, { x: 100, y: 0 });
       await commit(el, { x: 10, y: 0, z: 0 });
 
       // Existence, not completion: two points at a nonzero separation is it.
-      expect(paletteOf(el).calibrated).to.be.true;
+      expect(el.railState.calibrated).to.be.true;
     });
 
     it('leaves the tools gated for two points at the same position', async () => {
@@ -1397,7 +1414,7 @@ describe('rr-editor-view', () => {
       ];
       const el = await mount();
 
-      expect(paletteOf(el).calibrated).to.be.false;
+      expect(el.railState.calibrated).to.be.false;
     });
 
     it('drops a gated tool back to calibration when the DPT stops resolving', async () => {
@@ -1406,13 +1423,13 @@ describe('rr-editor-view', () => {
       calibrate();
       const el = await mount();
       await selectTool(el, 'sensor');
-      expect(paletteOf(el).tool).to.equal('sensor');
+      expect(el.railState.tool).to.equal('sensor');
 
       await rightClickAt(el, { x: 100, y: 0 });
       await choose(el, 'delete');
 
-      expect(paletteOf(el).calibrated).to.be.false;
-      expect(paletteOf(el).tool).to.equal('calibration');
+      expect(el.railState.calibrated).to.be.false;
+      expect(el.railState.tool).to.equal('calibration');
       // And a click means calibrate again, rather than silently placing nothing.
       const show = stubDialog(el);
       await clickAt(el, { x: 400, y: 400 });
@@ -1438,7 +1455,7 @@ describe('rr-editor-view', () => {
       await flush();
       await el.updateComplete;
 
-      expect(paletteOf(el).tool).to.equal('calibration');
+      expect(el.railState.tool).to.equal('calibration');
     });
   });
 
@@ -2931,7 +2948,7 @@ describe('rr-editor-view', () => {
       await clickAt(el, { x: 100, y: 100 });
       await clickAt(el, { x: 400, y: 100 });
 
-      expect(paletteOf(el).tool).to.equal('calibration');
+      expect(el.railState.tool).to.equal('calibration');
       expect(cars()).to.have.length(0);
       expect(show).toHaveBeenCalled();
     });
@@ -3212,50 +3229,6 @@ describe('rr-editor-view', () => {
       await selectImage(el, 1);
 
       expect(highlightOf(el)).to.be.null;
-    });
-
-    describe('the toolbar tooltips', () => {
-      const toolbar = (el: RREditorView) => el.shadowRoot!.querySelector('rr-toolbar')!;
-
-      it('names the image when the undo would land on another one', async () => {
-        addSecondImage();
-        const el = await fixture<RREditorView>(html`
-          <rr-editor-view
-            .archive=${archive}
-            .undoLabel=${'delete car'}
-            .undoImage=${'img2.jpg'}
-            .canUndo=${true}
-          ></rr-editor-view>
-        `);
-
-        expect(toolbar(el).undoLabel).to.equal('delete car — img2.jpg');
-      });
-
-      it('says only the edit when it lands on the image on screen', async () => {
-        const el = await fixture<RREditorView>(html`
-          <rr-editor-view
-            .archive=${archive}
-            .undoLabel=${'delete car'}
-            .undoImage=${'img1.jpg'}
-            .canUndo=${true}
-          ></rr-editor-view>
-        `);
-
-        expect(toolbar(el).undoLabel).to.equal('delete car');
-      });
-
-      it('says only the edit for a layout-scoped entry, which has no image', async () => {
-        const el = await fixture<RREditorView>(html`
-          <rr-editor-view
-            .archive=${archive}
-            .redoLabel=${'move sensor'}
-            .redoImage=${null}
-            .canRedo=${true}
-          ></rr-editor-view>
-        `);
-
-        expect(toolbar(el).redoLabel).to.equal('move sensor');
-      });
     });
   });
 
