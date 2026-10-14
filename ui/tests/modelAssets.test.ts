@@ -29,6 +29,15 @@ describe('the shipped model', () => {
     expect(DETECTOR_MODEL_DIR.startsWith('../')).toBe(true);
   });
 
+  it('is copied only when the file exists, since its directory always does', () => {
+    // `version.txt` is tracked, so the directory is there on a fresh clone, and
+    // a copy conditioned on the directory failed every build without a model.
+    expect(fs.existsSync(path.join(repoRoot, 'detector/models/version.txt'))).toBe(true);
+    expect(read('ui/vite.config.ts')).toContain(
+      'fs.existsSync(path.resolve(__dirname, detectorCopyTarget.src))'
+    );
+  });
+
   it('is fetched from the directory it is copied into, under the app base', () => {
     expect(DETECTOR_MODEL_URL).toBe(`/${detectorCopyTarget.dest}/${DETECTOR_MODEL_FILE}`);
   });
