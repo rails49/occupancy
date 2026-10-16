@@ -3,6 +3,7 @@ import type {
   CalibrationPoint,
   CarLabel,
   Image,
+  Layout,
   Point,
   R49Archive,
   Sensor,
@@ -399,6 +400,29 @@ export class EditSession {
       { kind: 'image', filename: image.filename },
       () => this._writeImage(image.filename, { labeledComplete: complete })
     );
+  }
+
+  /** Writes layout fields from the settings dialog, named for the first one. */
+  async editLayout(changes: Partial<Layout>) {
+    const field = Object.keys(changes)[0] ?? 'layout';
+    await this._record(`edit ${field}`, { kind: 'layout' }, () => {
+      const manifest = this.archive.getManifest();
+      manifest.layout = { ...manifest.layout, ...changes };
+    });
+  }
+
+  /**
+   * Writes the camera height, or removes the key for `undefined`: the schema
+   * field is optional with no default, so an absent height stays absent (#139).
+   */
+  async setCameraHeight(mm: number | undefined) {
+    await this._record('edit camera height', { kind: 'layout' }, () => {
+      const manifest = this.archive.getManifest();
+      const calibration = { ...manifest.layout.calibration };
+      if (mm === undefined) delete calibration.camera_height_mm;
+      else calibration.camera_height_mm = mm;
+      manifest.layout = { ...manifest.layout, calibration };
+    });
   }
 
   /** Adds an image at the end of the list and shows it. */

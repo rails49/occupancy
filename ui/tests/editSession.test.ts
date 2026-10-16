@@ -1492,6 +1492,48 @@ describe('EditSession', () => {
     });
   });
 
+  describe('layout settings', () => {
+    it('writes a layout field as one layout entry named for the field', async () => {
+      const s = session();
+
+      await s.editLayout({ scale: 'HO' });
+
+      expect(s.archive.getManifest().layout.scale).toBe('HO');
+      expect(s.history.undoLabel).toBe('edit scale');
+      expect(s.history.undoEntry!.target).toEqual({ kind: 'layout' });
+      await s.undo();
+      expect(s.archive.getManifest().layout.scale).toBe('N');
+    });
+
+    it('writes the camera height, and removes the key for none', async () => {
+      const s = session();
+
+      await s.setCameraHeight(1200);
+      expect(s.archive.getManifest().layout.calibration).toMatchObject({ camera_height_mm: 1200 });
+      expect(s.history.undoLabel).toBe('edit camera height');
+
+      await s.setCameraHeight(undefined);
+      expect('camera_height_mm' in s.archive.getManifest().layout.calibration).toBe(false);
+      expect(points(s)).toEqual(CALIBRATION);
+    });
+
+    it('drops a gated tool when a settings edit takes DPT away', async () => {
+      // Points above the reference plane resolve DPT only with a camera height.
+      const s = session({ calibrated: false });
+      s.archive.getManifest().layout.calibration = {
+        points: CALIBRATION.map(point => ({ ...point, world: { ...point.world, z: 50 } })),
+        camera_height_mm: 1000,
+      };
+      s.selectTool('car');
+      expect(s.tool).toBe('car');
+
+      await s.setCameraHeight(undefined);
+
+      expect(s.calibrated).toBe(false);
+      expect(s.tool).toBe('calibration');
+    });
+  });
+
   describe('listeners', () => {
     it('hear every change, and stop when unsubscribed', async () => {
       const s = session({ images: ['img1.jpg', 'img2.jpg'] });

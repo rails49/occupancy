@@ -174,8 +174,8 @@ rr-app ─────────── rr-editor-view ────────
   geometric consequence of the detector's boxes and there is nothing for a second model to say.
 
 Lit does not observe mutations *inside* `R49Archive`. The session tells its listeners after every
-change, which is what re-renders the editor and the rail; `rr-app`'s settings handlers, which still
-write through `session.history` directly, call `this.requestUpdate()` themselves.
+change, which is what re-renders the editor and the rail, including after a settings edit
+(`editLayout`, `setCameraHeight`).
 
 **Every manifest mutation goes through `history.record`** (see `history.ts`), so an edit made by
 reaching into the archive directly leaves an undo stack that is wrong rather than short.
@@ -1013,6 +1013,7 @@ it gets the objects the entry changed.
 | `beginDrag(point, scale)` | A `Drag` (`move`, `end`, `cancel`) on what is under the point, or null |
 | `rightClick(point, scale)` | Ends a live chain, or returns the `MenuSubject` a menu acts on |
 | `placeReferencePoint`, `editReferencePoint`, `nameSensor`, `delete`, `reclassifyCar`, `setComplete` | The answers to a dialog, a menu row or the checkbox |
+| `editLayout`, `setCameraHeight` | The settings dialog's edits, one `layout` entry each |
 | `addImage`, `deleteImage`, `reorderImages` | The image list. Deleting the image on screen shows its neighbour |
 | `undo`, `redo` | Select the image the entry is on, apply it, and report what changed |
 | `subscribe(listener)` | Returns a function that stops it |
