@@ -207,7 +207,7 @@ The five canonical triage roles, used verbatim as label strings. See `docs/agent
 
 ### Domain docs
 
-One document — `SPEC.md` at the repo root — plus the wayfinder maps on GitHub Issues as the decision record. **No `CONTEXT.md` and no `docs/adr/`**, by decision (#9). See `docs/agents/domain.md`.
+Single context: `CONTEXT.md` (glossary) and `docs/adr/` (decisions) at the repo root, with `SPEC.md` for requirements and GitHub issues as the full record. See `docs/agents/domain.md`.
 
 ## Contributing
 
