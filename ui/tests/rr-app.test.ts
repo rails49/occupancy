@@ -69,7 +69,7 @@ describe('rr-app', () => {
     (el as any)._open(archive);
 
     const exportSpy = vi.spyOn(archive, 'export').mockResolvedValue(new Uint8Array());
-    const notifySpy = vi.spyOn(el as any, '_notify');
+    const notifySpy = vi.spyOn(el as any, '_notify').mockImplementation(() => {});
 
     await (el as any)._onFileSave();
 
@@ -93,7 +93,7 @@ describe('rr-app', () => {
     (el as any)._binding = { stem: 'west-yard' };
 
     vi.spyOn(archive, 'export').mockResolvedValue(new Uint8Array());
-    const notifySpy = vi.spyOn(el as any, '_notify');
+    const notifySpy = vi.spyOn(el as any, '_notify').mockImplementation(() => {});
 
     await (el as any)._onFileSave();
 
@@ -126,7 +126,7 @@ describe('rr-app', () => {
       .mockRejectedValue(new DOMException('dismissed', 'AbortError'));
 
     const markSaved = vi.spyOn((el as any)._session.history as EditHistory, 'markSaved');
-    const notifySpy = vi.spyOn(el as any, '_notify');
+    const notifySpy = vi.spyOn(el as any, '_notify').mockImplementation(() => {});
 
     await (el as any)._onFileSave();
 
@@ -141,7 +141,7 @@ describe('rr-app', () => {
     const el = await fixture<RRApp>(html`<rr-app></rr-app>`);
     (el as any)._open(archive);
     await el.updateComplete;
-    const notify = vi.spyOn(el as any, '_notify');
+    const notify = vi.spyOn(el as any, '_notify').mockImplementation(() => {});
 
     el.renderRoot.querySelector('rr-editor-view')!.dispatchEvent(
       new CustomEvent<NotifyDetail>('rr-notify', {
@@ -327,7 +327,7 @@ describe('rr-app', () => {
     (el as any)._open(archive);
 
     vi.spyOn(archive, 'export').mockRejectedValue(new Error('disk full'));
-    const notifySpy = vi.spyOn(el as any, '_notify');
+    const notifySpy = vi.spyOn(el as any, '_notify').mockImplementation(() => {});
 
     await (el as any)._onFileSave();
 
