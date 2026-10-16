@@ -88,8 +88,7 @@ describe('the band', () => {
     const el = await mount();
     const show = vi.spyOn(el.renderRoot.querySelector('rr-settings-dialog')!, 'show');
 
-    const gear = el.renderRoot.querySelector('look-gear')!;
-    (gear.shadowRoot!.querySelector('sl-icon-button') as HTMLElement).click();
+    el.renderRoot.querySelector('look-gear')!.click();
 
     expect(show).toHaveBeenCalled();
   });
