@@ -887,8 +887,8 @@ nothing would read as a broken editor, and `rr-app` owns the toast.
 
   `.steady` is not decoration: the reference is **user-movable** by dragging the strip, so a row that
   appeared only on failure would let a reorder re-point the pose with nothing on screen moving. For the
-  same reason a reorder re-measures the whole archive, an add measures only the new image (appending
-  cannot move position 0), and a delete re-sweeps only when position 0 went.
+  same reason a new reference image — by reorder, by delete, or by undo or redo of either — re-measures
+  the whole archive, and an add measures only the new image (appending cannot move position 0).
 
   The bar says explicitly that **labeling this image is unaffected** — a car span is authored on the
   image's own pixels, so the training data derived from it is self-consistent whatever the camera did;
