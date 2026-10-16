@@ -10,7 +10,7 @@ import type { Detector } from '@occupancy/detector/browser';
 import type { DriftResult } from '@occupancy/drift';
 import { getCameraStream } from './capture.js';
 import { openDetector, DETECTOR_SOURCE } from './detectorSession.js';
-import { grabPlane, maxDriftPx, openDriftCheck } from './driftSession.js';
+import { driftVerdict, grabPlane, maxDriftPx, openDriftCheck } from './driftSession.js';
 import type { DriftSession } from './driftSession.js';
 import './rr-viewer.js';
 import './rr-stats-bar.js';
@@ -323,8 +323,12 @@ export class RRLiveView extends LitElement {
    * when no tolerance resolves — see `_driftTolerancePx`.
    */
   private get _drifted(): boolean {
-    const tolerance = this._driftTolerancePx;
-    return this._drift !== null && tolerance !== null && this._drift.displacementPx > tolerance;
+    return this._driftVerdict?.past ?? false;
+  }
+
+  /** The latest measurement judged against the tolerance, or `null` without one or the other. */
+  private get _driftVerdict() {
+    return this._drift && driftVerdict(this._drift.displacementPx, this._dpt);
   }
 
   /** Drift found, and not overridden — the state that withholds L1. */
@@ -472,9 +476,10 @@ export class RRLiveView extends LitElement {
 
     if (!this._drifted) return '';
 
-    const px = this._drift!.displacementPx.toFixed(1);
-    const tolerance = this._driftTolerancePx!.toFixed(1);
-    const tracks = (this._drift!.displacementPx / this._dpt!).toFixed(2);
+    const verdict = this._driftVerdict!;
+    const px = verdict.px.toFixed(1);
+    const tolerance = verdict.tolerancePx.toFixed(1);
+    const tracks = verdict.tracks.toFixed(2);
     const against = this._driftSession?.refName;
     // "against", not "closest match": there is one reference now — the archive's
     // first image — so there is nothing to have been closest among (#118).

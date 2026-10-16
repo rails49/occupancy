@@ -549,24 +549,25 @@ silence #118 was about. And position 0 says "reference" rather than reading `0.0
 *is* the reference" and "measured and found steady" are different claims, and only the first is true
 there.
 
-Measurements are keyed by filename in memory and never stored: a drift verdict is derived, v4 stores
-no derived state (#6), and the archive's images already *are* the pose record. An image absent from
-the map has **not been measured** — which the render distinguishes from measuring zero.
+Measurements are held in memory and never stored: a drift verdict is derived, v4 stores no derived
+state (#6), and the archive's images already *are* the pose record. An image with no row has **not
+been measured** (or its measurement failed) — which the render distinguishes from measuring zero.
 
-Recomputation is scoped to what actually invalidates:
+`ui/src/driftMeasurements.ts` holds them (#167). The editor tells it the image filenames on every
+update and nothing else; it works out what changed itself:
 
-* **archive change, reorder** → full `_sweepDrift()`. A reorder can move the reference, and getting
-  the "did position 0 change" arithmetic subtly wrong would leave stale numbers attributed to the
-  wrong reference — a sweep is idempotent and costs seconds of background work.
-* **add** → `_checkOneImage()`. Appending cannot move position 0, so every measurement still stands;
-  a labeler adding a dozen captures should not pay for the whole archive a dozen times.
-* **delete** → sweep only if position 0 went; otherwise drop that image's row.
+* **a different `images[0]`** → every measurement against the old reference is dropped and every
+  image is measured again. A reorder, a delete of position 0, and an undo or redo of either all look
+  the same from here, which is the point: no path has to remember to say so.
+* **a new filename** → that image alone is measured. Appending cannot move position 0.
+* **a filename gone** → its row is dropped, and measured again if an undo brings it back.
 
-A sweep is guarded by `_driftSweepToken` rather than cancelled: the archive can change under it, and
-a stale result is worse than a missing one because it would name a drift measured against an image
-that is no longer the reference. Nothing here holds a resource, so a token is cheaper and harder to
-get wrong. An uncalibrated layout is not swept at all and shows no row — a fraction of a track width
-needs a track width, and the calibration gate already has the labeler's attention.
+Each result is tagged with the reference it was measured against and dropped if that is no longer
+the reference. Images are measured one at a time, whether or not the layout is calibrated — the pixels
+need no DPT — but no row shows until a DPT resolves, since a fraction of a track width needs a track
+width and the calibration gate already has the labeler's attention. `driftVerdict` in
+`driftSession.ts` turns a measurement and a DPT into the numbers the row and the live view's refusal
+both print.
 
 ### Diagnostics reads the model against the labels (#87)
 

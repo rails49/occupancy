@@ -31,9 +31,9 @@ vi.mock('@occupancy/detector/browser', () => ({
 // the whole of #94. The measurement itself is `lib/drift`'s to prove, and
 // `tools/drift-bench` scores it against the corpus.
 //
-// `maxDriftPx` is the **real** implementation, not a stub. It is pure arithmetic
-// over `MAX_DRIFT_TRACK_FRACTION` and a DPT, and it is the thing that makes the
-// tolerance geometric rather than absolute — stubbing it would leave the suite
+// `maxDriftPx` and `driftVerdict` are the **real** implementations, not stubs. It is pure arithmetic
+// over `MAX_DRIFT_TRACK_FRACTION` and a DPT, and they are what make the
+// tolerance geometric rather than absolute — stubbing them would leave the suite
 // unable to tell a DPT-relative threshold from the fixed pixel count this
 // replaced.
 const check = vi.fn(async () => ({ displacementPx: 0, refIndex: 0 }));
@@ -45,6 +45,7 @@ vi.mock('../src/driftSession.js', async importOriginal => {
   const actual = await importOriginal<typeof import('../src/driftSession.js')>();
   return {
     maxDriftPx: actual.maxDriftPx,
+    driftVerdict: actual.driftVerdict,
     openDriftCheck: (...args: unknown[]) => (openDriftCheck as any)(...args),
     grabPlane: () => ({ width: 4, height: 4, data: new Float32Array(16) }),
   };

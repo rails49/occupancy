@@ -46,6 +46,30 @@ export function maxDriftPx(dpt: number | null): number | null {
   return dpt === null ? null : MAX_DRIFT_TRACK_FRACTION * dpt;
 }
 
+/** A drift measurement judged against the layout's tolerance. */
+export interface DriftVerdict {
+  /** The measured displacement, in `camera.resolution` pixels. */
+  readonly px: number;
+  /** The same displacement in track widths, the unit the tolerance is set in. */
+  readonly tracks: number;
+  /** {@link maxDriftPx} for this layout. */
+  readonly tolerancePx: number;
+  /** Whether the displacement is past the tolerance. Exactly at it passes. */
+  readonly past: boolean;
+}
+
+/**
+ * Judge a drift measurement, for the editor's row and the live view's refusal
+ * alike, so the two cannot disagree about where the line is.
+ *
+ * @returns `null` when `dpt` is `null` — see {@link maxDriftPx}.
+ */
+export function driftVerdict(px: number, dpt: number | null): DriftVerdict | null {
+  const tolerancePx = maxDriftPx(dpt);
+  if (dpt === null || tolerancePx === null) return null;
+  return { px, tracks: px / dpt, tolerancePx, past: px > tolerancePx };
+}
+
 /**
  * A drift check, plus the name of the image it checks against.
  *
@@ -139,8 +163,39 @@ export async function planeFromBytes(bytes: Uint8Array): Promise<GrayPlane> {
 export async function openDriftCheck(archive: R49Archive): Promise<DriftSession | null> {
   const reference = archive.getManifest().images[0];
   if (!reference) return null;
-  const bytes = await archive.getImage(reference.filename);
+  const check = await checkAgainst(archive, reference.filename);
+  return check && { check, refName: reference.filename };
+}
+
+/** A drift check against one image of the archive, or `null` if it has no bytes. */
+async function checkAgainst(archive: R49Archive, filename: string): Promise<DriftCheck | null> {
+  const bytes = await archive.getImage(filename);
   if (!bytes) return null;
   const plane: GrayPlane = await planeFromBytes(bytes);
-  return { check: await createDriftCheck([plane]), refName: reference.filename };
+  return createDriftCheck([plane]);
+}
+
+/**
+ * The editor's measuring function: one image of the archive against another,
+ * by filename, in the reference's pixels.
+ *
+ * The drift check for a reference is built once and kept until a different
+ * reference is asked for, so adding an image costs one decode, not two.
+ *
+ * @throws if either image has no bytes in the archive, or decoding fails
+ */
+export function measureAgainst(
+  archive: R49Archive
+): (reference: string, image: string) => Promise<number> {
+  let cached: { reference: string; check: Promise<DriftCheck | null> } | null = null;
+  return async (reference, image) => {
+    if (cached?.reference !== reference) {
+      cached = { reference, check: checkAgainst(archive, reference) };
+    }
+    const check = await cached.check;
+    if (!check) throw new Error(`drift: reference ${reference} has no image bytes`);
+    const bytes = await archive.getImage(image);
+    if (!bytes) throw new Error(`drift: ${image} has no image bytes`);
+    return (await check.check(await planeFromBytes(bytes))).displacementPx;
+  };
 }

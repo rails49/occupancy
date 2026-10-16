@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fixture, html } from '@open-wc/testing';
 import { R49Archive, getDPT } from '@occupancy/r49';
 import type { CalibrationPoint, CarLabel, Point, Sensor, WorldPoint } from '@occupancy/r49';
-import { EditHistory } from '../src/history.js';
+import { EditHistory, revealTarget } from '../src/history.js';
 import { HIGHLIGHT_DURATION_MS } from '../src/highlight.js';
 import { classChoices, rootClass } from '../src/vocabulary.js';
 import '../src/rr-editor-view.js';
@@ -15,17 +15,14 @@ import type { EditorStateDetail, NotifyDetail } from '../src/rr-editor-view.js';
 import type { SlCheckbox } from '@shoelace-style/shoelace';
 import type { Rect } from '../src/geometry.js';
 
-// The camera and the drift check are both mocked: one needs `getUserMedia` and
-// the other decodes blobs through `createImageBitmap` and reads pixels back out
-// of a canvas, and jsdom has none of the three. What the tests below prove is
-// that a drift verdict reaches the screen and blocks nothing — the measurement
-// is `lib/drift`'s to prove and `tools/drift-bench` scores it.
+// The camera and the drift measurement are both mocked: one needs `getUserMedia`
+// and the other decodes blobs through `createImageBitmap` and reads pixels back
+// out of a canvas, and jsdom has none of the three. What the tests below prove is
+// that a drift verdict reaches the screen and blocks nothing — which image is
+// measured against which is `driftMeasurements.test.ts`'s, the measurement is
+// `lib/drift`'s to prove, and `tools/drift-bench` scores it.
 const captureFromCamera = vi.fn(async () => new Uint8Array([1, 2, 3]));
-const check = vi.fn(async () => ({ displacementPx: 0, refIndex: 0 }));
-const openDriftCheck = vi.fn(async (..._args: unknown[]) => ({
-  check: { check },
-  refName: 'img1.jpg',
-}));
+const check = vi.fn(async (_reference: string, _image: string) => ({ displacementPx: 0 }));
 
 vi.mock('../src/capture.js', () => ({
   DEFAULT_CAMERA_CONSTRAINTS: { video: true, audio: false },
@@ -33,16 +30,15 @@ vi.mock('../src/capture.js', () => ({
   captureFromCamera: () => captureFromCamera(),
 }));
 
-// `maxDriftPx` is the real implementation: it is pure arithmetic over
+// `driftVerdict` is the real implementation: it is pure arithmetic over
 // MAX_DRIFT_TRACK_FRACTION and a DPT, and it is what makes the tolerance
 // geometric rather than an absolute pixel count. Only the IO is stubbed.
 vi.mock('../src/driftSession.js', async importOriginal => {
   const actual = await importOriginal<typeof import('../src/driftSession.js')>();
   return {
-    maxDriftPx: actual.maxDriftPx,
-    openDriftCheck: (...args: unknown[]) => (openDriftCheck as any)(...args),
-    planeFromBytes: async () => ({ width: 4, height: 4, data: new Float32Array(16) }),
-    grabPlane: () => ({ width: 4, height: 4, data: new Float32Array(16) }),
+    driftVerdict: actual.driftVerdict,
+    measureAgainst: () => async (reference: string, image: string) =>
+      (await check(reference, image)).displacementPx,
   };
 });
 
@@ -243,9 +239,7 @@ describe('rr-editor-view', () => {
     beforeEach(() => {
       captureFromCamera.mockClear();
       check.mockClear();
-      openDriftCheck.mockClear();
-      check.mockImplementation(async () => ({ displacementPx: 0, refIndex: 0 }));
-      openDriftCheck.mockImplementation(async () => ({ check: { check }, refName: 'img1.jpg' }));
+      check.mockImplementation(async () => ({ displacementPx: 0 }));
       const manifest = archive.getManifest();
       manifest.layout.calibration = {
         points: [
@@ -280,18 +274,12 @@ describe('rr-editor-view', () => {
       );
     }
 
-    function remove(el: RREditorView, index: number) {
-      el.shadowRoot!.querySelector('rr-thumbnail-bar')!.dispatchEvent(
-        new CustomEvent('rr-image-delete', { detail: { index }, bubbles: true, composed: true })
-      );
-    }
-
     const bar = (el: RREditorView) => el.shadowRoot!.querySelector('.drift-warning');
     /** Amber only: a finding, not the reference row and not a measured-fine row. */
     const warning = (el: RREditorView) =>
       el.shadowRoot!.querySelector('.drift-warning:not(.reference):not(.steady):not(.checking)');
 
-    /** The sweep is deliberately not awaited, so wait for its effect. */
+    /** Measuring is deliberately not awaited, so wait for its effect. */
     async function waitFor(el: RREditorView, done: () => boolean) {
       for (let i = 0; i < 200 && !done(); i++) {
         await new Promise(resolve => setTimeout(resolve, 5));
@@ -322,20 +310,11 @@ describe('rr-editor-view', () => {
       expect(row.textContent).to.match(/drag another thumbnail/i);
     });
 
-    it('measures every other image against the reference, and never the reference itself', async () => {
-      // Three images means two measurements. Asking whether image 0 matches
-      // itself would be asking a question with a fixed answer.
-      const el = await mount();
-
-      expect(check).toHaveBeenCalledTimes(2);
-      expect(el).to.exist;
-    });
-
     it('reports a measurement inside tolerance rather than staying silent', async () => {
       // The property that keeps a user-movable reference honest (#118): if the
       // row appeared only past the tolerance, a reorder could re-point the pose
       // with nothing on screen moving.
-      check.mockImplementation(async () => ({ displacementPx: 6, refIndex: 0 }));
+      check.mockImplementation(async () => ({ displacementPx: 6 }));
       const el = await mount();
 
       select(el, 1);
@@ -350,7 +329,7 @@ describe('rr-editor-view', () => {
     });
 
     it('warns about an image past the tolerance', async () => {
-      check.mockImplementation(async () => ({ displacementPx: 40.4, refIndex: 0 }));
+      check.mockImplementation(async () => ({ displacementPx: 40.4 }));
       const el = await mount();
 
       select(el, 1);
@@ -368,8 +347,18 @@ describe('rr-editor-view', () => {
       expect(row.textContent).to.match(/nothing is blocked/i);
     });
 
+    it('says an image is being measured while it is', async () => {
+      check.mockImplementation(() => new Promise(() => {}));
+      const el = await fixture<RREditorView>(html`
+        <rr-editor-view .archive=${archive}></rr-editor-view>
+      `);
+      select(el, 1);
+      await waitFor(el, () => bar(el)?.classList.contains('checking') ?? false);
+      expect(bar(el)!.textContent).to.match(/measuring this image/i);
+    });
+
     it('blocks nothing — the image stays selectable and labelable', async () => {
-      check.mockImplementation(async () => ({ displacementPx: 60, refIndex: 0 }));
+      check.mockImplementation(async () => ({ displacementPx: 60 }));
       const el = await mount();
       select(el, 1);
       await el.updateComplete;
@@ -383,7 +372,7 @@ describe('rr-editor-view', () => {
     it('keeps each image its own verdict when the user browses away and back', async () => {
       // Persistent, not a toast: it is a property of the image, and it matters at
       // labeling time rather than at capture time.
-      check.mockImplementation(async () => ({ displacementPx: 40, refIndex: 0 }));
+      check.mockImplementation(async () => ({ displacementPx: 40 }));
       const el = await mount();
 
       select(el, 1);
@@ -399,34 +388,6 @@ describe('rr-editor-view', () => {
       expect(warning(el)).to.exist;
     });
 
-    it('re-measures the whole archive when the strip is reordered', async () => {
-      // A reorder can change which image is the reference, which is the design
-      // rather than a hazard (#118) — but only if every number on screen moves
-      // with it. Stale measurements against a former reference would be worse
-      // than none.
-      const el = await mount();
-      const before = check.mock.calls.length;
-
-      reorder(el, 2, 0);
-      await waitFor(el, () => check.mock.calls.length > before);
-
-      expect(check.mock.calls.length).to.be.greaterThan(before);
-    });
-
-    it('measures only the new image on an add, since appending cannot move the reference', async () => {
-      const el = await mount();
-      check.mockClear();
-      openDriftCheck.mockClear();
-
-      addImage(el, 'camera');
-      await waitFor(el, () => check.mock.calls.length > 0);
-
-      // One check, not a re-sweep of the archive: a labeler adding a dozen
-      // captures in a row should not pay for the whole archive a dozen times.
-      expect(check).toHaveBeenCalledTimes(1);
-      expect(archive.getManifest().images).to.have.lengthOf(4);
-    });
-
     it('checks an image picked off the filesystem too', async () => {
       // #95 names the capture path, and a fresh capture is what it was written
       // about — but a file picked from disk is as likely to come from a session
@@ -434,7 +395,7 @@ describe('rr-editor-view', () => {
       // silently trusting what the other checked.
       const el = await mount();
       check.mockClear();
-      check.mockImplementation(async () => ({ displacementPx: 30.5, refIndex: 0 }));
+      check.mockImplementation(async () => ({ displacementPx: 30.5 }));
 
       const create = document.createElement.bind(document);
       const spy = vi.spyOn(document, 'createElement').mockImplementation(((tag: string) => {
@@ -455,27 +416,6 @@ describe('rr-editor-view', () => {
       expect(warning(el)!.textContent).to.contain('30.5 px');
     });
 
-    it('re-measures when the reference image is deleted, and only drops a row otherwise', async () => {
-      const el = await mount();
-
-      // Rebuilding the reference is the signal, not the number of measurements:
-      // deleting down to a single image leaves a valid reference and nothing to
-      // measure against it.
-      openDriftCheck.mockClear();
-
-      // Deleting a non-reference image invalidates nothing.
-      remove(el, 2);
-      await el.updateComplete;
-      await new Promise(resolve => setTimeout(resolve, 30));
-      expect(openDriftCheck).not.toHaveBeenCalled();
-
-      // Deleting position 0 promotes the next image to reference, so every
-      // measurement taken was against an image that no longer defines the pose.
-      remove(el, 0);
-      await waitFor(el, () => openDriftCheck.mock.calls.length > 0);
-      expect(openDriftCheck).toHaveBeenCalled();
-    });
-
     it('says nothing at all on an uncalibrated layout, which has no track width', async () => {
       archive.getManifest().layout.calibration = { points: [] };
 
@@ -488,26 +428,53 @@ describe('rr-editor-view', () => {
       // Not even the reference row: a fraction of a track width needs a track
       // width, and the calibration gate already has the labeler's attention.
       expect(bar(el)).to.not.exist;
-      expect(openDriftCheck).not.toHaveBeenCalled();
     });
 
-    it('leaves no row for an image whose measurement failed', async () => {
-      // Silence beats a fabricated zero. The image is in the archive and
-      // labelable; the console gets the error.
-      openDriftCheck.mockImplementation(async () => {
-        throw new Error('decode failed');
-      });
+    it('measures again when an undo moves the reference image back (#167)', async () => {
+      // Drifted against img3, steady against img1.
+      check.mockImplementation(async reference => ({
+        displacementPx: reference === 'img3.jpg' ? 30 : 5,
+      }));
+      const history = new EditHistory();
+      history.attach(archive);
+      const el = await fixture<RREditorView>(html`
+        <rr-editor-view .archive=${archive} .history=${history}></rr-editor-view>
+      `);
 
+      reorder(el, 2, 0);
+      select(el, 1);
+      await waitFor(el, () => bar(el)?.textContent?.includes('30.0 px') ?? false);
+      expect(bar(el)!.textContent).to.contain('30.0 px');
+
+      // Undo, driven as `rr-app` drives it.
+      el.selectImage(revealTarget(history.undoEntry));
+      const entry = await history.undo();
+      await el.syncFromArchive(revealTarget(entry!), entry!.highlights);
+
+      select(el, 1);
+      await waitFor(el, () => bar(el)?.textContent?.includes('5.0 px') ?? false);
+      expect(archive.getManifest().images[0].filename).to.equal('img1.jpg');
+      expect(bar(el)!.textContent).to.contain('5.0 px');
+    });
+
+    it('measures every image once the second calibration point is placed (#167)', async () => {
+      archive.getManifest().layout.calibration = { points: [] };
+      check.mockImplementation(async () => ({ displacementPx: 6 }));
       const el = await fixture<RREditorView>(html`
         <rr-editor-view .archive=${archive}></rr-editor-view>
       `);
-      await waitFor(el, () => openDriftCheck.mock.calls.length > 0);
+      stubDialog(el);
 
-      select(el, 1);
-      await el.updateComplete;
-      expect(bar(el)).to.not.exist;
-      expect(archive.getManifest().images).to.have.lengthOf(3);
+      await clickAt(el, { x: 0, y: 0 });
+      await commit(el, { x: 0, y: 0, z: 0 });
+      await clickAt(el, { x: 100, y: 0 });
+      await commit(el, { x: 10, y: 0, z: 0 });
+
+      select(el, 2);
+      await waitFor(el, () => bar(el)?.classList.contains('steady') ?? false);
+      expect(bar(el)!.textContent).to.contain('6.0 px');
     });
+
   });
 
   // Car authoring and sensor placement are still absent — they belong to the
