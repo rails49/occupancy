@@ -54,14 +54,22 @@ isolation. Both are configured in `vite.config.ts`; don't drop them.
 
 ### State: props down, events up
 
-`rr-app` owns the single `R49Archive` and the view mode. It passes `.archive` down as a property and
-listens for bubbling `rr-*` events coming up. Every child event is
+`rr-app` owns the view mode and one `EditSession` (`src/editSession.ts`) per archive, created on New
+and Open. It passes `.session` to the editor and the session's `.archive` to the live and diagnostics
+views, and listens for bubbling `rr-*` events coming up. Every child event is
 `new CustomEvent('rr-<verb>', { detail, bubbles: true, composed: true })` — `composed` is required to
 escape the shadow root. Children never reach into the archive's parent or mutate global state.
 
-Lit does not observe mutations *inside* `R49Archive`, so handlers that edit the manifest in place
-call `this.requestUpdate()` (as `rr-app._onLayoutChange` does). Prefer replacing the object where
-practical; call `requestUpdate()` where not.
+The editing rules live in the session, not in `rr-editor-view` (ADR 0017): every write the editor
+makes, the tool and its gate, the chain, drags, the image on screen, hit-testing, and undo and redo.
+The editor turns pointer, dialog and menu events into session calls and keeps what is only for
+display: dialogs and menus and what they are open on, zoom and pan, highlights, blob URLs and drift.
+Add an editing rule to the session and test it in `tests/editSession.test.ts`, without mounting
+anything.
+
+Lit does not observe mutations *inside* `R49Archive`. The session calls its listeners after every
+change, and `rr-app` and the editor re-render on that. Code that edits the manifest outside the
+session (`rr-app._onLayoutChange` today) calls `this.requestUpdate()` itself.
 
 ### Saving is two paths, and the fallback is permanent (#48)
 
@@ -97,9 +105,9 @@ and do not gate a feature on a handle existing.
 
 ### Every manifest mutation goes through `history.record`
 
-`rr-app` owns one `EditHistory` (`src/history.ts`) and passes it down. **Any code that changes
-`ManifestData` must run inside `history.record(label, target, mutate)`** — including the image
-handlers in `rr-editor-view`, which mutate the archive without going through `rr-app` at all.
+Each `EditSession` owns one `EditHistory` (`src/history.ts`). **Any code that changes
+`ManifestData` must run inside `history.record(label, target, mutate)`** — in the session, each write
+picks its own target.
 
 Nothing enforces this. A component that reaches into `.archive` directly still typechecks, still
 renders, and leaves a stack that is *wrong* rather than merely short: undo then reverses the edit
@@ -114,16 +122,18 @@ before it, which is worse than having no undo. Rules, from entries being scoped 
 * An edit that **removes images** must pass `options.retain` with their filenames — the bytes are
   gone from the zip by the time the entry could look for them. Additions are captured automatically.
 * **A drag uses `beginGesture`, not `record`**: a drag mutates on every pointer-move and must still
-  be one Cmd+Z. Snapshot at pointer-down, mutate freely, `commit()` at pointer-up records one entry
+  be one Cmd+Z. Snapshot when the drag starts, mutate freely, `commit()` at pointer-up records one entry
   — or none, when the subtree came back byte-identical. One entry covering several objects falls
   out of the target being a subtree (a coupler drag's two cars share one image record). Undo and
   redo are **refused while a gesture is open** — the drag has already mutated outside the stack —
   so every ending path (a repeated `pointerId`, `disconnectedCallback`, `attach`) must close one.
-* **A reveal is three steps in one order** (#37): `selectImage` on the *pending* entry's image,
-  then the apply, then `syncFromArchive(filename, highlights)`. Undo may move the user; it may never
-  change something they cannot see. The ordering keeps the snapshot from landing while the editor
-  still points at the frame being left — it buys no intermediate paint, since Lit batches the two
-  into one update, so **the highlight is what actually shows the user what moved**.
+  `EditSession.undo` refuses before it selects anything, so an undo pressed mid-drag does not move
+  the user either.
+* **A reveal is three steps in one order** (#37), all in `EditSession.undo` and `redo`: select the
+  *pending* entry's image, apply, then tell the listeners what changed. Undo may move the user; it
+  may never change something they cannot see. The ordering keeps the snapshot from landing while
+  the session still points at the frame being left — it buys no intermediate paint, since Lit
+  batches the two into one update, so **the highlight is what actually shows the user what moved**.
 * **What an entry changed is diffed from its own snapshots**, never declared by the caller —
   `changedObjects` in `history.ts`. The editor holds those candidates as the history gave them and
   **resolves them on every render** — by `id` for a car or sensor, by pixel for a calibration point,
@@ -131,8 +141,8 @@ before it, which is worse than having no undo. Rules, from entries being scoped 
   while the glow is up cannot leave it on a renumbered crosshair. The glow is `highlight.ts`,
   transient by a timer, and view state: it is written nowhere and survives no image change.
 * The rail's Undo and Redo tooltips are **qualified with the image** when the entry lands on another
-  one ("Undo delete car — img_3.jpg"). `rr-app` owns the stack and composes the phrase from the
-  image on screen, which `rr-editor-view` reports on `rr-editor-state`.
+  one ("Undo delete car — img_3.jpg"). `rr-app` composes the phrase from the session's image on
+  screen.
 
 `SPEC.md` § Undo and redo carries the reasoning.
 
@@ -146,20 +156,18 @@ before it, which is worse than having no undo. Rules, from entries being scoped 
 * A chain is **view state**. Its anchor writes nothing, so every way of abandoning one (right-click,
   tool change, image change, a lost DPT, a new archive) costs the manifest and the undo stack
   nothing; the cars already written stay, each on its own entry.
-* The `EditorMode` union is where state-dependent gestures dispatch: `idle` opens the context menu,
-  `placing-car` ends the chain.
+* `EditSession.rightClick` and `undo` are the state-dependent gestures: with no chain, right-click
+  names a menu subject and undo goes to the stack; with a chain live, right-click ends it and undo
+  stays inside it.
 * The **rubber band** (`rr-viewer`'s `pendingCar`) draws the whole car it would commit, rectangle
   included — the rectangle is the only feedback that a label covers the car. The cursor is tracked
   **only** while a chain is live. On touch there is no cursor between taps, so the band is just the
   anchor's handle — a platform limit, not a gap to close, but worth knowing since the labeling
   device is a phone.
-* **Undo is intercepted** through `rr-editor-view.interceptUndo()`, which `rr-app` awaits before
-  touching the stack (`rr-app` owns undo and cannot see chain state). A live chain consumes
-  **every** undo: further along it undoes the last car and walks the anchor back — but only if
-  that undo actually removed the chain's car — and at the chain's start it clears the anchor and
-  touches no history. Known cosmetic lag: the rail's Undo label reads the stack's `undoLabel`
-  and does not know about this wall; fixing it means adding chain state to `rr-editor-state`, which
-  no ticket asks for.
+* **A live chain consumes every undo** (`EditSession.undo`): further along it undoes the last car
+  and walks the anchor back — but only if that undo actually removed the chain's car — and at the
+  chain's start it clears the anchor and touches no history. Redo ends a live chain. Known cosmetic
+  lag: the rail's Undo label reads the stack's `undoLabel` and does not show this wall.
 * A **coupling renders as one shared handle**, derived by `rr-viewer` from exact coincidence
   (`geometry.ts` § `couplerPoints` — the same rule the hit-test grabs by); the cars leave their own
   handles off at those ends. Dragging it is one entry moving every end under it.
@@ -193,8 +201,8 @@ class anywhere in `ui/` breaks the config→menu path while still typechecking. 
 `labeled_complete` is the only place in the format where a human asserts something about **absence**
 — no car in this image is unlabeled — and it is the one gate on detector training.
 
-* `rr-editor-view._onCompleteToggle` is the **only** place `true` is ever written, one history entry
-  per toggle. Nothing computed may stand in for it: an image whose labels are all `proposed` is
+* `EditSession.setComplete` is the **only** place `true` is ever written, one history entry per
+  toggle, and the editor calls it only from the checkbox. Nothing computed may stand in for it: an image whose labels are all `proposed` is
   byte-identical whether the user checked every one or clicked accept-all blind, so an accept-all
   must never set it.
 * **Deleting a car clears the flag, in the same entry** (`SPEC.md` § Labeling completeness). Nothing
@@ -215,7 +223,7 @@ class anywhere in `ui/` breaks the config→menu path while still typechecking. 
   feedback a label covers the car.
 * The gate is on **existence, never completion** (`SPEC.md` § Labeling Workflow): `getDPT` returning
   a number *is* the gate. It is enforced twice on purpose — the rail disables the buttons, and
-  `rr-editor-view.willUpdate` demotes a live tool back to calibration — because DPT can vanish
+  the session demotes a live tool back to calibration after every change — because DPT can vanish
   through an **undo**, which `rr-app` applies straight into the archive with no editor handler
   seeing it.
 * The **sensor** tool is gated with the car tool, one step beyond `SPEC.md` § Labeling Workflow — a
@@ -248,7 +256,7 @@ The same component backs the editor (`src` → `<img>`) and the live view (`stre
   is the authored frame) — **never a hand-rolled subtraction of `getBoundingClientRect()`**, which
   ignores the letterbox and is right only when the viewport matches the image's aspect ratio. The
   same matrix yields `imagePxPerScreenPx`, which converts grab radii and measures `symbolSize`.
-  Deciding what a gesture means is the editor's job; the arithmetic is in `geometry.ts`. The v3
+  Deciding what a gesture means is `EditSession`'s job; the arithmetic is in `geometry.ts`. The v3
   machinery that mutated does not come back.
 * `symbolSize = SYMBOL_SIZE_SCREEN_PX / ctm.a`, recomputed by a `ResizeObserver` off the **content
   group's** CTM (a ratio from the SVG's bounding rect is wrong by the letterbox), keeps annotations
@@ -323,16 +331,16 @@ that happens to need it first. Rules it encodes, each wrong somewhere if reimple
 
 ### Right-click is a state branch, and the menu knows nothing
 
-* `rr-editor-view` dispatches `rr-pointer-contextmenu` through the `EditorMode` switch: context menu
-  when idle, end-the-chain while chaining (`SPEC.md` § Right-click is state-dependent). Undo is
-  state-dependent against the same states, through `interceptUndo()`.
+* `rr-editor-view` hands `rr-pointer-contextmenu` to `EditSession.rightClick`: a subject for the
+  menu when idle, end-the-chain while chaining (`SPEC.md` § Right-click is state-dependent). Undo is
+  state-dependent against the same states, inside `EditSession.undo`.
 * The native menu is suppressed **in the editor, not in `rr-viewer`**, and for every right-click —
   inside the labeling surface the gesture is the editor's whatever it lands on. `rr-live-view`
   shares the viewer, does not listen, and keeps the browser's menu.
 * `rr-context-menu` renders rows and reports which was chosen; it never learns what the object is.
-  The editor hit-tests and names subject *and* rows together in one `menuFor` switch — an object it
-  cannot name a verb for opens no menu at all.
-* **A car's subject is its body, and the subject is one object** (#45). `menuFor` resolves it
+  The session names the subject and the editor maps it to rows (`itemsFor`); empty image opens no
+  menu at all.
+* **A car's subject is its body, and the subject is one object** (#45). `rightClick` resolves it
   **topmost drawn first**: `hitTest` for sensors and calibration points only, then `carUnderPointer`
   for the area. Car ends are not asked about at all — a shared handle is two cars at one pixel, so a
   hit there must fall through to the area or right-clicking a joint opens nothing — and a sensor
@@ -344,7 +352,7 @@ that happens to need it first. Rules it encodes, each wrong somewhere if reimple
   `HitTarget` means *what a gesture can grab*, and a body grabs nothing.
 * Delete is **one entry scoped to what it deletes**: `layout` for a point or sensor, that image's
   record for a car. A calibration-point subject carries the pixel it was opened on
-  (`_pointIsStillAt`, the same staleness guard the calibration dialog uses) — an undo landing while
+  (`_pointIsStillAt` in the session, the same staleness guard the calibration dialog uses) — an undo landing while
   either is up can slide an index onto another point. Cars and sensors carry an `id` and need no
   guard.
 * Right-click shares the pointer stream with the left button: the editor **ignores presses and
@@ -706,9 +714,8 @@ opens a bump pull request here
   once Save would overwrite it, and `look-gear` for the settings dialog. `look-rail` holds the three
   views, then, in the editor only, File, History and, while a manifest is loaded, Tools. Live and
   Diagnostics have the views alone.
-* The rail is `rr-app`'s and the tool state is the editor's. The editor reports
-  `{ tool, calibrated, image }` on `rr-editor-state` when one of them changes, and `rr-app` hands a
-  chosen tool back through `selectTool`.
+* The rail is `rr-app`'s and the tool state is the session's. The rail reads the tool, whether DPT
+  resolves and the image on screen from the session, and a press calls `session.selectTool`.
 * Status text is a toast, `rr-app`'s own `sl-alert`. There is no unsaved mark and no source link.
 * The settings, calibration and sensor dialogs are `look-dialog`s (`medium`, `small`, `small`),
   still opened with `show()`. The discard confirm stays `window.confirm`.

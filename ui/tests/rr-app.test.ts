@@ -66,7 +66,7 @@ describe('rr-app', () => {
   // error to refuse a save over (#19, SPEC.md § Reference points).
   it('saves an uncalibrated archive without complaint', async () => {
     const el = await fixture<RRApp>(html`<rr-app></rr-app>`);
-    (el as any)._archive = archive;
+    (el as any)._open(archive);
 
     const exportSpy = vi.spyOn(archive, 'export').mockResolvedValue(new Uint8Array());
     const notifySpy = vi.spyOn(el as any, '_notify');
@@ -89,7 +89,7 @@ describe('rr-app', () => {
   // an archive that has never been saved.
   it('names the download after the opened file, not the layout', async () => {
     const el = await fixture<RRApp>(html`<rr-app></rr-app>`);
-    (el as any)._archive = archive;
+    (el as any)._open(archive);
     (el as any)._binding = { stem: 'west-yard' };
 
     vi.spyOn(archive, 'export').mockResolvedValue(new Uint8Array());
@@ -108,9 +108,9 @@ describe('rr-app', () => {
   // permanently dirty and make the discard gate cry wolf on every New.
   it('marks the history saved on the fallback path', async () => {
     const el = await fixture<RRApp>(html`<rr-app></rr-app>`);
-    (el as any)._archive = archive;
+    (el as any)._open(archive);
     vi.spyOn(archive, 'export').mockResolvedValue(new Uint8Array());
-    const markSaved = vi.spyOn((el as any)._history as EditHistory, 'markSaved');
+    const markSaved = vi.spyOn((el as any)._session.history as EditHistory, 'markSaved');
 
     await (el as any)._onFileSave();
 
@@ -119,13 +119,13 @@ describe('rr-app', () => {
 
   it('leaves the history dirty when the save picker is dismissed', async () => {
     const el = await fixture<RRApp>(html`<rr-app></rr-app>`);
-    (el as any)._archive = archive;
+    (el as any)._open(archive);
     vi.spyOn(archive, 'export').mockResolvedValue(new Uint8Array());
     (window as any).showSaveFilePicker = vi
       .fn()
       .mockRejectedValue(new DOMException('dismissed', 'AbortError'));
 
-    const markSaved = vi.spyOn((el as any)._history as EditHistory, 'markSaved');
+    const markSaved = vi.spyOn((el as any)._session.history as EditHistory, 'markSaved');
     const notifySpy = vi.spyOn(el as any, '_notify');
 
     await (el as any)._onFileSave();
@@ -139,7 +139,7 @@ describe('rr-app', () => {
     // The editor states its refusals but owns no place to put them; toasts
     // live here. A refusal is a warning, never a danger — nothing failed.
     const el = await fixture<RRApp>(html`<rr-app></rr-app>`);
-    (el as any)._archive = archive;
+    (el as any)._open(archive);
     await el.updateComplete;
     const notify = vi.spyOn(el as any, '_notify');
 
@@ -158,48 +158,8 @@ describe('rr-app', () => {
     );
   });
 
-  describe('undo, offered to the editor first', () => {
-    /** An app showing the editor, with the editor's interception stubbed. */
-    async function mount(intercepts: boolean) {
-      const el = await fixture<RRApp>(html`<rr-app></rr-app>`);
-      (el as any)._archive = archive;
-      await el.updateComplete;
-      const view = el.renderRoot.querySelector('rr-editor-view')!;
-      const intercept = vi.spyOn(view, 'interceptUndo').mockResolvedValue(intercepts);
-      const undo = vi.spyOn((el as any)._history, 'undo');
-      return { el, intercept, undo };
-    }
-
-    it('leaves the stack alone when a live chain consumes it', async () => {
-      // A live chain is a wall undo cannot cross (SPEC.md § Undo and redo).
-      const { el, intercept, undo } = await mount(true);
-
-      await (el as any)._undo();
-
-      expect(intercept).toHaveBeenCalled();
-      expect(undo).not.toHaveBeenCalled();
-    });
-
-    it('goes to the stack when the editor does not consume it', async () => {
-      const { el, intercept, undo } = await mount(false);
-
-      await (el as any)._undo();
-
-      expect(intercept).toHaveBeenCalled();
-      expect(undo).toHaveBeenCalled();
-    });
-
-    it('offers redo to nobody — only undo is state-dependent', async () => {
-      const { el, intercept } = await mount(true);
-
-      await (el as any)._redo();
-
-      expect(intercept).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('the reveal after an undo (#37)', () => {
-    /** An app on an archive of two images, with one car on the second. */
+  describe('undo and redo', () => {
+    /** An app on an archive of two images, showing the first, with a car placed on the second. */
     async function mountWithEdit() {
       archive.setManifest({
         version: 4,
@@ -211,14 +171,10 @@ describe('rr-app', () => {
         ],
       });
       const el = await fixture<RRApp>(html`<rr-app></rr-app>`);
-      (el as any)._archive = archive;
-      const history = (el as any)._history as EditHistory;
-      history.attach(archive);
-      await el.updateComplete;
-
-      const image = archive.getManifest().images[1];
+      (el as any)._open(archive);
+      const history = (el as any)._session.history as EditHistory;
       await history.record('place car', { kind: 'image', filename: 'img2.jpg' }, () => {
-        image.labels = [
+        archive.getManifest().images[1].labels = [
           {
             id: 'car-a',
             class: 'stock',
@@ -228,48 +184,43 @@ describe('rr-app', () => {
           },
         ];
       });
-
-      // The editor says so after every edit it records; the record above went
-      // straight to the stack, so the affordances are told here instead.
-      const view = el.renderRoot.querySelector('rr-editor-view')!;
-      view.dispatchEvent(new CustomEvent('rr-history-change', { bubbles: true, composed: true }));
+      el.requestUpdate();
       await el.updateComplete;
-
+      const view = el.renderRoot.querySelector('rr-editor-view')!;
+      await view.updateComplete;
       return { el, history, view };
     }
 
-    it('selects the image before the snapshot lands, then reveals it', async () => {
-      // The order the navigation invariant states: undo may move the user, but
-      // it may never change something they cannot see (SPEC.md § Undo and redo).
+    const selectedIndex = (view: Element) =>
+      view.shadowRoot!.querySelector('rr-thumbnail-bar')!.selectedIndex;
+
+    it('shows the image an undo changed', async () => {
       const { el, history, view } = await mountWithEdit();
-      const select = vi.spyOn(view, 'selectImage');
-      const undo = vi.spyOn(history, 'undo');
-      const sync = vi.spyOn(view, 'syncFromArchive');
 
       await (el as any)._undo();
+      await view.updateComplete;
 
-      expect(select).toHaveBeenCalledWith('img2.jpg');
-      expect(select.mock.invocationCallOrder[0]).toBeLessThan(undo.mock.invocationCallOrder[0]);
-      expect(undo.mock.invocationCallOrder[0]).toBeLessThan(sync.mock.invocationCallOrder[0]);
+      expect(archive.getManifest().images[1].labels).toEqual([]);
+      expect(history.canRedo).toBe(true);
+      expect(selectedIndex(view)).toBe(1);
     });
 
-    it('hands the editor what the entry changed, to highlight', async () => {
+    it('highlights what a redo brought back', async () => {
       const { el, view } = await mountWithEdit();
-      const sync = vi.spyOn(view, 'syncFromArchive');
-
       await (el as any)._undo();
-
-      expect(sync).toHaveBeenCalledWith('img2.jpg', [{ kind: 'car', id: 'car-a' }]);
-    });
-
-    it('does the same on redo', async () => {
-      const { el, history, view } = await mountWithEdit();
-      await history.undo();
-      const sync = vi.spyOn(view, 'syncFromArchive');
+      view.shadowRoot!.querySelector('rr-thumbnail-bar')!.dispatchEvent(
+        new CustomEvent('rr-image-select', { detail: { index: 0 }, bubbles: true, composed: true })
+      );
 
       await (el as any)._redo();
+      await view.updateComplete;
 
-      expect(sync).toHaveBeenCalledWith('img2.jpg', [{ kind: 'car', id: 'car-a' }]);
+      expect(selectedIndex(view)).toBe(1);
+      expect(view.shadowRoot!.querySelector('rr-viewer')!.highlight).toEqual({
+        cars: ['car-a'],
+        sensors: [],
+        calibration: [],
+      });
     });
   });
 
@@ -281,9 +232,8 @@ describe('rr-app', () => {
     /** An app whose history has one unsaved edit on it. */
     async function mountDirty() {
       const el = await fixture<RRApp>(html`<rr-app></rr-app>`);
-      (el as any)._archive = archive;
-      const history = (el as any)._history as EditHistory;
-      history.attach(archive);
+      (el as any)._open(archive);
+      const history = (el as any)._session.history as EditHistory;
       await history.record('rename layout', { kind: 'layout' }, () => {
         archive.getManifest().layout.name = 'Renamed';
       });
@@ -305,7 +255,7 @@ describe('rr-app', () => {
 
     it('lets a clean session close silently', async () => {
       const el = await fixture<RRApp>(html`<rr-app></rr-app>`);
-      (el as any)._archive = archive;
+      (el as any)._open(archive);
 
       expect(fireBeforeUnload().defaultPrevented).toBe(false);
     });
@@ -323,7 +273,7 @@ describe('rr-app', () => {
 
   it('reports a save failure', async () => {
     const el = await fixture<RRApp>(html`<rr-app></rr-app>`);
-    (el as any)._archive = archive;
+    (el as any)._open(archive);
 
     vi.spyOn(archive, 'export').mockRejectedValue(new Error('disk full'));
     const notifySpy = vi.spyOn(el as any, '_notify');

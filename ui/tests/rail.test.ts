@@ -51,10 +51,7 @@ async function settle(el: RRApp) {
 
 async function mount(open: R49Archive | null = archive) {
   const el = await fixture<RRApp>(html`<rr-app></rr-app>`);
-  if (open) {
-    (el as any)._archive = open;
-    ((el as any)._history as EditHistory).attach(open);
-  }
+  if (open) (el as any)._open(open);
   await settle(el);
   return el;
 }
@@ -165,7 +162,7 @@ describe('History', () => {
   /** An app on the first image, with one car placed on the second. */
   async function mountWithEdit() {
     const el = await mount();
-    const history = (el as any)._history as EditHistory;
+    const history = (el as any)._session.history as EditHistory;
     await history.record('place car', { kind: 'image', filename: 'img2.jpg' }, () => {
       archive.getManifest().images[1].labels = [
         { id: 'car-a', class: 'stock', provenance: 'human', p0: { x: 10, y: 10 }, p1: { x: 200, y: 10 } },
@@ -199,7 +196,7 @@ describe('History', () => {
 
   it('says only the edit when it lands on the image on screen', async () => {
     const { el } = await mountWithEdit();
-    el.renderRoot.querySelector('rr-editor-view')!.selectImage('img2.jpg');
+    (el as any)._session.selectImage('img2.jpg');
     await settle(el);
 
     expect(command(el, 'edit-undo').label).toBe('Undo place car');
@@ -207,7 +204,7 @@ describe('History', () => {
 
   it('says only the edit for a layout-scoped entry, which has no image', async () => {
     const el = await mount();
-    const history = (el as any)._history as EditHistory;
+    const history = (el as any)._session.history as EditHistory;
     await history.record('rename layout', { kind: 'layout' }, () => {
       archive.getManifest().layout.name = 'Renamed';
     });
@@ -249,14 +246,14 @@ describe('Tools', () => {
     expect(command(el, 'tool-sensor').pressed).toBe(false);
   });
 
-  it('hands the chosen tool to the editor, and marks what the editor reports', async () => {
+  it('hands the chosen tool to the session, and marks it', async () => {
     calibrate();
     const el = await mount();
 
     press(command(el, 'tool-sensor'));
     await settle(el);
 
-    expect(el.renderRoot.querySelector('rr-editor-view')!.railState.tool).toBe('sensor');
+    expect((el as any)._session.tool).toBe('sensor');
     expect(command(el, 'tool-sensor').pressed).toBe(true);
     expect(command(el, 'tool-calibration').pressed).toBe(false);
   });

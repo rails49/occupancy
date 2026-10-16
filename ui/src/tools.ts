@@ -9,7 +9,7 @@ export type EditorTool = 'calibration' | 'sensor' | 'car';
 /**
  * One tool's presentation, and whether calibration gates it.
  *
- * One list drives the rail's buttons and the editor's gate, so a tool cannot be
+ * One list drives the rail's buttons and the session's gate, so a tool cannot be
  * rendered enabled and dispatched as disabled — the two would be the same bug
  * the gate exists to prevent, one layer down.
  */

@@ -3,8 +3,8 @@ import type { R49Archive, CalibrationPoint, Image, Layout, Point } from '@occupa
 /**
  * Undo/redo for the editor, as scoped snapshots of the manifest.
  *
- * A plain module, not an element: `rr-app` owns one instance and passes it down
- * (see `ui/README.md` § State and data flow). It deliberately does **not** live
+ * A plain module, not an element: each `EditSession` owns one instance (see
+ * `ui/README.md` § State and data flow). It deliberately does **not** live
  * in `@occupancy/r49` — that package is a parser/serializer, and an edit history
  * is an editing-session concept, coupled here to view state that means nothing
  * to the training exporter or to `fixtures.test.ts`.
@@ -85,13 +85,12 @@ export interface HistoryEntry {
  * when it touches nothing image-scoped.
  *
  * The navigation invariant in one function (`SPEC.md` § Undo and redo): undo may
- * move the user, but it may never change something they cannot see. Two callers
- * need it — `rr-app` for an ordinary undo, `rr-editor-view` for the one a live
- * chain intercepts — and one rule stated twice is one rule that can drift.
+ * move the user, but it may never change something they cannot see.
+ * `EditSession` asks it before every undo and redo.
  *
- * `null` is accepted because the callers ask it of a *pending* entry as well as
- * of a completed one, and an empty stack has none: "no entry" and "an entry
- * about no image" both mean "do not move the user".
+ * `null` is accepted because it is asked of the *pending* entry, and an empty
+ * stack has none: "no entry" and "an entry about no image" both mean "do not
+ * move the user".
  */
 export function revealTarget(entry: HistoryEntry | null): string | undefined {
   return entry?.target.kind === 'image' ? entry.target.filename : undefined;
