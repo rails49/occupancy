@@ -68,9 +68,8 @@ Add an editing rule to the session and test it in `tests/editSession.test.ts`, w
 anything.
 
 Lit does not observe mutations *inside* `R49Archive`. The session calls its listeners after every
-change, and `rr-app` and the editor re-render on that. Code that edits the manifest outside the
-session (`rr-app._onLayoutChange` and `_onCameraHeightChange` today) calls `this.requestUpdate()`
-itself.
+change, and `rr-app` and the editor re-render on that. The settings dialog's edits go through the
+session too (`editLayout`, `setCameraHeight`), so nothing edits the manifest outside it.
 
 ### Saving is two paths, and the fallback is permanent (#48)
 

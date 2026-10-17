@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { fixture, fixtureCleanup, html } from '@open-wc/testing';
 import '../src/rr-app.js';
 import { RRApp } from '../src/rr-app.js';
-import { R49Archive } from '@occupancy/r49';
+import { R49Archive, getDPT } from '@occupancy/r49';
 import type { NotifyDetail } from '../src/rr-editor-view.js';
 import type { EditHistory } from '../src/history.js';
 
@@ -69,7 +69,7 @@ describe('rr-app', () => {
     (el as any)._open(archive);
 
     const exportSpy = vi.spyOn(archive, 'export').mockResolvedValue(new Uint8Array());
-    const notifySpy = vi.spyOn(el as any, '_notify');
+    const notifySpy = vi.spyOn(el as any, '_notify').mockImplementation(() => {});
 
     await (el as any)._onFileSave();
 
@@ -93,7 +93,7 @@ describe('rr-app', () => {
     (el as any)._binding = { stem: 'west-yard' };
 
     vi.spyOn(archive, 'export').mockResolvedValue(new Uint8Array());
-    const notifySpy = vi.spyOn(el as any, '_notify');
+    const notifySpy = vi.spyOn(el as any, '_notify').mockImplementation(() => {});
 
     await (el as any)._onFileSave();
 
@@ -126,7 +126,7 @@ describe('rr-app', () => {
       .mockRejectedValue(new DOMException('dismissed', 'AbortError'));
 
     const markSaved = vi.spyOn((el as any)._session.history as EditHistory, 'markSaved');
-    const notifySpy = vi.spyOn(el as any, '_notify');
+    const notifySpy = vi.spyOn(el as any, '_notify').mockImplementation(() => {});
 
     await (el as any)._onFileSave();
 
@@ -141,7 +141,7 @@ describe('rr-app', () => {
     const el = await fixture<RRApp>(html`<rr-app></rr-app>`);
     (el as any)._open(archive);
     await el.updateComplete;
-    const notify = vi.spyOn(el as any, '_notify');
+    const notify = vi.spyOn(el as any, '_notify').mockImplementation(() => {});
 
     el.renderRoot.querySelector('rr-editor-view')!.dispatchEvent(
       new CustomEvent<NotifyDetail>('rr-notify', {
@@ -224,6 +224,57 @@ describe('rr-app', () => {
     });
   });
 
+  describe('settings edits', () => {
+    /** An app on a calibrated archive, showing the editor. */
+    async function mountCalibrated() {
+      archive.getManifest().layout.calibration.points = [
+        { px: { x: 0, y: 0 }, world: { x: 0, y: 0, z: 0 } },
+        { px: { x: 100, y: 0 }, world: { x: 10, y: 0, z: 0 } },
+      ];
+      const el = await fixture<RRApp>(html`<rr-app></rr-app>`);
+      (el as any)._open(archive);
+      await el.updateComplete;
+      const view = el.renderRoot.querySelector('rr-editor-view')!;
+      await view.updateComplete;
+      return { el, view };
+    }
+
+    const readout = (view: Element) => view.shadowRoot!.querySelector('.dpt-bar')!.textContent!;
+
+    it('re-renders the editor after a scale edit, so the DPT readout follows', async () => {
+      const { el, view } = await mountCalibrated();
+      expect(readout(view)).toContain('DPT 89.7');
+
+      el.renderRoot.querySelector('rr-settings-dialog')!.dispatchEvent(
+        new CustomEvent('rr-layout-change', { detail: { layout: { scale: 'HO' } } })
+      );
+      await new Promise(resolve => setTimeout(resolve, 0));
+      await view.updateComplete;
+
+      expect(archive.getManifest().layout.scale).toBe('HO');
+      expect(readout(view)).toContain(`DPT ${getDPT(archive.getManifest())!.toFixed(1)}`);
+      expect(readout(view)).not.toContain('DPT 89.7');
+    });
+
+    it('re-renders the editor after a camera-height edit', async () => {
+      // Points above the reference plane resolve DPT only once a camera height is known.
+      const { el, view } = await mountCalibrated();
+      for (const point of archive.getManifest().layout.calibration.points) point.world.z = 10;
+      view.requestUpdate();
+      await view.updateComplete;
+      expect(readout(view)).toContain('Not calibrated');
+
+      el.renderRoot.querySelector('rr-settings-dialog')!.dispatchEvent(
+        new CustomEvent('rr-camera-height-change', { detail: { camera_height_mm: 1000 } })
+      );
+      await new Promise(resolve => setTimeout(resolve, 0));
+      await view.updateComplete;
+
+      expect(archive.getManifest().layout.calibration.camera_height_mm).toBe(1000);
+      expect(readout(view)).toContain(`DPT ${getDPT(archive.getManifest())!.toFixed(1)}`);
+    });
+  });
+
   // These prove the listener is registered and reads `isDirty`, and nothing
   // more. No browser here renders a leave-site dialog — jsdom dispatches the
   // event and records `defaultPrevented`, exactly as the viewer's CTM stub and
@@ -276,7 +327,7 @@ describe('rr-app', () => {
     (el as any)._open(archive);
 
     vi.spyOn(archive, 'export').mockRejectedValue(new Error('disk full'));
-    const notifySpy = vi.spyOn(el as any, '_notify');
+    const notifySpy = vi.spyOn(el as any, '_notify').mockImplementation(() => {});
 
     await (el as any)._onFileSave();
 

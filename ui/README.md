@@ -146,11 +146,11 @@ rr-app ─────────── rr-editor-view ────────
 
 * **`rr-app` owns:** the session, the view mode, the band and the rail, and file new/open/save.
 * **The `EditSession` owns:** the archive and its **undo history**, the image on screen, **the
-  active tool**, the **chain in progress**, and the open drag. Every manifest write the editor
-  makes is one of its methods, and each goes through `history.record` (or one `beginGesture` per
-  drag). A chain in progress writes nothing until the click that closes a car on it, so abandoning
-  one leaves both the manifest and the stack untouched — however many cars the chain already wrote,
-  since each of those is its own committed entry.
+  active tool**, the **chain in progress**, and the open drag. Every manifest write the editor and
+  the settings dialog make is one of its methods, and each goes through `history.record` (or one
+  `beginGesture` per drag). A chain in progress writes nothing until the click that closes a car on
+  it, so abandoning one leaves both the manifest and the stack untouched — however many cars the
+  chain already wrote, since each of those is its own committed entry.
 * **`rr-editor-view` owns:** blob URLs for the images, the cursor the rubber band follows, the
   dialog or menu that is open and what it is open on, the highlight after an undo, and the drift
   readout. It also owns the one control that sets `labeled_complete`, which is the only place in the
@@ -174,8 +174,8 @@ rr-app ─────────── rr-editor-view ────────
   geometric consequence of the detector's boxes and there is nothing for a second model to say.
 
 Lit does not observe mutations *inside* `R49Archive`. The session tells its listeners after every
-change, which is what re-renders the editor and the rail; `rr-app`'s settings handlers, which still
-write through `session.history` directly, call `this.requestUpdate()` themselves.
+change, which is what re-renders the editor and the rail, including after a settings edit
+(`editLayout`, `setCameraHeight`).
 
 **Every manifest mutation goes through `history.record`** (see `history.ts`), so an edit made by
 reaching into the archive directly leaves an undo stack that is wrong rather than short.
@@ -1013,6 +1013,7 @@ it gets the objects the entry changed.
 | `beginDrag(point, scale)` | A `Drag` (`move`, `end`, `cancel`) on what is under the point, or null |
 | `rightClick(point, scale)` | Ends a live chain, or returns the `MenuSubject` a menu acts on |
 | `placeReferencePoint`, `editReferencePoint`, `nameSensor`, `delete`, `reclassifyCar`, `setComplete` | The answers to a dialog, a menu row or the checkbox |
+| `editLayout`, `setCameraHeight` | The settings dialog's edits, one `layout` entry each |
 | `addImage`, `deleteImage`, `reorderImages` | The image list. Deleting the image on screen shows its neighbour |
 | `undo`, `redo` | Select the image the entry is on, apply it, and report what changed |
 | `subscribe(listener)` | Returns a function that stops it |

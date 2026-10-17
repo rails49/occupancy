@@ -5,7 +5,7 @@ import '@rails49/look';
 import '@rails49/look/look.css';
 import { lookTheme, type LookPressDetail, type LookViewDetail } from '@rails49/look';
 import { missingLayoutMetadata } from './requiredMetadata.js';
-import { EditSession } from './editSession.js';
+import { EditSession, type LayoutSettings } from './editSession.js';
 import { revealTarget, type HistoryEntry } from './history.js';
 import { openArchive, supportsFileSystemAccess, writeArchive, type FileBinding } from './persistence.js';
 // Shared with the diagnostics queue, which binds bare keys to `window` too —
@@ -301,37 +301,13 @@ export class RRApp extends LitElement {
     this._viewMode = e.detail.name as ViewMode;
   }
 
-  private async _onLayoutChange(e: CustomEvent) {
-    if (!this._session) return;
-    const manifest = this._session.archive.getManifest();
-    const field = Object.keys(e.detail.layout)[0] ?? 'layout';
-    await this._session.history.record(`edit ${field}`, { kind: 'layout' }, () => {
-      manifest.layout = { ...manifest.layout, ...e.detail.layout };
-    });
-    this.requestUpdate();
+  /** The settings dialog's edits. */
+  private async _onLayoutChange(e: CustomEvent<{ layout: LayoutSettings }>) {
+    await this._session?.editLayout(e.detail.layout);
   }
 
-  /**
-   * The camera height, applied where it lives. It arrives on its own event
-   * rather than through `rr-layout-change` because it sits inside
-   * `calibration`, and spreading that object in from the dialog would carry a
-   * copy of `points` with it — stale the moment anything else edits them.
-   *
-   * `undefined` deletes the key rather than storing it: the schema is
-   * `.optional()` and never `.default()`, so an absent height must stay absent
-   * in the bytes (#139).
-   */
   private async _onCameraHeightChange(e: CustomEvent<{ camera_height_mm: number | undefined }>) {
-    if (!this._session) return;
-    const manifest = this._session.archive.getManifest();
-    const height = e.detail.camera_height_mm;
-    await this._session.history.record('edit camera height', { kind: 'layout' }, () => {
-      const calibration = { ...manifest.layout.calibration };
-      if (height === undefined) delete calibration.camera_height_mm;
-      else calibration.camera_height_mm = height;
-      manifest.layout = { ...manifest.layout, calibration };
-    });
-    this.requestUpdate();
+    await this._session?.setCameraHeight(e.detail.camera_height_mm);
   }
 
   /**
