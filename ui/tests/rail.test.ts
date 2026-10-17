@@ -63,7 +63,7 @@ const groups = (el: RRApp) =>
 
 /** A press as a person makes one: a click on the button inside the command. */
 function press(cmd: LookCommand, init: MouseEventInit = {}) {
-  cmd.shadowRoot!.querySelector('sl-icon-button')!.dispatchEvent(
+  cmd.shadowRoot!.querySelector('button')!.dispatchEvent(
     new MouseEvent('click', { bubbles: true, composed: true, ...init })
   );
 }
