@@ -191,7 +191,7 @@ Which model ships is named **once**, in `ui/modelAssets.ts`: `ui/vite.config.ts`
 
 ### Deploy
 
-`bin/deploy.sh` regenerates `config.json`, builds the UI, runs `bin/check-deploy-dir.sh` (below — a refusal there uploads nothing), and pushes `ui/dist/` to the Cloudflare Pages project `occupancy-rails49` via `wrangler`. Credentials come from the environment or 1Password (`op://rails49/Cloudflare Pages/…`).
+`bin/deploy.sh` refuses to run unless the checkout is a clean `origin/main` (`bin/check-deploy-source.sh`, tested by `ui/tests/deploySource.test.ts`), then regenerates `config.json`, builds the UI, runs `bin/check-deploy-dir.sh` (below — a refusal there uploads nothing), and pushes `ui/dist/` to the Cloudflare Pages project `occupancy-rails49` via `wrangler`. Credentials come from the environment or 1Password (`op://rails49/Cloudflare Pages/…`).
 
 The app has an origin of its own, `occupancy.rails49.org`, and the deploy directory is the build output itself (rails49/control#47). It used to share the apex with a landing page, which is why it built under a `/ui/` base and staged into a tracked `rails49.org/` directory. The landing page now lives in `rails49/rails49.org`, `_headers` ships from `ui/public/`, and there is no staging copy — so `vite`'s emptying of `dist/` is what keeps unaccounted files out, rather than an `rsync --delete` that only covered part of the tree.
 

@@ -4,6 +4,9 @@ set -e
 # Set working directory to project root (parent of bin/)
 cd "$(dirname "$0")/.."
 
+echo "🔍 Checking that the checkout is origin/main..."
+bin/check-deploy-source.sh
+
 # Build config.json locally
 echo "🔧 Generating config.json from config.yaml..."
 if [ ! -f "config.yaml" ]; then
