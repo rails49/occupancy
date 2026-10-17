@@ -69,7 +69,8 @@ anything.
 
 Lit does not observe mutations *inside* `R49Archive`. The session calls its listeners after every
 change, and `rr-app` and the editor re-render on that. Code that edits the manifest outside the
-session (`rr-app._onLayoutChange` today) calls `this.requestUpdate()` itself.
+session (`rr-app._onLayoutChange` and `_onCameraHeightChange` today) calls `this.requestUpdate()`
+itself.
 
 ### Saving is two paths, and the fallback is permanent (#48)
 
@@ -224,8 +225,7 @@ class anywhere in `ui/` breaks the config→menu path while still typechecking. 
 * The gate is on **existence, never completion** (`SPEC.md` § Labeling Workflow): `getDPT` returning
   a number *is* the gate. It is enforced twice on purpose — the rail disables the buttons, and
   the session demotes a live tool back to calibration after every change — because DPT can vanish
-  through an **undo**, which `rr-app` applies straight into the archive with no editor handler
-  seeing it.
+  through an **undo**, which no disabled button can stop.
 * The **sensor** tool is gated with the car tool, one step beyond `SPEC.md` § Labeling Workflow — a
   sensor point needs no DPT to draw, but #31 asked for both. `needsDpt` is per tool in
   `tools.ts` if that is revisited.
@@ -787,8 +787,9 @@ caught none of the six. Two more things follow, and both are load-bearing:
   a test verifies visual appearance.
 * Camera (`getUserMedia`) and ONNX sessions are mocked per test file.
 * The drag tests dispatch `rr-pointer-*` events shaped the way `rr-viewer` emits them, so they
-  cover the editor's half of a gesture — one entry, no-op suppression, the sticky drag flag — and
-  **not** pointer capture, which is the browser's and the viewer's. A drag leaving the viewer is
+  cover the editor's half of a gesture — the click threshold, the sticky drag flag, and closing a
+  drag whose end never arrives — and **not** pointer capture, which is the browser's and the
+  viewer's. One entry per drag and no-op suppression are session tests. A drag leaving the viewer is
   exercised as coordinates outside the image, which is what the editor actually sees.
 * The detector session is pinned from **two sides**, and they are different checks:
   `tests/ortAssets.test.ts` reads `detectorSession.ts` as source text — that the `wasmPaths`

@@ -1129,6 +1129,17 @@ describe('EditSession', () => {
         expect(cars(s)).toHaveLength(1);
       });
 
+      it('leaves an already-incomplete image incomplete, and records one entry', async () => {
+        const s = session({ tool: 'car' });
+        await train(s, [100, 400]);
+        const size = s.history.size;
+
+        await s.delete(s.rightClick({ x: 250, y: 100 }, SCALE)!);
+
+        expect(s.image!.labeled_complete).toBe(false);
+        expect(s.history.size).toBe(size + 1);
+      });
+
       it('drops a delete whose car went away after the menu opened', async () => {
         const s = session({ tool: 'car' });
         await train(s, [100, 400]);
@@ -1269,6 +1280,15 @@ describe('EditSession', () => {
       const s = session();
       await s.setComplete(true);
       expect(s.image).toMatchObject({ labels: [], labeled_complete: true });
+    });
+
+    it('round-trips through a save and reopen', async () => {
+      const s = session({ images: ['img1.jpg', 'img2.jpg'] });
+      await s.setComplete(true);
+
+      const reopened = await R49Archive.load(await s.archive.export());
+
+      expect(reopened.getManifest().images.map(image => image.labeled_complete)).toEqual([true, false]);
     });
   });
 

@@ -160,6 +160,16 @@ export class EditSession {
     return this._chain?.anchor ?? null;
   }
 
+  /** The car with this id on the image on screen, or undefined once it is gone. */
+  car(id: string): CarLabel | undefined {
+    return this.image?.labels.find(car => car.id === id);
+  }
+
+  /** The sensor with this id, or undefined once it is gone. */
+  sensor(id: string): Sensor | undefined {
+    return this._sensors().find(sensor => sensor.id === id);
+  }
+
   /** Makes `tool` the active one. Ends a live chain. A gated tool drops back to calibration. */
   selectTool(tool: EditorTool) {
     if (tool === this._tool) return;
@@ -231,7 +241,7 @@ export class EditSession {
         return { kind: 'edit-reference-point', index: hit.index, px: point.px, world: point.world };
       }
       case 'sensor': {
-        const sensor = this._sensor(hit.id);
+        const sensor = this.sensor(hit.id);
         if (!sensor) return NONE;
         return { kind: 'name-sensor', id: sensor.id, name: sensor.name ?? null };
       }
@@ -270,9 +280,7 @@ export class EditSession {
       cancel: async () => {
         if (this._drag !== drag) return;
         this._moveHandles(handles, filename, { x: 0, y: 0 });
-        this._drag = null;
-        await gesture.commit();
-        this._changed();
+        await drag.end();
       },
     };
     this._drag = drag;
@@ -322,7 +330,7 @@ export class EditSession {
 
   /** Names a sensor, or removes its name for `null`. Does nothing if it is gone. */
   async nameSensor(id: string, name: string | null) {
-    if (!this._sensor(id)) return;
+    if (!this.sensor(id)) return;
     await this._record('name sensor', { kind: 'layout' }, () => {
       this._writeLayout({
         sensors: this._sensors().map(sensor => {
@@ -349,7 +357,7 @@ export class EditSession {
       }
       case 'sensor': {
         const { id } = subject;
-        if (!this._sensor(id)) return;
+        if (!this.sensor(id)) return;
         await this._record('delete sensor', { kind: 'layout' }, () => {
           this._writeLayout({ sensors: this._sensors().filter(sensor => sensor.id !== id) });
         });
@@ -359,7 +367,7 @@ export class EditSession {
         // Deleting a car clears labeled_complete in the same entry (ADR 0011).
         const { id } = subject;
         const image = this.image;
-        if (!image || !image.labels.some(car => car.id === id)) return;
+        if (!image || !this.car(id)) return;
         await this._record('delete car', { kind: 'image', filename: image.filename }, () => {
           this._writeImage(image.filename, {
             labels: image.labels.filter(car => car.id !== id),
@@ -374,7 +382,7 @@ export class EditSession {
   /** Sets a car's class, the full dotted class. Does nothing if the car is gone. */
   async reclassifyCar(id: string, cls: string) {
     const image = this.image;
-    if (!image || !image.labels.some(car => car.id === id)) return;
+    if (!image || !this.car(id)) return;
     await this._record('reclassify car', { kind: 'image', filename: image.filename }, () => {
       this._writeImage(image.filename, {
         labels: image.labels.map(car => (car.id === id ? { ...car, class: cls } : car)),
@@ -430,7 +438,7 @@ export class EditSession {
       return;
     }
     const entry = await this._apply(this.history.undoEntry, () => this.history.undo());
-    if (chain && link && this._chain && !this._car(link.carId)) {
+    if (chain && link && this._chain && !this.car(link.carId)) {
       this._chain = { anchor: link.anchor, links: chain.links.slice(0, -1) };
     }
     this._changed(entry && { highlights: entry.highlights });
@@ -639,15 +647,6 @@ export class EditSession {
 
   private _sensors(): readonly Sensor[] {
     return this.archive.getManifest().layout.sensors;
-  }
-
-  /** The car with this id on the current image. */
-  private _car(id: string): CarLabel | undefined {
-    return this.image?.labels.find(car => car.id === id);
-  }
-
-  private _sensor(id: string): Sensor | undefined {
-    return this._sensors().find(sensor => sensor.id === id);
   }
 
   /** Whether the point at `index` is still at `px`: points have no id. */

@@ -253,7 +253,7 @@ describe('Tools', () => {
     press(command(el, 'tool-sensor'));
     await settle(el);
 
-    expect((el as any)._session.tool).toBe('sensor');
+    expect(el.renderRoot.querySelector('rr-editor-view')!.session!.tool).toBe('sensor');
     expect(command(el, 'tool-sensor').pressed).toBe(true);
     expect(command(el, 'tool-calibration').pressed).toBe(false);
   });

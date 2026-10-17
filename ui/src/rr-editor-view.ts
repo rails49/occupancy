@@ -1,7 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, query, state } from 'lit/decorators.js';
 import { getDPT, getDPTResidual } from '@occupancy/r49';
-import type { CarLabel, Image, ManifestData, Point, Sensor } from '@occupancy/r49';
+import type { Image, ManifestData, Point } from '@occupancy/r49';
 import { MIN_DPT } from '@occupancy/config';
 import { make_id } from '@occupancy/uid';
 import { captureFromCamera } from './capture.js';
@@ -266,6 +266,8 @@ export interface NotifyDetail {
  * for display — dialogs and menus and what they are open on, zoom and pan, the
  * highlight after an undo, blob URLs, and the drift readout — and re-renders
  * whenever the session changes. See ADR 0017.
+ *
+ * Takes `session`. Emits `rr-notify` (`NotifyDetail`) when a click is refused.
  *
  * It owns the zoom (#44): a drag on empty image draws a rect to zoom to, or
  * pans once zoomed, and a Shift-drag draws a rect wherever it begins. Zoom
@@ -619,10 +621,10 @@ export class RREditorView extends LitElement {
     for (const highlight of highlights) {
       switch (highlight.kind) {
         case 'car':
-          if (this._car(highlight.id)) cars.push(highlight.id);
+          if (this.session?.car(highlight.id)) cars.push(highlight.id);
           break;
         case 'sensor':
-          if (this._sensor(highlight.id)) sensors.push(highlight.id);
+          if (this.session?.sensor(highlight.id)) sensors.push(highlight.id);
           break;
         case 'calibration': {
           const index = points.findIndex(point => samePoint(point.px, highlight.px));
@@ -675,12 +677,12 @@ export class RREditorView extends LitElement {
     for (const highlight of highlights) {
       switch (highlight.kind) {
         case 'car': {
-          const car = this._car(highlight.id);
+          const car = this.session?.car(highlight.id);
           if (car) points.push(car.p0, car.p1);
           break;
         }
         case 'sensor': {
-          const sensor = this._sensor(highlight.id);
+          const sensor = this.session?.sensor(highlight.id);
           if (sensor) points.push({ x: sensor.x, y: sensor.y });
           break;
         }
@@ -706,16 +708,6 @@ export class RREditorView extends LitElement {
     if (this._highlightTimer !== null) clearTimeout(this._highlightTimer);
     this._highlightTimer = null;
     this._highlight = null;
-  }
-
-  /** The car with this id on the image on screen, or undefined once it is gone. */
-  private _car(id: string): CarLabel | undefined {
-    return this.session?.image?.labels.find(car => car.id === id);
-  }
-
-  /** The sensor with this id, or undefined once it is gone. */
-  private _sensor(id: string): Sensor | undefined {
-    return this.session?.archive.getManifest().layout.sensors.find(s => s.id === id);
   }
 
   /** Asks `rr-app` to show a transient message — see {@link NotifyDetail}. */
@@ -845,11 +837,6 @@ export class RREditorView extends LitElement {
       drag: null,
       dragging: false,
     };
-  }
-
-  /** The image on screen, or undefined when the archive has none. */
-  private _currentImage(): Image | undefined {
-    return this.session?.image;
   }
 
   /** The authored frame — `camera.resolution` — or undefined with no session. */
@@ -991,7 +978,7 @@ export class RREditorView extends LitElement {
 
   /** Opens the name dialog on a sensor, if it is still there. */
   private async _openSensorName(id: string) {
-    const sensor = this._sensor(id);
+    const sensor = this.session?.sensor(id);
     if (!sensor) return;
     this._pendingSensorName = { id };
     await this._sensorDialog.show(sensor.name ?? null, { id });
@@ -1288,7 +1275,7 @@ export class RREditorView extends LitElement {
 
   render() {
     const manifest = this.session?.archive.getManifest();
-    const currentImage = this._currentImage();
+    const currentImage = this.session?.image;
     const src = currentImage ? this._imageUrls.get(currentImage.filename) : null;
 
     return html`
