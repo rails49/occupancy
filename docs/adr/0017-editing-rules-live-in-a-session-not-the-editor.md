@@ -1,6 +1,6 @@
 # Editing rules live in a session, not the editor
 
-The editing rules live in `ui/src/editSession.ts`, a plain class with no DOM. They cover every manifest write the editor makes and the history target each one picks, the tool and its calibration gate, chaining, drags, the image on screen, and undo and redo. `rr-app` creates one `EditSession` per archive on New and Open and passes it to `rr-editor-view`, and the rail's tools, Undo and Redo call it directly.
+The editing rules live in `ui/src/editSession.ts`, a plain class with no DOM. They cover every manifest write the editor and the settings dialog make and the history target each one picks, the tool and its calibration gate, chaining, drags, the image on screen, and undo and redo. `rr-app` creates one `EditSession` per archive on New and Open and passes it to `rr-editor-view`, and the rail's tools, Undo and Redo, the keyboard shortcut and `rr-app`'s settings handlers call it directly.
 
 Hit-testing is part of the session. The editor passes pointer positions in image pixels together with the pointer event's screen scale, and the session decides what a click, a drag or a right-click means. The editor keeps the click-or-drag threshold, pan and zoom, dialogs and menus, highlights and blob URLs.
 

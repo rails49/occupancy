@@ -86,6 +86,9 @@ export interface Reveal {
   readonly highlights: readonly HistoryHighlight[];
 }
 
+/** The layout fields the settings dialog edits, apart from the camera height. */
+export type LayoutSettings = Partial<Pick<Layout, 'name' | 'scale' | 'description' | 'contact'>>;
+
 /** Called after every change; with what changed after an undo or redo. */
 export type SessionListener = (reveal: Reveal | null) => void;
 
@@ -403,7 +406,7 @@ export class EditSession {
   }
 
   /** Writes layout fields from the settings dialog, named for the first one. */
-  async editLayout(changes: Partial<Layout>) {
+  async editLayout(changes: LayoutSettings) {
     const field = Object.keys(changes)[0] ?? 'layout';
     await this._record(`edit ${field}`, { kind: 'layout' }, () => {
       const manifest = this.archive.getManifest();

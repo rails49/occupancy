@@ -5,7 +5,7 @@ import '@rails49/look';
 import '@rails49/look/look.css';
 import { lookTheme, type LookPressDetail, type LookViewDetail } from '@rails49/look';
 import { missingLayoutMetadata } from './requiredMetadata.js';
-import { EditSession } from './editSession.js';
+import { EditSession, type LayoutSettings } from './editSession.js';
 import { revealTarget, type HistoryEntry } from './history.js';
 import { openArchive, supportsFileSystemAccess, writeArchive, type FileBinding } from './persistence.js';
 // Shared with the diagnostics queue, which binds bare keys to `window` too —
@@ -301,12 +301,8 @@ export class RRApp extends LitElement {
     this._viewMode = e.detail.name as ViewMode;
   }
 
-  /**
-   * The settings dialog's edits. The camera height arrives on its own event
-   * because it sits inside `calibration`, and spreading that object in from the
-   * dialog would carry a stale copy of `points` with it.
-   */
-  private async _onLayoutChange(e: CustomEvent<{ layout: Partial<Layout> }>) {
+  /** The settings dialog's edits. */
+  private async _onLayoutChange(e: CustomEvent<{ layout: LayoutSettings }>) {
     await this._session?.editLayout(e.detail.layout);
   }
 

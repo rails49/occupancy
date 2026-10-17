@@ -146,11 +146,11 @@ rr-app ─────────── rr-editor-view ────────
 
 * **`rr-app` owns:** the session, the view mode, the band and the rail, and file new/open/save.
 * **The `EditSession` owns:** the archive and its **undo history**, the image on screen, **the
-  active tool**, the **chain in progress**, and the open drag. Every manifest write the editor
-  makes is one of its methods, and each goes through `history.record` (or one `beginGesture` per
-  drag). A chain in progress writes nothing until the click that closes a car on it, so abandoning
-  one leaves both the manifest and the stack untouched — however many cars the chain already wrote,
-  since each of those is its own committed entry.
+  active tool**, the **chain in progress**, and the open drag. Every manifest write the editor and
+  the settings dialog make is one of its methods, and each goes through `history.record` (or one
+  `beginGesture` per drag). A chain in progress writes nothing until the click that closes a car on
+  it, so abandoning one leaves both the manifest and the stack untouched — however many cars the
+  chain already wrote, since each of those is its own committed entry.
 * **`rr-editor-view` owns:** blob URLs for the images, the cursor the rubber band follows, the
   dialog or menu that is open and what it is open on, the highlight after an undo, and the drift
   readout. It also owns the one control that sets `labeled_complete`, which is the only place in the

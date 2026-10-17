@@ -1517,7 +1517,7 @@ describe('EditSession', () => {
       expect(points(s)).toEqual(CALIBRATION);
     });
 
-    it('drops a gated tool when a settings edit takes DPT away', async () => {
+    it('drops a gated tool and ends a live chain when a settings edit takes DPT away', async () => {
       // Points above the reference plane resolve DPT only with a camera height.
       const s = session({ calibrated: false });
       s.archive.getManifest().layout.calibration = {
@@ -1525,12 +1525,14 @@ describe('EditSession', () => {
         camera_height_mm: 1000,
       };
       s.selectTool('car');
-      expect(s.tool).toBe('car');
+      await clicks(s, { x: 100, y: 100 });
+      expect(s.anchor).toEqual({ x: 100, y: 100 });
 
       await s.setCameraHeight(undefined);
 
       expect(s.calibrated).toBe(false);
       expect(s.tool).toBe('calibration');
+      expect(s.anchor).toBeNull();
     });
   });
 
