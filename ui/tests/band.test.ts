@@ -37,7 +37,7 @@ afterEach(fixtureCleanup);
 
 async function mount(open: R49Archive | null = archive) {
   const el = await fixture<RRApp>(html`<rr-app></rr-app>`);
-  (el as any)._archive = open;
+  if (open) (el as any)._open(open);
   await el.updateComplete;
   return el;
 }

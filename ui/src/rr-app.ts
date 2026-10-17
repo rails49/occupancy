@@ -5,14 +5,15 @@ import '@rails49/look';
 import '@rails49/look/look.css';
 import { lookTheme, type LookPressDetail, type LookViewDetail } from '@rails49/look';
 import { missingLayoutMetadata } from './requiredMetadata.js';
-import { EditHistory, revealTarget, type HistoryEntry } from './history.js';
+import { EditSession } from './editSession.js';
+import { revealTarget, type HistoryEntry } from './history.js';
 import { openArchive, supportsFileSystemAccess, writeArchive, type FileBinding } from './persistence.js';
 // Shared with the diagnostics queue, which binds bare keys to `window` too —
 // see `keyboard.ts` for why the rule has one home.
 import { isTypingTarget } from './keyboard.js';
 import { GATE_REASON, TOOLS } from './tools.js';
 import './rr-editor-view.js';
-import type { EditorStateDetail, NotifyDetail, RREditorView } from './rr-editor-view.js';
+import type { NotifyDetail } from './rr-editor-view.js';
 import './rr-live-view.js';
 import './rr-diagnostics-view.js';
 import './rr-settings-dialog.js';
@@ -52,14 +53,9 @@ function saveLabel(): string {
  */
 @customElement('rr-app')
 export class RRApp extends LitElement {
-  @state() private _archive: R49Archive | null = null;
+  /** The archive being edited, with its rules and history; one per New or Open. */
+  @state() private _session: EditSession | null = null;
   @state() private _viewMode: ViewMode = 'editor';
-  /** What the editor last reported for the rail's Tools and History groups. */
-  @state() private _editorState: EditorStateDetail = {
-    tool: 'calibration',
-    calibrated: false,
-    image: null,
-  };
 
   @query('rr-settings-dialog') private _settingsDialog!: RRSettingsDialog;
 
@@ -73,12 +69,6 @@ export class RRApp extends LitElement {
    * emphatically not the file that was open — and Save As re-points it.
    */
   @state() private _binding: FileBinding | null = null;
-
-  /**
-   * The editor's undo stack. Owned here because the archive is owned here, and
-   * passed down; see `history.ts` for why it is not part of `@occupancy/r49`.
-   */
-  private _history = new EditHistory();
 
   static styles = [
     lookTheme,
@@ -154,7 +144,7 @@ export class RRApp extends LitElement {
    * back-navigation to restore.
    */
   private _onBeforeUnload = (event: BeforeUnloadEvent) => {
-    if (!this._history.isDirty) return;
+    if (!this._session?.history.isDirty) return;
     event.preventDefault();
     // The legacy property stays alongside `preventDefault()` deliberately: the
     // engines converged on the modern form at different times, and one still
@@ -174,7 +164,7 @@ export class RRApp extends LitElement {
    * bottom, and touch devices have no Cmd+Z at all.
    */
   private _onKeyDown = async (event: KeyboardEvent) => {
-    if (this._viewMode !== 'editor' || !this._archive) return;
+    if (this._viewMode !== 'editor' || !this._session) return;
     if (!event.metaKey && !event.ctrlKey) return;
     if (isTypingTarget(event)) return;
 
@@ -188,63 +178,19 @@ export class RRApp extends LitElement {
     }
   };
 
-  /**
-   * Undo, offered to the editor before it reaches the stack.
-   *
-   * The editor owns one state undo means something else in — a live chain,
-   * which is **a wall undo cannot cross** (`SPEC.md` § Undo and redo) — and
-   * this component owns undo and cannot see it. So the protocol is one
-   * question, asked here rather than a state pushed up: whatever the chain
-   * consumes it handles in full, stack included.
-   */
+  /** Undo and redo, which select the image they change. See `EditSession.undo`. */
   private async _undo() {
-    if (await this._editorView()?.interceptUndo()) {
-      this.requestUpdate();
-      return;
-    }
-    // Before the snapshot lands, not after — see {@link _reveal}.
-    this._editorView()?.selectImage(revealTarget(this._history.undoEntry));
-    const entry = await this._history.undo();
-    if (entry) await this._reveal(entry);
+    await this._session?.undo();
   }
 
   private async _redo() {
-    this._editorView()?.selectImage(revealTarget(this._history.redoEntry));
-    const entry = await this._history.redo();
-    if (entry) await this._reveal(entry);
+    await this._session?.redo();
   }
 
-  /**
-   * The navigation invariant: undo may move the user, but it may never change
-   * something they cannot see (`SPEC.md` § Undo and redo).
-   *
-   * Three steps, in this order: **select** the image the entry targets, which
-   * the caller has already done from the *pending* entry; **apply**, which the
-   * stack does; and **highlight** what changed, here. Selecting first means the
-   * snapshot never lands while the editor's own state still points at the frame
-   * the user is leaving. What it does *not* buy is an intermediate paint — Lit
-   * batches the selection and the apply into one update — so the highlight, not
-   * the ordering, is what actually shows the user what moved.
-   *
-   * The highlight is object-level (#37) and resolved by the editor, because
-   * only it knows which image is on screen. What the entry changed is diffed
-   * out of its own snapshots, so a gesture that moved two cars lights both and
-   * an undone *add* lights nothing at all.
-   */
-  private async _reveal(entry: HistoryEntry) {
-    const view = this._editorView();
-    await view?.syncFromArchive(revealTarget(entry), entry.highlights);
-    this.requestUpdate();
-  }
-
-  /** The editor, or null in the live view, where it is not rendered. */
-  private _editorView(): RREditorView | null {
-    return this.renderRoot.querySelector('rr-editor-view');
-  }
-
-  /** Re-renders the undo affordances after a child records an edit. */
-  private _onHistoryChange() {
-    this.requestUpdate();
+  /** Starts editing `archive`, dropping the previous session and its history. */
+  private _open(archive: R49Archive) {
+    this._session = new EditSession(archive);
+    this._session.subscribe(() => this.requestUpdate());
   }
 
   /**
@@ -252,14 +198,14 @@ export class RRApp extends LitElement {
    * the archive, and the stack goes with it.
    */
   private _confirmDiscard(): boolean {
-    if (!this._history.isDirty) return true;
+    if (!this._session?.history.isDirty) return true;
     return window.confirm('Discard unsaved changes to this layout?');
   }
 
   private _onFileNew() {
     if (!this._confirmDiscard()) return;
-    this._archive = new R49Archive();
-    this._archive.setManifest({
+    const archive = new R49Archive();
+    archive.setManifest({
       version: MANIFEST_VERSION,
       layout: {
         name: 'New Layout',
@@ -273,9 +219,9 @@ export class RRApp extends LitElement {
       },
       images: []
     });
+    this._open(archive);
     this._binding = null;
     this._viewMode = 'editor';
-    this._history.attach(this._archive);
   }
 
   private async _onFileOpen() {
@@ -293,8 +239,7 @@ export class RRApp extends LitElement {
     const { file, binding } = opened;
     try {
       this._notify(`Loading ${file.name}…`, 'primary', 'hourglass-split');
-      this._archive = await R49Archive.load(file);
-      this._history.attach(this._archive);
+      this._open(await R49Archive.load(file));
       // Bound only once the bytes parse. A binding to a file that failed to
       // load would aim the next Save at an archive this session never held.
       this._binding = binding;
@@ -324,10 +269,11 @@ export class RRApp extends LitElement {
    * identity is the file, and `layout.name` is metadata stored inside it.
    */
   private async _onFileSave(rebind = false) {
-    if (!this._archive) return;
+    const session = this._session;
+    if (!session) return;
     try {
-      const data = await this._archive.export();
-      const stem = this._binding?.stem || this._archive.getManifest().layout.name || 'layout';
+      const data = await session.archive.export();
+      const stem = this._binding?.stem || session.archive.getManifest().layout.name || 'layout';
       const outcome = await writeArchive(data, { ...this._binding, stem }, { rebind });
       if (outcome.kind === 'cancelled') return;
 
@@ -335,7 +281,7 @@ export class RRApp extends LitElement {
       // Saving marks the position rather than clearing the stack: the bytes on
       // disk are unaffected by anything undone afterwards, so undoing past a
       // save stays legitimate. The marker is what `isDirty` is measured from.
-      this._history.markSaved();
+      session.history.markSaved();
       // The verb is half the message: overwriting `west-yard.r49` and dropping
       // a new `west-yard-20260802-1432.r49` into Downloads are different
       // enough that "Saved to disk" would hide which one just happened.
@@ -355,15 +301,11 @@ export class RRApp extends LitElement {
     this._viewMode = e.detail.name as ViewMode;
   }
 
-  private _onEditorState(e: CustomEvent<EditorStateDetail>) {
-    this._editorState = e.detail;
-  }
-
   private async _onLayoutChange(e: CustomEvent) {
-    if (!this._archive) return;
-    const manifest = this._archive.getManifest();
+    if (!this._session) return;
+    const manifest = this._session.archive.getManifest();
     const field = Object.keys(e.detail.layout)[0] ?? 'layout';
-    await this._history.record(`edit ${field}`, { kind: 'layout' }, () => {
+    await this._session.history.record(`edit ${field}`, { kind: 'layout' }, () => {
       manifest.layout = { ...manifest.layout, ...e.detail.layout };
     });
     this.requestUpdate();
@@ -380,10 +322,10 @@ export class RRApp extends LitElement {
    * in the bytes (#139).
    */
   private async _onCameraHeightChange(e: CustomEvent<{ camera_height_mm: number | undefined }>) {
-    if (!this._archive) return;
-    const manifest = this._archive.getManifest();
+    if (!this._session) return;
+    const manifest = this._session.archive.getManifest();
     const height = e.detail.camera_height_mm;
-    await this._history.record('edit camera height', { kind: 'layout' }, () => {
+    await this._session.history.record('edit camera height', { kind: 'layout' }, () => {
       const calibration = { ...manifest.layout.calibration };
       if (height === undefined) delete calibration.camera_height_mm;
       else calibration.camera_height_mm = height;
@@ -406,7 +348,7 @@ export class RRApp extends LitElement {
   private _qualified(verb: string, label: string | null, entry: HistoryEntry | null): string {
     if (!label) return verb;
     const image = revealTarget(entry);
-    return image && image !== this._editorState.image
+    return image && image !== this._session?.image?.filename
       ? `${verb} ${label} — ${image}`
       : `${verb} ${label}`;
   }
@@ -456,7 +398,7 @@ export class RRApp extends LitElement {
    * (`SPEC.md` § Labeling Workflow), and the editor enforces it too.
    */
   private _renderEditorGroups() {
-    const { tool, calibrated } = this._editorState;
+    const session = this._session;
     return html`
       <look-group label="File">
         <look-command
@@ -482,32 +424,32 @@ export class RRApp extends LitElement {
         <look-command
           id="edit-undo"
           icon="arrow-counterclockwise"
-          label=${this._qualified('Undo', this._history.undoLabel, this._history.undoEntry)}
+          label=${this._qualified('Undo', session?.history.undoLabel ?? null, session?.history.undoEntry ?? null)}
           key="Mod+Z"
-          ?disabled=${!this._history.canUndo}
+          ?disabled=${!session?.history.canUndo}
           @look-press=${this._undo}
         ></look-command>
         <look-command
           id="edit-redo"
           icon="arrow-clockwise"
-          label=${this._qualified('Redo', this._history.redoLabel, this._history.redoEntry)}
+          label=${this._qualified('Redo', session?.history.redoLabel ?? null, session?.history.redoEntry ?? null)}
           key="Shift+Mod+Z"
-          ?disabled=${!this._history.canRedo}
+          ?disabled=${!session?.history.canRedo}
           @look-press=${this._redo}
         ></look-command>
       </look-group>
-      ${this._archive
+      ${session
         ? html`<look-group label="Tools">
             ${TOOLS.map(spec => {
-              const disabled = spec.needsDpt && !calibrated;
+              const disabled = spec.needsDpt && !session.calibrated;
               return html`<look-command
                 id="tool-${spec.tool}"
                 icon=${spec.icon}
                 label=${spec.label}
-                ?pressed=${spec.tool === tool}
+                ?pressed=${spec.tool === session.tool}
                 ?disabled=${disabled}
                 reason=${disabled ? GATE_REASON : ''}
-                @look-press=${() => this._editorView()?.selectTool(spec.tool)}
+                @look-press=${() => session.selectTool(spec.tool)}
               ></look-command>`;
             })}
           </look-group>`
@@ -519,7 +461,7 @@ export class RRApp extends LitElement {
     // Null until a manifest has actually been read (#52).
     let layout: Layout | null = null;
     try {
-      if (this._archive) layout = this._archive.getManifest().layout;
+      if (this._session) layout = this._session.archive.getManifest().layout;
     } catch (e) {
       // Ignore if manifest not yet ready
     }
@@ -531,20 +473,17 @@ export class RRApp extends LitElement {
           ${this._viewMode === 'editor'
             ? html`
                 <rr-editor-view
-                  .archive=${this._archive}
-                  .history=${this._history}
-                  @rr-editor-state=${this._onEditorState}
-                  @rr-history-change=${this._onHistoryChange}
+                  .session=${this._session}
                   @rr-notify=${this._onNotify}
                 ></rr-editor-view>`
             : this._viewMode === 'live'
-              ? html`<rr-live-view .archive=${this._archive}></rr-live-view>`
+              ? html`<rr-live-view .archive=${this._session?.archive ?? null}></rr-live-view>`
               // Each mode is torn down when it leaves: the live view stops the
               // camera, the diagnostics view abandons an in-flight sweep and
               // releases its ORT session. Keeping them alive to preserve state
               // would leave a camera light on, or twenty seconds of WASM running
               // for a view nobody is looking at.
-              : html`<rr-diagnostics-view .archive=${this._archive}></rr-diagnostics-view>`
+              : html`<rr-diagnostics-view .archive=${this._session?.archive ?? null}></rr-diagnostics-view>`
           }
         </main>
       </look-shell>
