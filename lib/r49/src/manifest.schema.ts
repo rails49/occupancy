@@ -63,23 +63,76 @@ function getGaugeMM(scale: Scale): number {
  *          answer", not "zero".
  */
 export function getDPT(manifest: ManifestData): number | null {
+  return calibrationFit(manifest).dpt;
+}
+
+/**
+ * The calibration fit as one result: what it reports, which pairs it used, and
+ * which points it left out and why. Every calibration point is in a pair or in
+ * `leftOut`, never both.
+ */
+export interface CalibrationFit {
+  /** As {@link getDPT}: `null` when calibration does not resolve. */
+  readonly dpt: number | null;
+  /** As {@link getDPTResidual}: RMS in image pixels, `null` below two pairs. */
+  readonly residual: number | null;
+  /** The equal-height pairs the fit used. */
+  readonly pairs: readonly CalibrationPair[];
+  /** The points in no pair, each with the reason. */
+  readonly leftOut: readonly LeftOutPoint[];
+  /**
+   * Whether the camera is above every calibration point, or `null` without a
+   * camera height. The format accepts a camera below a point and the fit leaves
+   * that point out; refusing to author such a layout is the editor's decision.
+   */
+  readonly cameraHeightFits: boolean | null;
+}
+
+/** Why a calibration point is in no pair of the fit. */
+export type LeftOutReason =
+  /** No camera height, and the point is off the reference plane. */
+  | 'off-reference-plane'
+  /** The point is at or above the camera. */
+  | 'above-camera'
+  /** No other usable point shares its height. */
+  | 'no-partner';
+
+/** A calibration point the fit did not use. */
+export interface LeftOutPoint {
+  readonly point: ReferencePoint;
+  readonly reason: LeftOutReason;
+}
+
+/** Fit the manifest's calibration. See {@link getDPT} for the arithmetic. */
+export function calibrationFit(manifest: ManifestData): CalibrationFit {
   const { calibration } = manifest.layout;
   const h = calibration.camera_height_mm;
   const zRef = calibration.reference_height_mm ?? 0;
+  const pairs = calibrationPairs(calibration);
+  const leftOut = leftOutPoints(calibration);
+  const scale = fitScale(pairs);
 
-  if (h !== undefined && h <= zRef) return null;
+  let dpt: number | null = null;
+  if (scale !== null && (h === undefined || h > zRef)) {
+    // Absent `h` the fit already sits on the reference plane; with it, the fit
+    // is at layout zero and this lifts it to where the track is.
+    const atReference = h === undefined ? scale : scale * (h / (h - zRef));
+    dpt = atReference * getGaugeMM(manifest.layout.scale);
+  }
 
-  const scale = fitScale(calibrationPairs(calibration));
-  if (scale === null) return null;
-
-  // Absent `h` the fit already sits on the reference plane; with it, the fit is
-  // at layout zero and this lifts it to where the track is.
-  const atReference = h === undefined ? scale : scale * (h / (h - zRef));
-  return atReference * getGaugeMM(manifest.layout.scale);
+  return {
+    dpt,
+    residual: residualOf(pairs, scale),
+    pairs,
+    leftOut,
+    cameraHeightFits: h === undefined ? null : !leftOut.some(l => l.reason === 'above-camera'),
+  };
 }
 
-/** One equal-height pair of calibration points, as the two separations the fit sees. */
-interface CalibrationPair {
+/** One equal-height pair of calibration points, and the two separations the fit sees. */
+export interface CalibrationPair {
+  readonly a: ReferencePoint;
+  readonly b: ReferencePoint;
   /** Separation in image pixels, normalized to layout zero when the camera height is known. */
   readonly dPx: number;
   /** Separation on the layout, in mm. */
@@ -108,19 +161,45 @@ function calibrationPairs(calibration: ManifestData['layout']['calibration']): C
       const b = calibration.points[j];
       const z = a.world.z;
       if (b.world.z !== z) continue;
-      // Without a camera height, only the named plane can be spoken about.
-      if (h === undefined && z !== zRef) continue;
-      // A point at or above the camera is not a pose the pinhole model has.
-      if (h !== undefined && z >= h) continue;
+      if (unusable(z, h, zRef) !== null) continue;
 
       const dPx = Math.hypot(a.px.x - b.px.x, a.px.y - b.px.y);
       pairs.push({
+        a,
+        b,
         dPx: h === undefined ? dPx : dPx * ((h - z) / h),
         dMm: Math.hypot(a.world.x - b.world.x, a.world.y - b.world.y),
       });
     }
   }
   return pairs;
+}
+
+/**
+ * Why a point at height `z` can join no pair whatever the other points are, or
+ * `null` when it can. Shared by {@link calibrationPairs} and
+ * {@link leftOutPoints}, so a point is in a pair exactly when it is not left out.
+ */
+function unusable(z: number, h: number | undefined, zRef: number): LeftOutReason | null {
+  // Without a camera height, only the named plane can be spoken about.
+  if (h === undefined) return z === zRef ? null : 'off-reference-plane';
+  // A point at or above the camera is not a pose the pinhole model has.
+  return z >= h ? 'above-camera' : null;
+}
+
+/** Every calibration point in no pair, with the reason, in authored order. */
+function leftOutPoints(calibration: ManifestData['layout']['calibration']): LeftOutPoint[] {
+  const h = calibration.camera_height_mm;
+  const zRef = calibration.reference_height_mm ?? 0;
+  const { points } = calibration;
+
+  return points.flatMap((point, i) => {
+    const z = point.world.z;
+    const reason =
+      unusable(z, h, zRef) ??
+      (points.some((other, j) => j !== i && other.world.z === z) ? null : 'no-partner');
+    return reason === null ? [] : [{ point, reason }];
+  });
 }
 
 /**
@@ -170,11 +249,12 @@ function fitScale(pairs: readonly CalibrationPair[]): number | null {
  *          "more than two coplanar points", stated in terms of the fit.
  */
 export function getDPTResidual(manifest: ManifestData): number | null {
-  const pairs = calibrationPairs(manifest.layout.calibration);
-  if (pairs.length < 2) return null;
+  return calibrationFit(manifest).residual;
+}
 
-  const scale = fitScale(pairs);
-  if (scale === null) return null;
+/** The RMS of `d_px − s · d_mm` over `pairs`; see {@link getDPTResidual}. */
+function residualOf(pairs: readonly CalibrationPair[], scale: number | null): number | null {
+  if (pairs.length < 2 || scale === null) return null;
 
   let sumSq = 0;
   for (const { dPx, dMm } of pairs) {
@@ -249,8 +329,9 @@ const CalibrationSchema = z
      * Camera height above layout zero, in mm. Optional here, required by the
      * editor — see {@link getDPT}. `.positive()` because a camera at or below
      * the origin is not a representable pose and every reader of it divides by
-     * `h − z`; the cross-field rule that it must also clear the tallest
-     * calibration point is the editor's, not the schema's.
+     * `h − z`. Whether it also clears every calibration point is reported by
+     * {@link calibrationFit} as `cameraHeightFits`; refusing to author a layout
+     * where it does not is the editor's decision, not the schema's.
      */
     camera_height_mm: finite().positive().optional(),
     /**

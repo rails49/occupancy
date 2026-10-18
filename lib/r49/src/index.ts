@@ -55,17 +55,23 @@ export type {
 export { MANIFEST_VERSION } from './manifest.schema.ts';
 
 //── Scale geometry ───────────────────────────────────────────────────────────
-// Callers work with scale names and pixel-domain measurements only — the
-// prototype domain (real-world 1435mm gauge) and the model domain (physical
-// gauge in mm) are internal implementation details of how getDPT() is
-// computed.
-// getDPTResidual is the same fit's diagnostic and lives beside it deliberately:
-// both must select the same equal-z pairs, and two implementations of that rule
-// would drift.
+// Callers work with scale names, pixel-domain measurements and the authored
+// calibration points — the prototype domain (real-world 1435mm gauge) and the
+// model domain (physical gauge in mm) are internal implementation details of
+// how getDPT() is computed.
+// calibrationFit is the whole fit as one result: DPT, residual, the pairs used
+// and the points left out with the reason. getDPT and getDPTResidual read from
+// it. Every reader that needs more than a number reads the result rather than
+// reapplying the pair rule, so the rule lives in one place.
 export {
+  calibrationFit,
   getDPT,
   getDPTResidual,
   VALID_SCALES,
+  type CalibrationFit,
+  type CalibrationPair,
+  type LeftOutPoint,
+  type LeftOutReason,
   type ValidScales,
 } from './manifest.schema.ts';
 

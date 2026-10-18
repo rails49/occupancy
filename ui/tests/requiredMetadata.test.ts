@@ -1,27 +1,32 @@
 import { describe, it, expect } from 'vitest';
 import { missingLayoutMetadata } from '../src/requiredMetadata.ts';
-import type { Layout } from '@occupancy/r49';
+import type { Layout, ManifestData } from '@occupancy/r49';
 
-/** A layout satisfying the gate, spread-and-overridden per test. */
-function layout(over: Partial<Layout> = {}): Layout {
+/** A manifest whose layout satisfies the gate, spread-and-overridden per test. */
+function manifest(over: Partial<Layout> = {}): ManifestData {
   return {
-    name: 'West Yard',
-    scale: 'HO',
-    calibration: { points: [], camera_height_mm: 1150 },
-    sensors: [],
-    ...over,
-  } as Layout;
+    version: 4,
+    layout: {
+      name: 'West Yard',
+      scale: 'HO',
+      calibration: { points: [], camera_height_mm: 1150 },
+      sensors: [],
+      ...over,
+    },
+    camera: { resolution: { width: 1920, height: 1080 } },
+    images: [],
+  } as ManifestData;
 }
 
 const point = (z: number) => ({ px: { x: 0, y: 0 }, world: { x: 0, y: 0, z } });
-const fields = (l: Layout | null) => missingLayoutMetadata(l).map(m => m.field);
+const fields = (m: ManifestData | null) => missingLayoutMetadata(m).map(r => r.field);
 
 describe('missingLayoutMetadata', () => {
   it('is satisfied by a complete layout', () => {
-    expect(missingLayoutMetadata(layout())).toEqual([]);
+    expect(missingLayoutMetadata(manifest())).toEqual([]);
   });
 
-  it('says nothing when there is no layout at all', () => {
+  it('says nothing when there is no archive at all', () => {
     // Nothing is open, so nothing is owed — the gate must not fire on an empty
     // app and demand metadata for an archive that does not exist.
     expect(missingLayoutMetadata(null)).toEqual([]);
@@ -29,18 +34,18 @@ describe('missingLayoutMetadata', () => {
   });
 
   it('requires a name, treating blank as absent', () => {
-    expect(fields(layout({ name: '' }))).toEqual(['name']);
-    expect(fields(layout({ name: '   ' }))).toEqual(['name']);
+    expect(fields(manifest({ name: '' }))).toEqual(['name']);
+    expect(fields(manifest({ name: '   ' }))).toEqual(['name']);
   });
 
   it('requires a camera height', () => {
-    expect(fields(layout({ calibration: { points: [] } }))).toEqual(['camera_height_mm']);
+    expect(fields(manifest({ calibration: { points: [] } }))).toEqual(['camera_height_mm']);
   });
 
   it('reports every missing field at once, not one at a time', () => {
     // A gate that revealed its next demand only after the last was satisfied
     // would be a worse experience than one list stated up front.
-    expect(fields(layout({ name: '', calibration: { points: [] } }))).toEqual([
+    expect(fields(manifest({ name: '', calibration: { points: [] } }))).toEqual([
       'name',
       'camera_height_mm',
     ]);
@@ -51,12 +56,12 @@ describe('missingLayoutMetadata', () => {
     // representable difference between a confirmed scale and an invented one,
     // and the gate fires on the camera height anyway, which is where a wrong
     // scale gets seen.
-    expect(fields(layout({ scale: 'N' }))).toEqual([]);
+    expect(fields(manifest({ scale: 'N' }))).toEqual([]);
   });
 
   describe('the h > max(z) bound', () => {
     it('accepts a camera above every calibration point', () => {
-      expect(fields(layout({ calibration: { points: [point(0), point(85)], camera_height_mm: 1150 } })))
+      expect(fields(manifest({ calibration: { points: [point(0), point(85)], camera_height_mm: 1150 } })))
         .toEqual([]);
     });
 
@@ -65,7 +70,7 @@ describe('missingLayoutMetadata', () => {
       // A single-plane calibration normalizes by (h−z_ref)/h = 1 for *any* h,
       // so the residual is blind and this bound is the only thing left.
       const missing = missingLayoutMetadata(
-        layout({ calibration: { points: [point(230)], camera_height_mm: 115 } }),
+        manifest({ calibration: { points: [point(230)], camera_height_mm: 115 } }),
       );
       expect(missing.map(m => m.field)).toEqual(['camera_height_mm']);
       expect(missing[0].message).toContain('115 mm');
@@ -74,14 +79,14 @@ describe('missingLayoutMetadata', () => {
 
     it('rejects a camera exactly at the tallest point', () => {
       // Not merely degenerate arithmetic: at h = z the scale is infinite.
-      expect(fields(layout({ calibration: { points: [point(500)], camera_height_mm: 500 } })))
+      expect(fields(manifest({ calibration: { points: [point(500)], camera_height_mm: 500 } })))
         .toEqual(['camera_height_mm']);
     });
 
     it('cannot judge the height with no calibration points', () => {
       // Nothing to compare against, so the height stands. The bound is a
       // cross-check on authored geometry, not an independent plausibility test.
-      expect(fields(layout({ calibration: { points: [], camera_height_mm: 5 } }))).toEqual([]);
+      expect(fields(manifest({ calibration: { points: [], camera_height_mm: 5 } }))).toEqual([]);
     });
   });
 });

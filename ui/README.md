@@ -921,10 +921,10 @@ inside a car already labelled ([#43]). `rr-app` owns the toast.
     report button 0.
   * The press that **dismisses** the menu is swallowed by `rr-context-menu` and never reaches the
     viewer, so closing a menu over empty image does not place a point.
-* **DPT readout** (`.dpt-bar`). `getDPT()` to one decimal, or "Not calibrated" with a warning style
-  when it returns `null` — a real v4 state, reported rather than blocked on, and now with the click
+* **DPT readout** (`.dpt-bar`). `calibrationFit()`'s DPT to one decimal, or "Not calibrated" with a
+  warning style when it is `null` — a real v4 state, reported rather than blocked on, and now with the click
   that fixes it. Two further states:
-  * **Fit residual** (`getDPTResidual()`), shown only once the fit is over-determined — more than two
+  * **Fit residual** (the same result's `residual`), shown only once the fit is over-determined — more than two
     coplanar points. Below that the fit reproduces its input exactly, so a zero would claim an
     agreement nothing checked. It is what makes a mis-typed coordinate visible instead of silently
     absorbed into the scale.

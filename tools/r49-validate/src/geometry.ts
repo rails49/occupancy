@@ -62,18 +62,3 @@ export function obliquityOf(manifest: ManifestData): Obliquity | null {
     widthInflation: 1 + CAR_HEIGHT_OVER_WIDTH * Math.tan(radians),
   };
 }
-
-/**
- * Calibration points that sit off the plane DPT is reported at.
- *
- * Only interesting when no camera height is authored: the fit then restricts
- * itself to the reference plane, so these points are **silently excluded** while
- * the contributor believes they are being used. With a height they all
- * contribute, and this returns 0.
- */
-export function pointsOffReferencePlane(manifest: ManifestData): number {
-  const { calibration } = manifest.layout;
-  if (calibration.camera_height_mm !== undefined) return 0;
-  const zRef = calibration.reference_height_mm ?? 0;
-  return calibration.points.filter(p => p.world.z !== zRef).length;
-}

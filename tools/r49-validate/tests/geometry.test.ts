@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { obliquityOf, pointsOffReferencePlane } from '../src/geometry.ts';
+import { obliquityOf } from '../src/geometry.ts';
 import type { ManifestData } from '@occupancy/r49';
 
-/** A manifest carrying only what these two functions read. */
+/** A manifest carrying only what obliquityOf reads. */
 function manifest(calibration: Record<string, unknown>): ManifestData {
   return {
     version: 4,
@@ -58,29 +58,5 @@ describe('obliquityOf', () => {
     // Two points at one spot give a zero half-diagonal, not a zero angle.
     expect(obliquityOf(manifest({ points: [CORNERS[0], CORNERS[0]], camera_height_mm: 1000 })))
       .toBeNull();
-  });
-});
-
-describe('pointsOffReferencePlane', () => {
-  const at = (z: number) => ({ px: { x: 0, y: 0 }, world: { x: 0, y: 0, z } });
-
-  it('counts points the fit silently excludes', () => {
-    expect(pointsOffReferencePlane(manifest({ points: [at(0), at(0), at(85)] }))).toBe(1);
-  });
-
-  it('measures against the authored reference plane, not zero', () => {
-    const points = [at(0), at(85), at(85)];
-    expect(pointsOffReferencePlane(manifest({ points, reference_height_mm: 85 }))).toBe(1);
-  });
-
-  it('counts nothing once a camera height makes every point contribute', () => {
-    // This is the whole point of the warning: it names a condition the camera
-    // height resolves, so it must fall silent the moment one is authored.
-    expect(pointsOffReferencePlane(manifest({ points: [at(0), at(85)], camera_height_mm: 1150 })))
-      .toBe(0);
-  });
-
-  it('counts nothing for a single-plane archive, which is every archive today', () => {
-    expect(pointsOffReferencePlane(manifest({ points: [at(0), at(0)] }))).toBe(0);
   });
 });

@@ -1,7 +1,7 @@
-import { R49Archive, R49Error, getDPT, getDPTResidual, isKnownClass } from '@occupancy/r49';
+import { R49Archive, R49Error, calibrationFit, isKnownClass } from '@occupancy/r49';
 import { MIN_DPT } from '@occupancy/config';
 import { checkPath, handleOf, scopeOf } from './corpus.ts';
-import { obliquityOf, pointsOffReferencePlane } from './geometry.ts';
+import { obliquityOf } from './geometry.ts';
 import {
   isOk,
   type ArchiveReport,
@@ -50,11 +50,12 @@ export interface ValidateOptions {
 function facts(archive: R49Archive): Omit<ArchiveReport, 'path' | 'scope' | 'errors' | 'warnings'> {
   const manifest = archive.getManifest();
   const images = manifest.images;
+  const fit = calibrationFit(manifest);
   const obliquity = obliquityOf(manifest);
   return {
     id: manifest.id ?? null,
-    dpt: getDPT(manifest),
-    dptResidual: getDPTResidual(manifest),
+    dpt: fit.dpt,
+    dptResidual: fit.residual,
     cameraHeightMM: manifest.layout.calibration.camera_height_mm ?? null,
     referenceHeightMM: manifest.layout.calibration.reference_height_mm ?? null,
     obliquityDeg: obliquity?.degrees ?? null,
@@ -127,7 +128,9 @@ function qualityWarnings(archive: R49Archive, f: ReturnType<typeof facts>): Find
   // height is required; here it is a fact in the table. This narrower condition
   // is the one place the fit silently means something other than the
   // contributor intends.
-  const offPlane = pointsOffReferencePlane(archive.getManifest());
+  const offPlane = calibrationFit(archive.getManifest()).leftOut.filter(
+    l => l.reason === 'off-reference-plane'
+  ).length;
   if (offPlane > 0) {
     warnings.push({
       code: 'calibration/off-reference-plane',
@@ -144,8 +147,8 @@ function qualityWarnings(archive: R49Archive, f: ReturnType<typeof facts>): Find
       code: 'calibration/unresolved',
       message:
         `Calibration does not resolve, so no DPT can be computed and no geometric claim ` +
-        `about this archive can be checked. Add two calibration points at known, differing ` +
-        `world coordinates in the editor.`,
+        `about this archive can be checked. Add two calibration points at the same height ` +
+        `and different positions in the editor.`,
     });
   } else if (f.dpt < MIN_DPT) {
     warnings.push({
