@@ -18,7 +18,7 @@
     "@occupancy/detector": "workspace:*",
     "@occupancy/drift": "workspace:*",
     "@occupancy/r49": "workspace:*",
-    "@rails49/look": "github:rails49/look#v0.5.0",
+    "@rails49/look": "github:rails49/look#v0.6.0",
     "@shoelace-style/shoelace": "^2.20.1",
     "lit": "^3.3.2",
     "lit-element": "^4.2.2",
