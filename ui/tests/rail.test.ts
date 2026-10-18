@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from 
 import { fixture, fixtureCleanup, html } from '@open-wc/testing';
 import { R49Archive } from '@rails49/r49';
 import type { LookCommand, LookView } from '@rails49/look';
+import { press } from '@rails49/look/testing';
 import '../src/rr-app.js';
 import { RRApp } from '../src/rr-app.js';
 import type { EditHistory } from '../src/history.js';
@@ -61,13 +62,6 @@ const command = (el: RRApp, id: string) => el.renderRoot.querySelector<LookComma
 const groups = (el: RRApp) =>
   [...el.renderRoot.querySelectorAll('look-rail look-group')].map(g => g.getAttribute('label'));
 
-/** A press as a person makes one: a click on the button inside the command. */
-function press(cmd: LookCommand, init: MouseEventInit = {}) {
-  cmd.shadowRoot!.querySelector('button')!.dispatchEvent(
-    new MouseEvent('click', { bubbles: true, composed: true, ...init })
-  );
-}
-
 /** Two calibration points at a nonzero separation: exactly "DPT resolves". */
 function calibrate() {
   archive.getManifest().layout.calibration.points = [
@@ -94,7 +88,7 @@ describe('the views', () => {
     const el = await mount(null);
     const diagnostics = el.renderRoot.querySelector<LookView>('look-view[name="diagnostics"]')!;
 
-    diagnostics.shadowRoot!.querySelector('button')!.click();
+    press(diagnostics);
     await settle(el);
 
     expect(el.renderRoot.querySelector('rr-diagnostics-view')).not.toBeNull();
