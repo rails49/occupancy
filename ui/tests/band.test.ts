@@ -1,14 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from 'vitest';
 import { fixture, fixtureCleanup, html } from '@open-wc/testing';
 import { R49Archive } from '@occupancy/r49';
-import type { LookAbout } from '@rails49/look';
+import type { LookAbout, LookBand } from '@rails49/look';
 import '../src/rr-app.js';
 import { RRApp } from '../src/rr-app.js';
 import * as persistence from '../src/persistence.js';
 
 /**
- * The band, as `rr-app` declares it on look's elements: the layout's name and
- * scale, the file a save would land in, and the gear.
+ * The band, as `rr-app` declares it on look's elements: the UI name, the
+ * layout's name and scale, the file a save would land in, and the gear.
  */
 
 vi.mock('../src/persistence.js', async importOriginal => ({
@@ -42,16 +42,22 @@ async function mount(open: R49Archive | null = archive) {
   return el;
 }
 
+const band = (el: RRApp) => el.renderRoot.querySelector<LookBand>('look-band')!;
 const about = (el: RRApp) => el.renderRoot.querySelector<LookAbout>('look-about')!;
 const reading = (el: RRApp) => el.renderRoot.querySelector('look-reading');
 
 describe('the band', () => {
-  it('says "occupancy" and no scale before an archive is loaded', async () => {
-    // The `N` the settings dialog renders against is a placeholder, not an
-    // answer any archive gave; stating it here would be the band inventing it.
+  // look draws the mark and the UI name (org ADR-0019).
+  it('names the UI', async () => {
+    expect(band(await mount(null)).ui).toBe('occupancy');
+    expect(band(await mount()).ui).toBe('occupancy');
+  });
+
+  it('has no about before an archive is loaded', async () => {
+    // "occupancy" here would repeat the UI name. The `N` the settings dialog
+    // renders against is a placeholder, not an answer any archive gave.
     const el = await mount(null);
-    expect(about(el).name).toBe('occupancy');
-    expect(about(el).detail).toBe('');
+    expect(el.renderRoot.querySelector('look-about')).toBeNull();
   });
 
   // The scale is what the layout's geometry means — a span two pixels long is a
@@ -59,6 +65,13 @@ describe('the band', () => {
   it('names the layout and its scale', async () => {
     const el = await mount();
     expect(about(el).name).toBe('Test');
+    expect(about(el).detail).toBe('N');
+  });
+
+  it('states the scale alone for a layout with no name', async () => {
+    delete archive.getManifest().layout.name;
+    const el = await mount();
+    expect(about(el).name).toBe('');
     expect(about(el).detail).toBe('N');
   });
 

@@ -40,7 +40,7 @@ Non-element modules use plain camelCase filenames with no prefix.
 ```
 rr-app                          ← shell: owns the editing session and the view mode
 ├── look-shell                  ← @rails49/look: the page
-│   ├── look-band               ← layout name and scale, bound file, settings gear
+│   ├── look-band               ← UI name, layout name and scale, bound file, settings gear
 │   └── look-rail               ← the views; in the editor, File, History and Tools
 ├── rr-settings-dialog          ← layout metadata + required-metadata gate (look-dialog)
 ├── rr-editor-view              ← editor mode; drives editSession.ts, the rules for one archive
@@ -129,6 +129,7 @@ rr-app                          ← shell: owns the editing session and the view
 > [#148]: https://github.com/rails49/occupancy/issues/148
 > [#149]: https://github.com/rails49/occupancy/issues/149
 > [#151]: https://github.com/rails49/occupancy/issues/151
+> [#206]: https://github.com/rails49/occupancy/issues/206
 
 ## State and data flow
 
@@ -232,10 +233,12 @@ hijack Cmd+Z mid-typing. A press with a drag still live does nothing (see `histo
   metadata stored inside it.
 * The band names the bound file in a `look-reading` **only when a handle exists** — that is exactly
   when Save would overwrite it. A binding without a handle names no file that exists yet.
-* `look-about` carries the layout's name, or "occupancy" with nothing loaded, and its **scale** as
-  the detail ([#52]), read out of the manifest on every render so a scale changed in the settings
-  dialog is the one shown. The scale is stated **only once a manifest has been read**: the `N` the
-  settings dialog renders against is a placeholder, and an answer no archive gave.
+* `look-band`'s `ui` is "occupancy"; look draws the mark and the UI name (org
+  [ADR-0019](https://github.com/rails49/.github/blob/main/docs/adr/0019-the-band-starts-with-the-mark-and-the-ui-name.md), [#206]).
+* `look-about` carries the layout's name and its **scale** as the detail ([#52]), read out of the
+  manifest on every render so a scale changed in the settings dialog is the one shown. It is there
+  **only once a manifest has been read**: with nothing loaded it would repeat the UI name, and the
+  `N` the settings dialog renders against is a placeholder, an answer no archive gave.
 * Loading is a toast, not band text.
 * **Saving does not validate calibration.** The v3 check read `{p0, p1, size_mm}` structurally, which
   v4 has not — calibration is a list of points that legitimately starts empty, so "uncalibrated" is a

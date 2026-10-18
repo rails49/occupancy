@@ -708,9 +708,9 @@ The band, the rail, the dialog shell and the Shoelace theme layer come from
 opens a bump pull request here
 ([rails49/look#10](https://github.com/rails49/look/issues/10)).
 
-* `rr-app` declares the chrome on look's elements. `look-band` holds `look-about` (the layout's
-  name, or "occupancy" with nothing loaded, and its scale), a `look-reading` naming the bound file
-  once Save would overwrite it, and `look-gear` for the settings dialog. `look-rail` holds the three
+* `rr-app` declares the chrome on look's elements. `look-band` names the UI, "occupancy", and holds
+  `look-about` (the layout's name and scale, absent with nothing loaded), a `look-reading` naming
+  the bound file once Save would overwrite it, and `look-gear` for the settings dialog. `look-rail` holds the three
   views, then, in the editor only, File, History and, while a manifest is loaded, Tools. Live and
   Diagnostics have the views alone.
 * The rail is `rr-app`'s and the tool state is the session's. The rail reads the tool, whether DPT
