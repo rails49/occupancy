@@ -6,11 +6,39 @@ Computer vision suite for model railroaders to detect track occupancy using deep
 
 ## 🌟 Overview
 
-This project provides a camera-based solution for track occupancy detection based on overhead cameras and CNN-based image classification to identify trains and rolling stock. Although the approach has inherent limitations, the goal is to achieve very high reliability as to minimize the chances of collisions or other malfunctions.
+This project detects track occupancy from an overhead camera. An oriented-box object detector finds the cars in each frame, and the live view reports which sensors they cover.
 
-**WARNING**: Although the software has been designed with the goal to be reliable, the ultimate responsibility for safe model railroad operation rests with the user. In particular, the software in some instances fails to detect rolling stock or detect trains where there are none.
+**WARNING**: The detector sometimes misses rolling stock and sometimes reports trains where there are none. It is not a safety interlock. Responsibility for safe operation rests with the user.
 
 The application is offered as a static webapp served at https://occupancy.rails49.org/. When run from a mobile device with an attached camera (e.g. a smartphone) it shows the locations of detected trains in the browser.
+
+## 🛠 Development
+
+Requires [pnpm](https://pnpm.io/) and [uv](https://github.com/astral-sh/uv). Run from the repository root unless noted.
+
+| Task | Command |
+| :--- | :--- |
+| Install dependencies | `pnpm install` |
+| Full check (typecheck, TS tests, look-check, UI build, Python lint) | `bin/test.sh` |
+| Install the pre-push hook that runs `bin/test.sh` | `bin/install-hooks.sh` |
+| Typecheck all packages | `pnpm typecheck` |
+| All TS tests | `pnpm test` |
+| Tests for one package | `pnpm --filter @occupancy/r49 test` |
+| A single test file | `pnpm --filter @occupancy/ui test tests/carMarker.test.ts` |
+| Watch mode (ui) | `pnpm --filter @occupancy/ui test:watch` |
+| The chrome check alone | `ui/node_modules/.bin/look-check ui/src ui/index.html` |
+| UI dev server | `pnpm --filter @occupancy/ui dev` (`dev:http` for plain HTTP) |
+| Build the UI | `pnpm build` |
+| Regenerate `config.json` and `lib/config` | `pnpm config:generate` |
+| Python lint, format, types | `cd <classifier/resnet\|detector> && uv run ruff check . && uv run black --check . && uv run pyright` |
+| Derive the detector dataset | `pnpm --filter dataset run export:yolo` (reads `dataset/r49/`, writes `dataset/yolo/`) |
+| Fine-tune and export the detector | `cd detector && uv run python train.py && uv run python export_onnx.py` |
+| Score the drift check on the fixtures | `pnpm --filter @occupancy/drift-bench bench` (needs `rails49/r49` cloned at `../r49`; about 10 minutes) |
+| Deploy to Cloudflare Pages | `bin/deploy.sh` |
+
+The dev server serves HTTPS with a self-signed certificate, because `getUserMedia` needs a secure context; a phone on the LAN needs the HTTPS URL. It also sets the COOP/COEP headers that ONNX Runtime's threaded WASM needs.
+
+`bin/deploy.sh` reads Cloudflare credentials from the environment or from 1Password (`op://rails49/Cloudflare Pages/…`), and runs only from a clean `origin/main`.
 
 ## 🤝 Contributing
 
@@ -18,9 +46,9 @@ See [SPEC.md](SPEC.md) for what the system is meant to do and why — the requir
 the `.r49` format, and the reasoning behind the design. Much of it is the target rather
 than a description of what ships today.
 
-See [CLAUDE.md](CLAUDE.md) for the repository layout, development commands, and
-the technology stack, and [lib/CLAUDE.md](lib/CLAUDE.md) for the interface
-convention the shared TypeScript libraries follow.
+See [docs/SYSTEM.md](docs/SYSTEM.md) for how the stages fit together, and
+[lib/CLAUDE.md](lib/CLAUDE.md) for the interface convention the shared
+TypeScript libraries follow.
 
 Pull requests are welcome. By contributing you agree that your contributions
 are licensed under the [GNU Affero General Public License v3.0](LICENSE), the

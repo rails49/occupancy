@@ -31,7 +31,7 @@ Because model files exceed GitHub's file size limit, they are not checked into G
 2. Create a GitHub Release matching that version tag (e.g., `v1.0.1`).
 3. Upload `model_int8.ort` and `config.json` as assets to that GitHub Release.
 
-Publishing is unaffected by the retirement of the accuracy gate, but **nothing downloads these assets at test time any more and no test asserts an accuracy figure** — `bin/test.sh` runs identically with no model present. See the root `CLAUDE.md` § Model files and releases.
+Publishing is unaffected by the retirement of the accuracy gate, but **nothing downloads these assets at test time any more and no test asserts an accuracy figure** — `bin/test.sh` runs identically with no model present. See `docs/SYSTEM.md` § Model files and releases.
 
 > **⚠️ TODO:** Automate this process using a script (e.g., using `gh` CLI) to automatically package, version, tag, and upload the models.
 
