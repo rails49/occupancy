@@ -1,4 +1,4 @@
-import type { Finding, Scope } from './report.ts';
+import type { BlockingFinding, Scope } from './report.ts';
 
 /**
  * The corpus's own rules about *where* a file sits — as opposed to what is
@@ -58,14 +58,15 @@ export function handleOf(path: string): string | null {
  * @param author The PR author's handle, or `null` when unknown (a local run).
  *               Unknown skips only the ownership rule; shape and slug still apply.
  */
-export function checkPath(path: string, author: string | null): Finding[] {
-  const findings: Finding[] = [];
+export function checkPath(path: string, author: string | null): BlockingFinding[] {
+  const findings: BlockingFinding[] = [];
   const parts = segments(path);
   const scope = scopeOf(path);
 
   if (scope === 'unknown') {
     findings.push({
       code: 'path/shape',
+      rule: 'path/shape',
       message:
         `${path} is not a place the corpus defines. A submission goes in ` +
         `archives/<your-github-handle>/<slug>.r49; fixtures/<slug>.r49 is reserved for the ` +
@@ -78,6 +79,7 @@ export function checkPath(path: string, author: string | null): Finding[] {
   if (!SLUG.test(filename)) {
     findings.push({
       code: 'path/slug',
+      rule: 'path/slug',
       message:
         `${filename} is not a slug. Rename it to lowercase letters, digits and hyphens — ` +
         `"cars 0-10.r49" becomes "cars-0-10.r49". Spaces in particular break shell tooling ` +
@@ -88,6 +90,7 @@ export function checkPath(path: string, author: string | null): Finding[] {
   if (scope === 'archives' && author !== null && parts[1] !== author) {
     findings.push({
       code: 'path/owner',
+      rule: 'path/owner',
       message:
         `${path} is under archives/${parts[1]}/, but this pull request is from @${author}. ` +
         `Submit your archives under archives/${author}/ — the directory is the attribution ` +
