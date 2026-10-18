@@ -130,6 +130,7 @@ rr-app                          ← shell: owns the editing session and the view
 > [#149]: https://github.com/rails49/occupancy/issues/149
 > [#151]: https://github.com/rails49/occupancy/issues/151
 > [#206]: https://github.com/rails49/occupancy/issues/206
+> [#217]: https://github.com/rails49/occupancy/issues/217
 
 ## State and data flow
 
@@ -1209,6 +1210,11 @@ Camera stream under the two layers of the occupancy output ([#85]).
   not survive a remount. Sampling continues while refusing, since putting the camera back is the fix.
   An archive with no images, or a check that fails to build, reports **"not being checked"** — never
   silence, which would read as "no drift found".
+* **"Record drift"** ([#217], `driftRecording.ts`) appends one row per drift sample while on, and
+  turning it off downloads them as `drift-YYYYMMDD-HHMMSS.csv`: `time` (ISO 8601), `px`,
+  `tolerance_px`, `dpt`, `past`, `overridden`, `stream_width`, `stream_height` (the camera track's
+  `getSettings()`). The verdict cells are empty on an uncalibrated layout. Recording continues while
+  refusing. Rows are held in memory only, so leaving the live view drops them.
 * Disposes the detector session and stops all camera tracks on disconnect; the drift check is dropped
   with it, which is also what keeps an in-flight sample from writing into a detached view.
 
