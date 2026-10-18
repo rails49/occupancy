@@ -14,8 +14,22 @@ _Avoid_: scene
 A `.r49` file holding one layout's images, calibration, sensors and car labels.
 _Avoid_: project, dataset
 
+**Format**:
+The rules every archive follows, independent of any program that reads or writes one.
+_Avoid_: schema (for the rules themselves)
+
+**Outside reader**:
+A program that reads archives and is not part of this project, such as someone else's model trained on the corpus.
+_Avoid_: consumer, classifier
+
 **Corpus**:
 The archives contributed to `rails49/r49`, which training draws from.
+
+**Corpus rule**:
+A requirement an archive must meet to be accepted into the corpus, beyond the format. Corpus rules keep archives consistent with each other, such as every class being in the vocabulary.
+
+**Reader requirement**:
+A condition one reader places on the archives it uses, such as a minimum DPT. The corpus may report it but never enforces it.
 
 **Fixture**:
 One of the six archives kept to exercise the code. They are below the minimum DPT and are not training data.
@@ -37,7 +51,10 @@ Dots per track: image pixels per track gauge, measured on the reference plane.
 _Avoid_: px/mm, resolution
 
 **Minimum DPT**:
-The DPT below which images are too coarse to train on. The editor warns below it and never blocks.
+The DPT below which images are too coarse for this project's detector to train on. A reader requirement, not a corpus rule. The editor warns below it and never blocks.
+
+**Recommended DPT**:
+The DPT the corpus asks contributors to reach. A submission below it is warned, never refused. Set by the corpus, separately from the minimum DPT.
 
 **Calibration**:
 The reference points that fix a layout's DPT.
