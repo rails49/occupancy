@@ -6,7 +6,7 @@ oriented-box object detector. UI served at https://occupancy.rails49.org.
 The detector sometimes misses rolling stock or reports phantom trains. Present
 nothing here as a safety interlock.
 
-gate: bin/test.sh
+gate: pnpm install --frozen-lockfile && bin/test.sh
 
 ## Where things are
 
