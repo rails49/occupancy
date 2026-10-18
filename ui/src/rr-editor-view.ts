@@ -107,10 +107,11 @@ function classOfReclassifyRow(id: string): string | null {
 /**
  * The taxonomy as menu rows, for one car.
  *
- * Generated from the vocabulary in `lib/r49/r49.json` (`vocabulary.ts`), so adding a subtype
- * to `config.yaml` and regenerating changes this menu with **no code edit** —
- * and the root is not among them, because it is required in the stored class
- * and absent from the UI (`SPEC.md` § Parameters live in `config.yaml`).
+ * Generated from the vocabulary in `lib/r49/r49.json` (`vocabulary.ts`), so
+ * adding a subtype there and regenerating changes this menu with **no code
+ * edit** — and the root is not among them, because it is required in the
+ * stored class and absent from the UI (`SPEC.md` § Parameters live in
+ * `config.yaml`).
  *
  * A subtype that has subtypes of its own is a submenu, and a submenu's first
  * row is that subtype itself: a row that opens something cannot also be chosen,

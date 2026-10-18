@@ -66,8 +66,8 @@ const subtypes = vocabularySubtypes;
  * The taxonomy's single root — the class every new car is created as.
  *
  * Derived rather than written down: the editor authoring a hardcoded `'stock'`
- * would be a second home for a value `config.yaml` owns, and it would go on
- * agreeing with the vocabulary only by luck.
+ * would be a second home for a value `lib/r49/r49.json` owns, and it would go
+ * on agreeing with the vocabulary only by luck.
  *
  * **Exactly one root**, and both other counts throw rather than guess. None
  * leaves a new car with no class to be created as, and a second makes "the

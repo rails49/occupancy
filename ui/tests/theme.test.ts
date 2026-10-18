@@ -7,10 +7,10 @@ import { RRDiagnosticsReport } from '../src/rr-diagnostics-report.js';
 import { RRThumbnailBar } from '../src/rr-thumbnail-bar.js';
 import { RrViewer } from '../src/rr-viewer.js';
 
-// LOOK.md § Theme: **the work pane follows the theme; the chrome does not**
-// (#151). look.css carries both Shoelace themes and `prefers-color-scheme`
-// decides, so a pane painted with an `--sl-*` neutral inverts with the
-// operating system and a pane painted with a hex does not.
+// look's `docs/LOOK.md` § Theme: **the work pane follows the theme; the chrome
+// does not** (#151). look.css carries both Shoelace themes and
+// `prefers-color-scheme` decides, so a pane painted with an `--sl-*` neutral
+// inverts with the operating system and a pane painted with a hex does not.
 //
 // jsdom does not paint, so nothing here proves the result is *legible* — that
 // was judged by hand in both OS settings, and `ui/CLAUDE.md` § Testing (#109)
