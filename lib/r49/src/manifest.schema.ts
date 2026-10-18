@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { R49Error, type FormatRule } from './rules.ts';
 import { STANDARD_GAUGE, SCALE_TO_RATIO, SCALES, type Scale } from './data.ts';
 
 /**
@@ -314,7 +315,10 @@ const CarLabelSchema = z.discriminatedUnion('provenance', [
 function uniqueIds<T extends { id: string }>(kind: string) {
   return {
     check: (items: readonly T[]) => new Set(items.map(i => i.id)).size === items.length,
-    message: `duplicate ${kind} id: ids must be unique within their collection`,
+    options: {
+      message: `duplicate ${kind} id: ids must be unique within their collection`,
+      params: { rule: 'manifest/duplicate-id' satisfies FormatRule },
+    },
   };
 }
 
@@ -331,7 +335,7 @@ const ImageSchema = z
      * legitimate: it is an all-background sample.
      */
     labeled_complete: z.boolean().default(false),
-    labels: z.array(CarLabelSchema).refine(labelIds.check, labelIds.message).default([]),
+    labels: z.array(CarLabelSchema).refine(labelIds.check, labelIds.options).default([]),
   })
   .strict();
 
@@ -350,7 +354,7 @@ const LayoutSchema = z
     scale: ScaleSchema,
     calibration: CalibrationSchema,
     /** Per **layout**, not per image: placing one answers for every frame. */
-    sensors: z.array(SensorSchema).refine(sensorIds.check, sensorIds.message).default([]),
+    sensors: z.array(SensorSchema).refine(sensorIds.check, sensorIds.options).default([]),
   })
   .strict();
 
@@ -390,12 +394,6 @@ export const ManifestDataSchema = z
   .strict();
 
 /**
- * Rejects a non-v4 manifest with a message that names the version, before the
- * schema gets a chance to report it as one issue among many.
- *
- * @throws If `data` is not an object, or its `version` is not 4.
- */
-/**
  * Validate a manifest, rewording the one parse failure a user can act on.
  *
  * `.strict()` refuses an unknown key rather than stripping it, which is what
@@ -415,27 +413,30 @@ export const ManifestDataSchema = z
  * The hedge is not padding: an unknown key is equally a typo in a hand-built
  * manifest, and nothing can tell the two apart.
  *
- * @throws A reworded `Error` for an unknown key; otherwise whatever zod threw.
+ * @throws An {@link R49Error} naming `manifest/unknown-key`, with the reworded
+ *         message, for an unknown key; otherwise one naming the rule the first
+ *         issue broke, with zod's message.
  */
 export function parseManifest(data: unknown): ManifestData {
-  try {
-    return ManifestDataSchema.parse(data);
-  } catch (err) {
-    const unknown = unknownKeyPaths(err);
-    if (unknown.length === 0) throw err;
-    const names = unknown.map(k => `\`${k}\``).join(', ');
-    throw new Error(
-      `This archive uses ${unknown.length === 1 ? 'a field' : 'fields'} this build does not ` +
-        `know (${names}). It may have been written by a newer version of rails49 — reload the ` +
-        `app and try again. If you hand-edited manifest.json, check the key ` +
-        `${unknown.length === 1 ? 'name' : 'names'}.`,
-    );
+  const result = ManifestDataSchema.safeParse(data);
+  if (result.success) return result.data;
+
+  const unknown = unknownKeyPaths(result.error);
+  if (unknown.length === 0) {
+    throw new R49Error(ruleOf(result.error), result.error.message, { cause: result.error });
   }
+  const names = unknown.map(k => `\`${k}\``).join(', ');
+  throw new R49Error(
+    'manifest/unknown-key',
+    `This archive uses ${unknown.length === 1 ? 'a field' : 'fields'} this build does not ` +
+      `know (${names}). It may have been written by a newer version of rails49 — reload the ` +
+      `app and try again. If you hand-edited manifest.json, check the key ` +
+      `${unknown.length === 1 ? 'name' : 'names'}.`,
+  );
 }
 
 /** Dotted paths of every key `.strict()` rejected, or `[]` for any other failure. */
-function unknownKeyPaths(err: unknown): string[] {
-  if (!(err instanceof z.ZodError)) return [];
+function unknownKeyPaths(err: z.ZodError): string[] {
   return err.issues.flatMap(issue =>
     issue.code === 'unrecognized_keys'
       ? issue.keys.map(key => [...issue.path, key].join('.'))
@@ -443,11 +444,40 @@ function unknownKeyPaths(err: unknown): string[] {
   );
 }
 
+/**
+ * The rule a schema failure broke, read off its first issue.
+ *
+ * Provenance is recognised by path rather than by issue code: zod reports a
+ * missing or unknown discriminator, a forbidden `proposed_by` and a missing one
+ * as three different codes, and all three are the one rule. The duplicate-id
+ * refinement names its rule in its params, since a custom issue carries nothing
+ * else to tell it from any future refinement.
+ */
+function ruleOf(err: z.ZodError): FormatRule {
+  const issue = err.issues[0];
+  if (issue.code === 'custom' && issue.params?.rule === 'manifest/duplicate-id') {
+    return 'manifest/duplicate-id';
+  }
+  const field = issue.path[issue.path.length - 1];
+  if (issue.path.includes('labels') && (field === 'provenance' || field === 'proposed_by')) {
+    return 'manifest/provenance';
+  }
+  return 'manifest/schema';
+}
+
+/**
+ * Rejects a non-v4 manifest with a message that names the version, before the
+ * schema gets a chance to report it as one issue among many.
+ *
+ * @throws An {@link R49Error} naming `manifest/version` if `data` is not an
+ *         object, or its `version` is not 4.
+ */
 export function assertManifestVersion(data: unknown): void {
   const version = (data as { version?: unknown } | null)?.version;
   if (version === MANIFEST_VERSION) return;
 
-  throw new Error(
+  throw new R49Error(
+    'manifest/version',
     `Unsupported manifest version ${JSON.stringify(version)}: this build reads version ` +
       `${MANIFEST_VERSION} only. There is no v3 compatibility path — v4 replaced point ` +
       `markers with cars and sensors, and no automated migration is possible because a ` +

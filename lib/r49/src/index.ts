@@ -8,9 +8,28 @@
 
 //── Archive I/O ──────────────────────────────────────────────────────────────
 // Read and write .r49 layout archives (a zip of manifest.json + images).
-// Manifests are validated against the v4 schema on load; invalid input throws.
+// Manifests are validated against the v4 schema on load; invalid input throws
+// an R49Error naming the rule it broke.
 // There is no v3 path: loading anything else fails on the version number.
 export { R49Archive } from './archive.ts';
+
+//── Rules ────────────────────────────────────────────────────────────────────
+// Every refusal names the rule it broke, by a stable id from one closed set, so
+// two implementations and the conformance cases agree on *why* an archive was
+// refused without agreeing on wording. Format rules are what load() and
+// setManifest() throw an R49Error for (and what imageMismatches() reports);
+// corpus rules are the corpus validator's, named here so the set is defined
+// once. Match on `rule`, never on `message`.
+export {
+  R49Error,
+  RULES,
+  FORMAT_RULES,
+  CORPUS_RULES,
+  type Rule,
+  type FormatRule,
+  type CorpusRule,
+  type ImageMismatch,
+} from './rules.ts';
 
 //── Manifest types (v4) ──────────────────────────────────────────────────────
 // The shape of a parsed manifest, as returned by R49Archive.getManifest().

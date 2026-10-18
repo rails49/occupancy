@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { R49Archive, getDPT, getDPTResidual } from '../src/index.ts';
+import { R49Archive, R49Error, getDPT, getDPTResidual } from '../src/index.ts';
 import type { ManifestData } from '../src/index.ts';
 
 // One seam: the archive. Every test here drives the package's public interface
@@ -28,13 +28,17 @@ async function roundTrip(data: ManifestData): Promise<R49Archive> {
   return await R49Archive.load(await archive.export());
 }
 
-/** Assert that setting this manifest is rejected, and return the message. */
-function rejection(data: unknown): string {
+/**
+ * Assert that setting this manifest is rejected, and return the refusal.
+ * Tests assert its `rule`, never its wording (#182).
+ */
+function rejection(data: unknown): R49Error {
   const archive = new R49Archive();
   try {
     archive.setManifest(data as ManifestData);
   } catch (err) {
-    return String(err);
+    expect(err).toBeInstanceOf(R49Error);
+    return err as R49Error;
   }
   throw new Error('expected the manifest to be rejected, but it was accepted');
 }
@@ -151,14 +155,13 @@ describe('R49Archive', () => {
 
   describe('version', () => {
     it('rejects a v3 manifest, naming the version', () => {
-      const message = rejection({
+      const refusal = rejection({
         version: 3,
         layout: { name: 'Old', scale: 'N', calibration: { p0: { x: 0, y: 0 }, p1: { x: 1, y: 1 }, size_mm: 1 } },
         camera: { resolution: { width: 640, height: 480 } },
         images: [{ filename: '1.jpg', labels: {} }],
       });
-      expect(message).toContain('version');
-      expect(message).toContain('3');
+      expect(refusal.rule).toBe('manifest/version');
     });
 
     it('rejects a v3 archive on load, naming the version', async () => {
@@ -173,7 +176,7 @@ describe('R49Archive', () => {
       }));
       const bytes = await zip.generateAsync({ type: 'uint8array' });
 
-      await expect(R49Archive.load(bytes)).rejects.toThrow(/version/i);
+      await expect(R49Archive.load(bytes)).rejects.toMatchObject({ rule: 'manifest/version' });
     });
   });
 
@@ -182,7 +185,7 @@ describe('R49Archive', () => {
       const m = manifest({
         images: [{ filename: 'a.jpg', labels: [car({ provenance: 'human', proposed_by: 'v1' })] }],
       });
-      expect(rejection(m)).toBeTruthy();
+      expect(rejection(m).rule).toBe('manifest/provenance');
     });
 
     it('rejects a missing proposed_by on proposed and on corrected', () => {
@@ -190,7 +193,7 @@ describe('R49Archive', () => {
         const m = manifest({
           images: [{ filename: 'a.jpg', labels: [car({ provenance })] }],
         });
-        expect(rejection(m), `${provenance} without proposed_by`).toBeTruthy();
+        expect(rejection(m).rule, `${provenance} without proposed_by`).toBe('manifest/provenance');
       }
     });
 
@@ -199,14 +202,14 @@ describe('R49Archive', () => {
       const m = manifest({
         images: [{ filename: 'a.jpg', labels: [withoutProvenance] }],
       });
-      expect(rejection(m)).toBeTruthy();
+      expect(rejection(m).rule).toBe('manifest/provenance');
     });
 
     it('rejects duplicate ids within one collection', () => {
       const dupLabels = manifest({
         images: [{ filename: 'a.jpg', labels: [car({ id: 'x' }), car({ id: 'x' })] }],
       });
-      expect(rejection(dupLabels)).toMatch(/duplicate/i);
+      expect(rejection(dupLabels).rule).toBe('manifest/duplicate-id');
 
       const dupSensors = manifest({
         layout: {
@@ -214,7 +217,7 @@ describe('R49Archive', () => {
           sensors: [{ id: 'x', x: 1, y: 1 }, { id: 'x', x: 2, y: 2 }],
         },
       });
-      expect(rejection(dupSensors)).toMatch(/duplicate/i);
+      expect(rejection(dupSensors).rule).toBe('manifest/duplicate-id');
     });
 
     it('accepts an id shared between a sensor and a label', async () => {
@@ -242,7 +245,7 @@ describe('R49Archive', () => {
       // to 8.8x between Z and G. SPEC names only two defaults, and this is
       // not one of them.
       const m = manifest({ layout: { calibration: { points: [] }, sensors: [] } });
-      expect(rejection(m)).toBeTruthy();
+      expect(rejection(m).rule).toBe('manifest/schema');
     });
 
     it('defaults an absent calibration to empty points', async () => {
@@ -464,7 +467,7 @@ describe('R49Archive', () => {
     });
 
     it('rejects an empty id rather than treating it as absent', () => {
-      expect(rejection(manifest({ id: '' }))).toMatch(/id/);
+      expect(rejection(manifest({ id: '' })).rule).toBe('manifest/schema');
     });
   });
 
@@ -472,9 +475,10 @@ describe('R49Archive', () => {
   // a schema that gained a nested object without `.strict()` would pass every
   // test above while silently deleting whatever a newer build wrote into it.
   describe('unknown keys are rejected, not stripped', () => {
-    // Asserted on the *offending key*, not on the wording. The message is
-    // reworded for the person who meets it (#139) and may be reworded again;
-    // what must never change is that the refusal names what was wrong.
+    // Asserted on the rule and the *offending key*, not on the wording. The
+    // message is reworded for the person who meets it (#139) and may be
+    // reworded again; what must never change is that the refusal names what
+    // was wrong — the key is data the message carries, not prose.
     const cases: Array<[string, Record<string, unknown>, string]> = [
       ['the manifest root', manifest({ vendor_extra: 1 }), 'vendor_extra'],
       ['layout', manifest({ layout: { scale: 'HO', calibration: { points: [] }, sensors: [], hue: 1 } }), 'layout.hue'],
@@ -531,7 +535,9 @@ describe('R49Archive', () => {
 
     for (const [where, data, key] of cases) {
       it(`rejects an unknown key in ${where}`, () => {
-        expect(rejection(data)).toContain(key);
+        const refusal = rejection(data);
+        expect(refusal.rule).toBe('manifest/unknown-key');
+        expect(refusal.message).toContain(key);
       });
     }
 

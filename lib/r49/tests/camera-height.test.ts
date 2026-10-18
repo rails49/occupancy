@@ -50,13 +50,19 @@ describe('the schema accepts the two heights', () => {
   it('rejects a camera height at or below layout zero', () => {
     // Every consumer divides by `h − z`; a camera at the origin is not a pose.
     const archive = new R49Archive();
-    expect(() => archive.setManifest(manifest({ points: plane(0), camera_height_mm: 0 }))).toThrow();
-    expect(() => archive.setManifest(manifest({ points: plane(0), camera_height_mm: -5 }))).toThrow();
+    expect(() => archive.setManifest(manifest({ points: plane(0), camera_height_mm: 0 }))).toThrow(
+      expect.objectContaining({ rule: 'manifest/schema' }),
+    );
+    expect(() => archive.setManifest(manifest({ points: plane(0), camera_height_mm: -5 }))).toThrow(
+      expect.objectContaining({ rule: 'manifest/schema' }),
+    );
   });
 
   it('still rejects an unknown calibration key', () => {
     const archive = new R49Archive();
-    expect(() => archive.setManifest(manifest({ points: [], focal_length_mm: 24 }))).toThrow();
+    expect(() => archive.setManifest(manifest({ points: [], focal_length_mm: 24 }))).toThrow(
+      expect.objectContaining({ rule: 'manifest/unknown-key' }),
+    );
   });
 
   /**
