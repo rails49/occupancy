@@ -2,13 +2,9 @@
 
 How the engineering skills should consume this repo's domain documentation when exploring the codebase.
 
-Single context. Three documents, each with one job ([ADR 0001](../adr/0001-glossary-and-adrs-alongside-the-spec.md)):
+Single context. What each kind of doc holds, and how ADRs change, is set by org [ADR-0017](https://github.com/rails49/.github/blob/main/docs/adr/0017-each-fact-has-one-owner-and-an-accepted-adr-does-not-change.md). [ADR 0001](../adr/0001-glossary-and-adrs-alongside-the-spec.md) adds `SPEC.md` for the requirements.
 
-- **`CONTEXT.md`** at the repo root: the glossary. Terms and nothing else.
-- **`docs/adr/`**: one short record per decision the code depends on, with its main reason and a link to the issue that settled it.
-- **`SPEC.md`** at the repo root: the requirements, and what is ruled out or still open.
-
-GitHub issues stay the full record. The wayfinder maps (label `wayfinder:map`) and their closed tickets hold the alternatives that were rejected; an ADR links them rather than restating them.
+The wayfinder maps (label `wayfinder:map`) and their closed tickets hold the alternatives that were rejected; an ADR links them rather than restating them.
 
 ## Before exploring, read these
 
@@ -16,7 +12,7 @@ GitHub issues stay the full record. The wayfinder maps (label `wayfinder:map`) a
 - **The ADRs** in the area you are touching.
 - **`SPEC.md`**, for what the area must do.
 
-**`SPEC.md` describes the target, not what ships.** Parts of it are unbuilt, and it says so where that is the case. Where the spec and the code disagree, that gap is the planned migration, not a bug to fix. `CLAUDE.md` and `ui/README.md` describe what exists today.
+**`SPEC.md` describes the target, not what ships.** Parts of it are unbuilt, and it says so where that is the case. Where the spec and the code disagree, that gap is the planned migration, not a bug to fix. `docs/SYSTEM.md` and `ui/README.md` describe what exists today.
 
 ## File structure
 
@@ -24,10 +20,11 @@ GitHub issues stay the full record. The wayfinder maps (label `wayfinder:map`) a
 /
 ├── CONTEXT.md           ← glossary
 ├── SPEC.md              ← requirements, whole project
-├── CLAUDE.md            ← what exists, and how to build it
+├── CLAUDE.md            ← pointers, conventions and traps
 ├── docs/
 │   ├── adr/             ← decisions
 │   ├── agents/          ← these files
+│   ├── SYSTEM.md        ← what exists, across the stages
 │   └── research/        ← research notes cited by SPEC.md and the ADRs
 ├── lib/
 ├── ui/
@@ -50,4 +47,4 @@ If your output contradicts an ADR, say so rather than silently overriding it:
 
 > _Contradicts ADR 0010 (track is not stored) — but worth reopening because…_
 
-A decision with no ADR yet may still be settled in a closed issue or in `SPEC.md`; cite that instead. A decision that is reversed gets a new ADR that names the one it replaces; the old ADR is not edited.
+A decision with no ADR yet may still be settled in a closed issue or in `SPEC.md`; cite that instead.
