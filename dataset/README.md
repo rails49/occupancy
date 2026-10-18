@@ -91,8 +91,8 @@ There are no `.r49` archives here any more (#63). The corpus is
 [`rails49/r49`](https://github.com/rails49/r49), which takes submissions by pull
 request under CC BY 4.0. The six this directory used to hold are in that repo's
 `fixtures/` tree — **fixtures, not training data**, sitting below
-`layout.min_dpt`, so no number derived from them predicts model accuracy. How
-training code reaches the corpus is not decided; see issue #51.
+`layout.min_dpt`, so no number derived from them predicts model accuracy.
+Training reads the corpus from a local checkout of it, passed as `--in`.
 
 *   `yolo/`: The generated detector dataset (gitignored; `export:yolo` writes
     it). `data.yaml` names an absolute path, so it is machine-specific by

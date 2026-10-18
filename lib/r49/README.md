@@ -5,7 +5,7 @@ Reads and writes `.r49` railroad layout archives — a zip holding a
 `ui/` opens and saves, and the one `dataset/` reads when preparing training
 data.
 
-Manifests are validated against the v3 schema on load, so a successfully loaded
+Manifests are validated against the v4 schema on load, so a successfully loaded
 archive is a well-formed one. Works unchanged in Node and the browser.
 
 ## Interface
@@ -56,16 +56,18 @@ manifest wholesale.
 
 ## Notes on the format
 
-A v3 manifest carries the layout (name, scale, optional calibration), the
-camera (resolution, optional model), and the image list with per-image labels.
+A v4 manifest carries the layout (name, scale, calibration, sensors), the
+camera (resolution, optional model), and the image list. Each image carries its
+car labels and a `labeled_complete` flag.
 
-Calibration is two points `p0`/`p1` and the physical distance `size_mm` between
-them. That, combined with the modelling scale, is what `getDPT()` turns into an
-image resolution the classifier can scale its crops against — so an uncalibrated
-layout classifies poorly. `getGauge()` and `Scale2Number` expose the scale table
-(G, O, S, HO, T, N, Z) if you need the arithmetic yourself.
+Calibration is a list of reference points, each an image pixel paired with a
+world position in mm, plus an optional camera height. `calibrationFit()` fits
+them, with the modelling scale, to an image resolution in dots per track;
+`getDPT()` and `getDPTResidual()` read from that fit, and an uncalibrated layout
+has no DPT. `VALID_SCALES` lists the scales (G, O, S, HO, T, N, Z); the gauge
+and the scale-to-ratio table are in `r49.json`.
 
-Only v3 is supported. Earlier archives are not readable.
+Only v4 is supported. Loading any other version fails on the version number.
 
 ## The data file
 
