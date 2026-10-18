@@ -4,8 +4,9 @@ The corpus repo's validator, living here rather than there.
 
 `rails49/r49` holds `.r49` archives; this checks them. It runs from a checkout of
 `rails49` at `main` (issue #55), so nothing is published, no schema is vendored,
-and `@occupancy/config` supplies `MIN_DPT` and the class vocabulary — meaning
-`config.yaml` gains no second home for values that must agree.
+and `@occupancy/config` supplies `MIN_DPT` and `@occupancy/r49` the class
+vocabulary — meaning neither `config.yaml` nor `lib/r49/r49.json` gains a
+second home for values that must agree.
 
 It sits in `tools/`, not `lib/` and not `dataset/`, for two reasons: it is an
 executable whose consumer is a foreign CI rather than a library `ui/` imports,

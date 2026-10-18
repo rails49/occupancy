@@ -165,6 +165,10 @@ describe('validate', () => {
         await build('archives/alice/west-yard.r49', { labels: [car({ class: 'stockyard' })] })
       );
       expect(codes(unknown.errors)).toContain('labels/class');
+      // #187: the message must send the contributor to where the vocabulary lives.
+      const message = unknown.errors.find(e => e.code === 'labels/class')!.message;
+      expect(message).toContain('lib/r49/r49.json');
+      expect(message).not.toContain('config.yaml');
 
       const nested = await reportFor(
         await build('archives/alice/west-yard.r49', {
