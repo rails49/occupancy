@@ -1,21 +1,14 @@
 import { z } from 'zod';
-import {
-  STANDARD_GAUGE,
-  SCALE_TO_RATIO,
-  SCALES,
-  type Scale,
-} from '@occupancy/config';
+import { STANDARD_GAUGE, SCALE_TO_RATIO, SCALES, type Scale } from './data.ts';
 
 /**
- * Every valid scale name, in the order `config.yaml` defines them.
+ * Every valid scale name, in the order `r49.json` defines them.
  *
- * Sourced from `@occupancy/config`; this package declares no scale table of its
- * own. `config.yaml` is the single authored home, and a staleness check in
- * `bin/test.sh` keeps the generated binding honest.
+ * Read from the package's data file; no scale table is declared in code.
  */
 export const VALID_SCALES: readonly Scale[] = SCALES;
 
-/** A scale name. Alias of `@occupancy/config`'s `Scale`. */
+/** A scale name — a key of `r49.json`'s `scale_to_ratio`. */
 export type ValidScales = Scale;
 
 /** Model-domain track gauge in mm (prototype gauge / scale ratio). Internal — the prototype domain is not part of the package's public contract. */
@@ -282,7 +275,7 @@ const carLabelBase = {
    * A plain string here, deliberately unvalidated against the vocabulary.
    * Conformance is a warning in the editor and a fatal error in the training
    * exporter; a format that refused to open files because someone pruned
-   * `config.yaml` would punish config edits.
+   * the vocabulary would punish vocabulary edits.
    */
   class: z.string(),
   p0: PointSchema,

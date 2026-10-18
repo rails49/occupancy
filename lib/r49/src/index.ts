@@ -75,14 +75,14 @@ export {
 // could not be replaced without a breaking change. Validation is an
 // implementation detail — callers get validated data or an exception.
 //
-// Withheld: STANDARD_GAUGE, SCALE_TO_RATIO and getGaugeMM, the prototype- and
-// model-domain gauge constants. Nothing outside this package needs a physical
-// gauge in mm — only the pixel-domain getDPT() and the scale names in
-// VALID_SCALES. Exposing the prototype domain would invite gauge arithmetic to
-// be reimplemented downstream (which is exactly what lib/classifier used to
-// do). The first two are no longer ours to re-export in any case: they are
-// generated into @occupancy/config from config.yaml, which is where anything
-// that genuinely needs them should read them.
+// Withheld: STANDARD_GAUGE, SCALE_TO_RATIO, VOCABULARY and getGaugeMM. They
+// are read from this package's `r49.json` (./data.ts), which is their one
+// authored home. Nothing outside this package needs a physical gauge in mm —
+// only the pixel-domain getDPT() and the scale names in VALID_SCALES — and
+// exposing the prototype domain would invite gauge arithmetic to be
+// reimplemented downstream (which is exactly what lib/classifier used to do).
+// A consumer that genuinely needs the values reads the data file itself, as
+// occupancy's config generator does.
 //
 // Withheld: `toBase62`. It is a numeric encoding helper, not an identity
 // concept — exporting it invites callers to mint ids that bypass the

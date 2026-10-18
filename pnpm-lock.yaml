@@ -119,9 +119,6 @@ importers:
 
   lib/r49:
     dependencies:
-      '@occupancy/config':
-        specifier: workspace:*
-        version: link:../config
       jszip:
         specifier: ^3.10.1
         version: 3.10.1

@@ -229,7 +229,7 @@ describe('R49Archive', () => {
     });
 
     it('accepts an out-of-vocabulary class string', async () => {
-      // Pruning config.yaml must not lock anyone out of their own files.
+      // Pruning the vocabulary must not lock anyone out of their own files.
       const loaded = await roundTrip(manifest({
         images: [{ filename: 'a.jpg', labels: [car({ class: 'not.in.any.vocabulary' })] }],
       }));

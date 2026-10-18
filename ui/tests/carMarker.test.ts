@@ -166,7 +166,7 @@ describe('renderCar() with a class the vocabulary does not name', () => {
 
   it('still draws the car, because the archive still opens', () => {
     // `class` is not validated at parse time on purpose: a format that refused
-    // to open files because someone pruned `config.yaml` would punish config
+    // to open files because someone pruned the vocabulary would punish vocabulary
     // edits. So a non-conforming label is a warning, never a hidden car.
     const el = warned();
     expect(el.querySelector('line')).not.toBeNull();

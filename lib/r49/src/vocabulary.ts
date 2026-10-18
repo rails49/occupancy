@@ -1,9 +1,9 @@
-import { DETECTOR_VOCABULARY } from '@occupancy/config';
+import { VOCABULARY } from './data.ts';
 
 /**
  * How the authored class taxonomy is *read*. The taxonomy itself is authored in
- * `config.yaml` and reaches here through the generated `@occupancy/config`; this
- * module holds only the two rules for interpreting it.
+ * the package's `r49.json`; this module holds only the rules for interpreting
+ * it.
  *
  * It lives in this package rather than in `ui/` because it now has two
  * consumers that must agree: the editor, where a non-conforming class is a
@@ -14,8 +14,8 @@ import { DETECTOR_VOCABULARY } from '@occupancy/config';
  *
  * This is not parse-time validation and must not become it: `class` is a plain
  * string at the format layer, deliberately (`SPEC.md` § Format). A format that
- * refused to open files because someone pruned `config.yaml` would punish
- * config edits.
+ * refused to open files because someone pruned the vocabulary would punish
+ * vocabulary edits.
  */
 
 /**
@@ -23,12 +23,12 @@ import { DETECTOR_VOCABULARY } from '@occupancy/config';
  * properties.
  *
  * `unknown` rather than a union, because the two are told apart by shape and a
- * property may be any scalar the YAML allows.
+ * property may be any scalar the JSON allows.
  */
 export type VocabularyNode = { readonly [key: string]: unknown };
 
 /** The authored taxonomy. A separate name so the default is legible. */
-const AUTHORED: VocabularyNode = DETECTOR_VOCABULARY;
+const AUTHORED: VocabularyNode = VOCABULARY;
 
 /**
  * Whether `prefix` matches `cls` **segment by segment** — either the whole
@@ -52,7 +52,7 @@ export function isSegmentPrefix(prefix: string, cls: string): boolean {
  * **A nested object is a subtype; anything else is a property.** `width_mm` is
  * an optional per-class width override sitting beside subtypes in the same
  * mapping, and telling the two apart *structurally* is what avoids a reserved
- * list of key names that `config.yaml` would then have to know about.
+ * list of key names that the data file would then have to know about.
  */
 export function vocabularySubtypes(
   node: VocabularyNode

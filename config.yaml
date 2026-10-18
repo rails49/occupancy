@@ -39,9 +39,10 @@ cnn:
 # ====================================================================================
 # Layout & Physical specifications (R49 manifest)
 # ====================================================================================
+# The standard gauge and the scale-to-ratio table are the .r49 format's, not this
+# project's: they are authored in lib/r49/r49.json, and the generator reads them
+# from there (ADR 0018, #181). The generator fails if either reappears here.
 layout:
-  # Standard rail gauge in millimeters
-  standard_gauge: 1435.0
   # Prototype mm — widest real stock (SBB RAm TEE I). Car width is derived from
   # this rather than stored per label; because width in pixels is
   # DPT * standard_width / standard_gauge, the scale ratio cancels and a car is
@@ -49,15 +50,6 @@ layout:
   # an over-wide box biases toward `occupied`, the direction the occupancy
   # output deliberately errs in. See SPEC.md § Location Data.
   standard_width: 3000.0
-  # Model scale to ratio mapping
-  scale_to_ratio:
-    G: 25
-    O: 48
-    S: 64
-    HO: 87
-    T: 120
-    N: 160
-    Z: 220
   # Below this a car is too few pixels across to localize reliably. Warns
   # persistently, never blocks — the fixture corpus lives at DPT 18-19. Under
   # `layout` and not `classifier` because it gates the editor.
@@ -147,25 +139,21 @@ detector:
   # here therefore re-maps every already-labeled car of that subtype with no
   # relabeling.
   classes: ["stock"]
-  # The authoring taxonomy: what the editor's context menu offers and what a
-  # label's `class` must match. The `stock.` root is required rather than
-  # cosmetic — a new car is `stock` and refinements must roll up to it, so an
-  # unrooted class would match no entry and be dropped from the export. The
-  # root never appears in the UI; the menu renders its children.
   #
-  # A nested mapping is a subtype; any other value is a property of the class
-  # it sits under (`width_mm` is the one such property, an optional per-class
-  # width override). That is the rule the editor reads this with — it is how a
-  # property is told from a subtype without a reserved list of key names.
+  # Every entry must name a class in the vocabulary — the authoring taxonomy,
+  # which is the .r49 format's and lives in lib/r49/r49.json (ADR 0018). The
+  # generator fails, naming the class, when one does not: a class no label can
+  # carry is an index nothing is ever trained as.
   #
-  # Adding a subtype here costs nothing downstream: `classes` above is what a
-  # label maps into, and `stock.loco.steam` still maps to `stock` until
-  # `stock.loco.steam` is appended there.
-  vocabulary:
-    stock:
-      loco:
-        steam: {}
-        diesel: {}
-        electric: {}
-      passenger: {}
-      freight: {}
+  # The vocabulary's rules, kept here because JSON carries no comments:
+  #
+  # * The root (`stock`) is required rather than cosmetic — a new car is
+  #   `stock` and refinements must roll up to it, so an unrooted class would
+  #   match no entry above and be dropped from the export. The root never
+  #   appears in the UI; the menu renders its children.
+  # * A nested mapping is a subtype; any other value is a property of the class
+  #   it sits under (`width_mm` is the one such property, an optional per-class
+  #   width override). That is how a property is told from a subtype without a
+  #   reserved list of key names.
+  # * Adding a subtype there costs nothing downstream: `stock.loco.steam` still
+  #   maps to `stock` until `stock.loco.steam` is appended here.

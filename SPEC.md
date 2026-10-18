@@ -515,7 +515,7 @@ Encoding rules, each with its reason:
 
 * **Collections are arrays of self-describing objects carrying `id`**, not records keyed by id. v3 keys the label dict by identity, so a marker is *anonymous* once it leaves its collection — but [Occupancy Output](#occupancy-output) makes `id` the thing consumers key on, and the training exporter, the provenance audit, and any "which label produced this crop" trace all pass single labels around. Uniqueness costs one validation per collection, which is the price of that. `id` is a `make_id` snowflake; sensor ids and label ids are separate namespaces and are never compared.
 * **`provenance` is a discriminated union, with no default.** `proposed_by` is required on `proposed`/`corrected` and forbidden on `human`, enforced by the type rather than a runtime check. A default of `human` is specifically rejected: a forgotten field would launder model output as human authorship, which is the exact feedback loop [Provenance](#provenance-is-required-not-optional) exists to make measurable. `proposed_by` is a free-form non-empty string — no semver pattern, since it identifies a model and a future detector may be versioned differently.
-* **`class` is a plain string at the format layer**, *not* validated against the vocabulary at parse time. Conformance is a visible warning in the editor and a **fatal error in the training exporter**, which is where a mis-mapped class silently corrupts a model. A format that refuses to open files because someone pruned `config.yaml` would punish config edits.
+* **`class` is a plain string at the format layer**, *not* validated against the vocabulary at parse time. Conformance is a visible warning in the editor and a **fatal error in the training exporter**, which is where a mis-mapped class silently corrupts a model. A format that refuses to open files because someone pruned the vocabulary would punish vocabulary edits.
 * **`calibration` is always present, with `points` defaulting to `[]`.** "Uncalibrated" is a real state the editor handles, and an empty list expresses it without every consumer null-checking the parent. `getDPT()` returns `null` when no equal-`z` pair exists, covering the empty and single-point cases with one rule.
 * **`camera_height_mm` and `reference_height_mm` are `.optional()`, and both are targets** — see [Camera height](#camera-height-is-what-corrects-the-third-dimension). They are the *only* two fields the non-planarity work adds: nothing about the camera model, the nadir pixel, or focal length is stored, because none of it is used. **Neither takes a zod `.default()`**, which would have the parser populate it and so inject the key on the *first save of any archive*, including one the user only opened to look at — damage done at save time and invisible afterwards, which is exactly what the strictness rule below exists to prevent. Absent means absent: the fit falls back to the reference plane, and `reference_height_mm` reads as 0 at the one place that consumes it.
 * **They add no version.** Settled in [issue #139](https://github.com/rails49/occupancy/issues/139). The version number marks changes that make an old file **misread** or a new file **lose data**; an additive optional field is neither — an old archive loads unchanged, and a new archive is *refused* rather than misread, which is the loud failure strictness was written to produce. A bump would do the opposite of what it looks like: with `version` a literal and no compatibility shim by decision, v5 makes **every existing v4 archive fail to load**, sacrificing the backward compatibility [the frozen fixture](#migration-is-a-one-time-conversion-not-a-feature) exists to hold in order to reword a forward-compatibility refusal. Because a stale reader's raw `Unrecognized key(s)` message is useless to the model railroader who meets it, strict-key failures are reworded **once, at the archive-load boundary**, to say the archive may come from a newer build and the app should be reloaded.
@@ -535,26 +535,32 @@ This is safe because all six are tracked binaries: the originals stay recoverabl
 
 ```yaml
 layout:
-  standard_gauge: 1435.0      # prototype mm
   standard_width: 3000.0      # prototype mm — widest real stock (SBB RAm TEE I)
-  scale_to_ratio: { G: 25, O: 48, S: 64, HO: 87, T: 120, N: 160, Z: 220 }
   min_dpt: 20                 # warns persistently, never blocks
 
 detector:
   input: [960, 544]           # superseded — see below
   confidence_threshold: 0.25  # placeholder — needs held-out recall
   classes: ["stock"]          # YOLO class index order — append-only
-  vocabulary:                 # a nested mapping is a subtype; anything else
-    stock:                    # (width_mm) is a property of the class above it
-      loco:
-        steam: {}
-        diesel: {}
-        electric: {}
-      passenger: {}
-      freight: {}
 ```
 
-`vocabulary` is the authoring taxonomy — what the context menu offers and what a label's `class` must match. `classes` **is** the YOLO class list, verbatim and index-ordered. A label maps to the longest entry of `classes` that is a segment-prefix of its class, so `stock` matches `stock.loco.steam` but never `stockyard`; the same rule resolves an overriding `width_mm`. Adding a subtype to `classes` therefore re-maps every already-labeled car of that subtype with **no relabeling**.
+The format's own constants are not this project's and do not live here ([ADR 0018](docs/adr/0018-the-r49-format-is-defined-in-rails49-r49.md), #181). They sit in `lib/r49/r49.json`, which `@occupancy/r49` reads and the config generator takes them from:
+
+```json
+{
+  "standard_gauge": 1435.0,
+  "scale_to_ratio": { "G": 25, "O": 48, "S": 64, "HO": 87, "T": 120, "N": 160, "Z": 220 },
+  "vocabulary": {
+    "stock": {
+      "loco": { "steam": {}, "diesel": {}, "electric": {} },
+      "passenger": {},
+      "freight": {}
+    }
+  }
+}
+```
+
+`vocabulary` is the authoring taxonomy — what the context menu offers and what a label's `class` must match. A nested mapping is a subtype; anything else (`width_mm`) is a property of the class above it. `classes` **is** the YOLO class list, verbatim and index-ordered, and every entry must name a class in the vocabulary — the generator fails, naming the class, when one does not. A label maps to the longest entry of `classes` that is a segment-prefix of its class, so `stock` matches `stock.loco.steam` but never `stockyard`; the same rule resolves an overriding `width_mm`. Adding a subtype to `classes` therefore re-maps every already-labeled car of that subtype with **no relabeling**.
 
 > ⚠️ **`classes` is append-only.** A list position *is* a YOLO class index, so reordering or deleting an entry invalidates trained weights while the file still validates. It is the one config edit that can break a model with nothing noticing.
 

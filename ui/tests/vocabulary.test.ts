@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DETECTOR_VOCABULARY } from '@occupancy/config';
+import { VOCABULARY } from '@occupancy/config';
 import { classChoices, isKnownClass, rootClass } from '../src/vocabulary.js';
 import type { VocabularyNode } from '../src/vocabulary.js';
 
@@ -36,7 +36,7 @@ describe('rootClass()', () => {
   });
 
   it('reads the authored vocabulary without being told what it says', () => {
-    expect(rootClass()).toBe(Object.keys(DETECTOR_VOCABULARY)[0]);
+    expect(rootClass()).toBe(Object.keys(VOCABULARY)[0]);
   });
 });
 
@@ -81,7 +81,7 @@ describe('classChoices()', () => {
   });
 
   it('is generated from the authored vocabulary, with no list in the code', () => {
-    const authored = DETECTOR_VOCABULARY as VocabularyNode;
+    const authored = VOCABULARY as VocabularyNode;
     const root = authored[rootClass()] as VocabularyNode;
 
     expect(classChoices().map(c => c.name)).toEqual(Object.keys(root));

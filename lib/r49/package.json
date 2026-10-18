@@ -10,7 +10,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@occupancy/config": "workspace:*",
     "jszip": "^3.10.1",
     "zod": "^3.23.8"
   },
