@@ -14,7 +14,7 @@ import type { Detection, Frame } from './types.ts';
  * predicted width with `carWidthPx`, and the UI's archive diagnostics draw
  * ground truth beside detections in the same frame. Leaving it in `dataset`
  * would put the constant that biases boxes toward `occupied` in two packages
- * with nothing checking that they agree — and `dataset/src/obb.ts` imports
+ * with nothing checking that they agree — and `dataset/src/yolo_rules.ts` imports
  * `node:crypto` at module top, so the browser could not have reached it.
  */
 

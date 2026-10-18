@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from 'vitest';
 import { fixture, fixtureCleanup, html } from '@open-wc/testing';
 import { R49Archive } from '@rails49/r49';
-import type { LookAbout, LookBand } from '@rails49/look';
+import type { LookAbout, LookBand, LookGear } from '@rails49/look';
+import { press } from '@rails49/look/testing';
 import '../src/rr-app.js';
 import { RRApp } from '../src/rr-app.js';
 import * as persistence from '../src/persistence.js';
@@ -101,7 +102,7 @@ describe('the band', () => {
     const el = await mount();
     const show = vi.spyOn(el.renderRoot.querySelector('rr-settings-dialog')!, 'show');
 
-    el.renderRoot.querySelector('look-gear')!.click();
+    press(el.renderRoot.querySelector<LookGear>('look-gear')!);
 
     expect(show).toHaveBeenCalled();
   });

@@ -46,9 +46,15 @@ The rules it applies are `SPEC.md` § YOLO annotations:
 * Corners are **clamped** into `[0, 1]`; Ultralytics rejects a label file
   carrying one outside, and a clamped box beats no box. The run reports how
   many moved.
+* An image that decodes at another size than `camera.resolution` **warns** and
+  still exports: its labels are normalized against `camera.resolution`.
 
-`src/obb.ts` holds the arithmetic with no filesystem in it, and is where the
-tests point. The car box itself is not there: `carWidthPx` and `spanToPolygon`
+`src/yolo_rules.ts` holds all of these as one function, `planArchive`: a
+manifest and an image decoder in, and per image the split, the file stem, the
+label lines and warnings, or the reasons it is fatal. Nothing in it touches the
+filesystem or `sharp`, and it is where the tests point; `src/yolo_export.ts`
+only walks directories, decodes, writes what it is handed and reports, and
+names every fatal image of an archive before writing any of it. The car box itself is not there: `carWidthPx` and `spanToPolygon`
 are `@occupancy/detector`'s, so that the width constant has one home and the UI
 can draw ground truth beside detections without importing `node:crypto`.
 
@@ -100,7 +106,7 @@ Training reads the corpus from a local checkout of it, passed as `--in`.
 *   `r49/`: The default `--in`, if you keep a corpus checkout here (gitignored).
 *   `data/`: The generated CNN crop database (gitignored; nothing generates it
     today).
-*   `src/yolo_export.ts`, `src/obb.ts`: the detector export and its arithmetic
+*   `src/yolo_export.ts`, `src/yolo_rules.ts`: the detector export and its rules
     (the car box is `@occupancy/detector`'s).
 *   `src/data_prep.ts`, `src/online_diagnostics.ts`: parked stubs carrying the
     reasoning above.
