@@ -55,7 +55,7 @@ covers training and export.
 
 `config.yaml` holds the parameters that must agree across stages. The format's
 constants (standard gauge, scale ratios, class vocabulary) are in
-`lib/r49/r49.json` (#181). `pnpm config:generate` reads both and writes:
+`@rails49/r49`'s data file (#181). `pnpm config:generate` reads both and writes:
 
 | Output | Tracked? | Read by |
 | :--- | :--- | :--- |
@@ -65,18 +65,19 @@ constants (standard gauge, scale ratios, class vocabulary) are in
 `bin/test.sh` regenerates `lib/config` into a temporary tree and fails on a
 difference. The generator fails, naming the class, when a `detector.classes`
 entry is not in the vocabulary (`ui/tests/generateConfig.test.ts`), and fails
-if `classifier.labels` reappears (#8). Python reads `config.yaml` and
-`r49.json` directly. See ADR 0009.
+if `classifier.labels` reappears (#8). Python reads `config.yaml` and the
+package's data file directly. See ADR 0009.
 
 ## Workspace packages
 
 `pnpm-workspace.yaml` covers `lib/*`, `tools/*`, `dataset` and `ui`. The `lib/*`
 packages are consumed as TypeScript source; nothing under `lib/` is built or
-published. `lib/CLAUDE.md` holds their interface rules.
+published. `lib/CLAUDE.md` holds their interface rules. The `.r49` format
+package, `@rails49/r49`, comes from npm at the version `pnpm-workspace.yaml`
+pins (ADR 0018).
 
 | Package | Described in |
 | :--- | :--- |
-| `@occupancy/r49` | `lib/r49/README.md` |
 | `@occupancy/config` | `lib/config/src/index.ts` (generated) |
 | `@occupancy/drift` | `lib/drift/src/index.ts` |
 | `@occupancy/detector` | `lib/detector/src/index.ts` |

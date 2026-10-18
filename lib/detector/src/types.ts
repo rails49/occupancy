@@ -5,7 +5,7 @@
  * pulling anything a browser bundle would have to carry.
  */
 
-import type { Point } from '@occupancy/r49';
+import type { Point } from '@rails49/r49';
 
 /** The frame a set of pixel coordinates is expressed in. */
 export interface Frame {

@@ -1,14 +1,14 @@
 // GENERATED FILE — DO NOT EDIT.
 //
-// Source: config.yaml, and lib/r49/r49.json for the format's gauge, scales
-// and vocabulary. Regenerate with: pnpm config:generate
+// Source: config.yaml, and @rails49/r49's data file for the format's gauge,
+// scales and vocabulary. Regenerate with: pnpm config:generate
 //
 // Hand edits are lost on the next run, and bin/test.sh fails the build when
 // this file disagrees with its sources.
 
 //── Layout geometry ─────────────────────────────────────────────────────────
 
-/** Prototype track gauge in mm. Read from lib/r49/r49.json, its one authored home. */
+/** Prototype track gauge in mm. Read from @rails49/r49's data file. */
 export const STANDARD_GAUGE = 1435.0;
 
 /**
@@ -46,7 +46,7 @@ export const MIN_DPT = 20;
  */
 export const MAX_DRIFT_TRACK_FRACTION = 0.25;
 
-/** Every scale name lib/r49/r49.json defines a ratio for. */
+/** Every scale name @rails49/r49's data file defines a ratio for. */
 export type Scale = "G" | "O" | "S" | "HO" | "T" | "N" | "Z";
 
 /**
@@ -56,8 +56,8 @@ export type Scale = "G" | "O" | "S" | "HO" | "T" | "N" | "Z";
 export const SCALE_TO_RATIO = { "G": 25, "O": 48, "S": 64, "HO": 87, "T": 120, "N": 160, "Z": 220 } as const;
 
 /**
- * Scale names as a non-empty tuple, in lib/r49/r49.json's order — the form a
- * schema enum needs.
+ * Scale names as a non-empty tuple, in @rails49/r49's data file order — the
+ * form a schema enum needs.
  */
 export const SCALES: readonly [Scale, ...Scale[]] = ["G", "O", "S", "HO", "T", "N", "Z"];
 
@@ -105,7 +105,7 @@ export const DETECTOR_CLASSES = ["stock"] as const;
 
 /**
  * The authoring taxonomy — what a label's `class` should match. Read
- * from lib/r49/r49.json; every DETECTOR_CLASSES entry names a class in it.
+ * from @rails49/r49's data file; every DETECTOR_CLASSES entry names a class in it.
  *
  * The root is required, not cosmetic: an unrooted class matches no
  * entry in DETECTOR_CLASSES and would be dropped from an export. The root

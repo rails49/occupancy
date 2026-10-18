@@ -3,10 +3,10 @@
 
 config.yaml is authored; everything else is generated and verified. The format's
 own constants — the standard gauge, the scale table and the class vocabulary —
-are authored in lib/r49/r49.json instead, because they belong to the .r49
-format rather than to this project (ADR 0018). This script reads them from there
-wherever occupancy still needs them, and fails when a `detector.classes` entry
-names a class the vocabulary does not. It emits two outputs:
+are read from the data file of the pinned @rails49/r49 package instead, because
+they belong to the .r49 format rather than to this project (ADR 0018). This
+script reads them from there wherever occupancy still needs them, and fails
+when a `detector.classes` entry names a class the vocabulary does not. It emits two outputs:
 
   config.json          gitignored, consumed by the model export and the UI
   lib/config/src/      committed, so a fresh clone typechecks before anyone
@@ -29,14 +29,15 @@ from typing import NoReturn
 
 import yaml
 
-# The .r49 format's data file, relative to the project root.
-R49_DATA = "lib/r49/r49.json"
+# The .r49 format's data file, relative to the project root, in the
+# @rails49/r49 package that pnpm-workspace.yaml pins.
+R49_DATA = "node_modules/@rails49/r49/dist/data.json"
 
 # Emitted verbatim at the top of every generated TypeScript file.
 BANNER = """// GENERATED FILE — DO NOT EDIT.
 //
-// Source: config.yaml, and lib/r49/r49.json for the format's gauge, scales
-// and vocabulary. Regenerate with: pnpm config:generate
+// Source: config.yaml, and @rails49/r49's data file for the format's gauge,
+// scales and vocabulary. Regenerate with: pnpm config:generate
 //
 // Hand edits are lost on the next run, and bin/test.sh fails the build when
 // this file disagrees with its sources.
@@ -61,7 +62,7 @@ def require(config: dict, *path: str, source: str = "config.yaml"):
 def is_known_class(cls: str, vocabulary: dict) -> bool:
     """Whether `cls` names an entry of the vocabulary, segment by segment.
 
-    The rule @occupancy/r49's `isKnownClass` reads the vocabulary with: a nested
+    The rule @rails49/r49's `isKnownClass` reads the vocabulary with: a nested
     mapping is a subtype, anything else is a property, and the class is rooted.
     Restated here because Python cannot import it — and kept to the one thing
     the generator needs, which is refusing a class list the vocabulary does not
@@ -169,7 +170,7 @@ def render_generated_ts(config: dict, r49: dict) -> str:
         BANNER,
         "//── Layout geometry ─────────────────────────────────────────────────────────",
         "",
-        doc("Prototype track gauge in mm. Read from lib/r49/r49.json, its one authored home."),
+        doc("Prototype track gauge in mm. Read from @rails49/r49's data file."),
         f"export const STANDARD_GAUGE = {ts_literal(standard_gauge)};",
         "",
         doc(
@@ -207,7 +208,7 @@ def render_generated_ts(config: dict, r49: dict) -> str:
         ),
         f"export const MAX_DRIFT_TRACK_FRACTION = {ts_literal(max_drift_track_fraction)};",
         "",
-        doc("Every scale name lib/r49/r49.json defines a ratio for."),
+        doc("Every scale name @rails49/r49's data file defines a ratio for."),
         f"export type Scale = {scale_union};",
         "",
         doc(
@@ -217,8 +218,8 @@ def render_generated_ts(config: dict, r49: dict) -> str:
         f"export const SCALE_TO_RATIO = {ts_literal(scale_to_ratio)} as const;",
         "",
         doc(
-            "Scale names as a non-empty tuple, in lib/r49/r49.json's order — the form a",
-            "schema enum needs.",
+            "Scale names as a non-empty tuple, in @rails49/r49's data file order — the",
+            "form a schema enum needs.",
         ),
         "export const SCALES: readonly [Scale, ...Scale[]] = ["
         + ", ".join(json.dumps(name) for name in scale_names)
@@ -268,7 +269,7 @@ def render_generated_ts(config: dict, r49: dict) -> str:
         "",
         doc(
             "The authoring taxonomy — what a label's `class` should match. Read",
-            "from lib/r49/r49.json; every DETECTOR_CLASSES entry names a class in it.",
+            "from @rails49/r49's data file; every DETECTOR_CLASSES entry names a class in it.",
             "",
             "The root is required, not cosmetic: an unrooted class matches no",
             "entry in DETECTOR_CLASSES and would be dropped from an export. The root",
@@ -323,8 +324,8 @@ def render_index_ts() -> str:
             "} from './generated.ts';",
             "",
             "//── Vocabulary ──────────────────────────────────────────────────────────────",
-            "// The authoring taxonomy, read from lib/r49/r49.json like the gauge and the",
-            "// scales above. The editor's class menu is generated from it.",
+            "// The authoring taxonomy, read from @rails49/r49's data file like the gauge",
+            "// and the scales above. The editor's class menu is generated from it.",
             "export { VOCABULARY } from './generated.ts';",
             "",
             "// Withheld: everything under `classifier` and `cnn` in config.yaml. The",
@@ -392,7 +393,7 @@ def main() -> None:
         if key in (config.get(section) or {}):
             fail(
                 f"config.yaml still carries '{section}.{key}'. It is the .r49 "
-                f"format's and is authored in {R49_DATA} (ADR 0018)."
+                f"format's and comes from {R49_DATA} (ADR 0018)."
             )
 
     try:

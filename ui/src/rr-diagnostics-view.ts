@@ -1,8 +1,8 @@
 import { LitElement, html, css } from 'lit';
 import { lookTheme } from '@rails49/look';
 import { customElement, property, state } from 'lit/decorators.js';
-import type { R49Archive } from '@occupancy/r49';
-import { getDPT } from '@occupancy/r49';
+import type { R49Archive } from '@rails49/r49';
+import { getDPT } from '@rails49/r49';
 import type { Detection, Frame } from '@occupancy/detector';
 import type { Detector } from '@occupancy/detector/browser';
 import { DETECTOR_CONFIDENCE_THRESHOLD } from '@occupancy/config';

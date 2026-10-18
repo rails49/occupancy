@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fixture, html } from '@open-wc/testing';
-import { R49Archive, getDPT } from '@occupancy/r49';
-import type { ReferencePoint, CarLabel, Point, Sensor, WorldPoint } from '@occupancy/r49';
+import { R49Archive, getDPT } from '@rails49/r49';
+import type { ReferencePoint, CarLabel, Point, Sensor, WorldPoint } from '@rails49/r49';
 import { EditSession } from '../src/editSession.js';
 import { HIGHLIGHT_DURATION_MS } from '../src/highlight.js';
 import { classChoices, rootClass } from '../src/vocabulary.js';
@@ -1239,7 +1239,7 @@ describe('rr-editor-view', () => {
           .trim()
       );
       expect(labels).to.deep.equal(['Delete car', 'Reclassify car']);
-      // Generated from the vocabulary in `lib/r49/r49.json`: a subtype added there changes this
+      // Generated from the vocabulary in `@rails49/r49`'s data file: a subtype added there changes this
       // menu with no code edit (#35).
       expect(submenuItems(el, `reclassify-group:${rootClass()}`)).to.deep.equal(
         classChoices().map(choice =>

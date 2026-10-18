@@ -39,7 +39,7 @@ export { boxCorners, carWidthPx, spanToPolygon } from './geometry.ts';
 //── Class index ──────────────────────────────────────────────────────────────
 // The YOLO class a stored `class` trains as. The class list is this project's
 // and the vocabulary is the format's, so the mapping lives here; the
-// segment-prefix rule it matches by is imported from `@occupancy/r49` (#181).
+// segment-prefix rule it matches by is imported from `@rails49/r49` (#181).
 export { detectorClassIndex } from './classIndex.ts';
 
 //── Box overlap ──────────────────────────────────────────────────────────────

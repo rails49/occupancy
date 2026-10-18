@@ -1,5 +1,5 @@
 import { STANDARD_GAUGE, STANDARD_WIDTH } from '@occupancy/config';
-import type { CarLabel, Point } from '@occupancy/r49';
+import type { CarLabel, Point } from '@rails49/r49';
 import type { Detection, Frame } from './types.ts';
 
 /**

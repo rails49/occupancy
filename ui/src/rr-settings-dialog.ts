@@ -1,7 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, query } from 'lit/decorators.js';
-import { VALID_SCALES } from '@occupancy/r49';
-import type { Layout } from '@occupancy/r49';
+import { VALID_SCALES } from '@rails49/r49';
+import type { Layout } from '@rails49/r49';
 import { lookTheme, type LookDialog } from '@rails49/look';
 import type { MissingRequirement } from './requiredMetadata.js';
 import '@shoelace-style/shoelace/dist/components/tab-group/tab-group.js';

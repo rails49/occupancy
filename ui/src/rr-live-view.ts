@@ -1,8 +1,8 @@
 import { LitElement, html, css } from 'lit';
 import { lookTheme } from '@rails49/look';
 import { customElement, property, state, query } from 'lit/decorators.js';
-import type { R49Archive } from '@occupancy/r49';
-import { getDPT } from '@occupancy/r49';
+import type { R49Archive } from '@rails49/r49';
+import { getDPT } from '@rails49/r49';
 import { MAX_DRIFT_TRACK_FRACTION } from '@occupancy/config';
 import { occupancy } from '@occupancy/detector';
 import type { Detection, Frame, SensorState } from '@occupancy/detector';

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fixture, html } from '@open-wc/testing';
-import { R49Archive } from '@occupancy/r49';
+import { R49Archive } from '@rails49/r49';
 import type { Detection } from '@occupancy/detector';
 import '../src/rr-live-view.js';
 import { RRLiveView } from '../src/rr-live-view.js';

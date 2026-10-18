@@ -1,4 +1,4 @@
-import { calibrationFit, type ManifestData } from '@occupancy/r49';
+import { calibrationFit, type ManifestData } from '@rails49/r49';
 
 /**
  * The layout metadata an archive must carry before it can be authored, and the
@@ -15,7 +15,7 @@ import { calibrationFit, type ManifestData } from '@occupancy/r49';
  * every archive that predates it — the orphan-everything cost of a version bump
  * arriving by another road. A required *dialog* migrates an archive on its
  * first edit and orphans nothing, which is the `.optional()`-plus-a-gate shape
- * `@occupancy/r49` was given.
+ * `@rails49/r49` was given.
  *
  * Adding a requirement is one entry in {@link missingLayoutMetadata}.
  */

@@ -11,25 +11,22 @@ A model railroad as seen by one fixed overhead camera. See [SPEC § Assumption](
 _Avoid_: scene
 
 **Archive**:
-A `.r49` file holding one layout's images, calibration, sensors and car labels. See [SPEC § Format](SPEC.md#format).
-_Avoid_: project, dataset
+`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
 
 **Format**:
-The rules every archive follows, independent of any program that reads or writes one. See [SPEC § Format](SPEC.md#format) and [ADR 0018](docs/adr/0018-the-r49-format-is-defined-in-rails49-r49.md).
-_Avoid_: schema (for the rules themselves)
+`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
 
 **Outside reader**:
-A program that reads archives and is not part of this project, such as someone else's model trained on the corpus. See [ADR 0018](docs/adr/0018-the-r49-format-is-defined-in-rails49-r49.md).
-_Avoid_: consumer, classifier
+`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
 
 **Corpus**:
-The archives contributed to `rails49/r49`, which training draws from. See [docs/SYSTEM.md](docs/SYSTEM.md#the-pipeline).
+`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
 
 **Corpus rule**:
-A requirement an archive must meet to be accepted into the corpus, beyond the format, such as every class being in the vocabulary. See [ADR 0018](docs/adr/0018-the-r49-format-is-defined-in-rails49-r49.md).
+`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
 
 **Reader requirement**:
-A condition one reader places on the archives it uses, such as a minimum DPT. See [ADR 0018](docs/adr/0018-the-r49-format-is-defined-in-rails49-r49.md).
+`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
 
 **Fixture**:
 One of the six archives kept to exercise the code. See [docs/SYSTEM.md](docs/SYSTEM.md#the-pipeline).
@@ -54,7 +51,7 @@ _Avoid_: px/mm, resolution
 The DPT below which images are too coarse for this project's detector to train on. A reader requirement. See [SPEC § Calibration](SPEC.md#establishes-the-relation-between-image-pixels-and-physical-dimensions).
 
 **Recommended DPT**:
-The DPT the corpus asks contributors to reach. See [ADR 0018](docs/adr/0018-the-r49-format-is-defined-in-rails49-r49.md).
+`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
 
 **Calibration**:
 The reference points that fix a layout's DPT. See [SPEC § Calibration](SPEC.md#calibration).
@@ -94,7 +91,7 @@ One piece of rolling stock, labeled by its two ends along its centerline. See [S
 _Avoid_: vehicle, object, stock (for the thing itself)
 
 **Span**:
-The two end points of a car label. See [SPEC § The v4 manifest](SPEC.md#the-v4-manifest).
+`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
 
 **Car width**:
 The width every car is drawn with, derived from DPT and the standard width. Never stored. See [SPEC § Location Data](SPEC.md#location-data-cars-and-sensors).
@@ -110,14 +107,13 @@ _Avoid_: consist
 The point where two cars' ends coincide. Derived, never labeled. See [SPEC § Authoring cars](SPEC.md#authoring-cars-and-the-trains-they-form).
 
 **Class**:
-A dotted name for what a car is, such as `stock.loco.steam`. See [SPEC § Parameters](SPEC.md#parameters-live-in-configyaml).
+`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
 
 **Stock**:
-The root class, under which every class sits. See [SPEC § Parameters](SPEC.md#parameters-live-in-configyaml).
+`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
 
 **Vocabulary**:
-The tree of classes an author may assign. See [SPEC § Parameters](SPEC.md#parameters-live-in-configyaml).
-_Avoid_: taxonomy, label set
+`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
 
 **Labeled complete**:
 A person's assertion that no car in an image is unlabeled. See [SPEC § Labeling completeness](SPEC.md#labeling-completeness).

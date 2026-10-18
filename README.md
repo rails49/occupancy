@@ -23,7 +23,7 @@ Requires [pnpm](https://pnpm.io/) and [uv](https://github.com/astral-sh/uv). Run
 | Install the pre-push hook that runs `bin/test.sh` | `bin/install-hooks.sh` |
 | Typecheck all packages | `pnpm typecheck` |
 | All TS tests | `pnpm test` |
-| Tests for one package | `pnpm --filter @occupancy/r49 test` |
+| Tests for one package | `pnpm --filter @occupancy/detector test` |
 | A single test file | `pnpm --filter @occupancy/ui test tests/carMarker.test.ts` |
 | Watch mode (ui) | `pnpm --filter @occupancy/ui test:watch` |
 | The chrome check alone | `ui/node_modules/.bin/look-check ui/src ui/index.html` |

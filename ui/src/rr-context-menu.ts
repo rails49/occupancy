@@ -17,7 +17,7 @@ import { clampToViewport } from './geometry.js';
  * `items` nests: a row that carries children opens a **submenu** instead of
  * reporting anything, which is what the dotted class taxonomy is rendered as
  * (`SPEC.md` § Right-click is state-dependent). The nesting is arbitrarily
- * deep, because the taxonomy is — it is read out of `lib/r49/r49.json` and
+ * deep, because the taxonomy is — it is read out of `@rails49/r49`'s data file and
  * this element learns its shape from the rows it is handed, as it learns
  * everything else.
  */

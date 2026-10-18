@@ -1,17 +1,17 @@
 import { VOCABULARY } from '@occupancy/config';
-import { vocabularySubtypes, type VocabularyNode } from '@occupancy/r49';
+import { vocabularySubtypes, type VocabularyNode } from '@rails49/r49';
 
 /**
  * Whether a stored class names an entry of the taxonomy.
  *
- * Re-exported from `@occupancy/r49` rather than implemented here: the corpus
+ * Re-exported from `@rails49/r49` rather than implemented here: the corpus
  * validator **blocks** a submission on the same predicate the editor merely
  * warns on, and two implementations of segment matching would matter most in
  * exactly the case where they disagreed — a contributor rejected for a class
  * this editor drew as fine. This module stays the only place `ui/` learns what
  * a car may be called.
  */
-export { isKnownClass } from '@occupancy/r49';
+export { isKnownClass } from '@rails49/r49';
 
 /**
  * The authored class taxonomy, read as a tree — the one place `ui/` learns what
@@ -19,9 +19,9 @@ export { isKnownClass } from '@occupancy/r49';
  *
  * A pure module for the same reason `geometry.ts` is one: it is arithmetic over
  * data, and a component cannot be tested in jsdom. Everything here is derived
- * from the vocabulary in `lib/r49/r49.json`, reached through the generated
- * `@occupancy/config`, so **adding a subtype there and regenerating changes the
- * editor's menu with no code edit** — and no class name is written anywhere
+ * from the vocabulary in `@rails49/r49`'s data file, reached through the generated
+ * `@occupancy/config`, so **a subtype added in an `@rails49/r49` release reaches
+ * the editor's menu at the next bump and regenerate, with no code edit** — and no class name is written anywhere
  * else in `ui/` (`SPEC.md` § Parameters live in `config.yaml`).
  *
  * Two rules the tree is read with, both of which are wrong somewhere if
@@ -56,7 +56,7 @@ const AUTHORED: VocabularyNode = VOCABULARY;
 
 /**
  * The subtypes of a node, in authored order. Shared with the validator through
- * `@occupancy/r49` for the same reason `isKnownClass` is: "a nested object is a
+ * `@rails49/r49` for the same reason `isKnownClass` is: "a nested object is a
  * subtype, anything else is a property" is a rule about the authored taxonomy,
  * not about the menu.
  */
@@ -66,7 +66,7 @@ const subtypes = vocabularySubtypes;
  * The taxonomy's single root — the class every new car is created as.
  *
  * Derived rather than written down: the editor authoring a hardcoded `'stock'`
- * would be a second home for a value `lib/r49/r49.json` owns, and it would go
+ * would be a second home for a value `@rails49/r49`'s data file owns, and it would go
  * on agreeing with the vocabulary only by luck.
  *
  * **Exactly one root**, and both other counts throw rather than guess. None
@@ -81,8 +81,8 @@ export function rootClass(vocabulary: VocabularyNode = AUTHORED): string {
   const roots = subtypes(vocabulary);
   if (roots.length !== 1) {
     throw new Error(
-      `The vocabulary in lib/r49/r49.json must name exactly one root class, found ${roots.length}. ` +
-        'Edit it and run: pnpm config:generate'
+      `The vocabulary in @occupancy/config must name exactly one root class, found ${roots.length}. ` +
+        'Regenerate it: pnpm config:generate'
     );
   }
   return roots[0][0];

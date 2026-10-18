@@ -1,6 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, queryAll, query, state } from 'lit/decorators.js';
-import type { WorldPoint } from '@occupancy/r49';
+import type { WorldPoint } from '@rails49/r49';
 import { lookTheme, type LookDialog } from '@rails49/look';
 import '@shoelace-style/shoelace/dist/components/input/input.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';

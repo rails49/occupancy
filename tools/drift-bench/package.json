@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@occupancy/drift": "workspace:*",
-    "@occupancy/r49": "workspace:*",
+    "@rails49/r49": "catalog:",
     "sharp": "^0.33.4",
     "tsx": "^4.10.5"
   },

@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@occupancy/r49": "workspace:*",
+    "@rails49/r49": "catalog:",
     "onnxruntime-common": "^1.20.0",
     "onnxruntime-node": "1.20.0",
     "onnxruntime-web": "^1.20.0",

@@ -3,12 +3,13 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import authoredData from '@rails49/r49/data.json';
 
-// The vocabulary and the class list are authored in two files now: the
-// vocabulary is the .r49 format's (`lib/r49/r49.json`) and `detector.classes`
-// is this project's (`config.yaml`), ADR 0018 / #181. Removing a subtype from
-// the one used to sit beside the class list it broke; now nothing but the
-// generator sees both, so it is what refuses the pair — and `bin/test.sh` runs
+// The vocabulary and the class list are authored in two places now: the
+// vocabulary is the .r49 format's (`@rails49/r49`'s data file) and
+// `detector.classes` is this project's (`config.yaml`), ADR 0018 / #181.
+// Removing a subtype from the one used to sit beside the class list it broke;
+// now nothing but the generator sees both, so it is what refuses the pair — and `bin/test.sh` runs
 // it first, so a refusal fails the whole gate.
 //
 // These run the generator itself, as `bin/test.sh` does, against copies of the
@@ -19,7 +20,6 @@ import path from 'node:path';
 const repoRoot = path.resolve(__dirname, '../..');
 const generator = path.join(repoRoot, 'bin/generate_config.py');
 const authoredConfig = fs.readFileSync(path.join(repoRoot, 'config.yaml'), 'utf8');
-const authoredData = JSON.parse(fs.readFileSync(path.join(repoRoot, 'lib/r49/r49.json'), 'utf8'));
 
 let dir: string;
 

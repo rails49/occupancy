@@ -1,6 +1,6 @@
 import { svg, css } from 'lit';
 import type { SVGTemplateResult, CSSResult } from 'lit';
-import type { Sensor } from '@occupancy/r49';
+import type { Sensor } from '@rails49/r49';
 import type { SensorState, UnknownReason } from '@occupancy/detector';
 import { placeLabel } from './geometry.js';
 import type { FrameSize } from './geometry.js';

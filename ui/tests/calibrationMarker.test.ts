@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render, svg } from 'lit';
-import type { ReferencePoint } from '@occupancy/r49';
+import type { ReferencePoint } from '@rails49/r49';
 import {
   renderCalibrationPoint,
   calibrationMarkerStyles,

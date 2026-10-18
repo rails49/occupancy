@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render, svg } from 'lit';
-import type { Sensor } from '@occupancy/r49';
+import type { Sensor } from '@rails49/r49';
 import type { SensorState, UnknownReason } from '@occupancy/detector';
 import { renderSensor, sensorLabelText, sensorMarkerStyles } from '../src/sensorMarker.js';
 import { renderCalibrationPoint } from '../src/calibrationMarker.js';

@@ -1,7 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, query, state } from 'lit/decorators.js';
-import { calibrationFit, getDPT, make_id } from '@occupancy/r49';
-import type { Image, ManifestData, Point } from '@occupancy/r49';
+import { calibrationFit, getDPT, make_id } from '@rails49/r49';
+import type { Image, ManifestData, Point } from '@rails49/r49';
 import { MIN_DPT } from '@occupancy/config';
 import { captureFromCamera } from './capture.js';
 import { DriftMeasurements } from './driftMeasurements.js';
@@ -107,7 +107,7 @@ function classOfReclassifyRow(id: string): string | null {
 /**
  * The taxonomy as menu rows, for one car.
  *
- * Generated from the vocabulary in `lib/r49/r49.json` (`vocabulary.ts`), so
+ * Generated from the vocabulary in `@rails49/r49`'s data file (`vocabulary.ts`), so
  * adding a subtype there and regenerating changes this menu with **no code
  * edit** — and the root is not among them, because it is required in the
  * stored class and absent from the UI (`SPEC.md` § Parameters live in

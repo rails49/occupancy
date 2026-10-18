@@ -1,6 +1,6 @@
 import { svg, css } from 'lit';
 import type { SVGTemplateResult, CSSResult } from 'lit';
-import type { ReferencePoint, WorldPoint } from '@occupancy/r49';
+import type { ReferencePoint, WorldPoint } from '@rails49/r49';
 import { placeLabel } from './geometry.js';
 import type { FrameSize } from './geometry.js';
 import { HIGHLIGHT_CLASS } from './highlight.js';

@@ -1,5 +1,5 @@
 import { carWidthPx } from '@occupancy/detector';
-import type { ReferencePoint, CarLabel, Point, Sensor } from '@occupancy/r49';
+import type { ReferencePoint, CarLabel, Point, Sensor } from '@rails49/r49';
 
 /**
  * The editor's geometry, as pure functions.
@@ -12,7 +12,7 @@ import type { ReferencePoint, CarLabel, Point, Sensor } from '@occupancy/r49';
  * file is covered today, which is the entire reason the file exists. Every
  * editor-spec ticket that draws or grabs an object reads its numbers from here.
  *
- * It is **outside** `@occupancy/r49` for the same reason `history.ts` is: that
+ * It is **outside** `@rails49/r49` for the same reason `history.ts` is: that
  * package parses and serializes archives, and a grab radius is an editing
  * concept the training exporter and the Node classifier have no use for.
  *
@@ -23,7 +23,7 @@ import type { ReferencePoint, CarLabel, Point, Sensor } from '@occupancy/r49';
  * Track width in image pixels — which **is** DPT, and this function exists to
  * say so once.
  *
- * `DPT = px_per_mm × gauge_mm` (`@occupancy/r49`'s `getDPT`), so the number
+ * `DPT = px_per_mm × gauge_mm` (`@rails49/r49`'s `getDPT`), so the number
  * already is the track gauge measured in the image's own pixels. Callers that
  * need to draw something a track wide would otherwise pass `dpt` around with a
  * comment claiming the identity, and the identity would be re-derived, or

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { fixture, html } from '@open-wc/testing';
-import type { CarLabel } from '@occupancy/r49';
+import type { CarLabel } from '@rails49/r49';
 import { carWidthPx } from '@occupancy/detector';
 import { diagnoseImage, rollUp } from '../src/diagnostics.js';
 import '../src/rr-diagnostics-report.js';

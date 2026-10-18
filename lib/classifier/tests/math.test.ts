@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { ManifestData } from '@occupancy/r49';
+import type { ManifestData } from '@rails49/r49';
 // Internal base class — not part of the package interface, imported directly.
 import { BaseClassifier } from '../src/base.ts';
 

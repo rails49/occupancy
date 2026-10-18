@@ -4,6 +4,12 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+catalogs:
+  default:
+    '@rails49/r49':
+      specifier: 0.1.0
+      version: 0.1.0
+
 overrides:
   lit: ^3.3.2
 
@@ -11,6 +17,9 @@ importers:
 
   .:
     devDependencies:
+      '@rails49/r49':
+        specifier: 'catalog:'
+        version: 0.1.0
       typescript:
         specifier: ^5.4.5
         version: 5.9.3
@@ -26,9 +35,9 @@ importers:
       '@occupancy/detector':
         specifier: workspace:*
         version: link:../lib/detector
-      '@occupancy/r49':
-        specifier: workspace:*
-        version: link:../lib/r49
+      '@rails49/r49':
+        specifier: 'catalog:'
+        version: 0.1.0
       js-yaml:
         specifier: ^4.1.1
         version: 4.1.1
@@ -57,9 +66,9 @@ importers:
 
   lib/classifier:
     dependencies:
-      '@occupancy/r49':
-        specifier: workspace:*
-        version: link:../r49
+      '@rails49/r49':
+        specifier: 'catalog:'
+        version: 0.1.0
       onnxruntime-common:
         specifier: ^1.20.0
         version: 1.26.0
@@ -91,9 +100,9 @@ importers:
       '@occupancy/config':
         specifier: workspace:*
         version: link:../config
-      '@occupancy/r49':
-        specifier: workspace:*
-        version: link:../r49
+      '@rails49/r49':
+        specifier: 'catalog:'
+        version: 0.1.0
       onnxruntime-common:
         specifier: ^1.26.0
         version: 1.26.0
@@ -117,30 +126,14 @@ importers:
         specifier: ^1.6.0
         version: 1.6.1(@types/node@24.13.3)(jsdom@26.1.0)
 
-  lib/r49:
-    dependencies:
-      jszip:
-        specifier: ^3.10.1
-        version: 3.10.1
-      zod:
-        specifier: ^3.23.8
-        version: 3.25.76
-    devDependencies:
-      typescript:
-        specifier: ^5.4.5
-        version: 5.9.3
-      vitest:
-        specifier: ^1.6.0
-        version: 1.6.1(@types/node@24.13.3)(jsdom@26.1.0)
-
   tools/drift-bench:
     dependencies:
       '@occupancy/drift':
         specifier: workspace:*
         version: link:../../lib/drift
-      '@occupancy/r49':
-        specifier: workspace:*
-        version: link:../../lib/r49
+      '@rails49/r49':
+        specifier: 'catalog:'
+        version: 0.1.0
       sharp:
         specifier: ^0.33.4
         version: 0.33.5
@@ -151,31 +144,6 @@ importers:
       '@types/node':
         specifier: ^24.9.2
         version: 24.13.3
-      typescript:
-        specifier: ^5.4.5
-        version: 5.9.3
-      vitest:
-        specifier: ^1.6.0
-        version: 1.6.1(@types/node@24.13.3)(jsdom@26.1.0)
-
-  tools/r49-validate:
-    dependencies:
-      '@occupancy/config':
-        specifier: workspace:*
-        version: link:../../lib/config
-      '@occupancy/r49':
-        specifier: workspace:*
-        version: link:../../lib/r49
-      tsx:
-        specifier: ^4.10.5
-        version: 4.21.0
-    devDependencies:
-      '@types/node':
-        specifier: ^24.9.2
-        version: 24.13.3
-      jszip:
-        specifier: ^3.10.1
-        version: 3.10.1
       typescript:
         specifier: ^5.4.5
         version: 5.9.3
@@ -197,12 +165,12 @@ importers:
       '@occupancy/drift':
         specifier: workspace:*
         version: link:../lib/drift
-      '@occupancy/r49':
-        specifier: workspace:*
-        version: link:../lib/r49
       '@rails49/look':
         specifier: github:rails49/look#v0.6.0
         version: https://codeload.github.com/rails49/look/tar.gz/9362e29b9a828db34e9992246c9c38b2e6360b56(@shoelace-style/shoelace@2.20.1(@floating-ui/utils@0.2.11)(@types/react@19.2.14))(lit@3.3.2)
+      '@rails49/r49':
+        specifier: 'catalog:'
+        version: 0.1.0
       '@shoelace-style/shoelace':
         specifier: ^2.20.1
         version: 2.20.1(@floating-ui/utils@0.2.11)(@types/react@19.2.14)
@@ -1082,6 +1050,9 @@ packages:
     peerDependencies:
       '@shoelace-style/shoelace': ^2.20.1
       lit: ^3.3.2
+
+  '@rails49/r49@0.1.0':
+    resolution: {integrity: sha512-2TMEgBy2h/jCPQHdv+BsV1cbO9VSYzV2QvVpL9jTboRdY7VhTQyzUry1ZQstUsT84dNobpSLAB6ZuiJ7qKXQvw==}
 
   '@rollup/rollup-android-arm-eabi@4.60.3':
     resolution: {integrity: sha512-x35CNW/ANXG3hE/EZpRU8MXX1JDN86hBb2wMGAtltkz7pc6cxgjpy1OMMfDosOQ+2hWqIkag/fGok1Yady9nGw==}
@@ -3363,6 +3334,11 @@ snapshots:
     dependencies:
       '@shoelace-style/shoelace': 2.20.1(@floating-ui/utils@0.2.11)(@types/react@19.2.14)
       lit: 3.3.2
+
+  '@rails49/r49@0.1.0':
+    dependencies:
+      jszip: 3.10.1
+      zod: 3.25.76
 
   '@rollup/rollup-android-arm-eabi@4.60.3':
     optional: true
