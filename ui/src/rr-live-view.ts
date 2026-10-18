@@ -69,8 +69,8 @@ const DRIFT_SAMPLE_INTERVAL_MS = 3000;
  * alone would not be; the banner is for the human, and it carries the override.
  *
  * **"Record drift" keeps every sample** (#217): while on, each drift reading is
- * appended as a row, and turning it off downloads the rows as a CSV. Recording
- * goes on while refusing, as sampling does.
+ * appended as a row, and turning it off or leaving the view downloads the rows
+ * as a CSV. Recording goes on while refusing, as sampling does.
  *
  * **Properties:** `archive`.
  */
@@ -212,6 +212,8 @@ export class RRLiveView extends LitElement {
     super.disconnectedCallback();
     this._stopCamera();
     this._running = false;
+    // Leaving the view mid-recording downloads the rows rather than dropping them.
+    this._stopRecording();
     void this._detector?.dispose();
     this._detector = null;
     // Nothing to dispose — a drift check holds only JS memory — but dropping it
@@ -413,6 +415,12 @@ export class RRLiveView extends LitElement {
       this._recording = { started: new Date(), rows: [] };
       return;
     }
+    this._stopRecording();
+  }
+
+  /** Download what was recorded, if recording, and stop. */
+  private _stopRecording() {
+    if (this._recording === null) return;
     downloadDriftCsv(this._recording.rows, driftCsvName(this._recording.started));
     this._recording = null;
   }

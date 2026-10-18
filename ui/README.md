@@ -1214,7 +1214,7 @@ Camera stream under the two layers of the occupancy output ([#85]).
   turning it off downloads them as `drift-YYYYMMDD-HHMMSS.csv`: `time` (ISO 8601), `px`,
   `tolerance_px`, `dpt`, `past`, `overridden`, `stream_width`, `stream_height` (the camera track's
   `getSettings()`). The verdict cells are empty on an uncalibrated layout. Recording continues while
-  refusing. Rows are held in memory only, so leaving the live view drops them.
+  refusing. Leaving the live view mid-recording downloads the rows recorded so far.
 * Disposes the detector session and stops all camera tracks on disconnect; the drift check is dropped
   with it, which is also what keeps an in-flight sample from writing into a detached view.
 

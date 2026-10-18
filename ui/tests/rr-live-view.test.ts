@@ -474,6 +474,19 @@ describe('rr-live-view', () => {
         expect((await readBlob(blobs[0])).split('\n').filter(Boolean)).to.have.length(1);
       });
 
+      it('downloads what it has when the view is left mid-recording', async () => {
+        const el = await fixture<RRLiveView>(html`<rr-live-view .archive=${archive}></rr-live-view>`);
+        recordButton(el).click();
+        await el.updateComplete;
+        standInReadySource(el);
+        await waitFor(el, () => (recordButton(el).textContent ?? '').includes('1 row'));
+
+        el.remove();
+
+        expect(downloads).to.have.length(1);
+        expect((await readBlob(blobs[0])).split('\n').filter(Boolean)).to.have.length(2);
+      });
+
       it('records nothing until asked', async () => {
         const el = await fixture<RRLiveView>(html`<rr-live-view .archive=${archive}></rr-live-view>`);
         standInReadySource(el);
