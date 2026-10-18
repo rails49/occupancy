@@ -95,6 +95,47 @@ describe('load names the rule it refused on', () => {
     expect(await loadRuleOf(await zipWith(v3))).toBe('manifest/version');
   });
 
+  it('manifest/schema for a number that is not finite (#190)', async () => {
+    // A number in the format is a finite JSON number. `JSON.parse` reads 1e400
+    // as Infinity, which would make the fit NaN and save back as `null`. The
+    // text is spliced in because `JSON.stringify` cannot write it.
+    const at = (field: string, overrides: Record<string, unknown>) =>
+      JSON.stringify(manifest(overrides)).replace(`"${field}"`, '1e400');
+    const cases = [
+      at('H', {
+        layout: { scale: 'HO', calibration: { points: [], camera_height_mm: 'H' }, sensors: [] },
+      }),
+      at('H', {
+        layout: { scale: 'HO', calibration: { points: [], reference_height_mm: 'H' }, sensors: [] },
+      }),
+      at('H', {
+        layout: {
+          scale: 'HO',
+          calibration: { points: [{ px: { x: 1, y: 2 }, world: { x: 0, y: 0, z: 'H' } }] },
+          sensors: [],
+        },
+      }),
+      at('H', {
+        layout: { scale: 'HO', calibration: { points: [] }, sensors: [{ id: 's', x: 'H', y: 1 }] },
+      }),
+      at('H', { images: [{ filename: 'a.jpg', labels: [car({ p1: { x: 'H', y: 25 } })] }] }),
+      at('H', { camera: { resolution: { width: 'H', height: 1080 } } }),
+    ];
+    for (const text of cases) {
+      expect(text).toContain('1e400');
+      const entries = text.includes('a.jpg') ? ['a.jpg'] : [];
+      expect(await loadRuleOf(await zipWith(text, entries))).toBe('manifest/schema');
+    }
+    // Negative infinity is the same refusal.
+    expect(
+      ruleOf(
+        manifest({
+          layout: { scale: 'HO', calibration: { points: [], reference_height_mm: -Infinity }, sensors: [] },
+        })
+      )
+    ).toBe('manifest/schema');
+  });
+
   it('carries the inner rule through the load wrapper for a schema failure', async () => {
     const bad = JSON.stringify(manifest({ vendor_extra: 1 }));
     expect(await loadRuleOf(await zipWith(bad))).toBe('manifest/unknown-key');

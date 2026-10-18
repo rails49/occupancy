@@ -125,7 +125,7 @@ wording is free to change.
 | `manifest/unknown-key` | a key the format does not define, at any depth |
 | `manifest/duplicate-id` | two labels in one image, or two sensors, share an id |
 | `manifest/provenance` | `provenance` absent or unknown, or `proposed_by` contradicts it |
-| `manifest/schema` | any other shape the format does not allow |
+| `manifest/schema` | any other shape the format does not allow, including a number that is not finite (`1e400` parses as `Infinity`) |
 | `images/missing` | the manifest names an image the zip lacks (reported) |
 | `images/orphan` | the zip holds an image no entry names (reported) |
 
