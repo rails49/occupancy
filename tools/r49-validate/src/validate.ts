@@ -106,7 +106,7 @@ function checkLabels(archive: R49Archive): BlockingFinding[] {
           rule: 'labels/class',
           message:
             `${image.filename}: label ${label.id} has class "${label.class}", which is not in ` +
-            `the vocabulary (detector.vocabulary in rails49's config.yaml). If your rolling ` +
+            `the vocabulary (lib/r49/r49.json in rails49/occupancy). If your rolling ` +
             `stock genuinely is not representable, please open an issue — the vocabulary is ` +
             `meant to grow.`,
         });
