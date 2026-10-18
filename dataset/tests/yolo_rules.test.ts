@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { labelLine, outputStem, splitFor } from '../src/obb.ts';
+import { labelLine, outputStem, splitFor } from '../src/yolo_rules.ts';
 
 /**
  * The YOLO export's arithmetic. Every wrong number here is invisible until a

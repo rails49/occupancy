@@ -5,7 +5,7 @@ import sharp from 'sharp';
 import { DETECTOR_CLASSES, DETECTOR_VAL_SPLIT } from '@occupancy/config';
 import { carWidthPx, detectorClassIndex, spanToPolygon } from '@occupancy/detector';
 import { R49Archive, getDPT } from '@rails49/r49';
-import { labelLine, outputStem, splitFor, type Split } from './obb.ts';
+import { labelLine, outputStem, splitFor, type Split } from './yolo_rules.ts';
 
 /**
  * Derives the Ultralytics OBB dataset layout from a directory of `.r49`
