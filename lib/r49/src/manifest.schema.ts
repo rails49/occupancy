@@ -233,7 +233,7 @@ const ReferencePointSchema = z
 
 // Calibration is always present with `points` defaulting to []. "Uncalibrated"
 // is a real state the editor handles, and an empty list expresses it without
-// every consumer null-checking the parent.
+// every caller null-checking the parent.
 //
 // The two heights below are `.optional()` and deliberately **not** `.default()`
 // (#139). A default is populated by the parser, so the first save of any
@@ -248,7 +248,7 @@ const CalibrationSchema = z
     /**
      * Camera height above layout zero, in mm. Optional here, required by the
      * editor — see {@link getDPT}. `.positive()` because a camera at or below
-     * the origin is not a representable pose and every consumer divides by
+     * the origin is not a representable pose and every reader of it divides by
      * `h − z`; the cross-field rule that it must also clear the tallest
      * calibration point is the editor's, not the schema's.
      */

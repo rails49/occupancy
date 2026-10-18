@@ -9,7 +9,7 @@
  *
  * Blocking errors and warnings are separate fields rather than one list with a
  * severity, because the distinction is the whole point of the soft bar and a
- * consumer must not have to filter correctly to respect it.
+ * workflow must not have to filter correctly to respect it.
  */
 
 /** Which bar an archive is held to, decided by where it sits in the corpus. */
@@ -97,7 +97,7 @@ export interface ArchiveReport {
 
 /** The whole run. */
 export interface Report {
-  /** Bumped when a consumer would have to change. The workflow pins it. */
+  /** Bumped when a reader of the report would have to change. The workflow pins it. */
   readonly version: 1;
   readonly archives: readonly ArchiveReport[];
   /** True when no archive carries a blocking error. Warnings do not clear it. */

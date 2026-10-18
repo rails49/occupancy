@@ -48,7 +48,7 @@ describe('the schema accepts the two heights', () => {
   });
 
   it('rejects a camera height at or below layout zero', () => {
-    // Every consumer divides by `h − z`; a camera at the origin is not a pose.
+    // Every reader of the height divides by `h − z`; a camera at the origin is not a pose.
     const archive = new R49Archive();
     expect(() => archive.setManifest(manifest({ points: plane(0), camera_height_mm: 0 }))).toThrow(
       expect.objectContaining({ rule: 'manifest/schema' }),
