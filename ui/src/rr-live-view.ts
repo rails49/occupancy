@@ -12,6 +12,8 @@ import { getCameraStream } from './capture.js';
 import { openDetector, DETECTOR_SOURCE } from './detectorSession.js';
 import { driftVerdict, grabPlane, maxDriftPx, openDriftCheck } from './driftSession.js';
 import type { DriftSession } from './driftSession.js';
+import { downloadDriftCsv, driftCsvName, driftRow } from './driftRecording.js';
+import type { DriftRow } from './driftRecording.js';
 import './rr-viewer.js';
 import './rr-stats-bar.js';
 
@@ -65,6 +67,10 @@ const DRIFT_SAMPLE_INTERVAL_MS = 3000;
  * available statement of *why* the view is refusing. Occupancy is
  * machine-consumable, so withholding it is the honest response where a banner
  * alone would not be; the banner is for the human, and it carries the override.
+ *
+ * **"Record drift" keeps every sample** (#217): while on, each drift reading is
+ * appended as a row, and turning it off or leaving the view downloads the rows
+ * as a CSV. Recording goes on while refusing, as sampling does.
  *
  * **Properties:** `archive`.
  */
@@ -125,6 +131,8 @@ export class RRLiveView extends LitElement {
    * remount — a new session should start by telling the truth again.
    */
   @state() private _overrideDrift = false;
+  /** When recording started and the drift rows since, or `null` when not recording (#217). */
+  @state() private _recording: { started: Date; rows: readonly DriftRow[] } | null = null;
 
   @query('rr-viewer') private _viewer!: RrViewer;
 
@@ -166,7 +174,15 @@ export class RRLiveView extends LitElement {
       color: var(--sl-color-danger-800);
     }
 
-    .notice button {
+    .recorder {
+      padding: 0.25rem 1rem;
+      background: var(--sl-color-neutral-100);
+      color: var(--sl-color-neutral-700);
+      font-size: 0.9rem;
+    }
+
+    .notice button,
+    .recorder button {
       margin-left: 0.75rem;
       padding: 0.15rem 0.6rem;
       font: inherit;
@@ -196,6 +212,8 @@ export class RRLiveView extends LitElement {
     super.disconnectedCallback();
     this._stopCamera();
     this._running = false;
+    // Leaving the view mid-recording downloads the rows rather than dropping them.
+    this._stopRecording();
     void this._detector?.dispose();
     this._detector = null;
     // Nothing to dispose — a drift check holds only JS memory — but dropping it
@@ -363,6 +381,7 @@ export class RRLiveView extends LitElement {
         // The grab is synchronous and must happen now, on this frame: awaiting
         // first would measure whatever the camera was pointing at by the time
         // the check got round to it.
+        const at = new Date();
         const plane = grabPlane(source, width, height);
         const result = await session.check.check(plane);
         // A view that was disconnected mid-check, or handed a different archive,
@@ -371,6 +390,12 @@ export class RRLiveView extends LitElement {
         if (this._running && this._driftSession === session) {
           this._drift = result;
           this._driftError = null;
+          // A frame grabbed before recording started is not part of the recording.
+          if (this._recording && at >= this._recording.started) {
+            const stream = this._stream?.getVideoTracks()[0]?.getSettings() ?? {};
+            const row = driftRow(at, result.displacementPx, this._dpt, this._overrideDrift, stream);
+            this._recording = { ...this._recording, rows: [...this._recording.rows, row] };
+          }
         }
       } catch (err) {
         if (this._running && this._driftSession === session) {
@@ -382,6 +407,33 @@ export class RRLiveView extends LitElement {
         this._driftSampledAt = performance.now();
       }
     })();
+  }
+
+  /** Start recording, or stop and download what was recorded. */
+  private _toggleRecording() {
+    if (this._recording === null) {
+      this._recording = { started: new Date(), rows: [] };
+      return;
+    }
+    this._stopRecording();
+  }
+
+  /** Download what was recorded, if recording, and stop. */
+  private _stopRecording() {
+    if (this._recording === null) return;
+    downloadDriftCsv(this._recording.rows, driftCsvName(this._recording.started));
+    this._recording = null;
+  }
+
+  private _renderRecorder() {
+    const rows = this._recording?.rows.length ?? 0;
+    return html`<div class="recorder">
+      <button aria-pressed=${this._recording ? 'true' : 'false'} @click=${this._toggleRecording}>
+        ${this._recording
+          ? `Stop and download drift (${rows} ${rows === 1 ? 'row' : 'rows'})`
+          : 'Record drift'}
+      </button>
+    </div>`;
   }
 
   private async _loop() {
@@ -539,6 +591,8 @@ export class RRLiveView extends LitElement {
         : ''}
 
       ${this._renderDriftNotice()}
+
+      ${this._renderRecorder()}
 
       <rr-viewer
         .stream=${this._stream}

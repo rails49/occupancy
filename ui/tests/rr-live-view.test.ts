@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { fixture, html } from '@open-wc/testing';
 import { R49Archive } from '@rails49/r49';
 import type { Detection } from '@occupancy/detector';
@@ -113,8 +113,9 @@ describe('rr-live-view', () => {
       images: [{ filename: 'test.jpg', labeled_complete: false, labels: [] }],
     });
 
+    const track = { stop: vi.fn(), getSettings: () => ({ width: 1280, height: 720 }) };
     (navigator as any).mediaDevices = {
-      getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] }),
+      getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [track], getVideoTracks: () => [track] }),
     };
   });
 
@@ -276,7 +277,8 @@ describe('rr-live-view', () => {
       standInReadySource(el);
       await waitFor(el, () => check.mock.calls.length > 0);
 
-      expect(el.shadowRoot!.textContent).to.not.contain('drift');
+      const notices = [...el.shadowRoot!.querySelectorAll('.notice')].map(n => n.textContent).join('');
+      expect(notices).to.not.contain('drift');
       expect(el.shadowRoot!.querySelector('.notice.refusing')).to.be.null;
     });
 
@@ -388,6 +390,113 @@ describe('rr-live-view', () => {
 
       expect(el.shadowRoot!.textContent).to.contain('not being checked');
       expect(el.shadowRoot!.querySelector('.notice.refusing')).to.be.null;
+    });
+
+    describe('recording drift to a CSV (#217)', () => {
+      let blobs: Blob[];
+      let downloads: string[];
+      let spies: { mockRestore(): void }[];
+
+      beforeEach(() => {
+        blobs = [];
+        downloads = [];
+        spies = [
+          vi.spyOn(URL, 'createObjectURL').mockImplementation(blob => {
+            blobs.push(blob as Blob);
+            return 'blob:drift';
+          }),
+          vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {}),
+          vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+            downloads.push(this.download);
+          }),
+        ];
+      });
+
+      // Not `vi.restoreAllMocks()`: that would also strip this file's ResizeObserver stub.
+      afterEach(() => spies.forEach(spy => spy.mockRestore()));
+
+      // jsdom's Blob has no `text()`.
+      const readBlob = (blob: Blob) =>
+        new Promise<string>(resolve => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.readAsText(blob);
+        });
+
+      const recordButton = (el: RRLiveView) =>
+        el.shadowRoot!.querySelector<HTMLButtonElement>('.recorder button')!;
+
+      it('downloads one row per sample when stopped, and keeps recording while refusing', async () => {
+        check.mockImplementation(async () => ({ displacementPx: 40, refIndex: 0 }));
+
+        const el = await fixture<RRLiveView>(html`<rr-live-view .archive=${archive}></rr-live-view>`);
+        recordButton(el).click();
+        await el.updateComplete;
+        expect(recordButton(el).getAttribute('aria-pressed')).to.equal('true');
+
+        standInReadySource(el);
+        await waitFor(el, () => el.shadowRoot!.querySelector('.notice.refusing') !== null);
+        await waitFor(el, () => (recordButton(el).textContent ?? '').includes('1 row'));
+
+        recordButton(el).click();
+        await el.updateComplete;
+
+        expect(downloads).to.have.length(1);
+        expect(downloads[0]).to.match(/^drift-\d{8}-\d{6}\.csv$/);
+        const [header, row, end] = (await readBlob(blobs[0])).split('\n');
+        expect(header).to.equal('time,px,tolerance_px,dpt,past,overridden,stream_width,stream_height');
+        expect(row).to.match(
+          new RegExp(`^\\d{4}-\\d\\d-\\d\\dT[\\d:.]+Z,40,${TOLERANCE_PX},${DPT},true,false,1280,720$`),
+        );
+        expect(end).to.equal('');
+        expect(recordButton(el).getAttribute('aria-pressed')).to.equal('false');
+      });
+
+      it('drops a sample whose frame was grabbed before recording started', async () => {
+        // A check of its own: views mounted by earlier tests still loop and call the shared one.
+        let release!: () => void;
+        const held = vi.fn(
+          () => new Promise(resolve => (release = () => resolve({ displacementPx: 4, refIndex: 0 }))),
+        );
+        openDriftCheck.mockImplementation(async () => ({ check: { check: held }, refName: 'test.jpg' }) as any);
+
+        const el = await fixture<RRLiveView>(html`<rr-live-view .archive=${archive}></rr-live-view>`);
+        standInReadySource(el);
+        await waitFor(el, () => held.mock.calls.length > 0);
+
+        recordButton(el).click();
+        release();
+        const stats = el.shadowRoot!.querySelector('rr-stats-bar')! as any;
+        await waitFor(el, () => stats.alignment !== null);
+        recordButton(el).click();
+        await el.updateComplete;
+
+        expect((await readBlob(blobs[0])).split('\n').filter(Boolean)).to.have.length(1);
+      });
+
+      it('downloads what it has when the view is left mid-recording', async () => {
+        const el = await fixture<RRLiveView>(html`<rr-live-view .archive=${archive}></rr-live-view>`);
+        recordButton(el).click();
+        await el.updateComplete;
+        standInReadySource(el);
+        await waitFor(el, () => (recordButton(el).textContent ?? '').includes('1 row'));
+
+        el.remove();
+
+        expect(downloads).to.have.length(1);
+        expect((await readBlob(blobs[0])).split('\n').filter(Boolean)).to.have.length(2);
+      });
+
+      it('records nothing until asked', async () => {
+        const el = await fixture<RRLiveView>(html`<rr-live-view .archive=${archive}></rr-live-view>`);
+        standInReadySource(el);
+        await waitFor(el, () => check.mock.calls.length > 0);
+        await el.updateComplete;
+
+        expect(recordButton(el).getAttribute('aria-pressed')).to.equal('false');
+        expect(recordButton(el).textContent).to.contain('Record drift');
+        expect(downloads).to.have.length(0);
+      });
     });
   });
 });
