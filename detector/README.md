@@ -53,10 +53,10 @@ CPU/WASM target, and the conversion fails on a `Resize` type mismatch anyway.
 The useful rungs are fp32 and static INT8.
 
 The last two were established in the issue #3 feasibility research
-(`docs/research/issue-3-browser-yolo-feasibility.md`, branch
-`research/yolo-feasibility`), which ran this whole path on the released DOTA
-weights before any of this existed. The first was **not** — that research
-checked the output shape, which a collapsed model passes.
+(`docs/research/issue-3-browser-yolo-feasibility.md`), which ran this whole
+path on the released DOTA weights before any of this existed. The first was
+**not** — that research checked the output shape, which a collapsed model
+passes.
 
 Which is why `export_onnx.py` finishes by running fp32 and INT8 over the
 calibration frames and comparing detection counts. Loading, running and shape

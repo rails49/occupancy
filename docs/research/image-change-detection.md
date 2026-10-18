@@ -1,6 +1,6 @@
 # Image change detection as an occupancy classifier
 
-Research note on `SPEC.md` § Classifier, option 1 ("Image change"), and its cited prior art
+Written 2026-07-29. Research note on `SPEC.md` § Classifier, option 1 ("Image change"), and its cited prior art
 [EX-SensorCAM](https://dcc-ex.com/mkdocs-test/products/ex-sensorcam/ex-sensorcam/).
 
 *Researched 2026-07-29. Sources: EX-SensorCAM source at `DCC-EX/EX-SensorCAM@b07c3f3` (v3.21,
