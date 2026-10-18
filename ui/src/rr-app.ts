@@ -330,17 +330,21 @@ export class RRApp extends LitElement {
   }
 
   /**
-   * The band: the layout's name and scale, and the file a save would land in.
+   * The band: the UI name, the layout's name and scale, and the file a save
+   * would land in.
    *
-   * The scale is what the layout's geometry means (#52), and none is stated
-   * before an archive is open. The bound filename is shown only when Save
-   * would overwrite it: the question "where does my work go?" is asked before
-   * the click, and a toast answers it only afterwards. A binding without a
-   * handle names no file that exists yet, so it stays quiet.
+   * With no archive open there is no `look-about`: it would repeat the UI
+   * name. The scale is what the layout's geometry means (#52). The bound
+   * filename is shown only when Save would overwrite it: the question "where
+   * does my work go?" is asked before the click, and a toast answers it only
+   * afterwards. A binding without a handle names no file that exists yet, so
+   * it stays quiet.
    */
   private _renderBand(layout: Layout | null) {
-    return html`<look-band>
-      <look-about name=${layout?.name || 'occupancy'} detail=${layout?.scale ?? ''}></look-about>
+    return html`<look-band ui="occupancy">
+      ${layout
+        ? html`<look-about name=${layout.name ?? ''} detail=${layout.scale}></look-about>`
+        : nothing}
       ${this._binding?.handle
         ? html`<look-reading>${this._binding.stem}.r49</look-reading>`
         : nothing}
