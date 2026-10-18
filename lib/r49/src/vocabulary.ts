@@ -1,4 +1,4 @@
-import { DETECTOR_CLASSES, DETECTOR_VOCABULARY } from '@occupancy/config';
+import { DETECTOR_VOCABULARY } from '@occupancy/config';
 
 /**
  * How the authored class taxonomy is *read*. The taxonomy itself is authored in
@@ -30,9 +30,6 @@ export type VocabularyNode = { readonly [key: string]: unknown };
 /** The authored taxonomy. A separate name so the default is legible. */
 const AUTHORED: VocabularyNode = DETECTOR_VOCABULARY;
 
-/** The YOLO class list. A separate name so the default is legible. */
-const CLASSES: readonly string[] = DETECTOR_CLASSES;
-
 /**
  * Whether `prefix` matches `cls` **segment by segment** — either the whole
  * class or one of its dotted ancestors.
@@ -40,8 +37,12 @@ const CLASSES: readonly string[] = DETECTOR_CLASSES;
  * The rule the whole module turns on: `stock` is a prefix of `stock.loco` and
  * of `stock`, but never of `stockyard`. A plain `startsWith` would match the
  * last of those, silently mapping an unrelated class onto a trained index.
+ *
+ * Exported because a reader that maps classes onto a list of its own — the
+ * detector's YOLO class list — must match by the same rule the vocabulary is
+ * read with, or a class could be known here and unmapped there.
  */
-function isSegmentPrefix(prefix: string, cls: string): boolean {
+export function isSegmentPrefix(prefix: string, cls: string): boolean {
   return cls === prefix || cls.startsWith(`${prefix}.`);
 }
 
@@ -63,44 +64,13 @@ export function vocabularySubtypes(
 }
 
 /**
- * The YOLO class index a stored class trains as: the position of the **longest**
- * entry of `detector.classes` that is a segment-prefix of it.
- *
- * Longest, not first, is what makes the class list append-only in a useful way.
- * Appending `stock.loco` re-maps every already-labeled locomotive onto the new
- * index with no relabeling, because `stock.loco` outranks the `stock` that used
- * to claim them — while a car labeled plain `stock` keeps matching `stock`.
- *
- * @param cls The stored `class` string, rooted and dot-separated.
- * @param classes Defaults to the authored class list; injectable for tests.
- * @returns The index, or `null` when no entry prefixes the class. `null` is a
- *          **fatal export error**, never a drop: an unexported car is an
- *          unlabeled car, which teaches the detector that cars are background.
- */
-export function detectorClassIndex(cls: string, classes: readonly string[] = CLASSES): number | null {
-  let index: number | null = null;
-  let matched = -1;
-
-  classes.forEach((entry, i) => {
-    if (!isSegmentPrefix(entry, cls)) return;
-    // Two entries that both prefix one class are nested, so the longer string
-    // is unambiguously the more specific of the two.
-    if (entry.length <= matched) return;
-    index = i;
-    matched = entry.length;
-  });
-
-  return index;
-}
-
-/**
  * Whether a stored class names an entry of the taxonomy.
  *
- * Matching is **segment by segment**, the same rule {@link detectorClassIndex}
- * maps with: `stockyard` is not `stock` with a suffix, and a property name is
- * not a class. The class is rooted — an unrooted `loco.steam` matches nothing.
+ * Matching is **segment by segment** ({@link isSegmentPrefix}): `stockyard`
+ * is not `stock` with a suffix, and a property name is not a class. The class
+ * is rooted — an unrooted `loco.steam` matches nothing.
  *
- * Distinct from {@link detectorClassIndex} in what it reads: the authoring
+ * Distinct from the detector's class index in what it reads: the authoring
  * taxonomy, which the editor offers, against the class list, which is trained
  * on. A class can be known and still have no index — `stock.freight` is offered
  * by the menu and trains as `stock` — so neither answers for the other.

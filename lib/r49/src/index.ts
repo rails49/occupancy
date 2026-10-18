@@ -57,16 +57,15 @@ export {
 export { make_id } from './uid.ts';
 
 //── Class vocabulary ─────────────────────────────────────────────────────────
-// How the authored taxonomy in `config.yaml` is read. Here rather than in a
-// consumer because two of them must agree: the editor warns on a
-// non-conforming class, and the corpus validator blocks on it. Not parse-time
-// validation — `class` stays a plain string at the format layer.
-// Two tables, read by the same segment-prefix rule: the authoring taxonomy
-// (`isKnownClass`, `vocabularySubtypes`) and the YOLO class list
-// (`detectorClassIndex`). A class can be known and still have no index.
+// How the authored taxonomy is read. Here rather than in a consumer because two
+// of them must agree: the editor warns on a non-conforming class, and the
+// corpus validator blocks on it. Not parse-time validation — `class` stays a
+// plain string at the format layer.
+// `isSegmentPrefix` is the rule itself, exported so a reader mapping classes
+// onto a list of its own (the detector's YOLO class index) matches the same way.
 export {
-  detectorClassIndex,
   isKnownClass,
+  isSegmentPrefix,
   vocabularySubtypes,
   type VocabularyNode,
 } from './vocabulary.ts';
