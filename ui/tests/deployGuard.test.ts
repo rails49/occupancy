@@ -7,7 +7,7 @@ import { ORT_WASM_BINARY } from '../ortAssets.js';
 import { DETECTOR_MODEL_FILE } from '../modelAssets.js';
 
 // Why the deploy directory needs a guard that checks for *absence* is in
-// `bin/check-deploy-dir.sh`'s header and in CLAUDE.md § Deploy (#122); the
+// `bin/check-deploy-dir.sh`'s header and in `docs/SYSTEM.md` § Deploy (#122); the
 // short version is that every earlier check was one-directional and none could
 // see 21 MB of corpus archives in the bundle. `ui/tests/publicDir.test.ts`
 // closed the source they came in through. This covers the deploy directory
