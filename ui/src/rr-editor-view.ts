@@ -1,6 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, query, state } from 'lit/decorators.js';
-import { getDPT, getDPTResidual, make_id } from '@occupancy/r49';
+import { calibrationFit, getDPT, make_id } from '@occupancy/r49';
 import type { Image, ManifestData, Point } from '@occupancy/r49';
 import { MIN_DPT } from '@occupancy/config';
 import { captureFromCamera } from './capture.js';
@@ -1097,15 +1097,14 @@ export class RREditorView extends LitElement {
    * 18–19 and must stay openable and editable (`SPEC.md` § Reference points).
    */
   private _renderDpt(manifest: ManifestData) {
-    const dpt = getDPT(manifest);
+    const { dpt, residual } = calibrationFit(manifest);
     if (dpt === null) {
       return html`<div class="dpt-bar uncalibrated">
         Not calibrated — click the image to place calibration points. Two points at
-        different positions resolve DPT.
+        the same height and different positions resolve DPT.
       </div>`;
     }
 
-    const residual = getDPTResidual(manifest);
     const belowMinimum = dpt < MIN_DPT;
 
     return html`<div class="dpt-bar ${belowMinimum ? 'below-minimum' : ''}">

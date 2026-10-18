@@ -1,4 +1,4 @@
-import type { Layout } from '@occupancy/r49';
+import { calibrationFit, type ManifestData } from '@occupancy/r49';
 
 /**
  * The layout metadata an archive must carry before it can be authored, and the
@@ -38,8 +38,11 @@ export interface MissingRequirement {
  * and inventing one (a `scale_confirmed` flag) would be a field the format does
  * not need.
  */
-export function missingLayoutMetadata(layout: Layout | null | undefined): MissingRequirement[] {
-  if (!layout) return [];
+export function missingLayoutMetadata(
+  manifest: ManifestData | null | undefined,
+): MissingRequirement[] {
+  if (!manifest) return [];
+  const { layout } = manifest;
   const missing: MissingRequirement[] = [];
 
   if (!layout.name?.trim()) {
@@ -62,8 +65,11 @@ export function missingLayoutMetadata(layout: Layout | null | undefined): Missin
     // single-plane calibration makes the fit residual structurally blind to a
     // decimal or unit slip, because a pair at the reference plane normalizes by
     // 1 whatever the height is. This bound is what catches 115 for 1150.
-    const tallest = tallestPoint(layout);
-    if (tallest !== null && h <= tallest) {
+    const fit = calibrationFit(manifest);
+    if (!fit.cameraHeightFits) {
+      const tallest = Math.max(
+        ...fit.leftOut.filter(l => l.reason === 'above-camera').map(l => l.point.world.z),
+      );
       missing.push({
         field: 'camera_height_mm',
         message:
@@ -74,13 +80,6 @@ export function missingLayoutMetadata(layout: Layout | null | undefined): Missin
   }
 
   return missing;
-}
-
-/** The highest authored calibration point in mm, or `null` when there are none. */
-function tallestPoint(layout: Layout): number | null {
-  const points = layout.calibration?.points ?? [];
-  if (points.length === 0) return null;
-  return points.reduce((tallest, p) => Math.max(tallest, p.world.z), -Infinity);
 }
 
 /** Millimetres, without a trailing `.0` on whole numbers. */

@@ -138,6 +138,8 @@ describe('rr-editor-view', () => {
       expect(bar).to.exist;
       expect(bar.classList.contains('uncalibrated')).to.be.true;
       expect(bar.textContent).to.contain('Not calibrated');
+      // The fit pairs points of equal height only; "two points" alone misleads.
+      expect(bar.textContent).to.contain('the same height');
     });
 
     it('reports the DPT when calibration resolves', async () => {

@@ -254,6 +254,19 @@ describe('validate', () => {
       expect(result.errors).toEqual([]);
     });
 
+    it('warns when points off the reference plane are left out of the fit', async () => {
+      const result = await reportFor(
+        await build('archives/alice/west-yard.r49', {
+          calibration: [...CALIBRATED, { px: { x: 0, y: 500 }, world: { x: 0, y: 400, z: 85 } }],
+          labels: [car()],
+        })
+      );
+
+      const warning = result.warnings.find(w => w.code === 'calibration/off-reference-plane');
+      expect(warning?.message).toContain('1 calibration point sits off the plane');
+      expect(result.errors).toEqual([]);
+    });
+
     it('warns about incomplete images', async () => {
       const result = await reportFor(
         await build('archives/alice/west-yard.r49', { complete: false, images: 3 })

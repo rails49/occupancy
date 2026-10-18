@@ -1,6 +1,6 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { customElement, query, state } from 'lit/decorators.js';
-import { R49Archive, MANIFEST_VERSION, type Layout } from '@occupancy/r49';
+import { R49Archive, MANIFEST_VERSION, type Layout, type ManifestData } from '@occupancy/r49';
 import '@rails49/look';
 import '@rails49/look/look.css';
 import { lookTheme, type LookPressDetail, type LookViewDetail } from '@rails49/look';
@@ -435,12 +435,13 @@ export class RRApp extends LitElement {
 
   render() {
     // Null until a manifest has actually been read (#52).
-    let layout: Layout | null = null;
+    let manifest: ManifestData | null = null;
     try {
-      if (this._session) layout = this._session.archive.getManifest().layout;
+      if (this._session) manifest = this._session.archive.getManifest();
     } catch (e) {
       // Ignore if manifest not yet ready
     }
+    const layout: Layout | null = manifest?.layout ?? null;
 
     return html`
       <look-shell>
@@ -468,7 +469,7 @@ export class RRApp extends LitElement {
            answer any archive gave. -->
       <rr-settings-dialog
         .layout=${layout ?? { name: '', scale: 'N', calibration: { points: [] } }}
-        .requiredMissing=${missingLayoutMetadata(layout)}
+        .requiredMissing=${missingLayoutMetadata(manifest)}
         @rr-layout-change=${this._onLayoutChange}
         @rr-camera-height-change=${this._onCameraHeightChange}
       ></rr-settings-dialog>
