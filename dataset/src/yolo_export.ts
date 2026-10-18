@@ -3,9 +3,8 @@ import path from 'node:path';
 import process from 'node:process';
 import sharp from 'sharp';
 import { DETECTOR_CLASSES, DETECTOR_VAL_SPLIT } from '@occupancy/config';
-import { carWidthPx, detectorClassIndex, spanToPolygon } from '@occupancy/detector';
-import { R49Archive, getDPT } from '@rails49/r49';
-import { labelLine, outputStem, splitFor, type Split } from './yolo_rules.ts';
+import { R49Archive } from '@rails49/r49';
+import { planArchive, type ImageDecoder, type Split } from './yolo_rules.ts';
 
 /**
  * Derives the Ultralytics OBB dataset layout from a directory of `.r49`
@@ -15,11 +14,9 @@ import { labelLine, outputStem, splitFor, type Split } from './yolo_rules.ts';
  *     labels/{train,val}/<archive>__<image>.txt
  *     data.yaml
  *
- * See SPEC.md § YOLO annotations. The one hard gate is `labeled_complete`: an
- * image whose labeling a human has not vouched for is skipped whole, because a
- * single unlabeled car in an exported frame teaches the detector that cars are
- * background, and that loss is shared across the image so it cannot be scoped
- * away per class. Everything else that could drop a car is fatal instead.
+ * See SPEC.md § YOLO annotations. What goes where, and what is fatal, is
+ * decided by `planArchive` in `yolo_rules.ts`; this script walks directories,
+ * decodes images with `sharp`, writes what it is handed, and reports.
  *
  * This is **not** a revival of the parked CNN crop prep. That derivation is
  * blocked on a vocabulary v4 cannot produce; this one needs nothing v4 does not
@@ -126,81 +123,39 @@ interface Tally {
 async function exportArchive(file: string, outDir: string, tally: Tally): Promise<void> {
   const archiveName = path.basename(file, '.r49');
   const archive = await R49Archive.load(await fs.readFile(file));
-  const manifest = archive.getManifest();
 
-  // Width comes from DPT, so an uncalibrated archive has no derivable box at
-  // all. Fatal rather than skipped: silently exporting five of six archives is
-  // how a training run ends up quietly smaller than the corpus it named.
-  const dpt = getDPT(manifest);
-  if (dpt === null) {
-    fail(
-      `${archiveName}: no DPT — its calibration has no pair of points at equal height, ` +
-        `so car width cannot be derived. Calibrate it in the editor, or move it out of --in.`
-    );
-  }
-  const widthPx = carWidthPx(dpt);
-  const frame = manifest.camera.resolution;
+  const decode: ImageDecoder = async filename => {
+    const bytes = await archive.getImage(filename);
+    if (bytes === null) return null;
+    const { width, height } = await sharp(Buffer.from(bytes)).metadata();
+    return { width: width ?? 0, height: height ?? 0 };
+  };
 
-  for (const image of manifest.images) {
-    if (!image.labeled_complete) {
+  const plan = await planArchive(archiveName, archive.getManifest(), decode, DETECTOR_VAL_SPLIT);
+  if (plan.kind === 'fatal') fail(plan.reason);
+
+  // Every fatal image is named before anything of this archive is written.
+  const fatal = plan.images.flatMap(image => (image.kind === 'fatal' ? image.reasons : []));
+  if (fatal.length > 0) fail(fatal.join('\n'));
+
+  for (const image of plan.images) {
+    if (image.kind !== 'exported') {
       tally.imagesSkipped++;
       continue;
     }
 
-    const bytes = await archive.getImage(image.filename);
-    if (bytes === null) {
-      fail(`${archiveName}: manifest names ${image.filename}, which the archive does not contain`);
-    }
-
-    // Labels are authored in the camera frame, so that is what normalizes
-    // them. A decoded size that disagrees means the two have come apart and
-    // every box in this image is scaled wrong — worth saying loudly, but not
-    // worth failing on: the frozen v4 test fixture pairs a real declared
-    // resolution with a 1x1 placeholder image on purpose.
-    const decoded = await sharp(Buffer.from(bytes)).metadata();
-    if (decoded.width !== frame.width || decoded.height !== frame.height) {
-      tally.warnings.push(
-        `${archiveName}/${image.filename}: camera.resolution is ${frame.width}x${frame.height} ` +
-          `but the image decodes as ${decoded.width}x${decoded.height}; labels were normalized ` +
-          `against camera.resolution`
-      );
-    }
-
-    const lines: string[] = [];
-    for (const label of image.labels) {
-      const classIndex = detectorClassIndex(label.class);
-      if (classIndex === null) {
-        fail(
-          `${archiveName}/${image.filename}: label ${label.id} has class ` +
-            `${JSON.stringify(label.class)}, which no entry of detector.classes ` +
-            `[${DETECTOR_CLASSES.join(', ')}] is a segment-prefix of. Dropping it would ` +
-            `train this car as background — fix the class, or append its root to ` +
-            `detector.classes in config.yaml and regenerate.`
-        );
-      }
-
-      const { corners, clamped } = spanToPolygon(label, widthPx, frame);
-      tally.cornersClamped += clamped;
-      lines.push(labelLine(classIndex, corners));
-      tally.cars++;
-    }
-
-    // An empty label file is not a mistake here. `labeled_complete` on a frame
-    // with no cars is a human asserting it is all background, which is exactly
-    // the negative a detector wants.
-    if (lines.length === 0) tally.emptyFrames++;
-
-    const split = splitFor(archiveName, image.filename, DETECTOR_VAL_SPLIT);
-    const stem = outputStem(archiveName, image.filename);
-    const ext = path.extname(image.filename) || '.jpg';
-
-    await fs.writeFile(path.join(outDir, 'images', split, `${stem}${ext}`), bytes);
+    const bytes = (await archive.getImage(image.filename))!;
+    await fs.writeFile(path.join(outDir, 'images', image.split, `${image.stem}${image.ext}`), bytes);
     await fs.writeFile(
-      path.join(outDir, 'labels', split, `${stem}.txt`),
-      lines.length > 0 ? `${lines.join('\n')}\n` : ''
+      path.join(outDir, 'labels', image.split, `${image.stem}.txt`),
+      image.lines.length > 0 ? `${image.lines.join('\n')}\n` : ''
     );
 
-    tally.perSplit[split]++;
+    tally.warnings.push(...image.warnings);
+    tally.cornersClamped += image.cornersClamped;
+    tally.cars += image.lines.length;
+    if (image.lines.length === 0) tally.emptyFrames++;
+    tally.perSplit[image.split]++;
     tally.imagesExported++;
   }
 
