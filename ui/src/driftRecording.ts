@@ -3,8 +3,6 @@ import { driftVerdict } from './driftSession.js';
 /**
  * One live-view drift sample, as a CSV row (#217).
  *
- * The live view keeps only the latest reading; a recording keeps every one, so
- * an hour of an untouched camera can be read back as a series (#156).
  * `tolerancePx`, `dpt` and `past` are `null` on an uncalibrated layout, where no
  * verdict resolves; `streamWidth` and `streamHeight` are whatever the camera
  * track reports.
@@ -20,7 +18,17 @@ export interface DriftRow {
   streamHeight: number | null;
 }
 
-const COLUMNS = 'time,px,tolerance_px,dpt,past,overridden,stream_width,stream_height';
+/** CSV header and the row field under it, in column order. */
+const COLUMNS: readonly [string, keyof DriftRow][] = [
+  ['time', 'time'],
+  ['px', 'px'],
+  ['tolerance_px', 'tolerancePx'],
+  ['dpt', 'dpt'],
+  ['past', 'past'],
+  ['overridden', 'overridden'],
+  ['stream_width', 'streamWidth'],
+  ['stream_height', 'streamHeight'],
+];
 
 /** A row for a sample taken at `at`, judged by the same `driftVerdict` as the refusal. */
 export function driftRow(
@@ -45,12 +53,11 @@ export function driftRow(
 
 /** The rows as CSV text, header first; a `null` is an empty cell. */
 export function driftCsv(rows: readonly DriftRow[]): string {
-  const lines = rows.map(r =>
-    [r.time, r.px, r.tolerancePx, r.dpt, r.past, r.overridden, r.streamWidth, r.streamHeight]
-      .map(v => (v === null ? '' : String(v)))
-      .join(','),
+  const header = COLUMNS.map(([name]) => name).join(',');
+  const lines = rows.map(row =>
+    COLUMNS.map(([, key]) => (row[key] === null ? '' : String(row[key]))).join(','),
   );
-  return [COLUMNS, ...lines].map(line => `${line}\n`).join('');
+  return [header, ...lines].map(line => `${line}\n`).join('');
 }
 
 /** `drift-20261018-090507.csv`, in local time, from when the recording started. */

@@ -19,7 +19,7 @@ describe('driftRow', () => {
     });
   });
 
-  it('leaves the verdict empty without a DPT, rather than inventing one', () => {
+  it('leaves the verdict empty without a DPT', () => {
     const row = driftRow(AT, 3, null, false, {});
     expect(row.tolerancePx).toBeNull();
     expect(row.dpt).toBeNull();
@@ -48,7 +48,7 @@ describe('driftCsv', () => {
 });
 
 describe('driftCsvName', () => {
-  it('stamps the local start time so a folder of recordings sorts by time', () => {
+  it('stamps the local start time to the second', () => {
     expect(driftCsvName(new Date(2026, 9, 18, 9, 5, 7))).toBe('drift-20261018-090507.csv');
   });
 });

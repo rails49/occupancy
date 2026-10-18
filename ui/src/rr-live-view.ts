@@ -131,8 +131,8 @@ export class RRLiveView extends LitElement {
    * remount — a new session should start by telling the truth again.
    */
   @state() private _overrideDrift = false;
-  /** The drift rows recorded so far, or `null` when not recording (#217). */
-  @state() private _recording: readonly DriftRow[] | null = null;
+  /** When recording started and the drift rows since, or `null` when not recording (#217). */
+  @state() private _recording: { started: Date; rows: readonly DriftRow[] } | null = null;
 
   @query('rr-viewer') private _viewer!: RrViewer;
 
@@ -140,7 +140,6 @@ export class RRLiveView extends LitElement {
   private _driftSession: DriftSession | null = null;
   private _driftInFlight = false;
   private _driftSampledAt = 0;
-  private _recordingStarted = new Date();
   private _running = false;
   private _lastFrameTime = 0;
 
@@ -389,10 +388,11 @@ export class RRLiveView extends LitElement {
         if (this._running && this._driftSession === session) {
           this._drift = result;
           this._driftError = null;
-          if (this._recording) {
+          // A frame grabbed before recording started is not part of the recording.
+          if (this._recording && at >= this._recording.started) {
             const stream = this._stream?.getVideoTracks()[0]?.getSettings() ?? {};
             const row = driftRow(at, result.displacementPx, this._dpt, this._overrideDrift, stream);
-            this._recording = [...this._recording, row];
+            this._recording = { ...this._recording, rows: [...this._recording.rows, row] };
           }
         }
       } catch (err) {
@@ -410,16 +410,15 @@ export class RRLiveView extends LitElement {
   /** Start recording, or stop and download what was recorded. */
   private _toggleRecording() {
     if (this._recording === null) {
-      this._recordingStarted = new Date();
-      this._recording = [];
+      this._recording = { started: new Date(), rows: [] };
       return;
     }
-    downloadDriftCsv(this._recording, driftCsvName(this._recordingStarted));
+    downloadDriftCsv(this._recording.rows, driftCsvName(this._recording.started));
     this._recording = null;
   }
 
   private _renderRecorder() {
-    const rows = this._recording?.length ?? 0;
+    const rows = this._recording?.rows.length ?? 0;
     return html`<div class="recorder">
       <button aria-pressed=${this._recording ? 'true' : 'false'} @click=${this._toggleRecording}>
         ${this._recording

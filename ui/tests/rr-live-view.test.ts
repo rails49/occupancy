@@ -452,6 +452,28 @@ describe('rr-live-view', () => {
         expect(recordButton(el).getAttribute('aria-pressed')).to.equal('false');
       });
 
+      it('drops a sample whose frame was grabbed before recording started', async () => {
+        // A check of its own: views mounted by earlier tests still loop and call the shared one.
+        let release!: () => void;
+        const held = vi.fn(
+          () => new Promise(resolve => (release = () => resolve({ displacementPx: 4, refIndex: 0 }))),
+        );
+        openDriftCheck.mockImplementation(async () => ({ check: { check: held }, refName: 'test.jpg' }) as any);
+
+        const el = await fixture<RRLiveView>(html`<rr-live-view .archive=${archive}></rr-live-view>`);
+        standInReadySource(el);
+        await waitFor(el, () => held.mock.calls.length > 0);
+
+        recordButton(el).click();
+        release();
+        const stats = el.shadowRoot!.querySelector('rr-stats-bar')! as any;
+        await waitFor(el, () => stats.alignment !== null);
+        recordButton(el).click();
+        await el.updateComplete;
+
+        expect((await readBlob(blobs[0])).split('\n').filter(Boolean)).to.have.length(1);
+      });
+
       it('records nothing until asked', async () => {
         const el = await fixture<RRLiveView>(html`<rr-live-view .archive=${archive}></rr-live-view>`);
         standInReadySource(el);
