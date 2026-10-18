@@ -69,7 +69,7 @@ In Node the shape is identical; only the import and the inputs differ —
 many pixels span one track gauge. That is what lets it crop the same physical
 area regardless of camera distance or layout scale.
 
-Get it from the layout manifest with `getDPT()` in `@occupancy/r49`. The value
+Get it from the layout manifest with `getDPT()` in `@rails49/r49`. The value
 in `ClassifierConfig.dpt` is the resolution the *model* was trained at; the
 classifier scales between the two. Passing a wrong `img_dpt` silently produces
 poor predictions rather than an error, so it is worth getting right.

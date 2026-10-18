@@ -1,11 +1,12 @@
 packages:
   - "lib/*"
-  # Executables, not libraries: consumed by a foreign CI rather than imported by
-  # ui/ or dataset/, and deliberately outside lib/ so they carry none of its
-  # dependencies. See tools/r49-validate.
   - "tools/*"
   - "dataset"
   - "ui"
+# The .r49 format package, pinned once for every package here and for
+# bin/generate_config.py, which reads its data file (ADR 0018).
+catalog:
+  "@rails49/r49": 0.1.0
 allowBuilds:
   esbuild: true
   onnxruntime-node: true

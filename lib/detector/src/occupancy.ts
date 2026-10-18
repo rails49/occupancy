@@ -1,4 +1,4 @@
-import type { Sensor } from '@occupancy/r49';
+import type { Sensor } from '@rails49/r49';
 import { carWidthPx, covers } from './geometry.ts';
 import type { Detection, Frame, SensorState, UnknownReason } from './types.ts';
 

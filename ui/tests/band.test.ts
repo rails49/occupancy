@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from 'vitest';
 import { fixture, fixtureCleanup, html } from '@open-wc/testing';
-import { R49Archive } from '@occupancy/r49';
+import { R49Archive } from '@rails49/r49';
 import type { LookAbout, LookBand } from '@rails49/look';
 import '../src/rr-app.js';
 import { RRApp } from '../src/rr-app.js';

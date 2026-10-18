@@ -22,7 +22,7 @@
  * here says "agreed", never "correct".
  */
 
-import type { CarLabel, Point } from '@occupancy/r49';
+import type { CarLabel, Point } from '@rails49/r49';
 import type { Detection, Frame } from '@occupancy/detector';
 import { boxCorners, carWidthPx, polygonIoU } from '@occupancy/detector';
 import { carCorners } from './geometry.js';

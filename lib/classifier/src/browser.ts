@@ -2,7 +2,7 @@
 // (WebGPU/WebNN) binary, which is over Cloudflare's per-file limit and which
 // `executionProviders: ['wasm']` below never uses. See `ui/ortAssets.ts`.
 import * as ort from 'onnxruntime-web/wasm';
-import { type Point } from '@occupancy/r49';
+import { type Point } from '@rails49/r49';
 import { BaseClassifier, type ClassifierConfig } from './base.ts';
 
 /**

@@ -1,5 +1,5 @@
 import { DETECTOR_CLASSES } from '@occupancy/config';
-import { isSegmentPrefix } from '@occupancy/r49';
+import { isSegmentPrefix } from '@rails49/r49';
 
 /** The YOLO class list. A separate name so the default is legible. */
 const CLASSES: readonly string[] = DETECTOR_CLASSES;
@@ -8,7 +8,7 @@ const CLASSES: readonly string[] = DETECTOR_CLASSES;
  * The YOLO class index a stored class trains as: the position of the **longest**
  * entry of `detector.classes` that is a segment-prefix of it.
  *
- * Here rather than in `@occupancy/r49` because the class list is this
+ * Here rather than in `@rails49/r49` because the class list is this
  * project's, not the format's: an archive's `class` is read against the
  * vocabulary, which the format owns, and trained as an index into
  * `detector.classes`, which only the detector does. The segment-prefix rule is

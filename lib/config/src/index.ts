@@ -1,7 +1,7 @@
 // GENERATED FILE — DO NOT EDIT.
 //
-// Source: config.yaml, and lib/r49/r49.json for the format's gauge, scales
-// and vocabulary. Regenerate with: pnpm config:generate
+// Source: config.yaml, and @rails49/r49's data file for the format's gauge,
+// scales and vocabulary. Regenerate with: pnpm config:generate
 //
 // Hand edits are lost on the next run, and bin/test.sh fails the build when
 // this file disagrees with its sources.
@@ -41,8 +41,8 @@ export {
 } from './generated.ts';
 
 //── Vocabulary ──────────────────────────────────────────────────────────────
-// The authoring taxonomy, read from lib/r49/r49.json like the gauge and the
-// scales above. The editor's class menu is generated from it.
+// The authoring taxonomy, read from @rails49/r49's data file like the gauge
+// and the scales above. The editor's class menu is generated from it.
 export { VOCABULARY } from './generated.ts';
 
 // Withheld: everything under `classifier` and `cnn` in config.yaml. The

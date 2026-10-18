@@ -1,7 +1,7 @@
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import sharp from 'sharp';
-import { R49Archive } from '@occupancy/r49';
+import { R49Archive } from '@rails49/r49';
 import { GrayImage } from './image.ts';
 import { DecodedArchive } from './cases.ts';
 

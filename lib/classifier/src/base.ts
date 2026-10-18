@@ -1,4 +1,4 @@
-import { type Point, type ManifestData, getDPT } from '@occupancy/r49';
+import { type Point, type ManifestData, getDPT } from '@rails49/r49';
 import type { InferenceSession, Tensor } from 'onnxruntime-common';
 
 export interface ClassifierConfig {

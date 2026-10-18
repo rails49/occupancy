@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@occupancy/config": "workspace:*",
-    "@occupancy/r49": "workspace:*",
+    "@rails49/r49": "catalog:",
     "onnxruntime-common": "^1.26.0",
     "onnxruntime-web": "^1.26.0"
   },

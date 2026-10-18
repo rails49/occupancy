@@ -25,7 +25,7 @@ import type { FrameSize, Rect, Size } from './geometry.js';
 import { highlightStyles } from './highlight.js';
 import { matteTokens } from './matte.js';
 import { isKnownClass } from './vocabulary.js';
-import type { ReferencePoint, CarLabel, Point, Sensor } from '@occupancy/r49';
+import type { ReferencePoint, CarLabel, Point, Sensor } from '@rails49/r49';
 import type { Detection, SensorState } from '@occupancy/detector';
 import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
 

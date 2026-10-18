@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { fixture, fixtureCleanup, html } from '@open-wc/testing';
 import '../src/rr-app.js';
 import { RRApp } from '../src/rr-app.js';
-import { R49Archive, getDPT } from '@occupancy/r49';
+import { R49Archive, getDPT } from '@rails49/r49';
 import type { NotifyDetail } from '../src/rr-editor-view.js';
 import type { EditHistory } from '../src/history.js';
 

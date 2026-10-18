@@ -3,10 +3,8 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadArchives } from '../src/load.ts';
 
-const frozenFixtureDir = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  '..', '..', '..', 'lib', 'r49', 'tests', 'fixtures',
-);
+// A copy of rails49/r49's conformance/cases/format-v4/archive.r49.
+const frozenFixtureDir = resolve(dirname(fileURLToPath(import.meta.url)), 'fixtures');
 
 describe('loadArchives', () => {
   it('decodes the frozen v4 fixture to normalized grayscale', async () => {

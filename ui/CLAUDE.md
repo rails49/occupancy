@@ -176,7 +176,7 @@ before it, which is worse than having no undo. Rules, from entries being scoped 
 
 ### The vocabulary (#35)
 
-`vocabulary.ts` reads the vocabulary out of `lib/r49/r49.json` through the generated
+`vocabulary.ts` reads the vocabulary out of `@rails49/r49`'s data file through the generated
 `@occupancy/config` and is the **only place in `ui/` a class name comes from** — including the class
 a new car is created as, which is the taxonomy's root rather than a literal `'stock'`. A hardcoded
 class anywhere in `ui/` breaks the config→menu path while still typechecking. Rules, each stated in

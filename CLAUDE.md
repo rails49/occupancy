@@ -23,15 +23,10 @@ What each kind of doc holds: org [ADR-0017](https://github.com/rails49/.github/b
 - `SPEC.md` describes the target. Where it or an ADR disagrees with the code
   (for example `detector.input: [960, 544]` against ADR 0014), the gap is the
   planned migration; leave it unless the task is that migration.
-- This repository stays public, or `rails49/r49`'s CI breaks for every fork
-  pull request (ADR 0002). Nothing in this repository goes red when it happens.
-- `lib/r49/tests/fixtures/format-v4.r49` is frozen. If it fails to load, the
-  change broke v4 and needs a version bump; keep the fixture as it is.
-- `config.json` and `lib/config/src/` are generated. Edit `config.yaml` or
-  `lib/r49/r49.json` and run `pnpm config:generate`. `detector.classes` is
-  append-only (ADR 0009).
-- `@occupancy/r49` imports nothing else from this repository, so it can move to
-  `rails49/r49` as a straight copy (ADR 0018).
+- The `.r49` format is `@rails49/r49`'s, pinned once in `pnpm-workspace.yaml`.
+  A format change is a release in `rails49/r49`, then a bump here (ADR 0018).
+- `config.json` and `lib/config/src/` are generated. Edit `config.yaml` and run
+  `pnpm config:generate`. `detector.classes` is append-only (ADR 0009).
 - `dataset/src/data_prep.ts` and `dataset/src/online_diagnostics.ts` stay
   parked stubs. v4 stores no point markers; see `SPEC.md` § v4 cannot produce a
   trainable CNN dataset.

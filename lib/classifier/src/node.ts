@@ -1,6 +1,6 @@
 import * as ort from 'onnxruntime-node';
 import sharp from 'sharp';
-import { type Point } from '@occupancy/r49';
+import { type Point } from '@rails49/r49';
 import { BaseClassifier, type ClassifierConfig } from './base.ts';
 
 export class NodeClassifier extends BaseClassifier {

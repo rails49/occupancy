@@ -1,6 +1,6 @@
 import { LitElement, html, css, nothing } from 'lit';
 import { customElement, query, state } from 'lit/decorators.js';
-import { R49Archive, MANIFEST_VERSION, type Layout, type ManifestData } from '@occupancy/r49';
+import { R49Archive, MANIFEST_VERSION, type Layout, type ManifestData } from '@rails49/r49';
 import '@rails49/look';
 import '@rails49/look/look.css';
 import { lookTheme, type LookPressDetail, type LookViewDetail } from '@rails49/look';

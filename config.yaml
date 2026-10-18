@@ -40,8 +40,8 @@ cnn:
 # Layout & Physical specifications (R49 manifest)
 # ====================================================================================
 # The standard gauge and the scale-to-ratio table are the .r49 format's, not this
-# project's: they are authored in lib/r49/r49.json, and the generator reads them
-# from there (ADR 0018, #181). The generator fails if either reappears here.
+# project's: the generator reads them from @rails49/r49's data file (ADR 0018,
+# #181). The generator fails if either reappears here.
 layout:
   # Prototype mm — widest real stock (SBB RAm TEE I). Car width is derived from
   # this rather than stored per label; because width in pixels is
@@ -141,7 +141,7 @@ detector:
   classes: ["stock"]
   #
   # Every entry must name a class in the vocabulary — the authoring taxonomy,
-  # which is the .r49 format's and lives in lib/r49/r49.json (ADR 0018). The
+  # which is the .r49 format's and lives in @rails49/r49's data file (ADR 0018). The
   # generator fails, naming the class, when one does not: a class no label can
   # carry is an index nothing is ever trained as.
   #

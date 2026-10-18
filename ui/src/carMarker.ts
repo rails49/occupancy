@@ -1,6 +1,6 @@
 import { svg, css } from 'lit';
 import type { SVGTemplateResult, CSSResult } from 'lit';
-import type { CarLabel, Point } from '@occupancy/r49';
+import type { CarLabel, Point } from '@rails49/r49';
 import { boxCorners } from '@occupancy/detector';
 import type { Detection } from '@occupancy/detector';
 import { carCorners, placeLabel } from './geometry.js';

@@ -1,4 +1,4 @@
-import { getDPT, make_id } from '@occupancy/r49';
+import { getDPT, make_id } from '@rails49/r49';
 import type {
   ReferencePoint,
   CarLabel,
@@ -8,7 +8,7 @@ import type {
   R49Archive,
   Sensor,
   WorldPoint,
-} from '@occupancy/r49';
+} from '@rails49/r49';
 import {
   carCovering,
   carUnderPointer,

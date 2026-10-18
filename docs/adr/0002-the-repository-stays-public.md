@@ -1,5 +1,7 @@
 # The repository stays public
 
+*Superseded by [ADR 0018](0018-the-r49-format-is-defined-in-rails49-r49.md).*
+
 Status: accepted. To be retired by [ADR 0018](0018-the-r49-format-is-defined-in-rails49-r49.md) once `rails49/r49`'s CI no longer checks out this repository.
 
 `rails49/occupancy` must stay public. The corpus repository `rails49/r49` checks this repository out at `main` in CI to run `tools/r49-validate`. `GITHUB_TOKEN` is scoped to the repository running the workflow, so a private `rails49/occupancy` returns 404. No token fixes it: contributor submissions are fork pull requests, and GitHub passes them no secrets. Nothing in this repository fails when the constraint is broken.

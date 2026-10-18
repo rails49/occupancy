@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { CarLabel } from '@occupancy/r49';
+import type { CarLabel } from '@rails49/r49';
 import type { Detection } from '@occupancy/detector';
 import { carWidthPx } from '@occupancy/detector';
 import {

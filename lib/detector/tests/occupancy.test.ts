@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Sensor } from '@occupancy/r49';
+import type { Sensor } from '@rails49/r49';
 import { occupancy } from '../src/occupancy.ts';
 import type { Detection } from '../src/types.ts';
 

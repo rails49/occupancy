@@ -25,11 +25,14 @@ def get_device():
 def load_r49_data():
     """Loads the .r49 format's data file: gauge, scales and vocabulary.
 
-    They are the format's, not this project's, so they are authored in
-    lib/r49/r49.json rather than config.yaml (ADR 0018).
+    They are the format's, not this project's, so they are read from the
+    pinned @rails49/r49 package rather than config.yaml (ADR 0018).
     """
     data_path = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "../../../../lib/r49/r49.json")
+        os.path.join(
+            os.path.dirname(__file__),
+            "../../../../node_modules/@rails49/r49/dist/data.json",
+        )
     )
     with open(data_path, "r") as f:
         return json.load(f)
@@ -42,19 +45,19 @@ def get_gauge(scale_name: str) -> float:
     standard_gauge = data.get("standard_gauge")
     if standard_gauge is None:
         raise ValueError(
-            "Fatal Error: 'standard_gauge' is missing in lib/r49/r49.json."
+            "Fatal Error: 'standard_gauge' is missing in @rails49/r49's data file."
         )
 
     scale_to_ratio = data.get("scale_to_ratio")
     if not scale_to_ratio:
         raise ValueError(
-            "Fatal Error: 'scale_to_ratio' is missing in lib/r49/r49.json."
+            "Fatal Error: 'scale_to_ratio' is missing in @rails49/r49's data file."
         )
 
     ratio = scale_to_ratio.get(scale_name)
     if ratio is None:
         raise ValueError(
-            f"Fatal Error: Scale '{scale_name}' is missing in scale_to_ratio in lib/r49/r49.json."
+            f"Fatal Error: Scale '{scale_name}' is missing in scale_to_ratio in @rails49/r49's data file."
         )
 
     return standard_gauge / ratio

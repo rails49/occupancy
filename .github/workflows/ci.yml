@@ -1,13 +1,8 @@
-# The gate on `main`. Until now the only gate was `bin/test.sh` run from a
-# pre-push hook, which is installed by hand (`bin/install-hooks.sh`) and
-# skippable with `--no-verify`. That was fine while this repo's `main` was its
-# own only consumer. The corpus repo (rails49/r49) changed it: its CI checks out
-# `rails49` at `main` and runs the validator from there, so a bad push here
-# reddens a *contributor's* pull request with nothing on their side at fault.
-#
-# The pre-push hook stays. It is faster feedback and catches most things before
-# they reach `main`; this is the gate that cannot be skipped. They are also not
-# redundant — see the Python note on the `bin/test.sh` step below.
+# The gate on `main`. `bin/test.sh` also runs from a pre-push hook, which is
+# installed by hand (`bin/install-hooks.sh`) and skippable with `--no-verify`.
+# The hook is faster feedback and catches most things before they reach `main`;
+# this is the gate that cannot be skipped. They are also not redundant — see
+# the Python note on the `bin/test.sh` step below.
 name: test
 
 on:
@@ -17,8 +12,7 @@ on:
 
 # `push` is scoped to `main` and pull_request covers the rest, so a branch with
 # an open PR gets one run, not two. Superseded runs on a branch are cancelled;
-# runs on `main` are always left to finish, because `main` is the ref the corpus
-# repo checks out and its status is the thing contributors see.
+# runs on `main` are always left to finish.
 concurrency:
   group: test-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -30,9 +24,7 @@ jobs:
       - uses: actions/checkout@v7
 
       # No `version:` input — pnpm's version comes from `packageManager` in the
-      # root package.json, and Node's from .nvmrc. Those two files are the
-      # toolchain declaration the corpus workflow also reads out of this
-      # checkout, so this job consuming them is what keeps them honest.
+      # root package.json, and Node's from .nvmrc.
       - uses: pnpm/action-setup@v6
 
       - uses: actions/setup-node@v7

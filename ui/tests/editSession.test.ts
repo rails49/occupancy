@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { R49Archive, MANIFEST_VERSION, getDPT } from '@occupancy/r49';
-import type { ReferencePoint, CarLabel, ManifestData, Point, Sensor } from '@occupancy/r49';
+import { R49Archive, MANIFEST_VERSION, getDPT } from '@rails49/r49';
+import type { ReferencePoint, CarLabel, ManifestData, Point, Sensor } from '@rails49/r49';
 import { ALREADY_LABELED, EditSession } from '../src/editSession.js';
 import type { Reveal } from '../src/editSession.js';
 import { TOOLS } from '../src/tools.js';

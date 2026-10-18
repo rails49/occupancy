@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { missingLayoutMetadata } from '../src/requiredMetadata.ts';
-import type { Layout, ManifestData } from '@occupancy/r49';
+import type { Layout, ManifestData } from '@rails49/r49';
 
 /** A manifest whose layout satisfies the gate, spread-and-overridden per test. */
 function manifest(over: Partial<Layout> = {}): ManifestData {

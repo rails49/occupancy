@@ -11,6 +11,7 @@
     "config:generate": "uv run --with pyyaml python3 bin/generate_config.py"
   },
   "devDependencies": {
+    "@rails49/r49": "catalog:",
     "typescript": "^5.4.5"
   },
   "pnpm": {

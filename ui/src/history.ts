@@ -1,13 +1,13 @@
-import type { R49Archive, ReferencePoint, Image, Layout, Point } from '@occupancy/r49';
+import type { R49Archive, ReferencePoint, Image, Layout, Point } from '@rails49/r49';
 
 /**
  * Undo/redo for the editor, as scoped snapshots of the manifest.
  *
  * A plain module, not an element: each `EditSession` owns one instance (see
  * `ui/README.md` § State and data flow). It deliberately does **not** live
- * in `@occupancy/r49` — that package is a parser/serializer, and an edit history
+ * in `@rails49/r49` — that package is a parser/serializer, and an edit history
  * is an editing-session concept, coupled here to view state that means nothing
- * to the training exporter or to `fixtures.test.ts`.
+ * to the training exporter.
  *
  * Three properties are load-bearing, and each one closes a failure mode:
  *

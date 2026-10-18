@@ -19,7 +19,7 @@
 import { createDriftCheck, fromImageData } from '@occupancy/drift';
 import type { DriftCheck, GrayPlane } from '@occupancy/drift';
 import { MAX_DRIFT_TRACK_FRACTION } from '@occupancy/config';
-import type { R49Archive } from '@occupancy/r49';
+import type { R49Archive } from '@rails49/r49';
 
 /**
  * How far the camera may appear to have moved before it counts as drift, in

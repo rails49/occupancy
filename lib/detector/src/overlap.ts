@@ -9,7 +9,7 @@
  * this package's interface note sets for promoting anything.
  */
 
-import type { Point } from '@occupancy/r49';
+import type { Point } from '@rails49/r49';
 
 /** Area of a simple polygon, by the shoelace formula. Sign-free. */
 export function polygonArea(polygon: readonly Point[]): number {

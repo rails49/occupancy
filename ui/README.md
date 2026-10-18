@@ -643,8 +643,9 @@ ignores `frame` entirely: it names an exact pixel, wherever that pixel is.
 
 The authored class taxonomy, read as a tree. A pure module for the same reason `geometry.ts` is one,
 and the **only place in `ui/` that a class name comes from** — every value here is derived from
-the vocabulary in `lib/r49/r49.json`, reached through the generated `@occupancy/config`, so adding
-a subtype there and running `pnpm config:generate` changes the editor's menu with no code edit.
+the vocabulary in `@rails49/r49`'s data file, reached through the generated `@occupancy/config`, so a
+subtype added in an `@rails49/r49` release reaches the editor's menu at the next version bump and
+`pnpm config:generate`, with no code edit.
 
 | Export | Description |
 |---|---|
@@ -899,7 +900,7 @@ inside a car already labelled ([#43]). `rr-app` owns the toast.
   that subject's rows — **delete** for a reference point, **name and delete** for a sensor,
   **delete and reclassify** for a car — and a chosen row calls `delete`, `reclassifyCar` or opens the
   name dialog. Empty image opens nothing.
-  * **Reclassify is a submenu generated from the vocabulary in `lib/r49/r49.json`** ([#35]), through
+  * **Reclassify is a submenu generated from the vocabulary in `@rails49/r49`'s data file** ([#35]), through
     `vocabulary.ts`. A new car is the taxonomy's root and refinement is an occasional act, not a
     mode, which is what a submenu says and a persistent picker would not. The **root is never
     rendered** — its children are — and it is nonetheless required in the stored class, so the rows
@@ -1446,9 +1447,9 @@ absent from `lib.dom` (unlike `FileSystemFileHandle` itself, which OPFS put ther
 
 ### `history.ts`
 
-The editor's undo stack. A plain module, not an element: each `EditSession` owns one. It is deliberately **not** part of `@occupancy/r49`, which is a parser/serializer — an edit
+The editor's undo stack. A plain module, not an element: each `EditSession` owns one. It is deliberately **not** part of `@rails49/r49`, which is a parser/serializer — an edit
 history is an editing-session concept, coupled here to view state that means nothing to the training
-exporter or to `lib/r49/tests/fixtures.test.ts`.
+exporter.
 
 | Export | Description |
 |---|---|

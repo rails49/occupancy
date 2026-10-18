@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { R49Archive, MANIFEST_VERSION, type CarLabel, type ManifestData, type Point } from '@occupancy/r49';
+import { R49Archive, MANIFEST_VERSION, type CarLabel, type ManifestData, type Point } from '@rails49/r49';
 import { EditHistory } from '../src/history.js';
 
 // No DOM here at all: history.ts is a plain module, which is the point of

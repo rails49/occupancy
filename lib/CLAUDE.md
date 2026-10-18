@@ -3,8 +3,6 @@
 All written in TypeScript, all consumed as source — nothing here is built or
 published. `ui/` and `dataset/` are the only consumers.
 
-* `r49` : `.r49` archive parser and serializer, manifest schema, scale geometry,
-  and the id generator every `id` field is minted with
 * `classifier` : ONNX Runtime image classifier (browser and node targets)
 * `detector` : car boxes — the YOLO OBB session (browser), the L0 decode, the
   L1 occupancy geometry, and the span→box construction the exporter uses
@@ -38,8 +36,8 @@ Three rules:
 1. **Explicit exports only — never `export *`.** A wildcard makes the surface an
    accident of which files exist. Every exported name is a decision.
 2. **`index.ts` contains no implementation.** It re-exports and it comments;
-   that's all. Implementation lives in sibling modules (`archive.ts`,
-   `base.ts`, `uid.ts`, …).
+   that's all. Implementation lives in sibling modules (`base.ts`,
+   `geometry.ts`, …).
 3. **Not exported from `index.ts` means internal.** Consumers may not rely on
    it and it may change without notice. Tests, which live inside the package,
    may import internals directly.
@@ -53,20 +51,15 @@ Three rules:
   implementation module, where hover and IntelliSense read them. The header
   carries group comments and rationale instead.
 
-* **The zod schemas are withheld deliberately.** Exporting `ManifestDataSchema`
-  and friends would make zod part of `r49`'s public contract, so it could not
-  be replaced without a breaking change. Callers receive validated data or an
-  exception; how that validation happens is ours to change.
-
 * **There is no `paths` block in the root `tsconfig.json`.** Packages resolve
   through pnpm workspace symlinks and each `package.json` `"exports"` map, so
   `exports` is the single boundary and binds identically at typecheck and at
   bundle time. A `paths` entry — especially a wildcard one — would let deep
   imports typecheck cleanly and then fail only at build.
 
-* **A header cannot hide class members.** `R49Archive` is exported, so all of
-  its public methods are public regardless of what `index.ts` says. Narrowing
-  a class's surface means `private`, `#field`, or deletion.
+* **A header cannot hide class members.** `BrowserClassifier` is exported, so
+  all of its public methods are public regardless of what `index.ts` says.
+  Narrowing a class's surface means `private`, `#field`, or deletion.
 
 * **`classifier` has three entry points, not one.** `.` carries only the config
   type; `./browser` and `./node` carry the classifiers. The split is what keeps

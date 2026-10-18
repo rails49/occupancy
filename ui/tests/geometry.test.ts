@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { ReferencePoint, CarLabel, Sensor } from '@occupancy/r49';
+import type { ReferencePoint, CarLabel, Sensor } from '@rails49/r49';
 import { STANDARD_GAUGE, STANDARD_WIDTH } from '@occupancy/config';
 import {
   coupledEnds,
