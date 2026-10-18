@@ -9,7 +9,7 @@ vocabulary — meaning neither `config.yaml` nor `lib/r49/r49.json` gains a
 second home for values that must agree.
 
 It sits in `tools/`, not `lib/` and not `dataset/`, for two reasons: it is an
-executable whose consumer is a foreign CI rather than a library `ui/` imports,
+executable that a foreign CI runs rather than a library `ui/` imports,
 and `dataset/` drags `sharp` and `onnxruntime-node`. Validating a zip here costs
 `jszip` + `zod` + `tsx` and no native builds.
 

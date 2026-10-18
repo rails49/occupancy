@@ -1,6 +1,6 @@
 // Public interface of @occupancy/r49.
 //
-// This file is the package's interface — the only surface consumers may rely
+// This file is the package's interface — the only surface callers may rely
 // on. Anything not exported here is internal and may change without notice.
 // Per-symbol documentation lives on the declarations in ./archive.ts and
 // ./manifest.schema.ts, because TypeScript discards doc comments written on
@@ -55,7 +55,7 @@ export type {
 export { MANIFEST_VERSION } from './manifest.schema.ts';
 
 //── Scale geometry ───────────────────────────────────────────────────────────
-// Consumers work with scale names and pixel-domain measurements only — the
+// Callers work with scale names and pixel-domain measurements only — the
 // prototype domain (real-world 1435mm gauge) and the model domain (physical
 // gauge in mm) are internal implementation details of how getDPT() is
 // computed.
@@ -76,7 +76,7 @@ export {
 export { make_id } from './uid.ts';
 
 //── Class vocabulary ─────────────────────────────────────────────────────────
-// How the authored taxonomy is read. Here rather than in a consumer because two
+// How the authored taxonomy is read. Here rather than in a caller because two
 // of them must agree: the editor warns on a non-conforming class, and the
 // corpus validator blocks on it. Not parse-time validation — `class` stays a
 // plain string at the format layer.
@@ -100,7 +100,7 @@ export {
 // only the pixel-domain getDPT() and the scale names in VALID_SCALES — and
 // exposing the prototype domain would invite gauge arithmetic to be
 // reimplemented downstream (which is exactly what lib/classifier used to do).
-// A consumer that genuinely needs the values reads the data file itself, as
+// A caller that genuinely needs the values reads the data file itself, as
 // occupancy's config generator does.
 //
 // Withheld: `toBase62`. It is a numeric encoding helper, not an identity

@@ -122,7 +122,7 @@ async function main(argv: readonly string[]): Promise<number> {
     }
 
     // `--check` reports on stderr like every other human-facing rendering here,
-    // and writes nothing to stdout: there is no machine consumer, and stdout
+    // and writes nothing to stdout: no program reads it, and stdout
     // carrying the table would tempt a workflow into diffing it a second time.
     if (values.check !== undefined) {
       const { ok, message } = checkGuidance(await readFile(values.check, 'utf8'), width);

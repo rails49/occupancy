@@ -6,7 +6,7 @@ import { VOCABULARY } from './data.ts';
  * it.
  *
  * It lives in this package rather than in `ui/` because it now has two
- * consumers that must agree: the editor, where a non-conforming class is a
+ * callers that must agree: the editor, where a non-conforming class is a
  * visible warning, and the corpus validator, where the same mismatch blocks a
  * submission. A rule implemented twice agrees only until someone edits one
  * copy — and these two matter *most* in the case where they disagree, because a
