@@ -1,12 +1,19 @@
 #!/usr/bin/env python3
 """Generate every derived representation of config.yaml.
 
-config.yaml is authored; everything else is generated and verified. This script
-emits two of them:
+config.yaml is authored; everything else is generated and verified. The format's
+own constants — the standard gauge, the scale table and the class vocabulary —
+are authored in lib/r49/r49.json instead, because they belong to the .r49
+format rather than to this project (ADR 0018). This script reads them from there
+wherever occupancy still needs them, and fails when a `detector.classes` entry
+names a class the vocabulary does not. It emits two outputs:
 
   config.json          gitignored, consumed by the model export and the UI
   lib/config/src/      committed, so a fresh clone typechecks before anyone
                        runs a generator
+
+Pass --config and --r49-data to read other files than the project's own; the
+tests use that to drive the vocabulary check without editing either.
 
 Pass --out-dir to write somewhere other than the project root. bin/test.sh uses
 that to regenerate into a temp directory and diff against the committed output,
@@ -22,14 +29,17 @@ from typing import NoReturn
 
 import yaml
 
+# The .r49 format's data file, relative to the project root.
+R49_DATA = "lib/r49/r49.json"
+
 # Emitted verbatim at the top of every generated TypeScript file.
 BANNER = """// GENERATED FILE — DO NOT EDIT.
 //
-// Source: config.yaml (the single authored home for these values).
-// Regenerate with: pnpm config:generate
+// Source: config.yaml, and lib/r49/r49.json for the format's gauge, scales
+// and vocabulary. Regenerate with: pnpm config:generate
 //
 // Hand edits are lost on the next run, and bin/test.sh fails the build when
-// this file disagrees with config.yaml.
+// this file disagrees with its sources.
 """
 
 
@@ -38,14 +48,34 @@ def fail(message: str) -> NoReturn:
     sys.exit(1)
 
 
-def require(config: dict, *path: str):
+def require(config: dict, *path: str, source: str = "config.yaml"):
     """Fetch a nested key, failing loudly rather than emitting a hole."""
     node = config
     for i, key in enumerate(path):
         if not isinstance(node, dict) or key not in node:
-            fail(f"config.yaml is missing '{'.'.join(path[: i + 1])}'")
+            fail(f"{source} is missing '{'.'.join(path[: i + 1])}'")
         node = node[key]
     return node
+
+
+def is_known_class(cls: str, vocabulary: dict) -> bool:
+    """Whether `cls` names an entry of the vocabulary, segment by segment.
+
+    The rule @occupancy/r49's `isKnownClass` reads the vocabulary with: a nested
+    mapping is a subtype, anything else is a property, and the class is rooted.
+    Restated here because Python cannot import it — and kept to the one thing
+    the generator needs, which is refusing a class list the vocabulary does not
+    cover.
+    """
+    if cls == "":
+        return False
+    node = vocabulary
+    for segment in cls.split("."):
+        child = node.get(segment)
+        if not isinstance(child, dict):
+            return False
+        node = child
+    return True
 
 
 def ts_literal(value) -> str:
@@ -80,10 +110,12 @@ def doc(*lines: str) -> str:
     return f"/**\n{body}\n */"
 
 
-def render_generated_ts(config: dict) -> str:
-    standard_gauge = require(config, "layout", "standard_gauge")
+def render_generated_ts(config: dict, r49: dict) -> str:
+    standard_gauge = require(r49, "standard_gauge", source=R49_DATA)
+    scale_to_ratio = require(r49, "scale_to_ratio", source=R49_DATA)
+    vocabulary = require(r49, "vocabulary", source=R49_DATA)
+
     standard_width = require(config, "layout", "standard_width")
-    scale_to_ratio = require(config, "layout", "scale_to_ratio")
     min_dpt = require(config, "layout", "min_dpt")
     max_drift_track_fraction = require(config, "layout", "max_drift_track_fraction")
 
@@ -92,10 +124,9 @@ def render_generated_ts(config: dict) -> str:
     nms_iou = require(config, "detector", "nms_iou")
     val_split = require(config, "detector", "val_split")
     detector_classes = require(config, "detector", "classes")
-    vocabulary = require(config, "detector", "vocabulary")
 
     if not scale_to_ratio:
-        fail("config.yaml has an empty 'layout.scale_to_ratio'")
+        fail(f"{R49_DATA} has an empty 'scale_to_ratio'")
     if not detector_classes:
         fail("config.yaml has an empty 'detector.classes'")
     # The editor takes the class of every new car from this taxonomy's single
@@ -107,8 +138,22 @@ def render_generated_ts(config: dict) -> str:
     roots = [name for name, node in vocabulary.items() if isinstance(node, dict)]
     if len(roots) != 1:
         fail(
-            "config.yaml's 'detector.vocabulary' must name exactly one root class, "
+            f"{R49_DATA}'s 'vocabulary' must name exactly one root class, "
             f"found {len(roots)}"
+        )
+    # A class the vocabulary does not name is one no label can carry without a
+    # warning in the editor and a block in the corpus, so the detector would be
+    # training an index nothing is ever labeled as. The two files are authored
+    # separately now, which is what makes this check necessary: removing a
+    # subtype from the vocabulary used to sit beside the class list it broke.
+    unknown = [cls for cls in detector_classes if not is_known_class(cls, vocabulary)]
+    if unknown:
+        fail(
+            "config.yaml's 'detector.classes' names "
+            + ", ".join(json.dumps(cls) for cls in unknown)
+            + f", which {R49_DATA}'s 'vocabulary' does not. Every class the "
+            "detector trains must be one a label can carry — restore the "
+            "vocabulary entry, or fix the class."
         )
 
     scale_names = list(scale_to_ratio.keys())
@@ -124,7 +169,7 @@ def render_generated_ts(config: dict) -> str:
         BANNER,
         "//── Layout geometry ─────────────────────────────────────────────────────────",
         "",
-        doc("Prototype track gauge in mm. One authored home, in config.yaml."),
+        doc("Prototype track gauge in mm. Read from lib/r49/r49.json, its one authored home."),
         f"export const STANDARD_GAUGE = {ts_literal(standard_gauge)};",
         "",
         doc(
@@ -162,7 +207,7 @@ def render_generated_ts(config: dict) -> str:
         ),
         f"export const MAX_DRIFT_TRACK_FRACTION = {ts_literal(max_drift_track_fraction)};",
         "",
-        doc("Every scale name config.yaml defines a ratio for."),
+        doc("Every scale name lib/r49/r49.json defines a ratio for."),
         f"export type Scale = {scale_union};",
         "",
         doc(
@@ -172,7 +217,7 @@ def render_generated_ts(config: dict) -> str:
         f"export const SCALE_TO_RATIO = {ts_literal(scale_to_ratio)} as const;",
         "",
         doc(
-            "Scale names as a non-empty tuple, in config.yaml's order — the form a",
+            "Scale names as a non-empty tuple, in lib/r49/r49.json's order — the form a",
             "schema enum needs.",
         ),
         "export const SCALES: readonly [Scale, ...Scale[]] = ["
@@ -222,7 +267,8 @@ def render_generated_ts(config: dict) -> str:
         f"export const DETECTOR_CLASSES = {ts_literal(detector_classes)} as const;",
         "",
         doc(
-            "The authoring taxonomy — what a label's `class` should match.",
+            "The authoring taxonomy — what a label's `class` should match. Read",
+            "from lib/r49/r49.json; every DETECTOR_CLASSES entry names a class in it.",
             "",
             "The root is required, not cosmetic: an unrooted class matches no",
             "entry in DETECTOR_CLASSES and would be dropped from an export. The root",
@@ -232,7 +278,7 @@ def render_generated_ts(config: dict) -> str:
             "class it sits under (`width_mm` is the one such property today). That",
             "is what tells a subtype from a property with no reserved key names.",
         ),
-        f"export const DETECTOR_VOCABULARY = {ts_literal(vocabulary)} as const;",
+        f"export const VOCABULARY = {ts_literal(vocabulary)} as const;",
         "",
     ]
     return "\n".join(parts)
@@ -274,8 +320,12 @@ def render_index_ts() -> str:
             "  DETECTOR_NMS_IOU,",
             "  DETECTOR_VAL_SPLIT,",
             "  DETECTOR_CLASSES,",
-            "  DETECTOR_VOCABULARY,",
             "} from './generated.ts';",
+            "",
+            "//── Vocabulary ──────────────────────────────────────────────────────────────",
+            "// The authoring taxonomy, read from lib/r49/r49.json like the gauge and the",
+            "// scales above. The editor's class menu is generated from it.",
+            "export { VOCABULARY } from './generated.ts';",
             "",
             "// Withheld: everything under `classifier` and `cnn` in config.yaml. The",
             "// classifier reads its own config.json at runtime and the CNN training",
@@ -303,13 +353,23 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
+        "--config",
+        default=os.path.join(project_root, "config.yaml"),
+        help="The authored config to read (default: the project's config.yaml).",
+    )
+    parser.add_argument(
+        "--r49-data",
+        default=os.path.join(project_root, R49_DATA),
+        help=f"The format's data file to read (default: the project's {R49_DATA}).",
+    )
+    parser.add_argument(
         "--out-dir",
         default=project_root,
         help="Root to write generated files under (default: the project root).",
     )
     args = parser.parse_args()
 
-    yaml_path = os.path.join(project_root, "config.yaml")
+    yaml_path = os.path.abspath(args.config)
     if not os.path.exists(yaml_path):
         fail(f"config.yaml not found at {yaml_path}")
 
@@ -321,6 +381,28 @@ def main() -> None:
 
     if not isinstance(config, dict):
         fail("config.yaml did not parse to a mapping")
+
+    # Moved out rather than duplicated: two homes for one value is the failure
+    # this generator exists to prevent, so a key reappearing here is an error.
+    for section, key in (
+        ("layout", "standard_gauge"),
+        ("layout", "scale_to_ratio"),
+        ("detector", "vocabulary"),
+    ):
+        if key in (config.get(section) or {}):
+            fail(
+                f"config.yaml still carries '{section}.{key}'. It is the .r49 "
+                f"format's and is authored in {R49_DATA} (ADR 0018)."
+            )
+
+    try:
+        with open(args.r49_data, "r") as f:
+            r49 = json.load(f)
+    except Exception as e:
+        fail(f"could not read {args.r49_data}: {e}")
+
+    if not isinstance(r49, dict):
+        fail(f"{R49_DATA} did not parse to an object")
 
     if "labels" in config.get("classifier", {}):
         fail(
@@ -335,7 +417,7 @@ def main() -> None:
 
     try:
         write(json_path, json.dumps(config, indent=2))
-        write(os.path.join(pkg_src, "generated.ts"), render_generated_ts(config))
+        write(os.path.join(pkg_src, "generated.ts"), render_generated_ts(config, r49))
         write(os.path.join(pkg_src, "index.ts"), render_index_ts())
     except OSError as e:
         fail(f"could not write generated output: {e}")

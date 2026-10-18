@@ -1,14 +1,14 @@
 // GENERATED FILE — DO NOT EDIT.
 //
-// Source: config.yaml (the single authored home for these values).
-// Regenerate with: pnpm config:generate
+// Source: config.yaml, and lib/r49/r49.json for the format's gauge, scales
+// and vocabulary. Regenerate with: pnpm config:generate
 //
 // Hand edits are lost on the next run, and bin/test.sh fails the build when
-// this file disagrees with config.yaml.
+// this file disagrees with its sources.
 
 //── Layout geometry ─────────────────────────────────────────────────────────
 
-/** Prototype track gauge in mm. One authored home, in config.yaml. */
+/** Prototype track gauge in mm. Read from lib/r49/r49.json, its one authored home. */
 export const STANDARD_GAUGE = 1435.0;
 
 /**
@@ -46,7 +46,7 @@ export const MIN_DPT = 20;
  */
 export const MAX_DRIFT_TRACK_FRACTION = 0.25;
 
-/** Every scale name config.yaml defines a ratio for. */
+/** Every scale name lib/r49/r49.json defines a ratio for. */
 export type Scale = "G" | "O" | "S" | "HO" | "T" | "N" | "Z";
 
 /**
@@ -56,7 +56,7 @@ export type Scale = "G" | "O" | "S" | "HO" | "T" | "N" | "Z";
 export const SCALE_TO_RATIO = { "G": 25, "O": 48, "S": 64, "HO": 87, "T": 120, "N": 160, "Z": 220 } as const;
 
 /**
- * Scale names as a non-empty tuple, in config.yaml's order — the form a
+ * Scale names as a non-empty tuple, in lib/r49/r49.json's order — the form a
  * schema enum needs.
  */
 export const SCALES: readonly [Scale, ...Scale[]] = ["G", "O", "S", "HO", "T", "N", "Z"];
@@ -104,7 +104,8 @@ export const DETECTOR_VAL_SPLIT = 0.2;
 export const DETECTOR_CLASSES = ["stock"] as const;
 
 /**
- * The authoring taxonomy — what a label's `class` should match.
+ * The authoring taxonomy — what a label's `class` should match. Read
+ * from lib/r49/r49.json; every DETECTOR_CLASSES entry names a class in it.
  *
  * The root is required, not cosmetic: an unrooted class matches no
  * entry in DETECTOR_CLASSES and would be dropped from an export. The root
@@ -114,4 +115,4 @@ export const DETECTOR_CLASSES = ["stock"] as const;
  * class it sits under (`width_mm` is the one such property today). That
  * is what tells a subtype from a property with no reserved key names.
  */
-export const DETECTOR_VOCABULARY = { "stock": { "loco": { "steam": {}, "diesel": {}, "electric": {} }, "passenger": {}, "freight": {} } } as const;
+export const VOCABULARY = { "stock": { "loco": { "steam": {}, "diesel": {}, "electric": {} }, "passenger": {}, "freight": {} } } as const;

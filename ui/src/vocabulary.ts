@@ -1,4 +1,4 @@
-import { DETECTOR_VOCABULARY } from '@occupancy/config';
+import { VOCABULARY } from '@occupancy/config';
 import { vocabularySubtypes, type VocabularyNode } from '@occupancy/r49';
 
 /**
@@ -19,7 +19,7 @@ export { isKnownClass } from '@occupancy/r49';
  *
  * A pure module for the same reason `geometry.ts` is one: it is arithmetic over
  * data, and a component cannot be tested in jsdom. Everything here is derived
- * from `detector.vocabulary` in `config.yaml`, reached through the generated
+ * from the vocabulary in `lib/r49/r49.json`, reached through the generated
  * `@occupancy/config`, so **adding a subtype there and regenerating changes the
  * editor's menu with no code edit** — and no class name is written anywhere
  * else in `ui/` (`SPEC.md` § Parameters live in `config.yaml`).
@@ -30,7 +30,7 @@ export { isKnownClass } from '@occupancy/r49';
  * * **A nested object is a subtype; anything else is a property.** `width_mm`
  *   is an optional per-class width override that sits beside subtypes in the
  *   same mapping, and telling the two apart structurally is what avoids a
- *   reserved list of key names that config.yaml would then have to know about.
+ *   reserved list of key names that the data file would then have to know about.
  * * **The stored class is always rooted, and the root is never shown.** A label
  *   maps to the longest entry of `detector.classes` that is a segment-prefix of
  *   its class, so an unrooted `loco.steam` matches nothing and is **dropped
@@ -52,7 +52,7 @@ export interface ClassChoice {
 }
 
 /** The authored taxonomy. A separate name so the default is legible. */
-const AUTHORED: VocabularyNode = DETECTOR_VOCABULARY;
+const AUTHORED: VocabularyNode = VOCABULARY;
 
 /**
  * The subtypes of a node, in authored order. Shared with the validator through
@@ -81,8 +81,8 @@ export function rootClass(vocabulary: VocabularyNode = AUTHORED): string {
   const roots = subtypes(vocabulary);
   if (roots.length !== 1) {
     throw new Error(
-      `detector.vocabulary must name exactly one root class, found ${roots.length}. ` +
-        'Edit config.yaml and run: pnpm config:generate'
+      `The vocabulary in lib/r49/r49.json must name exactly one root class, found ${roots.length}. ` +
+        'Edit it and run: pnpm config:generate'
     );
   }
   return roots[0][0];

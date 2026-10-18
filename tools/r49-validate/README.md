@@ -80,6 +80,15 @@ directions, no label is still `proposed`, every class is in the vocabulary, an
 archive-level `id` is present, no two archives in one contributor directory
 share an id, and the path is a slug under the author's own handle.
 
+Every blocking error in the JSON carries a `rule` alongside its `code`: the id,
+from `@occupancy/r49`'s closed `RULES` set, of the rule the archive broke
+(#182). The two coincide for every corpus rule; they differ for an archive that
+will not load, whose `code` is `archive/load` whatever the cause and whose
+`rule` says which format rule refused it — `manifest/version`,
+`manifest/unknown-key` and so on. Match on `rule`; the message may be reworded.
+Warnings carry no rule, because nothing is refused on them. The field is
+additive, so the report's `version` stays 1.
+
 Warnings — DPT below `MIN_DPT`, calibration that does not resolve, images not
 marked complete, and calibration points off the reference plane with no camera
 height — are read by the maintainer and block nothing.

@@ -1,8 +1,14 @@
-import { R49Archive, getDPT, getDPTResidual, isKnownClass } from '@occupancy/r49';
+import { R49Archive, R49Error, getDPT, getDPTResidual, isKnownClass } from '@occupancy/r49';
 import { MIN_DPT } from '@occupancy/config';
 import { checkPath, handleOf, scopeOf } from './corpus.ts';
 import { obliquityOf, pointsOffReferencePlane } from './geometry.ts';
-import { isOk, type ArchiveReport, type Finding, type Report } from './report.ts';
+import {
+  isOk,
+  type ArchiveReport,
+  type BlockingFinding,
+  type Finding,
+  type Report,
+} from './report.ts';
 
 /**
  * What CI asserts about a corpus submission — issue #57's seven blocking
@@ -60,44 +66,33 @@ function facts(archive: R49Archive): Omit<ArchiveReport, 'path' | 'scope' | 'err
   };
 }
 
-/** Check 2 — the manifest and the zip must name the same images, both ways. */
-function checkImages(archive: R49Archive): Finding[] {
-  const declared = archive.getManifest().images.map(img => img.filename);
-  const present = new Set(archive.listEntries());
-  const findings: Finding[] = [];
-
-  for (const filename of declared) {
-    if (!present.has(filename)) {
-      findings.push({
-        code: 'images/missing',
-        message: `The manifest names ${filename}, but the archive contains no such file.`,
-      });
-    }
-  }
-
-  const referenced = new Set(declared);
-  for (const entry of present) {
-    if (entry === 'manifest.json' || referenced.has(entry)) continue;
-    findings.push({
-      code: 'images/orphan',
-      message:
-        `${entry} is in the archive but no manifest entry references it. ` +
-        `An unreferenced image is weight the corpus carries in git forever.`,
-    });
-  }
-
-  return findings;
+/**
+ * Check 2 — the manifest and the zip must name the same images, both ways.
+ * Which ones disagree is `@occupancy/r49`'s rule; what to tell the contributor
+ * is this tool's.
+ */
+function checkImages(archive: R49Archive): BlockingFinding[] {
+  return archive.imageMismatches().map(({ rule, filename }) => ({
+    code: rule,
+    rule,
+    message:
+      rule === 'images/missing'
+        ? `The manifest names ${filename}, but the archive contains no such file.`
+        : `${filename} is in the archive but no manifest entry references it. ` +
+          `An unreferenced image is weight the corpus carries in git forever.`,
+  }));
 }
 
 /** Checks 3 and 4 — what a label may claim, and what it may be called. */
-function checkLabels(archive: R49Archive): Finding[] {
-  const findings: Finding[] = [];
+function checkLabels(archive: R49Archive): BlockingFinding[] {
+  const findings: BlockingFinding[] = [];
 
   for (const image of archive.getManifest().images) {
     for (const label of image.labels) {
       if (label.provenance === 'proposed') {
         findings.push({
           code: 'labels/provenance',
+          rule: 'labels/provenance',
           message:
             `${image.filename}: label ${label.id} is still "proposed" — untouched model output. ` +
             `Review it in the editor: accepting or adjusting a proposal records it as ` +
@@ -108,6 +103,7 @@ function checkLabels(archive: R49Archive): Finding[] {
       if (!isKnownClass(label.class)) {
         findings.push({
           code: 'labels/class',
+          rule: 'labels/class',
           message:
             `${image.filename}: label ${label.id} has class "${label.class}", which is not in ` +
             `the vocabulary (detector.vocabulary in rails49's config.yaml). If your rolling ` +
@@ -173,8 +169,14 @@ function qualityWarnings(archive: R49Archive, f: ReturnType<typeof facts>): Find
   return warnings;
 }
 
+/** The format rule a load failure names, or a rethrow when it names none. */
+function ruleOf(err: unknown): R49Error['rule'] {
+  if (err instanceof R49Error) return err.rule;
+  throw err;
+}
+
 /** A report for an archive that never loaded: the facts are unknown, not zero. */
-function unloadable(path: string, error: Finding): ArchiveReport {
+function unloadable(path: string, error: BlockingFinding): ArchiveReport {
   return {
     path,
     scope: scopeOf(path),
@@ -216,8 +218,8 @@ async function idOf(input: ArchiveInput): Promise<string | null> {
 async function idCollisions(
   submitted: readonly { input: ArchiveInput; id: string | null }[],
   siblings: readonly ArchiveInput[]
-): Promise<Map<string, Finding[]>> {
-  const byPath = new Map<string, Finding[]>();
+): Promise<Map<string, BlockingFinding[]>> {
+  const byPath = new Map<string, BlockingFinding[]>();
 
   const committed = new Map<string, string>();
   for (const sibling of siblings) {
@@ -236,6 +238,7 @@ async function idCollisions(
       byPath.set(input.path, [
         {
           code: 'archive/id-collision',
+          rule: 'archive/id-collision',
           message:
             `This archive's id (${id}) already exists at ${clash}. If you meant to update that ` +
             `archive, replace the file rather than adding a second one — the id is its identity, ` +
@@ -282,6 +285,11 @@ export async function validate(
         input.path,
         unloadable(input.path, {
           code: 'archive/load',
+          // Every refusal load() makes is an R49Error. Anything else escaping
+          // it is a bug in the reader, and a contributor must not be told their
+          // archive broke a rule it did not — so it propagates, and the CLI
+          // exits 2 rather than 1.
+          rule: ruleOf(err),
           message: `${input.path} could not be read as a v4 .r49 archive: ${err}`,
         })
       );
@@ -289,7 +297,7 @@ export async function validate(
     }
 
     const f = facts(archive);
-    const errors: Finding[] = [...checkPath(input.path, author), ...checkImages(archive)];
+    const errors: BlockingFinding[] = [...checkPath(input.path, author), ...checkImages(archive)];
     const warnings: Finding[] = [];
 
     if (scope !== 'fixtures') {
@@ -297,6 +305,7 @@ export async function validate(
       if (f.id === null) {
         errors.push({
           code: 'archive/id',
+          rule: 'archive/id',
           message:
             `${input.path} has no archive-level id. Open it in the editor and save — every save ` +
             `mints one if it is missing, and never changes one that is already there.`,

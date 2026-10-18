@@ -1,10 +1,10 @@
 // GENERATED FILE — DO NOT EDIT.
 //
-// Source: config.yaml (the single authored home for these values).
-// Regenerate with: pnpm config:generate
+// Source: config.yaml, and lib/r49/r49.json for the format's gauge, scales
+// and vocabulary. Regenerate with: pnpm config:generate
 //
 // Hand edits are lost on the next run, and bin/test.sh fails the build when
-// this file disagrees with config.yaml.
+// this file disagrees with its sources.
 
 // Public interface of @occupancy/config.
 //
@@ -38,8 +38,12 @@ export {
   DETECTOR_NMS_IOU,
   DETECTOR_VAL_SPLIT,
   DETECTOR_CLASSES,
-  DETECTOR_VOCABULARY,
 } from './generated.ts';
+
+//── Vocabulary ──────────────────────────────────────────────────────────────
+// The authoring taxonomy, read from lib/r49/r49.json like the gauge and the
+// scales above. The editor's class menu is generated from it.
+export { VOCABULARY } from './generated.ts';
 
 // Withheld: everything under `classifier` and `cnn` in config.yaml. The
 // classifier reads its own config.json at runtime and the CNN training

@@ -176,7 +176,7 @@ before it, which is worse than having no undo. Rules, from entries being scoped 
 
 ### The vocabulary (#35)
 
-`vocabulary.ts` reads `detector.vocabulary` out of `config.yaml` through the generated
+`vocabulary.ts` reads the vocabulary out of `lib/r49/r49.json` through the generated
 `@occupancy/config` and is the **only place in `ui/` a class name comes from** — including the class
 a new car is created as, which is the taxonomy's root rather than a literal `'stock'`. A hardcoded
 class anywhere in `ui/` breaks the config→menu path while still typechecking. Rules, each stated in
@@ -190,7 +190,7 @@ class anywhere in `ui/` breaks the config→menu path while still typechecking. 
   structural, which is what avoids a reserved list of key names.
 * **Conformance is a warning here, never a parse error.** A car whose class names no vocabulary
   entry draws in red with the class beside it, and the archive opens exactly as before — a format
-  that refused files over a pruned `config.yaml` would punish config edits. The exporter is where
+  that refused files over a pruned vocabulary would punish vocabulary edits. The exporter is where
   the same mismatch becomes fatal.
 * A **submenu row is opened, never chosen** (Shoelace does not select a parent), so a subtype with
   subtypes of its own repeats itself as the first row of its own submenu ("loco (unspecified)") —

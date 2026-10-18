@@ -1,5 +1,6 @@
 import JSZip from 'jszip';
-import { make_id } from '@occupancy/uid';
+import { make_id } from './uid.ts';
+import { R49Error, type FormatRule, type ImageMismatch } from './rules.ts';
 import {
   parseManifest,
   assertManifestVersion,
@@ -20,21 +21,36 @@ export class R49Archive {
    * the v4 schema.
    *
    * @param data Raw archive bytes, in any form the host platform produces.
-   * @throws If the data is empty, is not a readable zip, lacks manifest.json,
-   *         carries a version other than 4, or fails v4 validation.
+   * @throws An {@link R49Error} naming the rule broken: `archive/empty`,
+   *         `archive/not-zip`, `archive/no-manifest`, `manifest/not-json`, or
+   *         any rule `setManifest` names.
    */
   static async load(data: Buffer | Blob | ArrayBuffer | Uint8Array): Promise<R49Archive> {
     const size = (data as any).byteLength ?? (data as any).size ?? 0;
     if (size === 0) {
-      throw new Error('Cannot load .r49 archive: data is empty');
+      throw new R49Error('archive/empty', 'Cannot load .r49 archive: data is empty');
     }
     try {
-      const zip = await JSZip.loadAsync(data);
+      let zip: JSZip;
+      try {
+        zip = await JSZip.loadAsync(data);
+      } catch (err) {
+        throw new R49Error('archive/not-zip', String(err), { cause: err });
+      }
       const archive = new R49Archive(zip);
       await archive.readAndValidateManifest();
       return archive;
     } catch (err) {
-      throw new Error(`Failed to load .r49 archive (size: ${size} bytes): ${err}`);
+      // The wrapper keeps the rule it caught and the text it always showed: a
+      // refusal detected through another error (zod's, JSZip's) quotes that
+      // error, exactly as the editor printed it before rules existed. Anything
+      // else that throws in here is JSZip failing to inflate an entry, which is
+      // the zip being unreadable after all.
+      const rule: FormatRule = err instanceof R49Error ? err.rule : 'archive/not-zip';
+      const inner = err instanceof R49Error && err.cause !== undefined ? err.cause : err;
+      throw new R49Error(rule, `Failed to load .r49 archive (size: ${size} bytes): ${inner}`, {
+        cause: err,
+      });
     }
   }
 
@@ -45,15 +61,22 @@ export class R49Archive {
    * The version is checked first and on its own, so a v3 archive fails with a
    * message naming the version rather than with a list of shape mismatches.
    *
-   * @throws If manifest.json is absent, is not version 4, or fails validation.
+   * @throws An {@link R49Error}: `archive/no-manifest` if manifest.json is
+   *         absent, `manifest/not-json` if it does not parse, or any rule
+   *         `setManifest` names.
    */
   async readAndValidateManifest(): Promise<ManifestData> {
     const manifestFile = this.zip.file('manifest.json');
     if (!manifestFile) {
-      throw new Error('manifest.json not found in archive');
+      throw new R49Error('archive/no-manifest', 'manifest.json not found in archive');
     }
     const content = await manifestFile.async('string');
-    const json = JSON.parse(content);
+    let json: unknown;
+    try {
+      json = JSON.parse(content);
+    } catch (err) {
+      throw new R49Error('manifest/not-json', String(err), { cause: err });
+    }
     assertManifestVersion(json);
     this.manifest = parseManifest(json);
     return this.manifest;
@@ -91,7 +114,9 @@ export class R49Archive {
   /**
    * Replaces the manifest, validating it against the v4 schema first.
    *
-   * @throws If the supplied data is not version 4, or fails validation.
+   * @throws An {@link R49Error} naming the rule broken: `manifest/version`,
+   *         `manifest/unknown-key`, `manifest/duplicate-id`,
+   *         `manifest/provenance`, or `manifest/schema` for anything else.
    */
   setManifest(data: ManifestData): void {
     assertManifestVersion(data);
@@ -125,6 +150,35 @@ export class R49Archive {
       if (!file.dir) names.push(path);
     });
     return names;
+  }
+
+  /**
+   * Every way the manifest and the zip disagree about which images this
+   * archive holds, both directions: `images/missing` for a manifest entry with
+   * no file, then `images/orphan` for a file no entry names.
+   *
+   * Reported, not thrown. Both are format rules, but `load` refusing an archive
+   * that carries a stray image would lock its author out of the editor that
+   * can remove it — so a reader that holds archives to the rule (the corpus
+   * validator) asks, and one that only needs the images it names need not.
+   *
+   * Empty when no manifest is loaded.
+   */
+  imageMismatches(): ImageMismatch[] {
+    if (!this.manifest) return [];
+    const declared = this.manifest.images.map(img => img.filename);
+    const present = new Set(this.listEntries());
+    const referenced = new Set(declared);
+    const mismatches: ImageMismatch[] = [];
+
+    for (const filename of declared) {
+      if (!present.has(filename)) mismatches.push({ rule: 'images/missing', filename });
+    }
+    for (const entry of present) {
+      if (entry === 'manifest.json' || referenced.has(entry)) continue;
+      mismatches.push({ rule: 'images/orphan', filename: entry });
+    }
+    return mismatches;
   }
 
   /**

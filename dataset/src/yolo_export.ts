@@ -3,8 +3,8 @@ import path from 'node:path';
 import process from 'node:process';
 import sharp from 'sharp';
 import { DETECTOR_CLASSES, DETECTOR_VAL_SPLIT } from '@occupancy/config';
-import { carWidthPx, spanToPolygon } from '@occupancy/detector';
-import { R49Archive, detectorClassIndex, getDPT } from '@occupancy/r49';
+import { carWidthPx, detectorClassIndex, spanToPolygon } from '@occupancy/detector';
+import { R49Archive, getDPT } from '@occupancy/r49';
 import { labelLine, outputStem, splitFor, type Split } from './obb.ts';
 
 /**

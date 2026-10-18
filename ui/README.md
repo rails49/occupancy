@@ -640,7 +640,7 @@ ignores `frame` entirely: it names an exact pixel, wherever that pixel is.
 
 The authored class taxonomy, read as a tree. A pure module for the same reason `geometry.ts` is one,
 and the **only place in `ui/` that a class name comes from** — every value here is derived from
-`detector.vocabulary` in `config.yaml`, reached through the generated `@occupancy/config`, so adding
+the vocabulary in `lib/r49/r49.json`, reached through the generated `@occupancy/config`, so adding
 a subtype there and running `pnpm config:generate` changes the editor's menu with no code edit.
 
 | Export | Description |
@@ -663,7 +663,7 @@ Two rules it encodes, each wrong somewhere if reimplemented:
 
 Conformance is checked **here and not at parse time**: `class` is a plain string at the format layer
 (`../SPEC.md` § Format), because a format that refused to open files because someone pruned
-`config.yaml` would punish config edits. So a non-conforming class is a visible warning in the editor
+the vocabulary would punish vocabulary edits. So a non-conforming class is a visible warning in the editor
 (`rr-viewer` marks the car red and names the class) and a fatal error in the training exporter later.
 
 ---
@@ -739,8 +739,8 @@ promise the drag keeps.
 
 **A class the vocabulary does not name draws red and says so** ([#35]). `class` is a plain string at
 the format layer and is deliberately **not** validated when an archive is parsed (`../SPEC.md`
-§ Format) — a format that refused to open files because someone pruned `config.yaml` would punish
-config edits — so the editor is where non-conformance becomes visible, and the exporter is where it
+§ Format) — a format that refused to open files because someone pruned the vocabulary would punish
+vocabulary edits — so the editor is where non-conformance becomes visible, and the exporter is where it
 becomes fatal. The whole symbol changes ink rather than gaining a badge (the label is *wrong*, not
 annotated), the offending class is drawn beside the car's midpoint because a typo is the likely
 cause, and the car is still drawn whole because the archive still opens. This is the one text a car
@@ -896,7 +896,7 @@ inside a car already labelled ([#43]). `rr-app` owns the toast.
   that subject's rows — **delete** for a reference point, **name and delete** for a sensor,
   **delete and reclassify** for a car — and a chosen row calls `delete`, `reclassifyCar` or opens the
   name dialog. Empty image opens nothing.
-  * **Reclassify is a submenu generated from `detector.vocabulary`** ([#35]), through
+  * **Reclassify is a submenu generated from the vocabulary in `lib/r49/r49.json`** ([#35]), through
     `vocabulary.ts`. A new car is the taxonomy's root and refinement is an occasional act, not a
     mode, which is what a submenu says and a persistent picker would not. The **root is never
     rendered** — its children are — and it is nonetheless required in the stored class, so the rows

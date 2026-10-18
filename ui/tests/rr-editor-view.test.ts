@@ -1237,7 +1237,7 @@ describe('rr-editor-view', () => {
           .trim()
       );
       expect(labels).to.deep.equal(['Delete car', 'Reclassify car']);
-      // Generated from `detector.vocabulary`: a subtype added there changes this
+      // Generated from the vocabulary in `lib/r49/r49.json`: a subtype added there changes this
       // menu with no code edit (#35).
       expect(submenuItems(el, `reclassify-group:${rootClass()}`)).to.deep.equal(
         classChoices().map(choice =>

@@ -36,6 +36,12 @@ export { occupancy } from './occupancy.ts';
 // the constant both are built on, and L1 substitutes for the model's own.
 export { boxCorners, carWidthPx, spanToPolygon } from './geometry.ts';
 
+//── Class index ──────────────────────────────────────────────────────────────
+// The YOLO class a stored `class` trains as. The class list is this project's
+// and the vocabulary is the format's, so the mapping lives here; the
+// segment-prefix rule it matches by is imported from `@occupancy/r49` (#181).
+export { detectorClassIndex } from './classIndex.ts';
+
 //── Box overlap ──────────────────────────────────────────────────────────────
 // How much two oriented boxes share. Exported because it has two consumers
 // that are not each other's: the decode suppresses duplicate boxes with it

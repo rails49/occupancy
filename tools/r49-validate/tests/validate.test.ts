@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import JSZip from 'jszip';
-import { R49Archive, type ManifestData } from '@occupancy/r49';
+import { R49Archive, RULES, type ManifestData } from '@occupancy/r49';
 import { MIN_DPT } from '@occupancy/config';
 import { validate, type ArchiveInput } from '../src/validate.ts';
 
@@ -268,6 +268,96 @@ describe('validate', () => {
 
       expect(result.warnings).toEqual([]);
       expect(result.labels).toBe(0);
+    });
+  });
+
+  // #182: the conformance cases and the Python reader agree on *why* an archive
+  // was refused through the rule id, so every blocking error carries one from
+  // @occupancy/r49's closed set — and the JSON on stdout is where they read it.
+  describe('every blocking error names the rule it broke', () => {
+    /** A zip whose manifest.json is exactly this object, with one image. */
+    async function rawArchive(manifest: unknown): Promise<Uint8Array> {
+      const zip = new JSZip();
+      zip.file('manifest.json', JSON.stringify(manifest));
+      zip.file('img_0.jpg', A_JPEG);
+      return await zip.generateAsync({ type: 'uint8array' });
+    }
+
+    const v4 = {
+      version: 4,
+      id: 'aBcDeFgHiJk',
+      layout: { scale: 'HO', calibration: { points: CALIBRATED }, sensors: [] },
+      camera: { resolution: { width: 1920, height: 1080 } },
+      images: [{ filename: 'img_0.jpg', labeled_complete: true, labels: [] }],
+    };
+
+    const rulesOf = (findings: readonly { rule: string }[]) => findings.map(f => f.rule);
+
+    it('names which format rule a load failure broke, under the one archive/load code', async () => {
+      const cases: Array<[Uint8Array, string]> = [
+        [new Uint8Array([1, 2, 3, 4]), 'archive/not-zip'],
+        [await rawArchive({ ...v4, version: 3 }), 'manifest/version'],
+        [await rawArchive({ ...v4, vendor_extra: 1 }), 'manifest/unknown-key'],
+        [
+          await rawArchive({
+            ...v4,
+            layout: { ...v4.layout, sensors: [{ id: 's', x: 0, y: 0 }, { id: 's', x: 1, y: 1 }] },
+          }),
+          'manifest/duplicate-id',
+        ],
+      ];
+
+      for (const [bytes, rule] of cases) {
+        const result = await reportFor({ path: 'archives/alice/west-yard.r49', bytes });
+        expect(codes(result.errors), rule).toEqual(['archive/load']);
+        expect(rulesOf(result.errors), rule).toEqual([rule]);
+      }
+    });
+
+    it('names the rule for every other blocking error, all from the closed set', async () => {
+      const report = await validate(
+        [
+          await build('archives/alice/Bad Name.r49', { missingImage: true }),
+          await build('archives/bob/west-yard.r49', { extraEntry: 'stray.jpg' }),
+          await build('archives/alice/proposals.r49', {
+            labels: [car({ provenance: 'proposed', proposed_by: 'v1', class: 'stockyard' })],
+          }),
+          { path: 'archives/alice/no-id.r49', bytes: await idlessArchive() },
+          await build('archives/alice/twin-a.r49', { id: 'sameIdHere' }),
+          await build('archives/alice/twin-b.r49', { id: 'sameIdHere' }),
+          await build('elsewhere.r49'),
+        ],
+        { author: 'alice' }
+      );
+
+      const errors = report.archives.flatMap(a => a.errors);
+      expect(new Set(rulesOf(errors))).toEqual(
+        new Set([
+          'path/slug',
+          'images/missing',
+          'path/owner',
+          'images/orphan',
+          'labels/provenance',
+          'labels/class',
+          'archive/id',
+          'archive/id-collision',
+          'path/shape',
+        ])
+      );
+      for (const error of errors) expect(RULES).toContain(error.rule);
+    });
+
+    it('carries the rule into the JSON the corpus workflow reads', async () => {
+      const report = await validate([
+        {
+          path: 'archives/alice/west-yard.r49',
+          bytes: await rawArchive({ ...v4, version: 3 }),
+        },
+      ]);
+
+      // Exactly what cli.ts writes to stdout.
+      const json = JSON.parse(JSON.stringify(report, null, 2));
+      expect(json.archives[0].errors[0].rule).toBe('manifest/version');
     });
   });
 

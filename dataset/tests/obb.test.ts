@@ -1,5 +1,4 @@
 import { describe, it, expect } from 'vitest';
-import { detectorClassIndex } from '@occupancy/r49';
 import { labelLine, outputStem, splitFor } from '../src/obb.ts';
 
 /**
@@ -8,7 +7,9 @@ import { labelLine, outputStem, splitFor } from '../src/obb.ts';
  * pinned rather than eyeballed once.
  *
  * The car box moved with its functions: `carWidthPx` and `spanToPolygon` are
- * `@occupancy/detector`'s now, and so are their cases.
+ * `@occupancy/detector`'s now, and so are their cases — as is
+ * `detectorClassIndex`, which moved there when the format package stopped
+ * reading the class list (#181).
  */
 
 describe('label lines', () => {
@@ -16,32 +17,6 @@ describe('label lines', () => {
     expect(labelLine(0, [0.1, 0.45, 0.3, 0.45, 0.3, 0.55, 0.1, 0.55])).toBe(
       '0 0.100000 0.450000 0.300000 0.450000 0.300000 0.550000 0.100000 0.550000'
     );
-  });
-});
-
-describe('the class index', () => {
-  it('maps every authored subtype onto the one trained class', () => {
-    // The whole authoring taxonomy trains as `stock` today, which is what lets
-    // the editor offer subtypes before any of them is a class of its own.
-    for (const cls of ['stock', 'stock.freight', 'stock.loco', 'stock.loco.steam']) {
-      expect(detectorClassIndex(cls)).toBe(0);
-    }
-  });
-
-  it('does not treat a longer word as a subtype', () => {
-    expect(detectorClassIndex('stockyard')).toBeNull();
-    expect(detectorClassIndex('rolling.stock')).toBeNull();
-    expect(detectorClassIndex('')).toBeNull();
-  });
-
-  it('prefers the longest matching entry, which is what makes appending safe', () => {
-    // Appending `stock.loco` re-maps locomotives onto the new index with no
-    // relabeling, while a plain `stock` car stays where it was.
-    const classes = ['stock', 'stock.loco'];
-    expect(detectorClassIndex('stock.loco.steam', classes)).toBe(1);
-    expect(detectorClassIndex('stock.loco', classes)).toBe(1);
-    expect(detectorClassIndex('stock.freight', classes)).toBe(0);
-    expect(detectorClassIndex('stock', classes)).toBe(0);
   });
 });
 

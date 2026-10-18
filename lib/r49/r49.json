@@ -1,0 +1,23 @@
+{
+  "standard_gauge": 1435.0,
+  "scale_to_ratio": {
+    "G": 25,
+    "O": 48,
+    "S": 64,
+    "HO": 87,
+    "T": 120,
+    "N": 160,
+    "Z": 220
+  },
+  "vocabulary": {
+    "stock": {
+      "loco": {
+        "steam": {},
+        "diesel": {},
+        "electric": {}
+      },
+      "passenger": {},
+      "freight": {}
+    }
+  }
+}

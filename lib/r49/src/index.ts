@@ -8,9 +8,28 @@
 
 //── Archive I/O ──────────────────────────────────────────────────────────────
 // Read and write .r49 layout archives (a zip of manifest.json + images).
-// Manifests are validated against the v4 schema on load; invalid input throws.
+// Manifests are validated against the v4 schema on load; invalid input throws
+// an R49Error naming the rule it broke.
 // There is no v3 path: loading anything else fails on the version number.
 export { R49Archive } from './archive.ts';
+
+//── Rules ────────────────────────────────────────────────────────────────────
+// Every refusal names the rule it broke, by a stable id from one closed set, so
+// two implementations and the conformance cases agree on *why* an archive was
+// refused without agreeing on wording. Format rules are what load() and
+// setManifest() throw an R49Error for (and what imageMismatches() reports);
+// corpus rules are the corpus validator's, named here so the set is defined
+// once. Match on `rule`, never on `message`.
+export {
+  R49Error,
+  RULES,
+  FORMAT_RULES,
+  CORPUS_RULES,
+  type Rule,
+  type FormatRule,
+  type CorpusRule,
+  type ImageMismatch,
+} from './rules.ts';
 
 //── Manifest types (v4) ──────────────────────────────────────────────────────
 // The shape of a parsed manifest, as returned by R49Archive.getManifest().
@@ -50,17 +69,22 @@ export {
   type ValidScales,
 } from './manifest.schema.ts';
 
+//── Identity ─────────────────────────────────────────────────────────────────
+// Time-ordered, collision-resistant 11-character identifiers. Archive, label
+// and sensor ids are all minted with it, so it lives with the format whose
+// `id` fields it fills.
+export { make_id } from './uid.ts';
+
 //── Class vocabulary ─────────────────────────────────────────────────────────
-// How the authored taxonomy in `config.yaml` is read. Here rather than in a
-// consumer because two of them must agree: the editor warns on a
-// non-conforming class, and the corpus validator blocks on it. Not parse-time
-// validation — `class` stays a plain string at the format layer.
-// Two tables, read by the same segment-prefix rule: the authoring taxonomy
-// (`isKnownClass`, `vocabularySubtypes`) and the YOLO class list
-// (`detectorClassIndex`). A class can be known and still have no index.
+// How the authored taxonomy is read. Here rather than in a consumer because two
+// of them must agree: the editor warns on a non-conforming class, and the
+// corpus validator blocks on it. Not parse-time validation — `class` stays a
+// plain string at the format layer.
+// `isSegmentPrefix` is the rule itself, exported so a reader mapping classes
+// onto a list of its own (the detector's YOLO class index) matches the same way.
 export {
-  detectorClassIndex,
   isKnownClass,
+  isSegmentPrefix,
   vocabularySubtypes,
   type VocabularyNode,
 } from './vocabulary.ts';
@@ -70,14 +94,19 @@ export {
 // could not be replaced without a breaking change. Validation is an
 // implementation detail — callers get validated data or an exception.
 //
-// Withheld: STANDARD_GAUGE, SCALE_TO_RATIO and getGaugeMM, the prototype- and
-// model-domain gauge constants. Nothing outside this package needs a physical
-// gauge in mm — only the pixel-domain getDPT() and the scale names in
-// VALID_SCALES. Exposing the prototype domain would invite gauge arithmetic to
-// be reimplemented downstream (which is exactly what lib/classifier used to
-// do). The first two are no longer ours to re-export in any case: they are
-// generated into @occupancy/config from config.yaml, which is where anything
-// that genuinely needs them should read them.
+// Withheld: STANDARD_GAUGE, SCALE_TO_RATIO, VOCABULARY and getGaugeMM. They
+// are read from this package's `r49.json` (./data.ts), which is their one
+// authored home. Nothing outside this package needs a physical gauge in mm —
+// only the pixel-domain getDPT() and the scale names in VALID_SCALES — and
+// exposing the prototype domain would invite gauge arithmetic to be
+// reimplemented downstream (which is exactly what lib/classifier used to do).
+// A consumer that genuinely needs the values reads the data file itself, as
+// occupancy's config generator does.
+//
+// Withheld: `toBase62`. It is a numeric encoding helper, not an identity
+// concept — exporting it invites callers to mint ids that bypass the
+// timestamp/node/sequence structure `make_id` guarantees. Tests import it
+// directly from './uid.ts'.
 //
 // Withheld: assertManifestVersion. It is the version guard R49Archive applies
 // before parsing, not a public predicate — callers that want to know whether

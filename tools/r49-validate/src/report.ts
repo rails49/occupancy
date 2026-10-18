@@ -21,12 +21,27 @@ export type Scope =
   /** Neither. A `.r49` somewhere the corpus layout does not define. */
   | 'unknown';
 
+import type { Rule } from '@occupancy/r49';
+
 /** One thing found, blocking or not. */
 export interface Finding {
   /** Stable machine name, safe to match on. Human text may be reworded. */
   readonly code: string;
   /** One sentence, addressed to the contributor, naming the fix where there is one. */
   readonly message: string;
+}
+
+/**
+ * A finding that blocks a submission, naming the rule it broke from
+ * `@occupancy/r49`'s closed set (#182) — the id the conformance cases and the
+ * Python reader agree on.
+ *
+ * `rule` and `code` coincide for every corpus rule. They differ for a load
+ * failure: its `code` is `archive/load` for all of them, as before, and its
+ * `rule` says which format rule refused the archive.
+ */
+export interface BlockingFinding extends Finding {
+  readonly rule: Rule;
 }
 
 /**
@@ -76,7 +91,7 @@ export interface ArchiveReport {
   readonly labels: number | null;
   readonly complete: number | null;
   readonly incomplete: number | null;
-  readonly errors: readonly Finding[];
+  readonly errors: readonly BlockingFinding[];
   readonly warnings: readonly Finding[];
 }
 
