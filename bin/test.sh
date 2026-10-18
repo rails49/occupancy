@@ -31,7 +31,7 @@ if ! command -v uv &>/dev/null; then
   exit 1
 fi
 
-STALE_DIR=$(mktemp -d)
+STALE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/stale.XXXXXX")
 trap 'rm -rf "$STALE_DIR"' EXIT
 if ! uv run --quiet --with pyyaml python3 bin/generate_config.py --out-dir "$STALE_DIR" >/dev/null; then
   echo "❌ Could not regenerate config to verify it. See the error above."
