@@ -7,170 +7,170 @@ Camera-based track occupancy detection for model railroads: photographs of a lay
 ### Layout and archive
 
 **Layout**:
-A model railroad as seen by one fixed overhead camera.
+A model railroad as seen by one fixed overhead camera. See [SPEC § Assumption](SPEC.md#assumption).
 _Avoid_: scene
 
 **Archive**:
-A `.r49` file holding one layout's images, calibration, sensors and car labels.
+A `.r49` file holding one layout's images, calibration, sensors and car labels. See [SPEC § Format](SPEC.md#format).
 _Avoid_: project, dataset
 
 **Format**:
-The rules every archive follows, independent of any program that reads or writes one.
+The rules every archive follows, independent of any program that reads or writes one. See [SPEC § Format](SPEC.md#format) and [ADR 0018](docs/adr/0018-the-r49-format-is-defined-in-rails49-r49.md).
 _Avoid_: schema (for the rules themselves)
 
 **Outside reader**:
-A program that reads archives and is not part of this project, such as someone else's model trained on the corpus.
+A program that reads archives and is not part of this project, such as someone else's model trained on the corpus. See [ADR 0018](docs/adr/0018-the-r49-format-is-defined-in-rails49-r49.md).
 _Avoid_: consumer, classifier
 
 **Corpus**:
-The archives contributed to `rails49/r49`, which training draws from.
+The archives contributed to `rails49/r49`, which training draws from. See [docs/SYSTEM.md](docs/SYSTEM.md#the-pipeline).
 
 **Corpus rule**:
-A requirement an archive must meet to be accepted into the corpus, beyond the format. Corpus rules keep archives consistent with each other, such as every class being in the vocabulary.
+A requirement an archive must meet to be accepted into the corpus, beyond the format, such as every class being in the vocabulary. See [ADR 0018](docs/adr/0018-the-r49-format-is-defined-in-rails49-r49.md).
 
 **Reader requirement**:
-A condition one reader places on the archives it uses, such as a minimum DPT. The corpus may report it but never enforces it.
+A condition one reader places on the archives it uses, such as a minimum DPT. See [ADR 0018](docs/adr/0018-the-r49-format-is-defined-in-rails49-r49.md).
 
 **Fixture**:
-One of the six archives kept to exercise the code. They are below the minimum DPT and are not training data.
+One of the six archives kept to exercise the code. See [docs/SYSTEM.md](docs/SYSTEM.md#the-pipeline).
 
 **Image**:
-One photograph of the layout in an archive.
+One photograph of the layout in an archive. See [SPEC § Images](SPEC.md#images).
 _Avoid_: frame (for a stored image; a frame is one picture from the live camera)
 
 **Scale**:
-The modelling scale of a layout (HO, N, Z, ...), which fixes its ratio to the prototype.
+The modelling scale of a layout (HO, N, Z, ...), which fixes its ratio to the prototype. See [SPEC § Calibration](SPEC.md#establishes-the-relation-scale-to-the-prototype).
 
 **Prototype**:
-The real railway a model represents.
+The real railway a model represents. See [SPEC § Calibration](SPEC.md#establishes-the-relation-scale-to-the-prototype).
 
 ### Calibration
 
 **DPT**:
-Dots per track: image pixels per track gauge, measured on the reference plane.
+Dots per track: image pixels per track gauge, measured on the reference plane. See [SPEC § Calibration](SPEC.md#establishes-the-relation-between-image-pixels-and-physical-dimensions).
 _Avoid_: px/mm, resolution
 
 **Minimum DPT**:
-The DPT below which images are too coarse for this project's detector to train on. A reader requirement, not a corpus rule. The editor warns below it and never blocks.
+The DPT below which images are too coarse for this project's detector to train on. A reader requirement. See [SPEC § Calibration](SPEC.md#establishes-the-relation-between-image-pixels-and-physical-dimensions).
 
 **Recommended DPT**:
-The DPT the corpus asks contributors to reach. A submission below it is warned, never refused. Set by the corpus, separately from the minimum DPT.
+The DPT the corpus asks contributors to reach. See [ADR 0018](docs/adr/0018-the-r49-format-is-defined-in-rails49-r49.md).
 
 **Calibration**:
-The reference points that fix a layout's DPT.
+The reference points that fix a layout's DPT. See [SPEC § Calibration](SPEC.md#calibration).
 
 **Reference point**:
-A point given both as an image position and as a layout position in millimetres.
+A point given both as an image position and as a layout position in millimetres. See [SPEC § Reference points](SPEC.md#reference-points).
 _Avoid_: control point, calibration marker
 
 **Camera height**:
-The distance from layout zero up to the camera.
+The distance from layout zero up to the camera. See [ADR 0015](docs/adr/0015-camera-height-corrects-scale.md).
 
 **Reference height**:
-The height of the railhead above layout zero; the plane DPT is reported on.
+The height of the railhead above layout zero; the plane DPT is reported on. See [ADR 0015](docs/adr/0015-camera-height-corrects-scale.md).
 
 **Residual**:
-How far the reference points disagree with the fitted scale, in image pixels.
+How far the reference points disagree with the fitted scale, in image pixels. See [SPEC § Reference points](SPEC.md#reference-points).
 
 ### Drift
 
 **Pose**:
-The camera position the images of an archive share.
+The camera position the images of an archive share. See [ADR 0013](docs/adr/0013-drift-is-measured-against-the-first-image.md).
 
 **Reference image**:
-The first image in an archive. Its pose is the one drift is measured against.
+The first image in an archive, whose pose drift is measured against. See [ADR 0013](docs/adr/0013-drift-is-measured-against-the-first-image.md).
 
 **Drift**:
-How far the camera has moved from the pose, measured in pixels of the reference image.
+How far the camera has moved from the pose, measured in pixels of the reference image. See [SPEC § Image Alignment](SPEC.md#image-alignment).
 _Avoid_: misalignment
 
 **Drift tolerance**:
-The largest drift accepted, as a fraction of a track width.
+The largest drift accepted, as a fraction of a track width. See [ADR 0013](docs/adr/0013-drift-is-measured-against-the-first-image.md).
 
 ### Cars and labels
 
 **Car**:
-One piece of rolling stock, labeled by its two ends along its centerline.
+One piece of rolling stock, labeled by its two ends along its centerline. See [SPEC § Location Data](SPEC.md#location-data-cars-and-sensors).
 _Avoid_: vehicle, object, stock (for the thing itself)
 
 **Span**:
-The two end points of a car label.
+The two end points of a car label. See [SPEC § The v4 manifest](SPEC.md#the-v4-manifest).
 
 **Car width**:
-The width every car is drawn with, derived from DPT and the standard width. Never stored.
+The width every car is drawn with, derived from DPT and the standard width. Never stored. See [SPEC § Location Data](SPEC.md#location-data-cars-and-sensors).
 
 **Standard width**:
-The prototype width used for every car: the widest real stock, so boxes err toward covering a sensor.
+The prototype width used for every car: the widest real stock. See [SPEC § Location Data](SPEC.md#location-data-cars-and-sensors).
 
 **Train**:
-Cars whose ends coincide. Derived from the labels, never stored.
+Cars whose ends coincide. Derived from the labels, never stored. See [SPEC § Authoring cars](SPEC.md#authoring-cars-and-the-trains-they-form).
 _Avoid_: consist
 
 **Coupling**:
-The point where two cars' ends coincide. Derived, never labeled.
+The point where two cars' ends coincide. Derived, never labeled. See [SPEC § Authoring cars](SPEC.md#authoring-cars-and-the-trains-they-form).
 
 **Class**:
-A dotted name for what a car is, such as `stock.loco.steam`.
+A dotted name for what a car is, such as `stock.loco.steam`. See [SPEC § Parameters](SPEC.md#parameters-live-in-configyaml).
 
 **Stock**:
-The root class. Every new car is `stock`, and every class sits under it.
+The root class, under which every class sits. See [SPEC § Parameters](SPEC.md#parameters-live-in-configyaml).
 
 **Vocabulary**:
-The tree of classes an author may assign.
+The tree of classes an author may assign. See [SPEC § Parameters](SPEC.md#parameters-live-in-configyaml).
 _Avoid_: taxonomy, label set
 
 **Labeled complete**:
-A person's assertion that no car in an image is unlabeled. Only a person can make it.
+A person's assertion that no car in an image is unlabeled. See [SPEC § Labeling completeness](SPEC.md#labeling-completeness).
 
 **Provenance**:
-How a car label came to exist: `human`, `proposed` (a model's, accepted as is) or `corrected` (a model's, then edited).
+How a car label came to exist: `human`, `proposed` (a model's, accepted as is) or `corrected` (a model's, then edited). See [SPEC § Provenance](SPEC.md#provenance-is-required-not-optional).
 
 **Proposal**:
-A car label suggested by the detector for a person to accept, correct or reject.
+A car label suggested by the detector for a person to accept, correct or reject. See [SPEC § Assisted Labeling](SPEC.md#assisted-labeling).
 
 **Track**:
-A deferred concept. Nothing stores track geometry.
+The rails cars run on. Nothing stores it. See [ADR 0010](docs/adr/0010-track-is-not-stored.md).
 _Avoid_: using it for a sensor or a block
 
 ### Occupancy
 
 **Sensor**:
-A point on the layout where occupancy must be reported.
+A point on the layout where occupancy must be reported. See [SPEC § Location Data](SPEC.md#location-data-cars-and-sensors).
 _Avoid_: detector, block, marker
 
 **Detector**:
-The model that finds cars in a frame: an oriented-box YOLO network.
+The model that finds cars in a frame: an oriented-box YOLO network. See [SPEC § The detector](SPEC.md#the-detector-is-yolo26n-obb).
 _Avoid_: sensor, classifier
 
 **Classifier**:
-The CNN that judges occupancy at a single point. Kept retrainable; nothing loads it.
+The CNN that judges occupancy at a single point. See [ADR 0004](docs/adr/0004-one-model-in-the-live-path.md).
 
 **Detection**:
-One car the detector found: an oriented box, a class and a confidence.
+One car the detector found: an oriented box, a class and a confidence. See [SPEC § Output encoding](SPEC.md#output-encoding).
 
 **L0**:
-Every detection in a frame, as the detector emitted it.
+Every detection in a frame, as the detector emitted it. See [SPEC § Occupancy Output](SPEC.md#occupancy-output).
 
 **L1**:
-Each sensor's state, computed from L0 alone.
+Each sensor's state, computed from L0 alone. See [ADR 0005](docs/adr/0005-l1-is-geometry-over-l0-biased-toward-occupied.md).
 
 **Occupied**:
-An L1 state: some detection's box contains the sensor.
+An L1 state: some detection's box contains the sensor. See [SPEC § The occupancy test](SPEC.md#the-occupancy-test).
 
 **Clear**:
-An L1 state: no detection's box contains the sensor. It carries no confidence.
+An L1 state: no detection's box contains the sensor. See [SPEC § Confidence](SPEC.md#confidence).
 
 **Unknown**:
-An L1 state: the system could not look, because the sensor is outside the frame, DPT is unresolved, no model is loaded, or the camera has drifted. Never a confidence outcome.
+An L1 state: the system could not look, because no model is loaded, DPT is unresolved, the sensor is outside the frame, or the camera has drifted. Not a confidence outcome. See [SPEC § The vocabulary](SPEC.md#the-vocabulary).
 
 **Phantom**:
-A detection where there is no car.
+A detection where there is no car. See [SPEC § Accuracy](SPEC.md#accuracy).
 
 **Miss**:
-A car with no detection.
+A car with no detection. See [SPEC § Accuracy](SPEC.md#accuracy).
 
 **Canvas**:
-The fixed square every detector input is padded onto, at a constant DPT.
+The fixed square every detector input is padded onto, at a constant DPT. See [ADR 0014](docs/adr/0014-dpt-normalized-input-padded-never-resized.md).
 
 **Tile**:
-A canvas-sized piece of a capture larger than the canvas.
+A canvas-sized piece of a capture larger than the canvas. See [ADR 0014](docs/adr/0014-dpt-normalized-input-padded-never-resized.md).
