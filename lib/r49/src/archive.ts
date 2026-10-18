@@ -1,5 +1,5 @@
 import JSZip from 'jszip';
-import { make_id } from '@occupancy/uid';
+import { make_id } from './uid.ts';
 import {
   parseManifest,
   assertManifestVersion,

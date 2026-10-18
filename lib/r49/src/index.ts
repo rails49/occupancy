@@ -50,6 +50,12 @@ export {
   type ValidScales,
 } from './manifest.schema.ts';
 
+//── Identity ─────────────────────────────────────────────────────────────────
+// Time-ordered, collision-resistant 11-character identifiers. Archive, label
+// and sensor ids are all minted with it, so it lives with the format whose
+// `id` fields it fills.
+export { make_id } from './uid.ts';
+
 //── Class vocabulary ─────────────────────────────────────────────────────────
 // How the authored taxonomy in `config.yaml` is read. Here rather than in a
 // consumer because two of them must agree: the editor warns on a
@@ -78,6 +84,11 @@ export {
 // do). The first two are no longer ours to re-export in any case: they are
 // generated into @occupancy/config from config.yaml, which is where anything
 // that genuinely needs them should read them.
+//
+// Withheld: `toBase62`. It is a numeric encoding helper, not an identity
+// concept — exporting it invites callers to mint ids that bypass the
+// timestamp/node/sequence structure `make_id` guarantees. Tests import it
+// directly from './uid.ts'.
 //
 // Withheld: assertManifestVersion. It is the version guard R49Archive applies
 // before parsing, not a public predicate — callers that want to know whether

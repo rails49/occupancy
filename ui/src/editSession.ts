@@ -1,4 +1,4 @@
-import { getDPT } from '@occupancy/r49';
+import { getDPT, make_id } from '@occupancy/r49';
 import type {
   CalibrationPoint,
   CarLabel,
@@ -9,7 +9,6 @@ import type {
   Sensor,
   WorldPoint,
 } from '@occupancy/r49';
-import { make_id } from '@occupancy/uid';
 import {
   carCovering,
   carUnderPointer,

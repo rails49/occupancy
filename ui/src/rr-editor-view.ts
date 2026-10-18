@@ -1,9 +1,8 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, query, state } from 'lit/decorators.js';
-import { getDPT, getDPTResidual } from '@occupancy/r49';
+import { getDPT, getDPTResidual, make_id } from '@occupancy/r49';
 import type { Image, ManifestData, Point } from '@occupancy/r49';
 import { MIN_DPT } from '@occupancy/config';
-import { make_id } from '@occupancy/uid';
 import { captureFromCamera } from './capture.js';
 import { DriftMeasurements } from './driftMeasurements.js';
 import { driftVerdict, measureAgainst } from './driftSession.js';

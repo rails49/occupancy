@@ -122,24 +122,12 @@ importers:
       '@occupancy/config':
         specifier: workspace:*
         version: link:../config
-      '@occupancy/uid':
-        specifier: workspace:*
-        version: link:../uid
       jszip:
         specifier: ^3.10.1
         version: 3.10.1
       zod:
         specifier: ^3.23.8
         version: 3.25.76
-    devDependencies:
-      typescript:
-        specifier: ^5.4.5
-        version: 5.9.3
-      vitest:
-        specifier: ^1.6.0
-        version: 1.6.1(@types/node@24.13.3)(jsdom@26.1.0)
-
-  lib/uid:
     devDependencies:
       typescript:
         specifier: ^5.4.5
@@ -215,9 +203,6 @@ importers:
       '@occupancy/r49':
         specifier: workspace:*
         version: link:../lib/r49
-      '@occupancy/uid':
-        specifier: workspace:*
-        version: link:../lib/uid
       '@rails49/look':
         specifier: github:rails49/look#v0.5.0
         version: https://codeload.github.com/rails49/look/tar.gz/757a81f1d3838904b80cd6fd3769452084c30ddb(@shoelace-style/shoelace@2.20.1(@floating-ui/utils@0.2.11)(@types/react@19.2.14))(lit@3.3.2)
