@@ -61,6 +61,20 @@ describe('buildCases', () => {
   });
 });
 
+describe('buildCases with refs: first', () => {
+  it('scores every image but the first against the first alone', () => {
+    const a = archive('a.r49', 3);
+    const cases = buildCases([a], { refs: 'first' });
+    expect(cases).toHaveLength(2 * 16);
+    expect(cases.some((c) => c.source === 'img-0.jpg')).toBe(false);
+    const ref = buildCases([a]).find((c) => c.grade === 'pass:sibling' && c.source === 'img-0.jpg')!;
+    for (const c of cases) {
+      expect(c.refs).toHaveLength(1);
+      expect(Array.from(c.refs[0].data)).toEqual(Array.from(ref.frame.data));
+    }
+  });
+});
+
 describe('requiredMargin', () => {
   it('covers the largest grade displacement with headroom', () => {
     const margin = requiredMargin(960, 540);

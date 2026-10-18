@@ -3,7 +3,7 @@ import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeFile } from 'node:fs/promises';
 import { loadArchives } from './load.ts';
-import { buildCases } from './cases.ts';
+import { buildCases, RefMode } from './cases.ts';
 import { runBenchmark, formatReport } from './harness.ts';
 import { BASELINE_SCORERS } from './baseline.ts';
 import { phasecorrScorer } from './phasecorr.ts';
@@ -38,6 +38,7 @@ const { values } = parseArgs({
     fixtures: { type: 'string', default: join(repoRoot, '..', 'r49', 'fixtures') },
     scorer: { type: 'string', default: phasecorrScorer.name },
     archive: { type: 'string' },
+    refs: { type: 'string', default: 'siblings' },
     json: { type: 'string' },
   },
 });
@@ -45,6 +46,13 @@ const { values } = parseArgs({
 const scorer = SCORERS[values.scorer!];
 if (!scorer) {
   console.error(`unknown scorer "${values.scorer}" — built in: ${Object.keys(SCORERS).join(', ')}`);
+  process.exit(1);
+}
+
+const REF_MODES: RefMode[] = ['siblings', 'first'];
+const refs = values.refs as RefMode;
+if (!REF_MODES.includes(refs)) {
+  console.error(`unknown --refs "${values.refs}" — one of: ${REF_MODES.join(', ')}`);
   process.exit(1);
 }
 
@@ -61,7 +69,7 @@ if (values.archive) {
   archives = archives.filter((a) => a.name.includes(values.archive!));
 }
 
-const cases = buildCases(archives);
+const cases = buildCases(archives, { refs });
 console.error(
   `${archives.length} archives, ${archives.reduce((n, a) => n + a.images.length, 0)} images, ${cases.length} cases`,
 );
