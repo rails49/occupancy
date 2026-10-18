@@ -34,6 +34,8 @@ The response is **warn, in the editor, with no threshold** — the live view nev
 
 Run from the repo root unless noted. pnpm workspace + `uv` for Python.
 
+gate: bin/test.sh
+
 | Task | Command |
 | :--- | :--- |
 | Full check (typecheck + TS tests + look-check + UI build + Python lint) | `bin/test.sh` |
