@@ -162,7 +162,7 @@ DPT must exceed 20. Below that a car is too few pixels across for the detector t
 
 The [fixtures](CONTEXT.md#layout-and-archive) sit at DPT 18–19. They exercise every code path in the editor, but they are not training data. Training will use new, higher-DPT images. Do not tune model accuracy against the fixtures or treat their numbers as predictive.
 
-Layouts are not planar and cameras are not at infinity, so scale varies with height. Camera height corrects it ([ADR 0015](docs/adr/0015-camera-height-corrects-scale.md)); see [Camera height](#camera-height-is-what-corrects-the-third-dimension). The derivations are in `docs/research/camera-calibration.md` on branch `research/camera-calibration`. Barrel distortion and camera tilt are ignored. Tilt adds to the height error rather than replacing it.
+Layouts are not planar and cameras are not at infinity, so scale varies with height. Camera height corrects it ([ADR 0015](docs/adr/0015-camera-height-corrects-scale.md)); see [Camera height](#camera-height-is-what-corrects-the-third-dimension). The derivations are in [`docs/research/camera-calibration.md`](docs/research/camera-calibration.md). Barrel distortion and camera tilt are ignored. Tilt adds to the height error rather than replacing it.
 
 #### Reference points
 
@@ -486,7 +486,7 @@ The detector runs entirely in the browser via ONNX Runtime; the application is f
 
 ## Deriving Training Data
 
-Settled in [issue #4](https://github.com/rails49/occupancy/issues/4); the full working is in `docs/research/issue-4-label-derivation.md` on branch `research/label-derivation`.
+Settled in [issue #4](https://github.com/rails49/occupancy/issues/4); the full working is in [`docs/research/issue-4-label-derivation.md`](docs/research/issue-4-label-derivation.md).
 
 Car labels are the single source of truth. Every model input is derived from them by a fixed rule, and no second annotation format is kept by hand. A relabel regenerates everything downstream.
 

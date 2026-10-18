@@ -33,8 +33,6 @@ The wayfinder maps (label `wayfinder:map`) and their closed tickets hold the alt
 └── classifier/
 ```
 
-Some research notes cited by `SPEC.md` live on their own branches rather than on `main` (`research/label-derivation`, `prototype/yolo-bench`). The citation names the branch where that is the case.
-
 ## Use the glossary's vocabulary
 
 When your output names a domain concept (in an issue title, a refactor proposal, a hypothesis, a test name), use the term as `CONTEXT.md` defines it, and not the words it lists under _Avoid_. The terms have moved before.
