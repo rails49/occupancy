@@ -66,6 +66,13 @@ async function zipWith(manifestText: string | null, entries: string[] = []): Pro
   return await zip.generateAsync({ type: 'uint8array' });
 }
 
+/** A zip holding `manifest.json` with exactly these bytes. */
+async function zipWithBytes(manifestBytes: Uint8Array): Promise<Uint8Array> {
+  const zip = new JSZip();
+  zip.file('manifest.json', manifestBytes);
+  return await zip.generateAsync({ type: 'uint8array' });
+}
+
 describe('the rule set', () => {
   it('is closed: every rule is either a format rule or a corpus rule, never both', () => {
     expect([...RULES].sort()).toEqual([...FORMAT_RULES, ...CORPUS_RULES].sort());
@@ -88,6 +95,27 @@ describe('load names the rule it refused on', () => {
 
   it('manifest/not-json for a manifest.json that does not parse', async () => {
     expect(await loadRuleOf(await zipWith('{ version: 4'))).toBe('manifest/not-json');
+  });
+
+  it('manifest/not-json for a manifest.json that is not UTF-8 (#191)', async () => {
+    // A lossy decode turns the 0xff into U+FFFD and loads an altered name.
+    const named = manifest({
+      layout: { name: 'Yard~', scale: 'HO', calibration: { points: [] }, sensors: [] },
+    });
+    const text = new TextEncoder().encode(JSON.stringify(named));
+    const bytes = text.map((b) => (b === 0x7e ? 0xff : b));
+    expect(await loadRuleOf(await zipWithBytes(bytes))).toBe('manifest/not-json');
+  });
+
+  it('manifest/not-json for a manifest.json with a leading byte-order mark (#191)', async () => {
+    const text = new TextEncoder().encode(JSON.stringify(manifest()));
+    const bytes = new Uint8Array([0xef, 0xbb, 0xbf, ...text]);
+    expect(await loadRuleOf(await zipWithBytes(bytes))).toBe('manifest/not-json');
+  });
+
+  it('loads the same manifest without the byte-order mark', async () => {
+    const bytes = new TextEncoder().encode(JSON.stringify(manifest()));
+    await expect(R49Archive.load(await zipWithBytes(bytes))).resolves.toBeInstanceOf(R49Archive);
   });
 
   it('manifest/version for a v3 archive', async () => {

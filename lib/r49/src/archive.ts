@@ -62,7 +62,7 @@ export class R49Archive {
    * message naming the version rather than with a list of shape mismatches.
    *
    * @throws An {@link R49Error}: `archive/no-manifest` if manifest.json is
-   *         absent, `manifest/not-json` if it does not parse, or any rule
+   *         absent, `manifest/not-json` if it is not strict UTF-8 or does not parse, or any rule
    *         `setManifest` names.
    */
   async readAndValidateManifest(): Promise<ManifestData> {
@@ -70,9 +70,13 @@ export class R49Archive {
     if (!manifestFile) {
       throw new R49Error('archive/no-manifest', 'manifest.json not found in archive');
     }
-    const content = await manifestFile.async('string');
+    // JSZip's 'string' decodes lossily, replacing invalid UTF-8 with U+FFFD, so
+    // the bytes are decoded strictly here (#191). `ignoreBOM` keeps a leading
+    // byte-order mark in the text, where JSON.parse refuses it.
+    const bytes = await manifestFile.async('uint8array');
     let json: unknown;
     try {
+      const content = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
       json = JSON.parse(content);
     } catch (err) {
       throw new R49Error('manifest/not-json', String(err), { cause: err });

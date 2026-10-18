@@ -120,7 +120,7 @@ wording is free to change.
 | `archive/empty` | the bytes are empty |
 | `archive/not-zip` | the bytes are not a readable zip |
 | `archive/no-manifest` | the zip has no `manifest.json` |
-| `manifest/not-json` | `manifest.json` does not parse |
+| `manifest/not-json` | `manifest.json` is not strict UTF-8 JSON: it does not parse, holds a byte that is not UTF-8, or starts with a byte-order mark |
 | `manifest/version` | `version` is not 4 |
 | `manifest/unknown-key` | a key the format does not define, at any depth |
 | `manifest/duplicate-id` | two labels in one image, or two sensors, share an id |
