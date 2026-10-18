@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render, svg } from 'lit';
-import type { CalibrationPoint } from '@occupancy/r49';
+import type { ReferencePoint } from '@occupancy/r49';
 import {
   renderCalibrationPoint,
   calibrationMarkerStyles,
@@ -14,7 +14,7 @@ function renderSvg(template: ReturnType<typeof svg>): SVGElement {
   return container;
 }
 
-const point = (over: Partial<CalibrationPoint> = {}): CalibrationPoint => ({
+const point = (over: Partial<ReferencePoint> = {}): ReferencePoint => ({
   px: { x: 100, y: 200 },
   world: { x: 0, y: 250, z: 0 },
   ...over,

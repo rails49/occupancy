@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { R49Archive, MANIFEST_VERSION, getDPT } from '@occupancy/r49';
-import type { CalibrationPoint, CarLabel, ManifestData, Point, Sensor } from '@occupancy/r49';
+import type { ReferencePoint, CarLabel, ManifestData, Point, Sensor } from '@occupancy/r49';
 import { ALREADY_LABELED, EditSession } from '../src/editSession.js';
 import type { Reveal } from '../src/editSession.js';
 import { TOOLS } from '../src/tools.js';
@@ -13,7 +13,7 @@ import { classChoices, rootClass } from '../src/vocabulary.js';
 const SCALE = 1;
 
 /** Two reference points at a nonzero separation: DPT 89.7, so the gate is open. */
-const CALIBRATION: readonly CalibrationPoint[] = [
+const CALIBRATION: readonly ReferencePoint[] = [
   { px: { x: 0, y: 0 }, world: { x: 0, y: 0, z: 0 } },
   { px: { x: 100, y: 0 }, world: { x: 10, y: 0, z: 0 } },
 ];
@@ -64,7 +64,7 @@ async function withBytes(filenames: readonly string[]): Promise<EditSession> {
   return new EditSession(archive);
 }
 
-function points(s: EditSession): CalibrationPoint[] {
+function points(s: EditSession): ReferencePoint[] {
   return s.archive.getManifest().layout.calibration.points;
 }
 

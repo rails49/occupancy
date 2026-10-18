@@ -1,4 +1,4 @@
-import type { R49Archive, CalibrationPoint, Image, Layout, Point } from '@occupancy/r49';
+import type { R49Archive, ReferencePoint, Image, Layout, Point } from '@occupancy/r49';
 
 /**
  * Undo/redo for the editor, as scoped snapshots of the manifest.
@@ -171,10 +171,10 @@ function changedIds(
  * once, since the pixel it is grabbed by is the same one.
  */
 function changedPoints(
-  before: readonly CalibrationPoint[],
-  after: readonly CalibrationPoint[]
+  before: readonly ReferencePoint[],
+  after: readonly ReferencePoint[]
 ): Point[] {
-  const key = (p: CalibrationPoint) =>
+  const key = (p: ReferencePoint) =>
     `${p.px.x},${p.px.y}|${p.world.x},${p.world.y},${p.world.z}`;
   const b = new Set(before.map(key));
   const a = new Set(after.map(key));

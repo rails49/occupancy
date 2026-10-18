@@ -1,6 +1,6 @@
 import { getDPT, make_id } from '@occupancy/r49';
 import type {
-  CalibrationPoint,
+  ReferencePoint,
   CarLabel,
   Image,
   Layout,
@@ -600,7 +600,7 @@ export class EditSession {
 
   /** Replaces the parts of `layout` given, by value. */
   private _writeLayout(changes: {
-    calibrationPoints?: readonly CalibrationPoint[];
+    calibrationPoints?: readonly ReferencePoint[];
     sensors?: readonly Sensor[];
   }) {
     const manifest = this.archive.getManifest();
@@ -667,7 +667,7 @@ export class EditSession {
     };
   }
 
-  private _points(): readonly CalibrationPoint[] {
+  private _points(): readonly ReferencePoint[] {
     return this.archive.getManifest().layout.calibration.points;
   }
 

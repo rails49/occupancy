@@ -222,7 +222,7 @@ const WorldPointSchema = z
   })
   .strict();
 
-const CalibrationPointSchema = z
+const ReferencePointSchema = z
   .object({
     /** Where the feature is in the image. */
     px: PointSchema,
@@ -244,7 +244,7 @@ const CalibrationPointSchema = z
 // refused rather than misread, which is the loud failure `.strict()` produces.
 const CalibrationSchema = z
   .object({
-    points: z.array(CalibrationPointSchema).default([]),
+    points: z.array(ReferencePointSchema).default([]),
     /**
      * Camera height above layout zero, in mm. Optional here, required by the
      * editor — see {@link getDPT}. `.positive()` because a camera at or below
@@ -494,7 +494,7 @@ export function assertManifestVersion(data: unknown): void {
 
 export type Point = z.infer<typeof PointSchema>;
 export type WorldPoint = z.infer<typeof WorldPointSchema>;
-export type CalibrationPoint = z.infer<typeof CalibrationPointSchema>;
+export type ReferencePoint = z.infer<typeof ReferencePointSchema>;
 export type Calibration = z.infer<typeof CalibrationSchema>;
 export type Sensor = z.infer<typeof SensorSchema>;
 export type CarLabel = z.infer<typeof CarLabelSchema>;

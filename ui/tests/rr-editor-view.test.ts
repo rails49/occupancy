@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fixture, html } from '@open-wc/testing';
 import { R49Archive, getDPT } from '@occupancy/r49';
-import type { CalibrationPoint, CarLabel, Point, Sensor, WorldPoint } from '@occupancy/r49';
+import type { ReferencePoint, CarLabel, Point, Sensor, WorldPoint } from '@occupancy/r49';
 import { EditSession } from '../src/editSession.js';
 import { HIGHLIGHT_DURATION_MS } from '../src/highlight.js';
 import { classChoices, rootClass } from '../src/vocabulary.js';
@@ -620,7 +620,7 @@ describe('rr-editor-view', () => {
     return vi.spyOn(dialog, 'show').mockResolvedValue(undefined);
   }
 
-  function points(): CalibrationPoint[] {
+  function points(): ReferencePoint[] {
     return archive.getManifest().layout.calibration.points;
   }
 
