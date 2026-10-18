@@ -78,6 +78,13 @@ export function requiredMargin(width: number, height: number): number {
 }
 
 /**
+ * Which images a case is scored against. `siblings`: the archive's other
+ * images. `first`: `images[0]` alone, the reference the UI uses (#118); image 0
+ * then contributes no cases of its own.
+ */
+export type RefMode = 'siblings' | 'first';
+
+/**
  * Expand decoded archives into benchmark cases.
  *
  * For each image i of an archive: the refs are the archive's OTHER images —
@@ -88,7 +95,10 @@ export function requiredMargin(width: number, height: number): number {
  * The "flag:combo" grade layers a brightness shift on its warp — drift in the
  * wild arrives between sessions, when lighting has changed too.
  */
-export function buildCases(archives: DecodedArchive[]): BenchCase[] {
+export function buildCases(
+  archives: DecodedArchive[],
+  { refs: mode = 'siblings' }: { refs?: RefMode } = {},
+): BenchCase[] {
   const cases: BenchCase[] = [];
   for (const archive of archives) {
     if (archive.images.length < 2) continue;
@@ -98,9 +108,10 @@ export function buildCases(archives: DecodedArchive[]): BenchCase[] {
       filename,
       image: cropBorder(image, margin),
     }));
-    for (let i = 0; i < archive.images.length; i++) {
+    for (let i = mode === 'first' ? 1 : 0; i < archive.images.length; i++) {
       const { filename, image } = archive.images[i];
-      const refs = cropped.filter((_, j) => j !== i).map((r) => r.image);
+      const refs =
+        mode === 'first' ? [cropped[0].image] : cropped.filter((_, j) => j !== i).map((r) => r.image);
       const push = (grade: string, expect: 'pass' | 'flag', frame: GrayImage) =>
         cases.push({ archive: archive.name, source: filename, grade, expect, frame, refs });
 

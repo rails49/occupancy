@@ -68,6 +68,10 @@ pnpm --filter @occupancy/drift-bench bench
 pnpm --filter @occupancy/drift-bench bench -- --scorer zmad --archive lighting --json report.json
 ```
 
+`--refs first` scores each image against its archive's `images[0]` alone, the
+reference the UI uses ([#118](https://github.com/rails49/occupancy/issues/118)).
+The default, `--refs siblings`, scores it against the archive's other images.
+
 `phasecorr` is the default. The naive pixel baselines `mad` and `zmad`
 (`src/baseline.ts`) stay reachable by name: they prove the harness end to end and
 put a number on why structural comparison was needed at all — `zmad` tops out at
