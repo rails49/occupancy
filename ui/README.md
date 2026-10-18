@@ -370,7 +370,7 @@ image pixel coordinates.
 |---|---|---|
 | `src` | `string \| null` | Image URL (editor mode) |
 | `stream` | `MediaStream \| null` | Video stream (live mode) |
-| `calibrationPoints` | `readonly CalibrationPoint[]` | Crosshairs to draw; empty in the live view |
+| `calibrationPoints` | `readonly ReferencePoint[]` | Crosshairs to draw; empty in the live view |
 | `sensors` | `readonly Sensor[]` | Diamonds to draw. Per **layout**, so the same list draws over every image; the live view passes the same list |
 | `sensorStates` | `ReadonlyMap<string, SensorState> \| null` | L1 per sensor, keyed by `id`. **`null` is the editor** — nothing is reading these sensors, which is not the same as reading them and finding nothing |
 | `detections` | `readonly Detection[]` | L0 for this frame: dashed oriented boxes at the model's **own** predicted width. Empty in the editor |
@@ -610,7 +610,7 @@ must be used together** — styles in the host's `static styles`, the renderer o
 
 | Export | Type | Description |
 |---|---|---|
-| `renderCalibrationPoint(point, index, size, frame, highlighted?)` | `(CalibrationPoint, number, number, FrameSize, boolean?) => SVGTemplateResult` | A crosshair centered on `point.px`, a small circle at the exact pixel, and a `text` label carrying the world coordinate. `size` is in image pixels — `rr-viewer`'s `symbolSize`, so the crosshair is constant on screen; `frame` is its `resolution` |
+| `renderCalibrationPoint(point, index, size, frame, highlighted?)` | `(ReferencePoint, number, number, FrameSize, boolean?) => SVGTemplateResult` | A crosshair centered on `point.px`, a small circle at the exact pixel, and a `text` label carrying the world coordinate. `size` is in image pixels — `rr-viewer`'s `symbolSize`, so the crosshair is constant on screen; `frame` is its `resolution` |
 | `calibrationMarkerStyles` | `CSSResult` | Crosshair and label colors, non-scaling strokes, and the label's own outline |
 
 There are no `<defs>` and so no third export: a crosshair is two lines, and nothing is reused.

@@ -1,5 +1,5 @@
 import { carWidthPx } from '@occupancy/detector';
-import type { CalibrationPoint, CarLabel, Point, Sensor } from '@occupancy/r49';
+import type { ReferencePoint, CarLabel, Point, Sensor } from '@occupancy/r49';
 
 /**
  * The editor's geometry, as pure functions.
@@ -346,7 +346,7 @@ export interface HitScene {
   /** The layout's sensors — sensors are per-layout and show on every image. */
   readonly sensors: readonly Sensor[];
   /** The layout's calibration points. */
-  readonly calibrationPoints: readonly CalibrationPoint[];
+  readonly calibrationPoints: readonly ReferencePoint[];
   /**
    * The layout's DPT, or `null` when calibration resolves none.
    *

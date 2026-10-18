@@ -47,7 +47,7 @@ export type {
   Provenance,
   Sensor,
   Calibration,
-  CalibrationPoint,
+  ReferencePoint,
   Point,
   WorldPoint,
 } from './manifest.schema.ts';

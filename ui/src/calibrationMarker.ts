@@ -1,6 +1,6 @@
 import { svg, css } from 'lit';
 import type { SVGTemplateResult, CSSResult } from 'lit';
-import type { CalibrationPoint, WorldPoint } from '@occupancy/r49';
+import type { ReferencePoint, WorldPoint } from '@occupancy/r49';
 import { placeLabel } from './geometry.js';
 import type { FrameSize } from './geometry.js';
 import { HIGHLIGHT_CLASS } from './highlight.js';
@@ -91,7 +91,7 @@ function formatWorld(world: WorldPoint): string {
  *   by pixel rather than by this index, since an undo renumbers the list.
  */
 export function renderCalibrationPoint(
-  point: CalibrationPoint,
+  point: ReferencePoint,
   index: number,
   size: number,
   frame: FrameSize,

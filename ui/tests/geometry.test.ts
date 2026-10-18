@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { CalibrationPoint, CarLabel, Sensor } from '@occupancy/r49';
+import type { ReferencePoint, CarLabel, Sensor } from '@occupancy/r49';
 import { STANDARD_GAUGE, STANDARD_WIDTH } from '@occupancy/config';
 import {
   coupledEnds,
@@ -41,7 +41,7 @@ function sensor(id: string, x: number, y: number): Sensor {
   return { id, x, y };
 }
 
-function calibrationPoint(x: number, y: number): CalibrationPoint {
+function calibrationPoint(x: number, y: number): ReferencePoint {
   return { px: { x, y }, world: { x: 0, y: 0, z: 0 } };
 }
 
