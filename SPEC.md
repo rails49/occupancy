@@ -351,7 +351,7 @@ The UI also runs the detector:
 
 #### Live-view runtime contract
 
-Measured in [issue #11](https://github.com/rails49/occupancy/issues/11) against the static-INT8 `.ort` under ORT-web 1.26.0 (WASM EP); rig on branch `prototype/yolo-bench` (`ui/bench/`). Median steady-state `session.run()`, 20 timed passes after 3 warmups:
+Measured in [issue #11](https://github.com/rails49/occupancy/issues/11) against the static-INT8 `.ort` under ORT-web 1.26.0 (WASM EP). Median steady-state `session.run()`, 20 timed passes after 3 warmups:
 
 | Device | Threads | 960×544 | 640×384 |
 | :--- | ---: | ---: | ---: |
