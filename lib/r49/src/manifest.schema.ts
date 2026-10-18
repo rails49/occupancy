@@ -200,18 +200,25 @@ const ScaleSchema = z.enum(SCALES);
 // downstream misses a field nobody knows was deleted. Strictness is per
 // object, so it has to be spelled on each one; a new object schema without it
 // reopens the hole quietly.
+// Every number is finite (#190). The format says a number is a finite JSON
+// number, but zod's `z.number()` accepts `Infinity`, and `JSON.parse("1e400")`
+// produces it — so a manifest would load, poison the fit with NaN, and save
+// back as `null`, which no reader accepts. Every numeric field goes through
+// this, so a new one cannot forget it.
+const finite = () => z.number().finite();
+
 const PointSchema = z
   .object({
-    x: z.number(),
-    y: z.number(),
+    x: finite(),
+    y: finite(),
   })
   .strict();
 
 const WorldPointSchema = z
   .object({
-    x: z.number(),
-    y: z.number(),
-    z: z.number(),
+    x: finite(),
+    y: finite(),
+    z: finite(),
   })
   .strict();
 
@@ -245,12 +252,12 @@ const CalibrationSchema = z
      * `h − z`; the cross-field rule that it must also clear the tallest
      * calibration point is the editor's, not the schema's.
      */
-    camera_height_mm: z.number().positive().optional(),
+    camera_height_mm: finite().positive().optional(),
     /**
      * Railhead height above layout zero, in mm — the plane DPT is reported at.
      * Absent reads as 0, which is the historical meaning of DPT.
      */
-    reference_height_mm: z.number().optional(),
+    reference_height_mm: finite().optional(),
   })
   .strict()
   .default({});
@@ -258,8 +265,8 @@ const CalibrationSchema = z
 const SensorSchema = z
   .object({
     id: z.string().min(1),
-    x: z.number(),
-    y: z.number(),
+    x: finite(),
+    y: finite(),
     /** Free text, not unique, and never auto-generated — absent when unset. */
     name: z.string().optional(),
   })
@@ -363,8 +370,8 @@ const CameraSchema = z
     /** Retained because L0 detections are reported in this frame. */
     resolution: z
       .object({
-        width: z.number().int(),
-        height: z.number().int(),
+        width: finite().int(),
+        height: finite().int(),
       })
       .strict(),
     model: z.string().optional(),
