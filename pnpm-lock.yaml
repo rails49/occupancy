@@ -166,8 +166,8 @@ importers:
         specifier: workspace:*
         version: link:../lib/drift
       '@rails49/look':
-        specifier: github:rails49/look#v0.7.0
-        version: https://codeload.github.com/rails49/look/tar.gz/793e4a80190feb9c9c88d26b4f3c380500c3b234(@shoelace-style/shoelace@2.20.1(@floating-ui/utils@0.2.11)(@types/react@19.2.14))(lit@3.3.2)
+        specifier: github:rails49/look#v0.8.0
+        version: https://codeload.github.com/rails49/look/tar.gz/c9ef0f838739bb21da6a0d5311e8b2f70e179e45(@shoelace-style/shoelace@2.20.1(@floating-ui/utils@0.2.11)(@types/react@19.2.14))(lit@3.3.2)
       '@rails49/r49':
         specifier: 'catalog:'
         version: 0.1.0
@@ -1043,9 +1043,9 @@ packages:
   '@protobufjs/utf8@1.1.1':
     resolution: {integrity: sha512-oOAWABowe8EAbMyWKM0tYDKi8Yaox52D+HWZhAIJqQXbqe0xI/GV7FhLWqlEKreMkfDjshR5FKgi3mnle0h6Eg==}
 
-  '@rails49/look@https://codeload.github.com/rails49/look/tar.gz/793e4a80190feb9c9c88d26b4f3c380500c3b234':
-    resolution: {tarball: https://codeload.github.com/rails49/look/tar.gz/793e4a80190feb9c9c88d26b4f3c380500c3b234}
-    version: 0.7.0
+  '@rails49/look@https://codeload.github.com/rails49/look/tar.gz/c9ef0f838739bb21da6a0d5311e8b2f70e179e45':
+    resolution: {tarball: https://codeload.github.com/rails49/look/tar.gz/c9ef0f838739bb21da6a0d5311e8b2f70e179e45}
+    version: 0.8.0
     hasBin: true
     peerDependencies:
       '@shoelace-style/shoelace': ^2.20.1
@@ -3330,7 +3330,7 @@ snapshots:
 
   '@protobufjs/utf8@1.1.1': {}
 
-  '@rails49/look@https://codeload.github.com/rails49/look/tar.gz/793e4a80190feb9c9c88d26b4f3c380500c3b234(@shoelace-style/shoelace@2.20.1(@floating-ui/utils@0.2.11)(@types/react@19.2.14))(lit@3.3.2)':
+  '@rails49/look@https://codeload.github.com/rails49/look/tar.gz/c9ef0f838739bb21da6a0d5311e8b2f70e179e45(@shoelace-style/shoelace@2.20.1(@floating-ui/utils@0.2.11)(@types/react@19.2.14))(lit@3.3.2)':
     dependencies:
       '@shoelace-style/shoelace': 2.20.1(@floating-ui/utils@0.2.11)(@types/react@19.2.14)
       lit: 3.3.2
