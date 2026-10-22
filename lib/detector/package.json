@@ -13,10 +13,13 @@
   "dependencies": {
     "@occupancy/config": "workspace:*",
     "@rails49/r49": "catalog:",
-    "onnxruntime-common": "^1.26.0",
+    "onnxruntime-common": "^1.26.0"
+  },
+  "peerDependencies": {
     "onnxruntime-web": "^1.26.0"
   },
   "devDependencies": {
+    "onnxruntime-web": "^1.26.0",
     "typescript": "^5.4.5",
     "vitest": "^1.6.0"
   }

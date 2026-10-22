@@ -67,6 +67,28 @@ describe('ORT wasm assets', () => {
     }
   });
 
+  it('copies the files of the runtime the UI installs, which the detector imports too', () => {
+    // The copy targets are paths, not imports: nothing but this test ties the
+    // WASM files served from `ort/` to the JavaScript Rollup bundles from the
+    // detector's `onnxruntime-web/wasm` import. ORT checks neither against the
+    // other, so a second version would fail at runtime, in the browser.
+    const uiInstall = fs.realpathSync(path.join(repoRoot, 'ui', path.dirname(ortCopyTargets[0].src)));
+    expect(uiInstall).toBe(fs.realpathSync(ortDist));
+    const detectorRequire = createRequire(path.join(repoRoot, 'lib/detector/package.json'));
+    const detectorDist = path.dirname(detectorRequire.resolve(`onnxruntime-web/${ORT_WASM_BINARY}`));
+    expect(fs.realpathSync(detectorDist)).toBe(uiInstall);
+  });
+
+  it('lets the UI decide the runtime version, and the workspace resolves one', () => {
+    // A peer dependency, so the detector package can never install a runtime
+    // of its own beside the UI's (ADR 0019).
+    const detector = JSON.parse(read('lib/detector/package.json'));
+    expect(detector.peerDependencies).toHaveProperty('onnxruntime-web');
+    expect(detector.dependencies ?? {}).not.toHaveProperty('onnxruntime-web');
+    const versions = new Set(read('pnpm-lock.yaml').match(/^ {2}onnxruntime-web@[^:(]+/gm));
+    expect([...versions]).toHaveLength(1);
+  });
+
   it('names the glue ORT actually resolves against wasmPaths', () => {
     // ORT loads the glue from `wasmPaths` the same way it loads the binary, so
     // a copy target missing it 404s on a path no build step would flag.
