@@ -609,7 +609,7 @@ export class RrViewer extends LitElement {
    * reason: the SVG's bounding rect is the whole element, letterbox bars
    * included, so a ratio taken from it is wrong by the letterbox whenever the
    * viewport's aspect ratio differs from the image's (#41) — the very thing
-   * `ui/CLAUDE.md` forbids hand-rolling.
+   * `docs/UI.md` forbids hand-rolling.
    */
   private measureScale() {
     // First, and outside the guard below: the viewport has a size well before

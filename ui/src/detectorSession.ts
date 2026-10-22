@@ -13,7 +13,7 @@
  * match `lib/detector/src/browser.ts` character for character: two specifiers
  * are two module instances, and the `ort.env.wasm` configured here would not be
  * the one the detector's session reads. Putting the import in one file rather
- * than two is the point — see `ui/CLAUDE.md` § Model loading.
+ * than two is the point — see `docs/UI.md` § Model loading.
  */
 
 // Must match the specifier `@occupancy/detector/browser` imports — see above.
