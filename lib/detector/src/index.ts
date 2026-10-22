@@ -3,14 +3,16 @@
 // This file is the package's interface — the only surface consumers may rely
 // on. Anything not exported here is internal and may change without notice.
 // Per-symbol documentation lives on the declarations in ./types.ts,
-// ./geometry.ts and ./occupancy.ts, because TypeScript discards doc comments
+// ./geometry.ts, ./classIndex.ts and ./overlap.ts, because TypeScript discards doc comments
 // written on re-export statements.
 //
 // The name undersells it. This root entry point is really the **car box**
 // package: a car is a rectangle derived from two points and one width
 // constant, and everything here is that rectangle seen from one side or the
-// other — authored into a training label, predicted back out by the model,
-// or tested against a sensor. The geometry is not drift; it is here because
+// other — authored into a training label or predicted back out by the model.
+// Testing a box against a sensor is L1, and L1 is the UI's
+// (`ui/src/occupancy.ts`): sensors are authored there and training never
+// reads them (ADR 0019). The geometry is not drift; it is here because
 // the width constant has to have exactly one home, and the model's consumers
 // and the label exporter both need it. The session itself is behind a
 // platform entry point, so nothing that only wants the geometry pays for ORT:
@@ -21,12 +23,6 @@
 // One detection per car, in the frame the caller asked `detect` to answer in —
 // pose exactly as emitted, raw predicted width included.
 export type { Detection, Frame } from './types.ts';
-
-//── L1: what the sensors say ─────────────────────────────────────────────────
-// Pure geometry over L0 — no second model, and total: one state per sensor,
-// always, so no caller ever constructs an `unknown` itself.
-export type { SensorState, UnknownReason } from './types.ts';
-export { occupancy } from './occupancy.ts';
 
 //── Car geometry ─────────────────────────────────────────────────────────────
 // The rectangle, from both ends. `spanToPolygon` turns an authored span into
@@ -51,12 +47,12 @@ export { detectorClassIndex } from './classIndex.ts';
 // something down.
 export { convexIntersectionArea, polygonArea, polygonIoU } from './overlap.ts';
 
-// Withheld: `covers`, the point-in-oriented-box test, and the width
-// normalization it is applied with. `occupancy` is the only caller, so
-// exporting them would publish a seam nothing yet stands on. `boxCorners` is
-// exported despite being derivable from a `Detection` for the opposite reason:
-// two consumers need corners to draw, and "derivable" is exactly how the width
-// constant came to be written twice in the first place.
+// Withheld: `occupancy`, `SensorState` and `UnknownReason`, with `covers`, the
+// point-in-oriented-box test. L1 moved to the UI (#231, ADR 0019); it builds
+// on `carWidthPx` and the `Detection` shape from here. `boxCorners` is
+// exported despite being derivable from a `Detection`: two consumers need
+// corners to draw, and "derivable" is exactly how the width constant came to
+// be written twice in the first place.
 //
 // Withheld: a `./geometry` entry point. The classifier's split is load-bearing
 // — it keeps `onnxruntime-node` and `sharp` out of the browser bundle — but

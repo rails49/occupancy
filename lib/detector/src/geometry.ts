@@ -133,32 +133,3 @@ export function boxCorners(detection: Detection): readonly Point[] {
     detection.width
   );
 }
-
-/**
- * Whether an oriented box of the given width **strictly contains** a point.
- *
- * Tested in the box's own axes rather than against its corners: a point is
- * inside when its along-axis and across-axis offsets from the centre are both
- * within the respective half-extents. Four corners and a winding rule would
- * answer the same question with more ways to be wrong.
- *
- * No tolerance epsilon, per SPEC. Any value would be unvalidatable, the lateral
- * direction already carries ~1.4 m prototype of slack from the derived width,
- * and at a coupler two boxes abut on a shared endpoint so a point between
- * coupled cars is already inside one of them. A real gap between uncoupled cars
- * should read `clear`, and an epsilon would manufacture a phantom there.
- *
- * Internal: L1 is the only caller, so exporting it would publish a seam that
- * nothing yet needs on the other side.
- */
-export function covers(detection: Detection, widthPx: number, point: Point): boolean {
-  const dx = point.x - detection.centre.x;
-  const dy = point.y - detection.centre.y;
-  const ux = Math.cos(detection.angle);
-  const uy = Math.sin(detection.angle);
-
-  const along = dx * ux + dy * uy;
-  const across = -dx * uy + dy * ux;
-
-  return Math.abs(along) < detection.length / 2 && Math.abs(across) < widthPx / 2;
-}

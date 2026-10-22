@@ -1,7 +1,7 @@
 import { svg, css } from 'lit';
 import type { SVGTemplateResult, CSSResult } from 'lit';
 import type { Sensor } from '@rails49/r49';
-import type { SensorState, UnknownReason } from '@occupancy/detector';
+import type { SensorState, UnknownReason } from './occupancy.js';
 import { placeLabel } from './geometry.js';
 import type { FrameSize } from './geometry.js';
 import { HIGHLIGHT_CLASS } from './highlight.js';

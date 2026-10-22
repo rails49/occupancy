@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { boxCorners, carWidthPx, covers, spanToPolygon } from '../src/geometry.ts';
+import { boxCorners, carWidthPx, spanToPolygon } from '../src/geometry.ts';
 import type { Detection } from '../src/types.ts';
 
 /**
@@ -149,50 +149,5 @@ describe('box corners', () => {
       detection({ centre: { x: 0, y: 0 }, length: 100, width: 7, angle: 0 })
     );
     expect(corners[0].y - corners[3].y).toBe(7);
-  });
-});
-
-describe('the occupancy test', () => {
-  const car = detection({ centre: { x: 500, y: 250 }, length: 200, width: 42, angle: 0 });
-
-  it('contains a point inside the box', () => {
-    expect(covers(car, 42, { x: 500, y: 250 })).toBe(true);
-    expect(covers(car, 42, { x: 599, y: 270 })).toBe(true);
-  });
-
-  it('excludes a point past either half-extent', () => {
-    expect(covers(car, 42, { x: 601, y: 250 })).toBe(false);
-    expect(covers(car, 42, { x: 500, y: 272 })).toBe(false);
-  });
-
-  it('is strict: a point exactly on the boundary is not contained', () => {
-    // No tolerance epsilon, per SPEC. At a coupler two boxes abut on a shared
-    // endpoint, so a point between coupled cars is already strictly inside one
-    // of them, and a real gap between uncoupled cars must read clear.
-    expect(covers(car, 42, { x: 600, y: 250 })).toBe(false);
-    expect(covers(car, 42, { x: 500, y: 271 })).toBe(false);
-  });
-
-  it("uses the width it is handed, not the detection's own", () => {
-    // The whole point of the normalization: an under-predicted width must not
-    // shrink the box L1 tests against.
-    const narrow = detection({ centre: { x: 500, y: 250 }, length: 200, width: 10, angle: 0 });
-    expect(covers(narrow, 10, { x: 500, y: 265 })).toBe(false);
-    expect(covers(narrow, 42, { x: 500, y: 265 })).toBe(true);
-  });
-
-  it('rotates with the box', () => {
-    const diagonal = detection({
-      centre: { x: 0, y: 0 },
-      length: 200,
-      width: 20,
-      angle: Math.PI / 4,
-    });
-
-    // 50 px along the long axis is inside; 50 px across it is not.
-    const along = { x: 50 / Math.SQRT2, y: 50 / Math.SQRT2 };
-    const across = { x: -50 / Math.SQRT2, y: 50 / Math.SQRT2 };
-    expect(covers(diagonal, 20, along)).toBe(true);
-    expect(covers(diagonal, 20, across)).toBe(false);
   });
 });
