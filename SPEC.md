@@ -1,6 +1,6 @@
 # Model Railroad Track Occupancy Detection with Cameras
 
-This file holds the requirements. Terms are defined in [`CONTEXT.md`](CONTEXT.md) and decisions are recorded in [`docs/adr/`](docs/adr/) ([ADR 0001](docs/adr/0001-glossary-and-adrs-alongside-the-spec.md)). It describes the target. Parts of it are not built yet, and each such part says so.
+This file holds the requirements. Terms are defined in [`GLOSSARY.md`](GLOSSARY.md) and decisions are recorded in [`docs/adr/`](docs/adr/) ([ADR 0001](docs/adr/0001-glossary-and-adrs-alongside-the-spec.md)). It describes the target. Parts of it are not built yet, and each such part says so.
 
 ## Goals
 
@@ -80,7 +80,7 @@ Safety: nothing here may be presented as a safety interlock. The detector does s
 
 ## Occupancy Output
 
-Occupancy is reported as L0 and L1 ([glossary](CONTEXT.md#occupancy)) and nothing more. L1 is computed from L0 by geometry and calls no second model ([ADR 0005](docs/adr/0005-l1-is-geometry-over-l0-biased-toward-occupied.md), [issue #7](https://github.com/rails49/occupancy/issues/7)). The detector runs once per frame however many sensors a layout has.
+Occupancy is reported as L0 and L1 ([glossary](GLOSSARY.md#occupancy)) and nothing more. L1 is computed from L0 by geometry and calls no second model ([ADR 0005](docs/adr/0005-l1-is-geometry-over-l0-biased-toward-occupied.md), [issue #7](https://github.com/rails49/occupancy/issues/7)). The detector runs once per frame however many sensors a layout has.
 
 Everything above L1 is unspecified: event and transition semantics (Rocrail's enter and in sensors fire on transitions, not on per-frame state) and block-span occupancy. L0 carries full car pose, so both can be computed later from archives recorded today.
 
@@ -107,7 +107,7 @@ The box tested keeps the detector's centre, orientation and length and takes the
 
 ### The vocabulary
 
-L1 states are occupied, clear and unknown, as [`CONTEXT.md`](CONTEXT.md#occupancy) defines them. A detection above the confidence threshold counts when it covers the sensor, including a low-confidence one. Errors lean toward occupied, and a persistent phantom can deadlock a controller's schedule; both are accepted in [ADR 0005](docs/adr/0005-l1-is-geometry-over-l0-biased-toward-occupied.md). Camera drift as a reason for unknown comes from [issue #12](https://github.com/rails49/occupancy/issues/12).
+L1 states are occupied, clear and unknown, as [`GLOSSARY.md`](GLOSSARY.md#occupancy) defines them. A detection above the confidence threshold counts when it covers the sensor, including a low-confidence one. Errors lean toward occupied, and a persistent phantom can deadlock a controller's schedule; both are accepted in [ADR 0005](docs/adr/0005-l1-is-geometry-over-l0-biased-toward-occupied.md). Camera drift as a reason for unknown comes from [issue #12](https://github.com/rails49/occupancy/issues/12).
 
 The bias reduces the consequence of the worse error. It does not make this a safety interlock.
 
@@ -154,19 +154,19 @@ Supports the common scales (HO, N, Z, and so on).
 
 #### Establishes the relation between image pixels and physical dimensions
 
-The relation between image and layout is expressed as [DPT](CONTEXT.md#calibration), so the detector sees cars at one size.
+The relation between image and layout is expressed as [DPT](GLOSSARY.md#calibration), so the detector sees cars at one size.
 
 Example. Two points in an N-scale layout are 1000 pixels apart in the image and 250 mm apart on the layout: 4 pixels per millimetre. Track gauge in N is `STANDARD_GAUGE/160 = 1435/160 ≈ 9 mm` (`STANDARD_GAUGE` is defined in the `.r49` library). DPT is 4 × 9 = 36.
 
 DPT must exceed 20. Below that a car is too few pixels across for the detector to place it reliably. The threshold is `layout.min_dpt` in `config.yaml`. It sits under `layout`, not `detector`, because the editor applies it: the editor warns below it and never blocks.
 
-The [fixtures](CONTEXT.md#layout-and-archive) sit at DPT 18–19. They exercise every code path in the editor, but they are not training data. Training will use new, higher-DPT images. Do not tune model accuracy against the fixtures or treat their numbers as predictive.
+The [fixtures](GLOSSARY.md#layout-and-archive) sit at DPT 18–19. They exercise every code path in the editor, but they are not training data. Training will use new, higher-DPT images. Do not tune model accuracy against the fixtures or treat their numbers as predictive.
 
 Layouts are not planar and cameras are not at infinity, so scale varies with height. Camera height corrects it ([ADR 0015](docs/adr/0015-camera-height-corrects-scale.md)); see [Camera height](#camera-height-is-what-corrects-the-third-dimension). The derivations are in [`docs/research/camera-calibration.md`](docs/research/camera-calibration.md). Barrel distortion and camera tilt are ignored. Tilt adds to the height error rather than replacing it.
 
 #### Reference points
 
-Calibration is a list of [reference points](CONTEXT.md#calibration):
+Calibration is a list of [reference points](GLOSSARY.md#calibration):
 
 ```jsonc
 calibration: {
@@ -192,7 +192,7 @@ The `d_mm²` weighting favours long baselines. Click error is a fixed number of 
 
 The minimum calibration is two points at different positions, which is what resolves DPT. Car width is derived from DPT, so an uncalibrated archive cannot draw a label. The editor opens in calibration mode with the labeling tools disabled and the reason stated.
 
-Points are placed with their own tool, distinct from the sensor tool and drawn differently: click a pixel, then enter the x, y and z coordinate in millimetres. A point draws as a crosshair labeled with its world coordinate. With more than two points the editor shows the fit [residual](CONTEXT.md#calibration), so a mistyped coordinate shows instead of being absorbed into the scale.
+Points are placed with their own tool, distinct from the sensor tool and drawn differently: click a pixel, then enter the x, y and z coordinate in millimetres. A point draws as a crosshair labeled with its world coordinate. With more than two points the editor shows the fit [residual](GLOSSARY.md#calibration), so a mistyped coordinate shows instead of being absorbed into the scale.
 
 #### Camera height is what corrects the third dimension
 
@@ -200,8 +200,8 @@ Decided in [ADR 0015](docs/adr/0015-camera-height-corrects-scale.md) ([issues #1
 
 Two optional fields:
 
-* `camera_height_mm`, the [camera height](CONTEXT.md#calibration) `h`.
-* `reference_height_mm`, the [reference height](CONTEXT.md#calibration) `z_ref`, defaulting to 0. DPT is reported there. `dptAtHeight(z)` serves any other height. The editor does not edit it yet.
+* `camera_height_mm`, the [camera height](GLOSSARY.md#calibration) `h`.
+* `reference_height_mm`, the [reference height](GLOSSARY.md#calibration) `z_ref`, defaulting to 0. DPT is reported there. `dptAtHeight(z)` serves any other height. The editor does not edit it yet.
 
 The editor keeps one declared list of required layout metadata: layout `name` and `camera_height_mm` (`ui/src/requiredMetadata.ts`). `scale` is required by the schema, so it is never missing. The settings dialog stays open until every item is supplied, on New and on any Open that lacks one. An archive that carries them all opens straight through.
 
@@ -220,10 +220,10 @@ Remaining perspective error gets a warning in the editor and nothing else:
 
 #### Image Alignment
 
-Camera [drift](CONTEXT.md#drift) is detected, and classification is refused past the [drift tolerance](CONTEXT.md#drift) ([ADR 0013](docs/adr/0013-drift-is-measured-against-the-first-image.md); built under [map #89](https://github.com/rails49/occupancy/issues/89)).
+Camera [drift](GLOSSARY.md#drift) is detected, and classification is refused past the [drift tolerance](GLOSSARY.md#drift) ([ADR 0013](docs/adr/0013-drift-is-measured-against-the-first-image.md); built under [map #89](https://github.com/rails49/occupancy/issues/89)).
 
 * Nothing records the camera pose. The archive's images are the pose record, and the reference is derived from them at load time.
-* `@occupancy/drift` compares the structure of a frame against the [reference image](CONTEXT.md#drift) by block-wise phase correlation, which ignores illumination, and reports a displacement in `camera.resolution` pixels.
+* `@occupancy/drift` compares the structure of a frame against the [reference image](GLOSSARY.md#drift) by block-wise phase correlation, which ignores illumination, and reports a displacement in `camera.resolution` pixels.
 * The tolerance is `layout.max_drift_track_fraction`, a fraction of a track width. It is a tolerance, not a detection floor: the check resolves much smaller displacements.
 * Past the tolerance the live view reports every sensor as unknown with reason `drift`, with a visible override.
 * The editor shows every image's drift against the reference, so moving a thumbnail to the front re-measures all of them. Image order therefore carries meaning.
@@ -239,12 +239,12 @@ The format and the editor store two kinds of geometry, in pixel coordinates:
 
 | | Geometry | Scope | Trained on? | Provenance? |
 |---|---|---|---|---|
-| Cars | A [span](CONTEXT.md#cars-and-labels): two points along the car's centerline | Per image | Yes, the detector's only class | Yes |
+| Cars | A [span](GLOSSARY.md#cars-and-labels): two points along the car's centerline | Per image | Yes, the detector's only class | Yes |
 | Sensors | A single point | Per layout | No, an output specification | No |
 
-1. Cars. Width is not stored; every car is drawn at the [car width](CONTEXT.md#cars-and-labels). The [standard width](CONTEXT.md#cars-and-labels) is `layout.standard_width` = 3000 mm prototype, the SBB RAm TEE I. Car width in pixels is `DPT × standard_width / standard_gauge`, so the scale ratio cancels and a car is 2.09 track widths wide in every scale. [Trains and couplings](CONTEXT.md#cars-and-labels) are derived from coincident ends and never labeled. Each car carries [provenance](#provenance-is-required-not-optional).
+1. Cars. Width is not stored; every car is drawn at the [car width](GLOSSARY.md#cars-and-labels). The [standard width](GLOSSARY.md#cars-and-labels) is `layout.standard_width` = 3000 mm prototype, the SBB RAm TEE I. Car width in pixels is `DPT × standard_width / standard_gauge`, so the scale ratio cancels and a car is 2.09 track widths wide in every scale. [Trains and couplings](GLOSSARY.md#cars-and-labels) are derived from coincident ends and never labeled. Each car carries [provenance](#provenance-is-required-not-optional).
 
-2. [Sensors](CONTEXT.md#occupancy) are where the deployed system must answer, and they never enter a loss. What they answer with is [Occupancy Output](#occupancy-output). They stay points, not spans: L0 carries full car pose, so block semantics can be derived later, and authoring intervals is UI for a consumer that does not exist yet. Sensors carry no provenance, since no model proposes where a person wants an answer.
+2. [Sensors](GLOSSARY.md#occupancy) are where the deployed system must answer, and they never enter a loss. What they answer with is [Occupancy Output](#occupancy-output). They stay points, not spans: L0 carries full car pose, so block semantics can be derived later, and authoring intervals is UI for a consumer that does not exist yet. Sensors carry no provenance, since no model proposes where a person wants an answer.
 
 #### Track is not stored, and that is a deliberate deferral
 
@@ -258,7 +258,7 @@ Track authoring returns as a new effort. The closed [issue #14](https://github.c
 
 Every image used for detector training must have all its cars labeled. An unlabeled car is treated as background by the loss, which is shared across the whole image, so this cannot be scoped per class.
 
-Each image carries `labeled_complete` ([labeled complete](CONTEXT.md#cars-and-labels)). Only complete images are exported for training. Incomplete images stay useful for authoring and review. Per-image labeling does get skipped: `cars 0-10.r49` had 32 track markers on image-0 and none on its other ten images.
+Each image carries `labeled_complete` ([labeled complete](GLOSSARY.md#cars-and-labels)). Only complete images are exported for training. Incomplete images stay useful for authoring and review. Per-image labeling does get skipped: `cars 0-10.r49` had 32 track markers on image-0 and none on its other ten images.
 
 * Only a person sets it. Accepting proposals never sets it, however many are accepted ([ADR 0011](docs/adr/0011-deleting-a-car-clears-labeled-complete.md)).
 * An image marked complete with zero cars is valid. It is an all-background sample.
@@ -329,7 +329,7 @@ The rules below keep proposals from degrading the corpus, whichever model propos
 
 Accepted proposals that become training data form a loop: the model trains on its own output and amplifies its errors, including ones a user is unlikely to catch.
 
-Each car label therefore records its [provenance](CONTEXT.md#cars-and-labels), and `proposed_by`, the proposing model's version string, which is absent when provenance is `human`. Unedited proposals can then be excluded or down-weighted, and acceptance rate becomes a quality signal. Provenance cannot be added to a corpus after it is labeled, which is why it exists before the feature that needs it.
+Each car label therefore records its [provenance](GLOSSARY.md#cars-and-labels), and `proposed_by`, the proposing model's version string, which is absent when provenance is `human`. Unedited proposals can then be excluded or down-weighted, and acceptance rate becomes a quality signal. Provenance cannot be added to a corpus after it is labeled, which is why it exists before the feature that needs it.
 
 Three details decided against:
 

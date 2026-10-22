@@ -7,63 +7,63 @@ Camera-based track occupancy detection for model railroads: photographs of a lay
 ### Layout and archive
 
 **Layout**:
-`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
 
 **Archive**:
-`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
 
 **Format**:
-`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
 
 **Outside reader**:
-`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
 
 **Corpus**:
-`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
 
 **Corpus rule**:
-`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
 
 **Reader requirement**:
-`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
 
 **Fixture**:
 One of the six archives kept to exercise the code. See [docs/SYSTEM.md](docs/SYSTEM.md#the-pipeline).
 
 **Image**:
-`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
 
 **Scale**:
-`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
 
 **Prototype**:
-`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
 
 ### Calibration
 
 **DPT**:
-`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
 
 **Minimum DPT**:
 The DPT below which images are too coarse for this project's detector to train on. A reader requirement. See [SPEC § Calibration](SPEC.md#establishes-the-relation-between-image-pixels-and-physical-dimensions).
 
 **Recommended DPT**:
-`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
 
 **Calibration**:
-`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
 
 **Reference point**:
-`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
 
 **Camera height**:
-`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
 
 **Reference height**:
-`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
 
 **Residual**:
-`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
 
 ### Drift
 
@@ -83,10 +83,10 @@ The largest drift accepted, as a fraction of a track width. See [ADR 0013](docs/
 ### Cars and labels
 
 **Car**:
-`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
 
 **Span**:
-`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
 
 **Car width**:
 The width every car is drawn with, derived from DPT and the standard width. Never stored. See [SPEC § Location Data](SPEC.md#location-data-cars-and-sensors).
@@ -95,25 +95,25 @@ The width every car is drawn with, derived from DPT and the standard width. Neve
 The prototype width used for every car: the widest real stock. See [SPEC § Location Data](SPEC.md#location-data-cars-and-sensors).
 
 **Train**:
-`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
 
 **Coupling**:
-`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
 
 **Class**:
-`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
 
 **Stock**:
-`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
 
 **Vocabulary**:
-`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
 
 **Labeled complete**:
-`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
 
 **Provenance**:
-`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
 
 **Proposal**:
 A car label suggested by the detector for a person to accept, correct or reject. See [SPEC § Assisted Labeling](SPEC.md#assisted-labeling).
@@ -125,7 +125,7 @@ _Avoid_: using it for a sensor or a block
 ### Occupancy
 
 **Sensor**:
-`r49`'s word, owned by its [CONTEXT.md](https://github.com/rails49/r49/blob/main/CONTEXT.md).
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
 
 **Detector**:
 The model that finds cars in a frame: an oriented-box YOLO network. See [SPEC § The detector](SPEC.md#the-detector-is-yolo26n-obb).

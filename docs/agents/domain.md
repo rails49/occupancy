@@ -2,13 +2,13 @@
 
 How the engineering skills should consume this repo's domain documentation when exploring the codebase.
 
-Single context. What each kind of doc holds, and how ADRs change, is set by org [ADR-0017](https://github.com/rails49/.github/blob/main/docs/adr/0017-each-fact-has-one-owner-and-an-accepted-adr-does-not-change.md). [ADR 0001](../adr/0001-glossary-and-adrs-alongside-the-spec.md) adds `SPEC.md` for the requirements.
+Single context. What each kind of doc holds, and how ADRs change, is set by org [ADR-0021](https://github.com/rails49/.github/blob/main/docs/adr/0021-each-fact-has-one-owner-and-the-glossary-is-glossary-md.md). [ADR 0001](../adr/0001-glossary-and-adrs-alongside-the-spec.md) adds `SPEC.md` for the requirements.
 
 The wayfinder maps (label `wayfinder:map`) and their closed tickets hold the alternatives that were rejected; an ADR links them rather than restating them.
 
 ## Before exploring, read these
 
-- **`CONTEXT.md`**, for the vocabulary.
+- **`GLOSSARY.md`**, for the vocabulary.
 - **The ADRs** in the area you are touching.
 - **`SPEC.md`**, for what the area must do.
 
@@ -18,7 +18,7 @@ The wayfinder maps (label `wayfinder:map`) and their closed tickets hold the alt
 
 ```
 /
-├── CONTEXT.md           ← glossary
+├── GLOSSARY.md           ← glossary
 ├── SPEC.md              ← requirements, whole project
 ├── CLAUDE.md            ← pointers, conventions and traps
 ├── docs/
@@ -35,9 +35,9 @@ The wayfinder maps (label `wayfinder:map`) and their closed tickets hold the alt
 
 ## Use the glossary's vocabulary
 
-When your output names a domain concept (in an issue title, a refactor proposal, a hypothesis, a test name), use the term as `CONTEXT.md` defines it, and not the words it lists under _Avoid_. The terms have moved before.
+When your output names a domain concept (in an issue title, a refactor proposal, a hypothesis, a test name), use the term as `GLOSSARY.md` defines it, and not the words it lists under _Avoid_. The terms have moved before.
 
-If the concept you need isn't in the glossary, either you're inventing language the project doesn't use (reconsider) or there's a real gap (add the term to `CONTEXT.md`).
+If the concept you need isn't in the glossary, either you're inventing language the project doesn't use (reconsider) or there's a real gap (add the term to `GLOSSARY.md`).
 
 ## Flag conflicts with settled decisions
 
