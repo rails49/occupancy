@@ -20,7 +20,7 @@ Requires [pnpm](https://pnpm.io/) and [uv](https://github.com/astral-sh/uv). Run
 | :--- | :--- |
 | Install dependencies | `pnpm install` |
 | Full check (typecheck, TS tests, look-check, UI build, Python lint) | `bin/test.sh` |
-| Install the pre-push hook that runs `bin/test.sh` | `bin/install-hooks.sh` |
+| Install the hooks: pre-commit refuses commits on `main`, pre-push runs `bin/test.sh` | `bin/install-hooks.sh` |
 | Typecheck all packages | `pnpm typecheck` |
 | All TS tests | `pnpm test` |
 | Tests for one package | `pnpm --filter @occupancy/detector test` |
