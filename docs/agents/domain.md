@@ -25,6 +25,7 @@ The wayfinder maps (label `wayfinder:map`) and their closed tickets hold the alt
 │   ├── adr/             ← decisions
 │   ├── agents/          ← these files
 │   ├── SYSTEM.md        ← what exists, across the stages
+│   ├── UI.md            ← how ui/ works, and its invariants
 │   └── research/        ← research notes cited by SPEC.md and the ADRs
 ├── lib/
 ├── ui/

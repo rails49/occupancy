@@ -8,7 +8,8 @@ classification runs in the browser via ONNX Runtime. There is no backend.
 * **`../SPEC.md`** — what the system is *for*, and the requirements it is working toward. Covers the
   whole project, not just this package. Much of it is not built yet; treat it as the target, not a
   description.
-* **`CLAUDE.md`** — build, test, and deploy mechanics, and the invariants an edit can break.
+* **`CLAUDE.md`** — conventions, coding standards and testing rules.
+* **[`../docs/UI.md`](../docs/UI.md)** — how the modules work, and the invariants an edit can break.
 * **This file** — the component reference: what exists today, and each component's interface.
 
 ## Naming conventions
