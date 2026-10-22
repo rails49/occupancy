@@ -118,7 +118,6 @@ def render_generated_ts(config: dict, r49: dict) -> str:
 
     standard_width = require(config, "layout", "standard_width")
     min_dpt = require(config, "layout", "min_dpt")
-    max_drift_track_fraction = require(config, "layout", "max_drift_track_fraction")
 
     detector_input = require(config, "detector", "input")
     confidence_threshold = require(config, "detector", "confidence_threshold")
@@ -187,26 +186,6 @@ def render_generated_ts(config: dict, r49: dict) -> str:
             "corpus sits below it at DPT 18-19.",
         ),
         f"export const MIN_DPT = {ts_literal(min_dpt)};",
-        "",
-        doc(
-            "Largest apparent camera displacement still taken as the canonical",
-            "pose, as a **fraction of one track width**.",
-            "",
-            "The verdict `@occupancy/drift` deliberately does not make. Above this,",
-            "the live view refuses to classify — with an override — and the editor",
-            "warns without blocking: one authored number, two responses, which is",
-            "why it is config and not a constant inside the module.",
-            "",
-            "DPT is pixels per track gauge, so the tolerance in pixels is",
-            "`MAX_DRIFT_TRACK_FRACTION * dpt` — `ui/src/driftSession.ts`'s",
-            "`maxDriftPx` is the one place that multiplies. A fraction rather than",
-            "a pixel count because the failure is geometric: a sensor stops sitting",
-            "on the car it reads. It is a **tolerance, not a detection floor** — the",
-            "check resolves far smaller displacements than this accepts, and should.",
-            "",
-            "See config.yaml for the derivation.",
-        ),
-        f"export const MAX_DRIFT_TRACK_FRACTION = {ts_literal(max_drift_track_fraction)};",
         "",
         doc("Every scale name @rails49/r49's data file defines a ratio for."),
         f"export type Scale = {scale_union};",
@@ -302,7 +281,6 @@ def render_index_ts() -> str:
             "  STANDARD_GAUGE,",
             "  STANDARD_WIDTH,",
             "  MIN_DPT,",
-            "  MAX_DRIFT_TRACK_FRACTION,",
             "  SCALE_TO_RATIO,",
             "  SCALES,",
             "  type Scale,",
@@ -332,12 +310,6 @@ def render_index_ts() -> str:
             "// classifier reads its own config.json at runtime and the CNN training",
             "// hyperparameters are Python's; neither needs a TypeScript binding, and",
             "// exporting them would invite a second consumer for values that have one.",
-            "",
-            "// Withheld: `global.rails_domain`. Nothing in TypeScript consumes it any",
-            "// more — the UI used to inject it as __RAILS_DOMAIN__ to recognize the",
-            "// deployed site and send ORT's WASM to a CDN, which serving the runtime",
-            "// from origin removed (#15). It stays in config.yaml as the project's",
-            "// domain of record; give it a binding again only when something reads it.",
             "",
         ]
     )

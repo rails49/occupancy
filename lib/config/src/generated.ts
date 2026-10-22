@@ -26,26 +26,6 @@ export const STANDARD_WIDTH = 3000.0;
  */
 export const MIN_DPT = 20;
 
-/**
- * Largest apparent camera displacement still taken as the canonical
- * pose, as a **fraction of one track width**.
- *
- * The verdict `@occupancy/drift` deliberately does not make. Above this,
- * the live view refuses to classify — with an override — and the editor
- * warns without blocking: one authored number, two responses, which is
- * why it is config and not a constant inside the module.
- *
- * DPT is pixels per track gauge, so the tolerance in pixels is
- * `MAX_DRIFT_TRACK_FRACTION * dpt` — `ui/src/driftSession.ts`'s
- * `maxDriftPx` is the one place that multiplies. A fraction rather than
- * a pixel count because the failure is geometric: a sensor stops sitting
- * on the car it reads. It is a **tolerance, not a detection floor** — the
- * check resolves far smaller displacements than this accepts, and should.
- *
- * See config.yaml for the derivation.
- */
-export const MAX_DRIFT_TRACK_FRACTION = 0.25;
-
 /** Every scale name @rails49/r49's data file defines a ratio for. */
 export type Scale = "G" | "O" | "S" | "HO" | "T" | "N" | "Z";
 

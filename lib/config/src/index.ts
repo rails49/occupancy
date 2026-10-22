@@ -19,7 +19,6 @@ export {
   STANDARD_GAUGE,
   STANDARD_WIDTH,
   MIN_DPT,
-  MAX_DRIFT_TRACK_FRACTION,
   SCALE_TO_RATIO,
   SCALES,
   type Scale,
@@ -49,9 +48,3 @@ export { VOCABULARY } from './generated.ts';
 // classifier reads its own config.json at runtime and the CNN training
 // hyperparameters are Python's; neither needs a TypeScript binding, and
 // exporting them would invite a second consumer for values that have one.
-
-// Withheld: `global.rails_domain`. Nothing in TypeScript consumes it any
-// more — the UI used to inject it as __RAILS_DOMAIN__ to recognize the
-// deployed site and send ORT's WASM to a CDN, which serving the runtime
-// from origin removed (#15). It stays in config.yaml as the project's
-// domain of record; give it a binding again only when something reads it.
