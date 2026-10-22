@@ -32,8 +32,7 @@ What each kind of doc holds: org [ADR-0021](https://github.com/rails49/.github/b
   A format change is a release in `rails49/r49`, then a bump here (ADR 0018).
 - The detector is `@rails49/detector`, pinned in `pnpm-workspace.yaml`'s
   catalog. A detector change is a release in `rails49/detector`, then a bump
-  here. Until `0.1.0` the package carries no model, and the deployed live view
-  reports every sensor `unknown` / `no-model` (ADR 0019).
+  here (ADR 0019). What the pinned version holds: `docs/SYSTEM.md` § The model.
 - Everything the app fetches comes from origin (ADR 0006). Import
   `onnxruntime-web/wasm`, never the package root.
 - The model filename is `@rails49/detector`'s: its `./model` exports entry and

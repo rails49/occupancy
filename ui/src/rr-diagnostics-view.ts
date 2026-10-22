@@ -202,8 +202,8 @@ export class RRDiagnosticsView extends LitElement {
       this._run = {
         kind: 'failed',
         message:
-          `No detector could be loaded from ${DETECTOR_SOURCE}. Build one with ` +
-          `\`uv run python export_onnx.py\` in \`detector/\`, then rebuild the UI. ` +
+          `No detector could be loaded from ${DETECTOR_SOURCE}. No model has been published ` +
+          `yet; to use one, link a rails49/detector checkout that has one, then rebuild the UI. ` +
           `(${err instanceof Error ? err.message : String(err)})`,
       };
       return;

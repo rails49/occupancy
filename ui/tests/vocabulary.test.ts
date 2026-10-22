@@ -44,7 +44,7 @@ describe('rootClass()', () => {
 
 describe('classChoices()', () => {
   it('offers the root s children and never the root itself', () => {
-    // ADR 0018: the root is required in the
+    // rails49/detector's SPEC.md § Parameters: the root is required in the
     // stored class and absent from the UI.
     const choices = classChoices(vocabulary);
 

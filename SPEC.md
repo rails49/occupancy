@@ -193,7 +193,7 @@ The format and the editor store two kinds of geometry, in pixel coordinates:
 | Cars | A [span](GLOSSARY.md#cars-and-labels): two points along the car's centerline | Per image | Yes, the detector's only class | Yes |
 | Sensors | A single point | Per layout | No, an output specification | No |
 
-1. Cars. Width is not stored; every car is drawn at the [car width](GLOSSARY.md#cars-and-labels). The [standard width](GLOSSARY.md#cars-and-labels) is 3000 mm prototype, the SBB RAm TEE I, set as `layout.standard_width` in rails49/detector. Car width in pixels is `DPT × standard_width / standard_gauge`, so the scale ratio cancels and a car is 2.09 track widths wide in every scale. [Trains and couplings](GLOSSARY.md#cars-and-labels) are derived from coincident ends and never labeled. Each car carries [provenance](#provenance-is-required-not-optional).
+1. Cars. Width is not stored; every car is drawn at the [car width](GLOSSARY.md#cars-and-labels). [Trains and couplings](GLOSSARY.md#cars-and-labels) are derived from coincident ends and never labeled. Each car carries [provenance](#provenance-is-required-not-optional).
 
 2. [Sensors](GLOSSARY.md#occupancy) are where the deployed system must answer, and they never enter a loss. What they answer with is [Occupancy Output](#occupancy-output). They stay points, not spans: L0 carries full car pose, so block semantics can be derived later, and authoring intervals is UI for a consumer that does not exist yet. Sensors carry no provenance, since no model proposes where a person wants an answer.
 

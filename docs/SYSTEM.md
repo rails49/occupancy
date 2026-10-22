@@ -9,9 +9,9 @@ What the repository does now, across its stages. Each package's `README.md` or
 Each directory is a stage in one data path. The detector is trained in
 [rails49/detector](https://github.com/rails49/detector) and reaches the UI as
 the `@rails49/detector` package; its own stages are in rails49/detector's
-[`docs/SYSTEM.md`](https://github.com/rails49/detector/blob/main/docs/SYSTEM.md#the-pipeline). `lib/drift` trains
-nothing: it derives reference spectra from the images at load time, and both
-UI views gate on them (#89).
+[`docs/SYSTEM.md`](https://github.com/rails49/detector/blob/main/docs/SYSTEM.md#the-pipeline).
+`lib/drift` trains nothing: it derives reference spectra from the images at
+load time, and both UI views gate on them (#89).
 
 ```
 .r49 archives (rails49/r49)         v4: layout photos, calibration, labels

@@ -30,7 +30,7 @@ Requires [pnpm](https://pnpm.io/) and Node at the version in `.nvmrc`. Run from 
 | The chrome check alone | `ui/node_modules/.bin/look-check ui/src ui/index.html` |
 | UI dev server | `pnpm --filter @occupancy/ui dev` (`dev:http` for plain HTTP) |
 | Build the UI | `pnpm build` |
-| Run the UI against a local model | build `lib/detector` with a model in a [rails49/detector](https://github.com/rails49/detector/blob/main/README.md) checkout beside this one, then `cd ui && pnpm link ../../detector/lib/detector` |
+| Run the UI against a local model | build `lib/detector` with a model in a [rails49/detector](https://github.com/rails49/detector/blob/main/README.md) checkout beside this one, then `cd ui && pnpm link ../../detector/lib/detector`; undo with `git checkout pnpm-lock.yaml && pnpm install` |
 | Score the drift check on the fixtures | `pnpm --filter @occupancy/drift-bench bench` (needs `rails49/r49` cloned at `../r49`; about 10 minutes) |
 | Deploy to Cloudflare Pages | `bin/deploy.sh` |
 

@@ -110,7 +110,8 @@ function classOfReclassifyRow(id: string): string | null {
  * Generated from the vocabulary in `@rails49/r49`'s data file (`vocabulary.ts`), so
  * a release adding a subtype there changes this menu at the version bump with **no code
  * edit** — and the root is not among them, because it is required in the
- * stored class and absent from the UI (ADR 0018).
+ * stored class and absent from the UI (rails49/detector's `SPEC.md` § Parameters
+ * live in `config.yaml`).
  *
  * A subtype that has subtypes of its own is a submenu, and a submenu's first
  * row is that subtype itself: a row that opens something cannot also be chosen,

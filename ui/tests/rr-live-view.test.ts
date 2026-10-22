@@ -162,7 +162,7 @@ describe('rr-live-view', () => {
 
     const notice = el.shadowRoot!.textContent ?? '';
     expect(notice).to.contain('unknown');
-    expect(notice).to.contain('export_onnx.py');
+    expect(notice).to.contain('rails49/detector');
   });
 
   it('reports every sensor unknown / no-model when the build shipped no model', async () => {

@@ -106,7 +106,7 @@ export class RRLiveView extends LitElement {
    * Why the detector is not loaded, or `null` when it is.
    *
    * Held as the message rather than a boolean: the causes are different jobs —
-   * a fresh clone has never run `export_onnx.py`, a deployed bundle that 404s
+   * the published package holds no model yet, a deployed bundle that 404s
    * was built without the model — and the sensors all read `unknown` either
    * way, which says nothing about which.
    */
@@ -581,9 +581,9 @@ export class RRLiveView extends LitElement {
 
       ${this._modelError
         ? html`<div class="notice">
-            No detector loaded, so every sensor reads <strong>unknown</strong>. Build one with
-            <code>uv run python export_onnx.py</code> in <code>detector/</code>, then rebuild the
-            UI. (${this._modelError})
+            No detector loaded, so every sensor reads <strong>unknown</strong>. No model has been
+            published yet; to run one, link a rails49/detector checkout that has one, then rebuild
+            the UI. (${this._modelError})
           </div>`
         : ''}
 

@@ -92,7 +92,6 @@ const serveProtoFixtures = {
  * `no-model`. Any other failure stops the build.
  *
  * `src` is relative to `ui/`, which is what the plugin resolves against.
- * `resolve` is a parameter so tests can stand in for a package with a model.
  */
 export function detectorCopyTarget(
   resolve: (id: string) => string = createRequire(import.meta.url).resolve,

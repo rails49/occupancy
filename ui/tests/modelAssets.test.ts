@@ -110,7 +110,13 @@ describe('the shipped model', () => {
 
     it('copies from what the entry resolves to, relative to ui/', async () => {
       const { detectorCopyTarget } = await loadConfig();
-      const target = detectorCopyTarget(() => standIn);
+      const asked: string[] = [];
+      const target = detectorCopyTarget(id => {
+        asked.push(id);
+        return standIn;
+      });
+
+      expect(asked).toEqual(['@rails49/detector/model']);
 
       expect(target).not.toBeNull();
       expect(target!.dest).toBe(DETECTOR_MODEL_DEST);
