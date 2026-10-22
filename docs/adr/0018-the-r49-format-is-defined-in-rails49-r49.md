@@ -1,5 +1,7 @@
 # The .r49 format is defined in rails49/r49
 
+*Superseded by [ADR 0019](0019-detection-and-training-move-to-rails49-detector.md).*
+
 Status: accepted, not yet built. Replaces the decision in [#55](https://github.com/rails49/occupancy/issues/55).
 
 The corpus is CC BY 4.0 so that others can train on it. An outside reader should not have to read this repository to understand an archive. `rails49/r49` therefore owns the format: a written definition, a TypeScript implementation that reads and writes, a Python implementation that only reads, and conformance cases both must pass. The cases are archives or bare manifests with the expected result, the rule that failed, and the expected DPT within a tolerance. The scales, gauge, vocabulary and recommended DPT sit in one JSON file there that both implementations and the validator read. Code is MIT; archives and the written definition stay CC BY 4.0. Each tag publishes `@rails49/r49` to npm and `rails49-r49` to PyPI, so installing either never downloads the corpus.
