@@ -36,7 +36,9 @@ What each kind of doc holds: org [ADR-0021](https://github.com/rails49/.github/b
   trainable CNN dataset.
 - Everything the app fetches comes from origin (ADR 0006). Import
   `onnxruntime-web/wasm`, never the package root.
-- The model filename is written only in `ui/modelAssets.ts`.
+- The model filename is written only in the detector package: its `./model`
+  exports entry and `DETECTOR_MODEL_FILE` (`lib/detector/tests/model.test.ts`).
+  The UI resolves the entry to copy it and imports the constant to fetch it.
 - `detector/models/version.txt` stays `unreleased`: the current model is
   trained on the 46 fixture images and nothing measures it. There is no
   automated model gate, and no substitute for one (ADR 0007).

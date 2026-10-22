@@ -55,7 +55,7 @@ fi
 
 # Everything the deploy directory may hold. `assets` is vite's hashed output,
 # `ort` and `shoelace` and `models` are `viteStaticCopy` targets named in
-# `ui/ortAssets.ts` and `ui/modelAssets.ts`, and `_headers` and the two SVGs are
+# `ui/ortAssets.ts` and `ui/modelCopy.ts`, and `_headers` and the two SVGs are
 # all of `ui/public/`, which vite copies to the root verbatim.
 ROOT_ENTRIES="_headers index.html assets ort shoelace models favicon.svg icons.svg"
 

@@ -94,9 +94,12 @@ matching GitHub Release, and uploading `model_int8.ort` and `config.json` as
 assets. `bin/test.sh` downloads no model.
 
 The only model that ships is `detector/models/detector_int8.ort` (3.4 MiB).
-Vite copies it into the bundle only if it exists; without it the live view
-shows a no-model banner and reports every sensor `unknown`. The filename is
-written once, in `ui/modelAssets.ts` (`ui/tests/modelAssets.test.ts`).
+The detector package exposes it as its `./model` exports entry, through the
+`lib/detector/models` link (ADR 0019). Vite resolves that entry and copies the
+file into the bundle only if it exists; without it the live view shows a
+no-model banner and reports every sensor `unknown`. The filename is written
+only in the detector package (`lib/detector/tests/model.test.ts`); the UI names
+none (`ui/tests/modelAssets.test.ts`).
 
 ## Deploy
 

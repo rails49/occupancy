@@ -384,11 +384,16 @@ the live view keeps its loop running and reports every sensor `unknown`, because
 total and that is a state SPEC names, while the diagnostics view has no partial answer to give and
 says so. Folding that into the loader would take the choice away from both.
 
-**Which model ships is named once, in `ui/modelAssets.ts`.** It used to be two literals in two files
-that run in different worlds — a build-time copy target in `vite.config.ts` and a run-time fetch
-here — and the gap between them is invisible to the typechecker *and* to the build: a rename touched
-one and 404'd the moment the camera came up. Both now import the constant, and
-`tests/modelAssets.test.ts` fails if either file names the filename itself.
+**Which model ships is named by the detector package, and the UI names no model file** (#234,
+ADR 0019). It used to be two literals in two files that run in different worlds — a build-time copy
+target in `vite.config.ts` and a run-time fetch here — and the gap between them is invisible to the
+typechecker *and* to the build: a rename touched one and 404'd the moment the camera came up. The
+build now copies whatever `@occupancy/detector/model` resolves to (`ui/modelCopy.ts` names the entry
+and the bundle directory), and the fetch goes to `modelAssets.ts`'s `DETECTOR_MODEL_URL`, built from
+the package's `DETECTOR_MODEL_FILE`. They are two modules because `vite.config.ts` cannot import
+anything that imports the package: Vite's config loader leaves workspace packages to Node, which
+cannot load their TypeScript source. `tests/modelAssets.test.ts` fails if any of these files names
+the filename, and builds the UI with a stand-in at the package's entry to check it lands at the URL.
 
 **The CNN is retained but not loaded, and the bundle no longer carries it.** `@occupancy/classifier`
 stays in `lib/` and stays retrainable (SPEC § Option 2), but `ui` does not depend on it and Vite
