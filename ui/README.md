@@ -552,7 +552,7 @@ covered today.
 | `overlayFit(media, frame)` | `{ sx, sy, aspectMismatch }` — how the authored frame maps onto the media's own pixel grid, which is what the overlay's content group is scaled by. Uniform for a photograph of the frame's shape at any pixel count; the identity while nothing is loaded |
 | `OverlayFit` | `{ sx, sy, aspectMismatch }` |
 
-**Both constants stay in `@occupancy/detector`**, whose `carWidthPx` this re-exports. The scale ratio cancels out of the width formula —
+**Both constants are `@occupancy/config`'s**, and `ui/` reaches them only through `@occupancy/detector`'s `carWidthPx`, which this re-exports. The scale ratio cancels out of the width formula —
 a car is 2.09 track-widths wide in **every** scale — so no scale lookup belongs anywhere in `ui/`,
 and no gauge arithmetic is reimplemented here.
 

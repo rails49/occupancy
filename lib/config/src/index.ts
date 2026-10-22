@@ -41,7 +41,7 @@ export {
 
 //── Vocabulary ──────────────────────────────────────────────────────────────
 // The authoring taxonomy, read from @rails49/r49's data file like the gauge
-// and the scales above. The editor's class menu is generated from it.
+// and the scales above. The editor reads that file directly.
 export { VOCABULARY } from './generated.ts';
 
 // Withheld: everything under `classifier` and `cnn` in config.yaml. The

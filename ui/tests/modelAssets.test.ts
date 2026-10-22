@@ -61,6 +61,12 @@ describe('the shipped model', () => {
     }
   });
 
+  it('is fetched by the loader through the assets module', () => {
+    // Without this import a hand-written URL in another directory would pass
+    // the filename check above and 404 at run time.
+    expect(read('ui/src/detectorSession.ts')).toMatch(/from '\.\.?\/modelAssets\.js'/);
+  });
+
   it('is fetched from the directory it is copied into, under the app base', () => {
     expect(DETECTOR_MODEL_URL).toBe(`/${DETECTOR_MODEL_DEST}/${DETECTOR_MODEL_FILE}`);
   });

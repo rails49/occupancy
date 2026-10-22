@@ -9,8 +9,10 @@ import path from 'node:path';
 const repoRoot = path.resolve(__dirname, '../..');
 const guard = path.join(repoRoot, 'bin/check-deploy-source.sh');
 
+// No inherited GIT_ variable: a git hook exports GIT_DIR, which would point
+// these commands at the real repository.
 const env = {
-  ...process.env,
+  ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_'))),
   GIT_AUTHOR_NAME: 'test',
   GIT_AUTHOR_EMAIL: 'test@example.com',
   GIT_COMMITTER_NAME: 'test',
@@ -89,5 +91,25 @@ describe('bin/check-deploy-source.sh', () => {
     const { status, output } = check(work);
     expect(status).not.toBe(0);
     expect(output).toMatch(/origin\/main/);
+  });
+});
+
+describe('the throwaway repositories', () => {
+  it('stay throwaway when the run starts under a git hook', () => {
+    // A hook sets GIT_DIR before this file loads, so the check runs this file
+    // again in a child that starts with one, pointing at a repository of its own.
+    const outer = path.join(dir, 'outer');
+    git(dir, 'init', '-q', '-b', 'main', outer);
+    const run = spawnSync(
+      'pnpm',
+      ['exec', 'vitest', 'run', 'tests/deploySource.test.ts', '-t', 'passes a clean checkout'],
+      {
+        cwd: path.join(repoRoot, 'ui'),
+        env: { ...process.env, GIT_DIR: path.join(outer, '.git') },
+        encoding: 'utf8',
+      }
+    );
+    expect(run.status, run.stdout + run.stderr).toBe(0);
+    expect(fs.readdirSync(path.join(outer, '.git', 'refs', 'heads'))).toEqual([]);
   });
 });
