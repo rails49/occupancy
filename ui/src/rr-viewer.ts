@@ -26,7 +26,7 @@ import { highlightStyles } from './highlight.js';
 import { matteTokens } from './matte.js';
 import { isKnownClass } from './vocabulary.js';
 import type { ReferencePoint, CarLabel, Point, Sensor } from '@rails49/r49';
-import type { Detection } from '@occupancy/detector';
+import type { Detection } from '@rails49/detector';
 import type { SensorState } from './occupancy.js';
 import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
 

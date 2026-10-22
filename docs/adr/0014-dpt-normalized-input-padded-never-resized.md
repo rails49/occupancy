@@ -1,5 +1,7 @@
 # DPT-normalized input, padded and never resized
 
+*Superseded by [rails49/detector ADR 0014](https://github.com/rails49/detector/blob/main/docs/adr/0014-dpt-normalized-input-padded-never-resized.md).*
+
 Status: accepted, not yet built.
 
 Every image is resampled to a constant DPT and padded onto one authored square canvas, never resized. A capture larger than the canvas is tiled with overlap longer than the longest car, and tile detections are joined in full-frame coordinates. [#112](https://github.com/rails49/occupancy/issues/112) measured the model finding far fewer cars when car width in model pixels changes, so scale is normalized instead of following from an input grid.

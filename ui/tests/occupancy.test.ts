@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Sensor } from '@rails49/r49';
-import type { Detection } from '@occupancy/detector';
+import type { Detection } from '@rails49/detector';
 import { covers, occupancy } from '../src/occupancy.js';
 
 /**

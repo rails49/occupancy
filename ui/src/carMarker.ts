@@ -1,8 +1,8 @@
 import { svg, css } from 'lit';
 import type { SVGTemplateResult, CSSResult } from 'lit';
 import type { CarLabel, Point } from '@rails49/r49';
-import { boxCorners } from '@occupancy/detector';
-import type { Detection } from '@occupancy/detector';
+import { boxCorners } from '@rails49/detector';
+import type { Detection } from '@rails49/detector';
 import { carCorners, placeLabel } from './geometry.js';
 import { HIGHLIGHT_CLASS } from './highlight.js';
 import type { CoupledEnds, FrameSize } from './geometry.js';
@@ -402,7 +402,7 @@ export function renderPendingCar(pending: PendingCar, size: CarSymbolSize): SVGT
  * One L0 detection: the model's own oriented box, dashed, labelled with its
  * class and confidence.
  *
- * **The corners come from `@occupancy/detector`'s `boxCorners`, not from
+ * **The corners come from `@rails49/detector`'s `boxCorners`, not from
  * `geometry.ts`'s `carCorners`.** They are two different claims and the
  * difference is the width. An authored car has no stored width — it is derived
  * from DPT, which is why `renderCar` takes the DPT and not a number — while a

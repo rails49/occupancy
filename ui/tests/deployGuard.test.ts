@@ -76,7 +76,7 @@ describe('bin/check-deploy-dir.sh', () => {
   });
 
   it('passes when the optional model directory is absent', () => {
-    // A clone with no `detector/models/` builds fine and ships a no-model
+    // A build with no model succeeds and ships a no-model
     // banner (#85). The inventory is what *may* appear, not what must.
     fs.mkdirSync(path.join(dir, 'models'));
     fs.writeFileSync(path.join(dir, 'models', DETECTOR_MODEL_FILE), 'x');

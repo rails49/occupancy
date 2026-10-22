@@ -10,16 +10,16 @@
  * URL.
  *
  * **The `onnxruntime-web/wasm` specifier is the load-bearing detail.** It must
- * match `lib/detector/src/browser.ts` character for character: two specifiers
+ * match `@rails49/detector`'s `browser.ts` character for character: two specifiers
  * are two module instances, and the `ort.env.wasm` configured here would not be
  * the one the detector's session reads. Putting the import in one file rather
  * than two is the point — see `docs/UI.md` § Model loading.
  */
 
-// Must match the specifier `@occupancy/detector/browser` imports — see above.
+// Must match the specifier `@rails49/detector/browser` imports — see above.
 import * as ort from 'onnxruntime-web/wasm';
-import { loadDetector } from '@occupancy/detector/browser';
-import type { Detector } from '@occupancy/detector/browser';
+import { loadDetector } from '@rails49/detector/browser';
+import type { Detector } from '@rails49/detector/browser';
 import { DETECTOR_MODEL_URL } from '../modelAssets.js';
 
 /** Set once per page, not once per session — `ort.env` is module-global. */

@@ -85,19 +85,23 @@ const serveProtoFixtures = {
  * local model.
  *
  * Resolved through the detector package's `./model` entry, so the filename is
- * the package's (ADR 0019). Resolution fails with `MODULE_NOT_FOUND` when the
- * file is absent, which is a fresh clone's normal state: the build goes on
- * without it and the live view reports every sensor `unknown` / `no-model`.
- * Any other failure — the entry gone from the package — stops the build.
+ * the package's (ADR 0019). A published package with no model has no `./model`
+ * entry (`ERR_PACKAGE_PATH_NOT_EXPORTED`), and a linked checkout with no model
+ * has the entry but not the file (`MODULE_NOT_FOUND`). Either way the build
+ * goes on without it and the live view reports every sensor `unknown` /
+ * `no-model`. Any other failure stops the build.
  *
  * `src` is relative to `ui/`, which is what the plugin resolves against.
  */
-export function detectorCopyTarget(): { src: string; dest: string } | null {
+export function detectorCopyTarget(
+  resolve: (id: string) => string = createRequire(import.meta.url).resolve,
+): { src: string; dest: string } | null {
   let file: string;
   try {
-    file = createRequire(import.meta.url).resolve(DETECTOR_MODEL_ENTRY);
+    file = resolve(DETECTOR_MODEL_ENTRY);
   } catch (err) {
-    if ((err as { code?: unknown }).code === 'MODULE_NOT_FOUND') return null;
+    const code = (err as { code?: unknown }).code;
+    if (code === 'MODULE_NOT_FOUND' || code === 'ERR_PACKAGE_PATH_NOT_EXPORTED') return null;
     throw err;
   }
   return { src: path.relative(__dirname, file), dest: DETECTOR_MODEL_DEST };

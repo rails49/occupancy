@@ -25,26 +25,20 @@ What each kind of doc holds: org [ADR-0021](https://github.com/rails49/.github/b
   `git fetch -q origin && git switch --no-track -c <issue>-<slug> origin/main`.
   Every code change passes the gate and the `code-review` skill before its PR.
 - `SPEC.md` describes the target. Where it or an ADR disagrees with the code
-  (for example `detector.input: [960, 544]` against ADR 0014), the gap is the
-  planned migration; leave it unless the task is that migration.
+  (for example `dptAtHeight(z)`, which `SPEC.md` § Camera height requires and
+  nothing builds), the gap is the planned migration; leave it unless the task
+  is that migration.
 - The `.r49` format is `@rails49/r49`'s, pinned once in `pnpm-workspace.yaml`.
   A format change is a release in `rails49/r49`, then a bump here (ADR 0018).
-- `config.json` and `lib/config/src/` are generated. Edit `config.yaml` and run
-  `pnpm config:generate`. `detector.classes` is append-only (ADR 0009).
-- `dataset/src/data_prep.ts` and `dataset/src/online_diagnostics.ts` stay
-  parked stubs. v4 stores no point markers; see `SPEC.md` § v4 cannot produce a
-  trainable CNN dataset.
+- The detector is `@rails49/detector`, pinned in `pnpm-workspace.yaml`'s
+  catalog. A detector change is a release in `rails49/detector`, then a bump
+  here (ADR 0019). What the pinned version holds: `docs/SYSTEM.md` § The model.
 - Everything the app fetches comes from origin (ADR 0006). Import
   `onnxruntime-web/wasm`, never the package root.
-- The model filename is written only in the detector package: its `./model`
-  exports entry and `DETECTOR_MODEL_FILE` (`lib/detector/tests/model.test.ts`).
-  The UI resolves the entry to copy it and imports the constant to fetch it.
-- `detector/models/version.txt` stays `unreleased`: the current model is
-  trained on the 46 fixture images and nothing measures it. There is no
-  automated model gate, and no substitute for one (ADR 0007).
-- `@occupancy/classifier` keeps its three entry points, so `onnxruntime-node`
-  and `sharp` stay out of the browser bundle. `ui` does not depend on it
-  (ADR 0004).
+- The model filename is `@rails49/detector`'s: its `./model` exports entry and
+  `DETECTOR_MODEL_FILE`. `ui/modelAssets.ts` re-exports the constant to fetch
+  the model, and the build resolves the entry to copy it. No UI file names the
+  filename (`ui/tests/modelAssets.test.ts`).
 - The deploy budget in `bin/check-deploy-dir.sh` is in apparent bytes. `du`
   reports more; measure the way the script does.
 - `bin/deploy.sh` needs Cloudflare credentials. Ask the user to run it.

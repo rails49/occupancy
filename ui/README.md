@@ -325,9 +325,8 @@ One entry per editing session is the unit the user perceives.
 The "Ref Size (mm)" input is gone: it wrote v3's single `size_mm`, and v4's calibration points each
 carry their own world coordinate instead.
 
-Classifier selection is **not implemented**: there is no classifier tab, and the
-`rr-classifier-change` event named in the source JSDoc is never fired. Classifier config comes from
-`models/config.json` at runtime and is deliberately not stored in the manifest.
+Classifier selection is **not implemented**: there is no classifier tab, and nothing loads the
+classifier (ADR 0004).
 
 ---
 
@@ -438,7 +437,7 @@ labeling surface has to own its gestures — but it is the one user-visible cons
 and the labeling device is a phone.
 
 **It still authors nothing** — `calibrationPoints` is drawn from the manifest and never written here,
-and `detections`/`sensorStates` are computed by `@occupancy/detector` and handed down. `interactive`, `activeTool`, `calibration`, and the four events that
+and `detections`/`sensorStates` are computed by `@rails49/detector` and handed down. `interactive`, `activeTool`, `calibration`, and the four events that
 mutated (`rr-marker-add`, `rr-marker-move`, `rr-marker-delete`, `rr-calibration-move`) were removed
 in the v4 reduction and do not come back — v4 has neither point markers nor a draggable `{p0, p1}`
 pair. The viewer reports where the pointer is; deciding what that means is the editor's job, and the
@@ -552,7 +551,7 @@ covered today.
 | `overlayFit(media, frame)` | `{ sx, sy, aspectMismatch }` — how the authored frame maps onto the media's own pixel grid, which is what the overlay's content group is scaled by. Uniform for a photograph of the frame's shape at any pixel count; the identity while nothing is loaded |
 | `OverlayFit` | `{ sx, sy, aspectMismatch }` |
 
-**Both constants are `@occupancy/config`'s**, and `ui/` reaches them only through `@occupancy/detector`'s `carWidthPx`, which this re-exports. The scale ratio cancels out of the width formula —
+**Both constants are `@rails49/detector`'s**, and `ui/` reaches them only through `@rails49/detector`'s `carWidthPx`, which this re-exports. The scale ratio cancels out of the width formula —
 a car is 2.09 track-widths wide in **every** scale — so no scale lookup belongs anywhere in `ui/`,
 and no gauge arithmetic is reimplemented here.
 
@@ -934,7 +933,7 @@ inside a car already labelled ([#43]). `rr-app` owns the toast.
     coplanar points. Below that the fit reproduces its input exactly, so a zero would claim an
     agreement nothing checked. It is what makes a mis-typed coordinate visible instead of silently
     absorbed into the scale.
-  * **Below `@occupancy/detector`'s `MIN_DPT`**, the bar takes the `below-minimum` warning style and says so. It **blocks
+  * **Below `@rails49/detector`'s `MIN_DPT`**, the bar takes the `below-minimum` warning style and says so. It **blocks
     nothing** — the six fixture archives sit at DPT 18–19, under the threshold of 20, and must stay
     openable and editable.
 * **Frame mismatch** (`.frame-warning`), from the viewer's `rr-media-frame`. Shown only when the
@@ -1192,7 +1191,7 @@ Camera stream under the two layers of the occupancy output ([#85]).
   gone.
 * `detect` is asked to answer in **`camera.resolution`**, the frame sensors and labels are authored
   in. The capture's own pixel count, the model grid and the letterbox bars stay inside
-  `@occupancy/detector`; nothing here scales a coordinate.
+  `@rails49/detector`; nothing here scales a coordinate.
 * **The loop runs whether or not a model loaded.** `occupancy()` is total, and with `detections:
   null` it answers every sensor `unknown` / `no-model` — a state SPEC names and the user needs to
   see. Suppressing the loop would leave the previous frame's answers on screen instead.
@@ -1233,12 +1232,12 @@ The shipped detector run over an opened archive, read against the labels a human
   the detector come from the training run's own validation split on `best.pt`; nothing has scored
   `detector_int8.ort`, whose quantisation is Conv-only because quantising the whole graph zeroed
   every score ([#82]). What this reports is **agreement between one model and one archive's labels**
-  — not accuracy, and not a generalization estimate, which `../SPEC.md` § Accuracy makes a property
+  — not accuracy, and not a generalization estimate, which rails49/detector's `SPEC.md` § Accuracy makes a property
   of a held-out protocol over a corpus that does not exist yet.
 * Sweeps images **sequentially**: one ORT session and one WASM heap, so concurrent `detect` calls
   would queue inside the session anyway while making the progress count meaningless and holding
   every decoded bitmap in memory at once.
-* Starts the report at `@occupancy/detector`'s `CONFIDENCE_THRESHOLD`, the default `detect` applies
+* Starts the report at `@rails49/detector`'s `CONFIDENCE_THRESHOLD`, the default `detect` applies
   in the live view, so an untouched report describes what ships.
 * Runs inference at a confidence floor **far below** `CONFIDENCE_THRESHOLD` and filters
   afterwards. That is what `detect`'s `minConfidence` override is for: running at the shipped
@@ -1469,7 +1468,7 @@ exporter.
 | `changedObjects(target, before, after)` | The diff behind `highlights`. Pure, and exported for its own tests |
 | `revealTarget(entry)` | The image an entry must bring into view before it lands, or `undefined`. `EditSession` reads it before an undo or redo. Takes `null` too, since it is asked of a *pending* entry |
 | `HistoryGesture` | An open gesture. One method, `commit()`, returning whether an entry was recorded |
-| `DEFAULT_HISTORY_BUDGET_BYTES` | 256 MB. A UI constant, **not** a `config.yaml` value — nothing outside `ui/` can read it |
+| `DEFAULT_HISTORY_BUDGET_BYTES` | 256 MB. A UI constant — nothing outside `ui/` can read it |
 
 Entries are **scoped snapshots** — `before`/`after` clones of the one subtree touched — so undo and
 redo are one operation with the fields swapped, and there is no per-command inverse to author

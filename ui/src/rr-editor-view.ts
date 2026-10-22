@@ -2,7 +2,7 @@ import { LitElement, html, css } from 'lit';
 import { customElement, property, query, state } from 'lit/decorators.js';
 import { calibrationFit, getDPT, make_id } from '@rails49/r49';
 import type { Image, ManifestData, Point } from '@rails49/r49';
-import { MIN_DPT } from '@occupancy/detector';
+import { MIN_DPT } from '@rails49/detector';
 import { captureFromCamera } from './capture.js';
 import { DriftMeasurements } from './driftMeasurements.js';
 import { driftVerdict, measureAgainst } from './driftSession.js';
@@ -110,8 +110,8 @@ function classOfReclassifyRow(id: string): string | null {
  * Generated from the vocabulary in `@rails49/r49`'s data file (`vocabulary.ts`), so
  * a release adding a subtype there changes this menu at the version bump with **no code
  * edit** — and the root is not among them, because it is required in the
- * stored class and absent from the UI (`SPEC.md` § Parameters live in
- * `config.yaml`).
+ * stored class and absent from the UI (rails49/detector's `SPEC.md` § Parameters
+ * live in `config.yaml`).
  *
  * A subtype that has subtypes of its own is a submenu, and a submenu's first
  * row is that subtype itself: a row that opens something cannot also be chosen,

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { fixture, html } from '@open-wc/testing';
 import { R49Archive } from '@rails49/r49';
-import type { Detection } from '@occupancy/detector';
+import type { Detection } from '@rails49/detector';
 import '../src/rr-live-view.js';
 import { RRLiveView } from '../src/rr-live-view.js';
 import { DETECTOR_MODEL_URL } from '../modelAssets.js';
@@ -21,7 +21,7 @@ const loadDetector = vi.fn(async (_source: string) => ({
   dispose: vi.fn(async () => {}),
 }));
 
-vi.mock('@occupancy/detector/browser', () => ({
+vi.mock('@rails49/detector/browser', () => ({
   loadDetector: (source: string) => loadDetector(source),
 }));
 
@@ -162,7 +162,7 @@ describe('rr-live-view', () => {
 
     const notice = el.shadowRoot!.textContent ?? '';
     expect(notice).to.contain('unknown');
-    expect(notice).to.contain('export_onnx.py');
+    expect(notice).to.contain('rails49/detector');
   });
 
   it('reports every sensor unknown / no-model when the build shipped no model', async () => {

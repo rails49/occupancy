@@ -28,10 +28,8 @@ The wayfinder maps (label `wayfinder:map`) and their closed tickets hold the alt
 │   ├── UI.md            ← how ui/ works, and its invariants
 │   └── research/        ← research notes cited by SPEC.md and the ADRs
 ├── lib/
-├── ui/
-├── dataset/
-├── detector/
-└── classifier/
+├── tools/
+└── ui/
 ```
 
 ## Use the glossary's vocabulary

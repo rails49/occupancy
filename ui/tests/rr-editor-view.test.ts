@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fixture, html } from '@open-wc/testing';
 import { R49Archive, getDPT } from '@rails49/r49';
-import { MIN_DPT } from '@occupancy/detector';
+import { MIN_DPT } from '@rails49/detector';
 import type { ReferencePoint, CarLabel, Point, Sensor, WorldPoint } from '@rails49/r49';
 import { EditSession } from '../src/editSession.js';
 import { HIGHLIGHT_DURATION_MS } from '../src/highlight.js';

@@ -1,12 +1,13 @@
 // @vitest-environment node
 // Node, not jsdom: two of these tests run a real `vite build`, and esbuild
 // refuses jsdom's `TextEncoder`.
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { DETECTOR_MODEL_FILE, DETECTOR_MODEL_URL } from '../modelAssets.js';
-import { DETECTOR_MODEL_DEST } from '../modelCopy.js';
+import { DETECTOR_MODEL_DEST, DETECTOR_MODEL_ENTRY } from '../modelCopy.js';
 
 // Which model ships used to be two string literals in two files that run in
 // different worlds — a build-time copy target and a run-time fetch — and the
@@ -19,15 +20,17 @@ const repoRoot = path.resolve(__dirname, '../..');
 const uiRoot = path.join(repoRoot, 'ui');
 const read = (file: string) => fs.readFileSync(path.join(repoRoot, file), 'utf8');
 
-/** Where the detector package's `./model` entry points, read from its own manifest. */
-const detectorPackage = path.join(repoRoot, 'lib/detector');
-const modelEntry = path.join(
-  detectorPackage,
-  JSON.parse(fs.readFileSync(path.join(detectorPackage, 'package.json'), 'utf8')).exports['./model'],
-);
-
-/** A machine that has exported a model keeps it; these tests never overwrite or remove it. */
-const realModel = fs.existsSync(modelEntry);
+/**
+ * The model the installed package holds, or null. The published package has
+ * none until a measured model ships; a linked checkout may have one.
+ */
+const realModel = (() => {
+  try {
+    return createRequire(import.meta.url).resolve(DETECTOR_MODEL_ENTRY);
+  } catch {
+    return null;
+  }
+})();
 
 /** Load `vite.config.ts` afresh, so it resolves the model as the file system stands now. */
 async function loadConfig() {
@@ -82,10 +85,6 @@ describe('the shipped model', () => {
 
   describe.skipIf(realModel)('with no local model', () => {
     it('has no copy target', async () => {
-      // `version.txt` is tracked, so the directory is there on a fresh clone,
-      // and a copy conditioned on the directory failed every build without a
-      // model.
-      expect(fs.existsSync(path.join(path.dirname(modelEntry), 'version.txt'))).toBe(true);
       const { detectorCopyTarget } = await loadConfig();
       expect(detectorCopyTarget()).toBeNull();
     });
@@ -102,37 +101,50 @@ describe('the shipped model', () => {
     }, 120_000);
   });
 
-  describe("with a model at the package's entry", () => {
-    // A stand-in, unless this machine has a real one. It is written through
-    // the package's entry, not to a path this test knows on its own, so it
-    // lands wherever the package says the model lives.
-    const standIn = 'stand-in model, not a detector';
+  describe('resolving the model entry', () => {
+    // A stand-in resolver, since the published package holds no model yet.
+    const standIn = path.join(os.tmpdir(), DETECTOR_MODEL_FILE);
+    const failing = (code: string) => () => {
+      throw Object.assign(new Error(code), { code });
+    };
 
-    beforeAll(() => {
-      if (!realModel) fs.writeFileSync(modelEntry, standIn);
-    });
-    afterAll(() => {
-      if (!realModel) fs.rmSync(modelEntry, { force: true });
-    });
-
-    it('copies from what the package entry resolves to, relative to ui/', async () => {
+    it('copies from what the entry resolves to, relative to ui/', async () => {
       const { detectorCopyTarget } = await loadConfig();
-      const target = detectorCopyTarget();
+      const asked: string[] = [];
+      const target = detectorCopyTarget(id => {
+        asked.push(id);
+        return standIn;
+      });
+
+      expect(asked).toEqual(['@rails49/detector/model']);
 
       expect(target).not.toBeNull();
       expect(target!.dest).toBe(DETECTOR_MODEL_DEST);
       // Relative, because that is what vite-plugin-static-copy resolves
       // against — an absolute path would copy on this machine and nowhere else.
       expect(path.isAbsolute(target!.src)).toBe(false);
-      expect(fs.realpathSync(path.resolve(uiRoot, target!.src))).toBe(fs.realpathSync(modelEntry));
+      expect(path.resolve(uiRoot, target!.src)).toBe(standIn);
     });
 
+    it('has no target when the package has no ./model entry, or no file behind it', async () => {
+      const { detectorCopyTarget } = await loadConfig();
+      expect(detectorCopyTarget(failing('ERR_PACKAGE_PATH_NOT_EXPORTED'))).toBeNull();
+      expect(detectorCopyTarget(failing('MODULE_NOT_FOUND'))).toBeNull();
+    });
+
+    it('stops the build on any other failure', async () => {
+      const { detectorCopyTarget } = await loadConfig();
+      expect(() => detectorCopyTarget(failing('EACCES'))).toThrow('EACCES');
+    });
+  });
+
+  describe.skipIf(!realModel)('with a model in the package', () => {
     it('is copied by the build to the URL the live view fetches', async () => {
       const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'r49-build-'));
       try {
         await buildInto(outDir);
         const shipped = path.join(outDir, DETECTOR_MODEL_URL);
-        expect(fs.readFileSync(shipped)).toEqual(fs.readFileSync(modelEntry));
+        expect(fs.readFileSync(shipped)).toEqual(fs.readFileSync(realModel!));
         // Copied, not linked: the deploy guard refuses a symlink.
         expect(fs.lstatSync(shipped).isSymbolicLink()).toBe(false);
       } finally {

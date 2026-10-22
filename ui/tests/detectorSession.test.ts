@@ -15,7 +15,7 @@ const loadDetector = vi.fn(async (_source: string) => ({
   dispose: vi.fn(),
 }));
 
-vi.mock('@occupancy/detector/browser', () => ({
+vi.mock('@rails49/detector/browser', () => ({
   loadDetector: (source: string) => loadDetector(source),
 }));
 

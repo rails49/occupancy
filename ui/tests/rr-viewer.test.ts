@@ -8,7 +8,7 @@ import type {
   ViewerPointerEventName,
 } from '../src/rr-viewer.js';
 import { HIGHLIGHT_CLASS } from '../src/highlight.js';
-import type { Detection } from '@occupancy/detector';
+import type { Detection } from '@rails49/detector';
 import type { SensorState } from '../src/occupancy.js';
 
 // Mock ResizeObserver

@@ -1,4 +1,4 @@
-import { carWidthPx } from '@occupancy/detector';
+import { carWidthPx } from '@rails49/detector';
 import type { ReferencePoint, CarLabel, Point, Sensor } from '@rails49/r49';
 
 /**
@@ -74,13 +74,13 @@ export function sensorDiameterPx(dpt: number | null, imagePxPerScreenPx: number)
 /**
  * Car width in image pixels, derived from DPT rather than stored per label.
  *
- * **Re-exported from `@occupancy/detector`, not implemented here** (#85). It
+ * **Re-exported from `@rails49/detector`, not implemented here** (#85). It
  * was a second copy of `DPT * STANDARD_WIDTH / STANDARD_GAUGE` until the live
  * view started drawing detections beside labels, at which point the two copies
  * became one picture: L1 replaces a predicted width with this constant before
  * testing a sensor, so a rectangle drawn from a different one would put a
  * sensor visibly outside a box that reads `occupied`. Issue #83 moved it out of
- * `dataset` for exactly this reason and missed the editor's copy.
+ * the training-data export for exactly this reason and missed the editor's copy.
  *
  * Kept as a name in this module rather than imported at each call site because
  * "no scale lookup belongs anywhere in the editor" is a rule about this file:

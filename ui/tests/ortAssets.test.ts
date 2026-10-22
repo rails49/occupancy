@@ -22,18 +22,13 @@ const ortDist = path.dirname(require.resolve('onnxruntime-web/ort-wasm-simd-thre
 const repoRoot = path.resolve(__dirname, '../..');
 const read = (file: string) => fs.readFileSync(path.join(repoRoot, file), 'utf8');
 
-/**
- * Every module that imports ORT. They must agree about all of this.
- *
- * The classifier is on the list although nothing loads it any more (#7, #85):
- * it stays retrainable and revivable, and a revival that came back on the
- * package root would pull the oversized jsep binary into a bundle that had
- * stopped checking.
- */
+/** The installed `@rails49/detector`, as the UI resolves it. */
+const detectorDir = fs.realpathSync(path.join(repoRoot, 'ui/node_modules/@rails49/detector'));
+
+/** Every module that imports ORT. They must agree about all of this. */
 const ORT_IMPORTERS = [
-  'lib/classifier/src/browser.ts',
-  'lib/detector/src/browser.ts',
-  'ui/src/detectorSession.ts',
+  path.join(detectorDir, 'dist/browser.js'),
+  path.join(repoRoot, 'ui/src/detectorSession.ts'),
 ];
 
 /** Every `ort-wasm-simd-threaded*.wasm` an ORT dist file names, following glue modules. */
@@ -74,7 +69,7 @@ describe('ORT wasm assets', () => {
     // other, so a second version would fail at runtime, in the browser.
     const uiInstall = fs.realpathSync(path.join(repoRoot, 'ui', path.dirname(ortCopyTargets[0].src)));
     expect(uiInstall).toBe(fs.realpathSync(ortDist));
-    const detectorRequire = createRequire(path.join(repoRoot, 'lib/detector/package.json'));
+    const detectorRequire = createRequire(path.join(detectorDir, 'package.json'));
     const detectorDist = path.dirname(detectorRequire.resolve(`onnxruntime-web/${ORT_WASM_BINARY}`));
     expect(fs.realpathSync(detectorDist)).toBe(uiInstall);
   });
@@ -82,7 +77,7 @@ describe('ORT wasm assets', () => {
   it('lets the UI decide the runtime version, and the workspace resolves one', () => {
     // A peer dependency, so the detector package can never install a runtime
     // of its own beside the UI's (ADR 0019).
-    const detector = JSON.parse(read('lib/detector/package.json'));
+    const detector = JSON.parse(fs.readFileSync(path.join(detectorDir, 'package.json'), 'utf8'));
     expect(detector.peerDependencies).toHaveProperty('onnxruntime-web');
     expect(detector.dependencies ?? {}).not.toHaveProperty('onnxruntime-web');
     const versions = new Set(read('pnpm-lock.yaml').match(/^ {2}onnxruntime-web@[^:(]+/gm));
@@ -109,10 +104,11 @@ describe('ORT wasm assets', () => {
   it('is reached through the WASM-EP entry point everywhere ORT is imported', () => {
     // Both files must name the same specifier: two specifiers are two module
     // instances, and the `ort.env.wasm` the live view configures would not be
-    // the one the classifier's session reads.
+    // the one the detector's session reads.
     for (const file of ORT_IMPORTERS) {
-      expect(read(file), file).toMatch(/from ['"]onnxruntime-web\/wasm['"]/);
-      expect(read(file), file).not.toMatch(/from ['"]onnxruntime-web['"]/);
+      const source = fs.readFileSync(file, 'utf8');
+      expect(source, file).toMatch(/from ['"]onnxruntime-web\/wasm['"]/);
+      expect(source, file).not.toMatch(/from ['"]onnxruntime-web['"]/);
     }
   });
 
@@ -158,7 +154,7 @@ describe('ORT wasm assets', () => {
     // detector is what the live view loads: this is the shipped path, and the
     // guard is only worth anything on the path that runs.
     const ort = await import('onnxruntime-web/wasm');
-    const { loadDetector } = await import('@occupancy/detector/browser');
+    const { loadDetector } = await import('@rails49/detector/browser');
     const previous = ort.env.wasm.wasmPaths;
     ort.env.wasm.wasmPaths = undefined;
     try {

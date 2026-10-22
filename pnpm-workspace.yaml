@@ -1,13 +1,11 @@
 packages:
   - "lib/*"
   - "tools/*"
-  - "dataset"
   - "ui"
-# The .r49 format package, pinned once for every package here and for
-# bin/generate_config.py, which reads its data file (ADR 0018).
+# The packages from rails49/r49 and rails49/detector, pinned once for every
+# package here (ADR 0018, ADR 0019).
 catalog:
+  "@rails49/detector": 0.0.1
   "@rails49/r49": 0.1.0
 allowBuilds:
   esbuild: true
-  onnxruntime-node: true
-  sharp: true

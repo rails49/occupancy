@@ -1,7 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { lookTheme } from '@rails49/look';
 import { customElement, property, state } from 'lit/decorators.js';
-import type { Frame } from '@occupancy/detector';
+import type { Frame } from '@rails49/detector';
 import { KIND_COLOR, KIND_LABEL, LABEL_INK, describeFinding, findingBounds } from './diagnostics.js';
 import { isInsideOpenDialog, isTypingTarget } from './keyboard.js';
 import type { Finding, ImageDiagnostics } from './diagnostics.js';

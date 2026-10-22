@@ -14,26 +14,23 @@ The application is offered as a static webapp served at https://occupancy.rails4
 
 ## 🛠 Development
 
-Requires [pnpm](https://pnpm.io/) and [uv](https://github.com/astral-sh/uv). Run from the repository root unless noted.
+Requires [pnpm](https://pnpm.io/) and Node at the version in `.nvmrc`. Run from the repository root unless noted.
 
 | Task | Command |
 | :--- | :--- |
 | Install dependencies | `pnpm install` |
-| Full check (typecheck, UI lint, TS tests, look-check, UI build, Python lint) | `bin/test.sh` |
+| Full check (typecheck, UI lint, TS tests, look-check, UI build) | `bin/test.sh` |
 | Install the hooks: pre-commit refuses commits on `main`, pre-push runs `bin/test.sh` | `bin/install-hooks.sh` |
 | Typecheck all packages | `pnpm typecheck` |
 | Lint `ui/src` (`eslint.config.mjs`) | `pnpm lint` |
 | All TS tests | `pnpm test` |
-| Tests for one package | `pnpm --filter @occupancy/detector test` |
+| Tests for one package | `pnpm --filter @occupancy/drift test` |
 | A single test file | `pnpm --filter @occupancy/ui test tests/carMarker.test.ts` |
 | Watch mode (ui) | `pnpm --filter @occupancy/ui test:watch` |
 | The chrome check alone | `ui/node_modules/.bin/look-check ui/src ui/index.html` |
 | UI dev server | `pnpm --filter @occupancy/ui dev` (`dev:http` for plain HTTP) |
 | Build the UI | `pnpm build` |
-| Regenerate `config.json` and `lib/config` | `pnpm config:generate` |
-| Python lint, format, types | `cd <classifier/resnet\|detector> && uv run ruff check . && uv run black --check . && uv run pyright` |
-| Derive the detector dataset | `pnpm --filter dataset run export:yolo` (reads `dataset/r49/`, writes `dataset/yolo/`) |
-| Fine-tune and export the detector | `cd detector && uv run python train.py && uv run python export_onnx.py` |
+| Run the UI against a local model | build `lib/detector` with a model in a [rails49/detector](https://github.com/rails49/detector/blob/main/README.md) checkout beside this one, then `cd ui && pnpm link ../../detector/lib/detector`; undo with `git checkout pnpm-lock.yaml && pnpm install` |
 | Score the drift check on the fixtures | `pnpm --filter @occupancy/drift-bench bench` (needs `rails49/r49` cloned at `../r49`; about 10 minutes) |
 | Deploy to Cloudflare Pages | `bin/deploy.sh` |
 
@@ -49,7 +46,8 @@ than a description of what ships today.
 
 See [docs/SYSTEM.md](docs/SYSTEM.md) for how the stages fit together, and
 [lib/CLAUDE.md](lib/CLAUDE.md) for the interface convention the shared
-TypeScript libraries follow.
+TypeScript libraries follow. The detector, its training and the training data
+are in [rails49/detector](https://github.com/rails49/detector).
 
 Pull requests are welcome. By contributing you agree that your contributions
 are licensed under the [GNU Affero General Public License v3.0](LICENSE), the

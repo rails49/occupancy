@@ -3,9 +3,9 @@ import { lookTheme } from '@rails49/look';
 import { customElement, property, state } from 'lit/decorators.js';
 import type { R49Archive } from '@rails49/r49';
 import { getDPT } from '@rails49/r49';
-import { CONFIDENCE_THRESHOLD } from '@occupancy/detector';
-import type { Detection, Frame } from '@occupancy/detector';
-import type { Detector } from '@occupancy/detector/browser';
+import { CONFIDENCE_THRESHOLD } from '@rails49/detector';
+import type { Detection, Frame } from '@rails49/detector';
+import type { Detector } from '@rails49/detector/browser';
 import { openDetector, DETECTOR_SOURCE } from './detectorSession.js';
 import { diagnoseImage, rollUp } from './diagnostics.js';
 import type { ArchiveDiagnostics } from './diagnostics.js';
@@ -202,8 +202,8 @@ export class RRDiagnosticsView extends LitElement {
       this._run = {
         kind: 'failed',
         message:
-          `No detector could be loaded from ${DETECTOR_SOURCE}. Build one with ` +
-          `\`uv run python export_onnx.py\` in \`detector/\`, then rebuild the UI. ` +
+          `No detector could be loaded from ${DETECTOR_SOURCE}. No model has been published ` +
+          `yet; to use one, link a rails49/detector checkout that has one, then rebuild the UI. ` +
           `(${err instanceof Error ? err.message : String(err)})`,
       };
       return;
