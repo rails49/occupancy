@@ -45,6 +45,7 @@ vi.mock('../src/driftSession.js', async importOriginal => {
   // inside the two functions replaced below.
   const actual = await importOriginal<typeof import('../src/driftSession.js')>();
   return {
+    MAX_DRIFT_TRACK_FRACTION: actual.MAX_DRIFT_TRACK_FRACTION,
     maxDriftPx: actual.maxDriftPx,
     driftVerdict: actual.driftVerdict,
     openDriftCheck: (...args: unknown[]) => (openDriftCheck as any)(...args),
