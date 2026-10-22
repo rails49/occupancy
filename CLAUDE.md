@@ -10,11 +10,11 @@ gate: pnpm install --frozen-lockfile && bin/test.sh
 
 ## Where things are
 
-What each kind of doc holds: org [ADR-0017](https://github.com/rails49/.github/blob/main/docs/adr/0017-each-fact-has-one-owner-and-an-accepted-adr-does-not-change.md). See `docs/agents/domain.md`.
+What each kind of doc holds: org [ADR-0021](https://github.com/rails49/.github/blob/main/docs/adr/0021-each-fact-has-one-owner-and-the-glossary-is-glossary-md.md). See `docs/agents/domain.md`.
 
 - Commands: `README.md`.
 - How the stages fit together, models, deploy: `docs/SYSTEM.md`.
-- Terms: `CONTEXT.md`. Decisions: `docs/adr/`. Requirements: `SPEC.md`.
+- Terms: `GLOSSARY.md`. Decisions: `docs/adr/`. Requirements: `SPEC.md`.
 - Before touching `lib/`, read `lib/CLAUDE.md`. Before touching `ui/`, read
   `ui/CLAUDE.md`.
 
@@ -55,4 +55,4 @@ The five canonical triage roles, used verbatim as label strings. See `docs/agent
 
 ### Domain docs
 
-Single context: `CONTEXT.md`, `docs/adr/` and `SPEC.md`. See `docs/agents/domain.md`.
+Single context: `GLOSSARY.md`, `docs/adr/` and `SPEC.md`. See `docs/agents/domain.md`.
