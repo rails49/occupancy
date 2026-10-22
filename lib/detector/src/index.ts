@@ -3,7 +3,7 @@
 // This file is the package's interface — the only surface consumers may rely
 // on. Anything not exported here is internal and may change without notice.
 // Per-symbol documentation lives on the declarations in ./types.ts,
-// ./geometry.ts, ./classIndex.ts and ./overlap.ts, because TypeScript discards doc comments
+// ./geometry.ts, ./classIndex.ts, ./overlap.ts and ./thresholds.ts, because TypeScript discards doc comments
 // written on re-export statements.
 //
 // The name undersells it. This root entry point is really the **car box**
@@ -47,6 +47,14 @@ export { detectorClassIndex } from './classIndex.ts';
 // something down.
 export { convexIntersectionArea, polygonArea, polygonIoU } from './overlap.ts';
 
+//── Thresholds ───────────────────────────────────────────────────────────────
+// The detector's two numbers that something outside it acts on. `MIN_DPT` is
+// the detector's requirement, so the editor's warning reads it here (ADR
+// 0018); `CONFIDENCE_THRESHOLD` is what `detect` applies by default, so the
+// diagnostics view starts from the same value the live view gets (#232).
+// `config.yaml` still authors both until the split (ADR 0019).
+export { CONFIDENCE_THRESHOLD, MIN_DPT } from './thresholds.ts';
+
 // Withheld: `occupancy`, `SensorState` and `UnknownReason`, with `covers`, the
 // point-in-oriented-box test. L1 moved to the UI (#231, ADR 0019); it builds
 // on `carWidthPx` and the `Detection` shape from here. `boxCorners` is
@@ -66,7 +74,8 @@ export { convexIntersectionArea, polygonArea, polygonIoU } from './overlap.ts';
 // could pass while the real one fails. Add it when something wants to score a
 // corpus offline, not before.
 //
-// Withheld: `DETECTOR_CLASSES`, `DETECTOR_CONFIDENCE_THRESHOLD` and
-// `DETECTOR_INPUT`. They are `@occupancy/config`'s, generated from
-// `config.yaml`; re-exporting them here would give them a second import path
-// and an implied second owner.
+// Withheld: `DETECTOR_CLASSES` and `DETECTOR_INPUT`. They are
+// `@occupancy/config`'s, generated from `config.yaml`, and only this package
+// reads them; re-exporting them here would give them a second import path and
+// an implied second owner. The thresholds above are the exception because a
+// consumer acts on them, and the UI reads them only from here.
