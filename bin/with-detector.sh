@@ -16,11 +16,22 @@ fi
 
 detector=$(cd ../detector && pwd)
 work=$(mktemp -d "${TMPDIR:-/tmp}/with-detector.XXXXXX")
-trap 'git checkout -q HEAD -- "${pinned[@]}" && pnpm install --frozen-lockfile >/dev/null; rm -rf "$work"' EXIT
+trap 'rm -rf "$work"' EXIT
 
 pnpm --dir "$detector" --filter @rails49/detector build
 "$detector/bin/check-package.sh" "$work"
 tarball=$(echo "$work"/*.tgz)
+
+restore() {
+  local status=$?
+  rm -rf "$work"
+  if ! (git checkout -q HEAD -- "${pinned[@]}" && pnpm install --frozen-lockfile >/dev/null); then
+    echo "❌ could not put the pinned @rails49/detector back; run pnpm install" >&2
+    status=1
+  fi
+  exit "$status"
+}
+trap restore EXIT
 
 # A catalog entry cannot be a file: spec, so the tarball goes in as an override.
 node - "$tarball" <<'JS'
@@ -33,8 +44,8 @@ pnpm install --no-frozen-lockfile
 
 pnpm --filter @occupancy/ui ls @rails49/detector --json | node -e '
 const [ui] = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
-const resolved = ui.dependencies["@rails49/detector"].resolved;
-if (!resolved.startsWith("file:")) {
+const resolved = ui.dependencies?.["@rails49/detector"]?.resolved;
+if (!resolved?.startsWith("file:")) {
   console.error(`❌ the UI has @rails49/detector from ${resolved}, not the tarball`);
   process.exit(1);
 }'
@@ -42,7 +53,9 @@ if (!resolved.startsWith("file:")) {
 # One onnxruntime-web: the ort.env.wasm the UI configures must be the one the
 # detector's session reads (ui/src/detectorSession.ts).
 resolve() { (cd "$1" && node -p "require('fs').realpathSync(require.resolve('onnxruntime-web'))"); }
-if [ "$(resolve ui)" != "$(resolve ui/node_modules/@rails49/detector)" ]; then
+ui_ort=$(resolve ui)
+detector_ort=$(resolve ui/node_modules/@rails49/detector)
+if [ "$ui_ort" != "$detector_ort" ]; then
   echo "❌ @rails49/detector resolves a different onnxruntime-web from the UI's" >&2
   exit 1
 fi
