@@ -481,7 +481,7 @@ export class RRDiagnosticsReport extends LitElement {
   private _renderRow(image: ImageDiagnostics) {
     const open = this._expanded === image.filename;
     const cell = (n: number, kind: FindingKind) =>
-      html`<td class=${n === 0 ? 'zero' : 'kind'} style=${n ? `--kind:${KIND_COLOR[kind]}` : ''}>
+      html`<td class=${n === 0 ? 'zero' : 'kind'} style="${n ? `--kind:${KIND_COLOR[kind]}` : ''}">
         ${n}
       </td>`;
     const disagreeing = image.findings.filter(f => f.kind !== 'agreed');

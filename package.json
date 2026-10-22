@@ -5,7 +5,7 @@
   "packageManager": "pnpm@9.15.9",
   "scripts": {
     "typecheck": "pnpm -r typecheck",
-    "lint": "eslint ui/src",
+    "lint": "node --test 'eslint/*.test.mjs' && eslint ui/src",
     "test": "pnpm -r test",
     "build": "pnpm -r build",
     "deploy": "./bin/deploy.sh",

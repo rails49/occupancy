@@ -120,8 +120,9 @@ opens a bump pull request here
 ## Coding standards
 
 * `pnpm lint` ([`../eslint.config.mjs`](../eslint.config.mjs), run by the gate) checks `src/`: no
-  `any`, an inline `style=` sets custom properties only, element tags are `rr-<noun>[-<qualifier>]`,
-  and each element file declares its tag in `HTMLElementTagNameMap`.
+  `any`; a `style` attribute in an `html` or `svg` template is quoted and sets custom properties
+  only; element tags are `rr-<noun>[-<qualifier>]` and keys of the file's `HTMLElementTagNameMap`,
+  which goes at the bottom of the file. A declaration written wholly as `${}` is not checked.
 * Where a type is loose, write a narrow local interface or a type guard.
 * A value a component can only compute at render time goes in a custom property, and its rule stays
   in `static styles` (`rr-viewer`'s zoom transform writes three numbers as `--zoom-*`). Shoelace part
