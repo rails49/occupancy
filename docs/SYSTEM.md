@@ -29,9 +29,9 @@ the images at load time, and both UI views gate on them (#89).
         │       ▼
         │   detector/models/             detector_int8.ort (not in git)
         │       │
-        │       └─▶ lib/detector/         loadDetector → L0 → occupancy() → L1
+        │       └─▶ lib/detector/         loadDetector → L0
         │               │
-        │               └─▶ ui/           rr-live-view: L0 boxes, sensors   #85
+        │               └─▶ ui/           occupancy() → L1; rr-live-view: L0 boxes, sensors   #85
         │
         └── parked: no crop derivation runs (#8, #18)
                 ▼
