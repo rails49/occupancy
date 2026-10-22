@@ -7,14 +7,6 @@ cd "$(dirname "$0")/.."
 echo "🔍 Checking that the checkout is origin/main..."
 bin/check-deploy-source.sh
 
-# Build config.json locally
-echo "🔧 Generating config.json from config.yaml..."
-if [ ! -f "config.yaml" ]; then
-  echo "❌ Error: config.yaml not found at project root."
-  exit 1
-fi
-uv run --with pyyaml python3 -c "import yaml, json; json.dump(yaml.safe_load(open('config.yaml')), open('config.json', 'w'), indent=2)"
-
 # Ensure CLOUDFLARE_API_TOKEN is set
 if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
   if command -v op &>/dev/null; then

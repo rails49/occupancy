@@ -1,31 +1,14 @@
 # Shared Libraries
 
 All written in TypeScript, all consumed as source — nothing here is built or
-published. `ui/` and `dataset/` are the only consumers.
+published. `ui/` and `tools/drift-bench` are the only consumers.
 
-* `classifier` : ONNX Runtime image classifier (browser and node targets)
-* `detector` : car boxes — the YOLO OBB session (browser), the L0 decode, and
-  the span→box construction the exporter uses. L1 is the UI's
-  (`ui/src/occupancy.ts`, ADR 0019)
 * `drift` : camera-drift detection — block-wise phase correlation over an
   archive's own images, measuring only, deciding nothing
-* `config` : **generated** from `config.yaml` — layout and detector constants
 
-## `config` is generated, and committed
-
-`lib/config/src/` is emitted by `pnpm config:generate` (`bin/generate_config.py`)
-and **must not be hand-edited** — edit `config.yaml` and regenerate. It is
-committed rather than gitignored so a fresh clone typechecks before anyone runs
-a generator, and `bin/test.sh` regenerates into a temp tree and diffs, so a
-`config.yaml` edit without a regenerate fails the full check.
-
-The interface convention below holds for it too: the generator emits `index.ts`
-as a header of explicit named exports with a "Withheld" note, and the values
-with their TSDoc in a sibling `generated.ts`. Both carry a DO-NOT-EDIT banner.
-If you need a new value exported, add it to the generator's
-`render_generated_ts` and `render_index_ts` — not to the output.
-
-Python keeps reading `config.yaml` directly and must not consume this package.
+The detector package, `@rails49/detector`, is not here: it comes from npm and
+its interface rules are rails49/detector's
+([`lib/CLAUDE.md`](https://github.com/rails49/detector/blob/main/lib/CLAUDE.md)).
 
 ## The interface convention
 
@@ -58,18 +41,14 @@ Three rules:
   bundle time. A `paths` entry — especially a wildcard one — would let deep
   imports typecheck cleanly and then fail only at build.
 
-* **A header cannot hide class members.** `BrowserClassifier` is exported, so
-  all of its public methods are public regardless of what `index.ts` says.
-  Narrowing a class's surface means `private`, `#field`, or deletion.
+* **A header cannot hide class members.** An exported class's public methods
+  are all public regardless of what `index.ts` says. Narrowing a class's
+  surface means `private`, `#field`, or deletion.
 
-* **`classifier` has three entry points, not one.** `.` carries only the config
-  type; `./browser` and `./node` carry the classifiers. The split is what keeps
-  `onnxruntime-node` and `sharp` out of the browser bundle, so it is load-
-  bearing, not stylistic.
-
-* **`drift` has one, and that is the decision.** `classifier` and `detector`
-  split entry points to keep a platform's runtime out of the other platform's
-  bundle. `drift` has no runtime to keep out of anything: the FFT is hand-rolled
+* **`drift` has one entry point, and that is the decision.** A package splits
+  entry points to keep a platform's runtime out of the other platform's
+  bundle, as `@rails49/detector` keeps ORT behind `./browser`. `drift` has no
+  runtime to keep out of anything: the FFT is hand-rolled
   (~60 lines, against opencv.js at ~10.5 MiB) and every input is a `GrayPlane`,
   which is why `ImageData` is **not** the parameter type — it does not exist in
   Node, and `tools/drift-bench` is a first-class consumer that must score the
@@ -83,22 +62,6 @@ Three rules:
   fraction of a *track width*, not a pixel count: `ui/src/driftSession.ts`'s
   `maxDriftPx` multiplies it by the layout's DPT, which is the only place that
   conversion happens.
-
-* **`detector` has two, and the second one is the same idea.** `.` is pure —
-  types, geometry and the two thresholds, importable from node, which is how
-  `dataset` gets `spanToPolygon` and the editor gets `MIN_DPT` without loading
-  ORT — and `./browser` carries the ORT session. There is no
-  `./geometry`: pure geometry has no dependency to keep out of anything, so a
-  third entry point would be ceremony. `loadDetector` is a factory rather than
-  a constructor plus `await load()` on purpose — an unloaded session cannot be
-  represented, so `detect` has no null branch and "model not loaded" stays the
-  view's `unknown` rather than an empty detection list.
-
-  `./model` is not a module: it resolves to the `.ort` file, which the UI
-  build copies into the bundle when it exists (ADR 0019). An `exports` target
-  may not leave the package, so `models` is a link to `detector/models/`,
-  where the exporter writes, until the split. `DETECTOR_MODEL_FILE` on `.` is
-  the same name, for the browser's fetch.
 
 ## Adding an export
 

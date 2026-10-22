@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { render, svg } from 'lit';
 import type { CarLabel } from '@rails49/r49';
-import type { Detection } from '@occupancy/detector';
+import type { Detection } from '@rails49/detector';
 import {
   renderCar,
   renderCoupler,

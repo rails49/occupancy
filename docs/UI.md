@@ -152,7 +152,7 @@ before it, which is worse than having no undo. Rules, from entries being scoped 
 and is the **only place in `ui/` a class name comes from** — including the class
 a new car is created as, which is the taxonomy's root rather than a literal `'stock'`. A hardcoded
 class anywhere in `ui/` breaks the data-file→menu path while still typechecking. Rules, each stated in
-`SPEC.md` § Parameters live in `config.yaml`:
+rails49/detector's [`SPEC.md` § Parameters live in `config.yaml`](https://github.com/rails49/detector/blob/main/SPEC.md#parameters-live-in-configyaml):
 
 * **The root is required in the stored class and never rendered.** An unrooted class is a
   segment-prefix of no `detector.classes` entry and is dropped from the export — the
@@ -266,7 +266,7 @@ that happens to need it first. Rules it encodes, each wrong somewhere if reimple
 
 * **No scale lookup.** The ratio cancels out of `DPT × STANDARD_WIDTH / STANDARD_GAUGE`, so a car is
   2.09 track-widths wide in every scale. `carWidthPx` itself is **re-exported from
-  `@occupancy/detector`** rather than implemented here, so the width L1 normalizes with and the
+  `@rails49/detector`** rather than implemented here, so the width L1 normalizes with and the
   width the editor draws cannot disagree.
 * **Objects draw at world sizes; annotations at screen sizes.** A sensor is one track width across
   (`trackWidthPx` *is* DPT: px/mm × gauge_mm) and a car is 2.09, so both shrink with the
@@ -388,15 +388,14 @@ says so. Folding that into the loader would take the choice away from both.
 ADR 0019). It used to be two literals in two files that run in different worlds — a build-time copy
 target in `vite.config.ts` and a run-time fetch here — and the gap between them is invisible to the
 typechecker *and* to the build: a rename touched one and 404'd the moment the camera came up. The
-build now copies whatever `@occupancy/detector/model` resolves to (`ui/modelCopy.ts` names the entry
+build now copies whatever `@rails49/detector/model` resolves to (`ui/modelCopy.ts` names the entry
 and the bundle directory), and the fetch goes to `modelAssets.ts`'s `DETECTOR_MODEL_URL`, built from
-the package's `DETECTOR_MODEL_FILE`. They are two modules because `vite.config.ts` cannot import
-anything that imports the package: Vite's config loader leaves workspace packages to Node, which
-cannot load their TypeScript source. `tests/modelAssets.test.ts` fails if any of these files names
+the package's `DETECTOR_MODEL_FILE`. They are two modules so that `vite.config.ts` loads no package
+code. `tests/modelAssets.test.ts` fails if any of these files names
 the filename, and builds the UI with a stand-in at the package's entry to check it lands at the URL.
 
-**The CNN is retained but not loaded, and the bundle no longer carries it.** `@occupancy/classifier`
-stays in `lib/` and stays retrainable (SPEC § Option 2), but `ui` does not depend on it and Vite
+**The CNN is retained but not loaded, and the bundle no longer carries it.** The classifier
+stays retrainable in rails49/detector (SPEC § Option 2), but `ui` does not depend on it and Vite
 copies no `model_int8.ort`. L1 is a pure function of L0 (`SPEC.md` § Occupancy Output), so the
 per-sensor answer is a geometric consequence of the detector's boxes and there is nothing left for a
 second model to say — one model, one ORT session, one vocabulary, settled in #7. Reintroducing a
@@ -412,20 +411,20 @@ cross-origin-isolates the app's origin, without which ORT silently runs one WASM
 rejects any cross-origin subresource, so the jsDelivr branch that used to serve the runtime is gone
 and cannot come back on its own. It existed because the default `onnxruntime-web` entry asks for the
 jsep (WebGPU/WebNN) binary, which is 25.02 MiB — 0.02 over Cloudflare's per-file limit. The app
-requests `executionProviders: ['wasm']` and needs none of jsep, so `detectorSession.ts`,
-`lib/detector/src/browser.ts` and `lib/classifier/src/browser.ts` all import
+requests `executionProviders: ['wasm']` and needs none of jsep, so `detectorSession.ts` and
+`@rails49/detector/browser` both import
 **`onnxruntime-web/wasm`**, whose 12.42 MiB binary fits. Those specifiers must stay identical: two
 specifiers are two module instances, and the
 `ort.env.wasm` set here would not be the one the detector's session reads. Two versions would be
 two instances as well, and worse, the WASM files copied from the UI's install would not match the
-JavaScript bundled from the detector's: `@occupancy/detector` takes `onnxruntime-web` as a peer
+JavaScript bundled from the detector's: `@rails49/detector` takes `onnxruntime-web` as a peer
 dependency, so the UI's own dependency decides the one version (ADR 0019). `ui/ortAssets.ts` holds
 the reasoning and the copy targets; `tests/ortAssets.test.ts` holds the chain to them.
 
 **Only two ORT files are copied** — the binary and `ort-wasm-simd-threaded.mjs`, its Emscripten
 glue, which ORT resolves against `wasmPaths` exactly like the binary. Everything else in ORT's
 `dist/` reaches the browser through Rollup; globbing the directory put 44 MB of webgl, webgpu and
-node builds in the bundle that nothing could fetch. `@occupancy/detector` sets **no** default
+node builds in the bundle that nothing could fetch. `@rails49/detector` sets **no** default
 `wasmPaths` and throws if none is set: a library cannot know the app's base path — the old `/ort/`
 guess was a 404 under the `/ui/` base this app used to have, and is right today only by coincidence
 of `base` being `/` — and `vite.config.ts`'s `dropUnfetchableOrtWasm` removes the copy ORT
@@ -435,14 +434,14 @@ would otherwise fall back to — so an unset path fails on a hashed filename wit
 **Do not reintroduce it there** — the duplication was a standing hazard, and nothing in the reduced
 editor needs inference.
 
-Vite copies the model into the bundle only if `detector/models/` exists, so builds and typechecks
-must keep working with no local model present — that directory is gitignored and absent on a fresh
-clone. Without it the live view starts, shows the no-model banner and reports every sensor
+Vite copies the model into the bundle only if `@rails49/detector/model` resolves to a file, so
+builds and typechecks must keep working with no model present — `0.0.1` carries none, and a linked
+checkout may have none. Without it the live view starts, shows the no-model banner and reports every sensor
 `unknown`.
 
 ## L1 lives in `occupancy.ts` (#231)
 
-`occupancy()`, `SensorState` and `UnknownReason` are the UI's, not `@occupancy/detector`'s
+`occupancy()`, `SensorState` and `UnknownReason` are the UI's, not `@rails49/detector`'s
 (ADR 0019). Sensors are authored in the editor and training never reads them, so the per-sensor
 answer belongs with the app that reports it, and ADR 0005's bias toward occupied is a rule about
 that report. What L1 builds on stays in the package: the `Detection` shape and `carWidthPx`, the
@@ -574,7 +573,7 @@ both print.
 nothing out, so anything left in a Lit element is untestable. Rules that are decisions rather than
 implementation:
 
-* **It is not in `@occupancy/detector`.** That package's root is the car-box geometry both sides of
+* **It is not in `@rails49/detector`.** That package's root is the car-box geometry both sides of
   the model need. Scoring belongs to whoever is evaluating, and that is one view in one app today —
   the package's own interface note says to add a `./node` entry point "when something wants to score
   a corpus offline, not before", and the same restraint applies to the scoring itself.
@@ -590,11 +589,11 @@ implementation:
   duplicates** so the crop can frame both — that is not a claim it matched; the kind says otherwise.
 
   **The cause was found and fixed** (#107): `end2end`'s `TopK` selects the top 300 slots and
-  suppresses nothing, at fp32 and INT8 alike. `lib/detector/src/decode.ts` now suppresses duplicates
+  suppresses nothing, at fp32 and INT8 alike. `@rails49/detector`'s decode now suppresses duplicates
   before returning L0, so this count should read near zero against a current model — **keep the kind
   anyway**. It is the only thing that would show the suppression regressing, and it distinguishes
   the two faults that a single "false positive" number cannot.
-* **The polygon IoU is `@occupancy/detector`'s**, not this module's. It moved down when the decode
+* **The polygon IoU is `@rails49/detector`'s**, not this module's. It moved down when the decode
   became a second consumer, which is the bar that package sets for promoting anything; two copies of
   a winding rule is exactly how a matcher and a suppressor come to disagree about what overlaps.
 * **Matching is width-normalized**, the same substitution `occupancy()` makes and for the same
@@ -605,7 +604,7 @@ implementation:
   looking at that picture would say the model agreed. It is a legibility threshold; no published
   figure depends on it, and it is **not** the automated model gate SPEC says not to invent.
 * **The vocabulary is "agreed", never "correct" or "accurate".** This measures one model against one
-  archive's labels. `SPEC.md` § Accuracy makes a generalization estimate a property of a held-out
+  archive's labels. rails49/detector's `SPEC.md` § Accuracy makes a generalization estimate a property of a held-out
   protocol over a corpus that does not exist yet.
 * **`KIND_COLOR` and `LABEL_INK` live here**, not in three components' `static styles`: the same
   four hues are chips, table cells, scorecard tiles **and** ink passed to `rr-viewer` as a value, so
@@ -644,6 +643,6 @@ Rules the code depends on:
   both live in `carMarker.ts`: a detection is the same object seen from the other side, and giving
   it its own module would mean a second copy of the ink.
 
-`ui/src/geometry.ts`'s `carWidthPx` is **re-exported from `@occupancy/detector`, not implemented**.
+`ui/src/geometry.ts`'s `carWidthPx` is **re-exported from `@rails49/detector`, not implemented**.
 It was a second copy of the same arithmetic until the live view started drawing detections beside
 labels; two copies would let a sensor read `occupied` while sitting visibly outside its rectangle.

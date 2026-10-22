@@ -6,10 +6,10 @@
  * untestable. Everything in this file is arithmetic over two rectangles, and
  * all of it is tested.
  *
- * **Not in `@occupancy/detector`, deliberately.** That package's root is the
+ * **Not in `@rails49/detector`, deliberately.** That package's root is the
  * car-box geometry both sides of the model need — `carWidthPx`, `spanToPolygon`,
  * `boxCorners`. Scoring is a different job: it belongs to whoever
- * is *evaluating*, and today that is one view in one app. `lib/detector`'s own
+ * is *evaluating*, and today that is one view in one app. The detector package's
  * interface notes say to add a `./node` entry point "when something wants to
  * score a corpus offline, not before"; the same restraint applies to the
  * scoring itself. When a second consumer appears — a CI gate, an offline
@@ -23,8 +23,8 @@
  */
 
 import type { CarLabel, Point } from '@rails49/r49';
-import type { Detection, Frame } from '@occupancy/detector';
-import { boxCorners, carWidthPx, polygonIoU } from '@occupancy/detector';
+import type { Detection, Frame } from '@rails49/detector';
+import { boxCorners, carWidthPx, polygonIoU } from '@rails49/detector';
 import { carCorners } from './geometry.js';
 import type { Rect } from './geometry.js';
 
@@ -148,7 +148,7 @@ export const MATCH_IOU = 0.15;
 export const AGREE_IOU = 0.7;
 
 // `polygonArea`, `convexIntersectionArea` and `polygonIoU` moved into
-// `@occupancy/detector` when the decode needed them to suppress duplicate
+// `@rails49/detector` when the decode needed them to suppress duplicate
 // boxes (#107). Same arithmetic, one home — two copies of a winding rule is
 // exactly how a matcher and a suppressor come to disagree about what
 // overlaps.

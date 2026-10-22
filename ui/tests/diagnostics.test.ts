@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { CarLabel } from '@rails49/r49';
-import type { Detection } from '@occupancy/detector';
-import { carWidthPx } from '@occupancy/detector';
+import type { Detection } from '@rails49/detector';
+import { carWidthPx } from '@rails49/detector';
 import {
   AGREE_IOU,
   MATCH_IOU,
@@ -11,9 +11,9 @@ import {
   rollUp,
 } from '../src/diagnostics.js';
 
-// The polygon arithmetic moved into `@occupancy/detector` with the decode's
+// The polygon arithmetic moved into `@rails49/detector` with the decode's
 // duplicate suppression (#107); its tests went with it, to
-// `lib/detector/tests/overlap.test.ts`.
+// rails49/detector's `lib/detector/tests/overlap.test.ts`.
 
 // One DPT for the whole file, so every width below is the same number the
 // matcher derives. 10 px per track gauge puts a car at ~20.9 px wide.

@@ -44,7 +44,7 @@ describe('rootClass()', () => {
 
 describe('classChoices()', () => {
   it('offers the root s children and never the root itself', () => {
-    // `SPEC.md` § Parameters live in config.yaml: the root is required in the
+    // ADR 0018: the root is required in the
     // stored class and absent from the UI.
     const choices = classChoices(vocabulary);
 

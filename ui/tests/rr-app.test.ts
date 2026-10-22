@@ -6,18 +6,6 @@ import { R49Archive, getDPT } from '@rails49/r49';
 import type { NotifyDetail } from '../src/rr-editor-view.js';
 import type { EditHistory } from '../src/history.js';
 
-vi.mock('@occupancy/classifier/browser', () => {
-  return {
-    BrowserClassifier: vi.fn().mockImplementation(() => {
-      return {
-        load: vi.fn().mockResolvedValue(undefined),
-        classify: vi.fn().mockResolvedValue('track'),
-        release: vi.fn().mockResolvedValue(undefined)
-      };
-    })
-  };
-});
-
 // Mock global fetch for config.json
 global.fetch = vi.fn().mockImplementation((url: string) => {
   if (url.endsWith('config.json')) {

@@ -23,7 +23,7 @@
  * `tests/modelAssets.test.ts` holds the chain to these values.
  */
 
-import { DETECTOR_MODEL_FILE } from '@occupancy/detector';
+import { DETECTOR_MODEL_FILE } from '@rails49/detector';
 import { DETECTOR_MODEL_DEST } from './modelCopy.js';
 
 export { DETECTOR_MODEL_FILE };

@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { fixture, html } from '@open-wc/testing';
 import { R49Archive } from '@rails49/r49';
-import { CONFIDENCE_THRESHOLD } from '@occupancy/detector';
-import type { Detection } from '@occupancy/detector';
+import { CONFIDENCE_THRESHOLD } from '@rails49/detector';
+import type { Detection } from '@rails49/detector';
 import '../src/rr-diagnostics-view.js';
 import type { RRDiagnosticsView } from '../src/rr-diagnostics-view.js';
 import type { RRDiagnosticsReport } from '../src/rr-diagnostics-report.js';

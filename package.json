@@ -8,8 +8,7 @@
     "lint": "node --test 'eslint/*.test.mjs' && eslint ui/src",
     "test": "pnpm -r test",
     "build": "pnpm -r build",
-    "deploy": "./bin/deploy.sh",
-    "config:generate": "uv run --with pyyaml python3 bin/generate_config.py"
+    "deploy": "./bin/deploy.sh"
   },
   "devDependencies": {
     "@rails49/r49": "catalog:",

@@ -1,5 +1,5 @@
-import { carWidthPx } from '@occupancy/detector';
-import type { Detection, Frame } from '@occupancy/detector';
+import { carWidthPx } from '@rails49/detector';
+import type { Detection, Frame } from '@rails49/detector';
 import type { Point, Sensor } from '@rails49/r49';
 
 /**

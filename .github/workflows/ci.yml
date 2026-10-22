@@ -1,8 +1,7 @@
 # The gate on `main`. `bin/test.sh` also runs from a pre-push hook, which is
 # installed by hand (`bin/install-hooks.sh`) and skippable with `--no-verify`.
 # The hook is faster feedback and catches most things before they reach `main`;
-# this is the gate that cannot be skipped. They are also not redundant — see
-# the Python note on the `bin/test.sh` step below.
+# this is the gate that cannot be skipped.
 name: test
 
 on:
@@ -32,23 +31,8 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
 
-      # `bin/test.sh` hard-fails without uv, deliberately: regenerating
-      # lib/config and diffing it is the one check it will not degrade to a
-      # warning. Python's own version comes from classifier/resnet/.python-version.
-      #
-      # Pinned to an exact version, unlike the actions above: setup-uv publishes
-      # no floating major tag, so `@v9` does not resolve. Bump it by hand.
-      - uses: astral-sh/setup-uv@v9.0.0
-        with:
-          enable-cache: true
-
       - run: pnpm install --frozen-lockfile
 
       # The same script the pre-push hook runs, unexpanded, so the two gates
       # cannot drift apart.
-      #
-      # This is stricter than a local run on macOS x86_64, where `uv sync`
-      # cannot resolve the environment (no onnxruntime wheel) and `bin/test.sh`
-      # skips the Python checks with a warning. On Linux they resolve, so ruff,
-      # black and pyright actually run here — for some contributors, only here.
       - run: bin/test.sh
