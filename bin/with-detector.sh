@@ -8,7 +8,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-pinned=(pnpm-workspace.yaml pnpm-lock.yaml)
+pinned=(package.json pnpm-lock.yaml)
 if ! git diff --quiet HEAD -- "${pinned[@]}"; then
   echo "❌ ${pinned[*]} have uncommitted changes, and the undo would discard them" >&2
   exit 1
@@ -22,10 +22,22 @@ pnpm --dir "$detector" --filter @rails49/detector build
 "$detector/bin/check-package.sh" "$work"
 tarball=$(echo "$work"/*.tgz)
 
-sed "s|^\(  \"@rails49/detector\":\).*|\1 file:$tarball|" pnpm-workspace.yaml > "$work/workspace.yaml"
-cp "$work/workspace.yaml" pnpm-workspace.yaml
-grep -q "file:$tarball" pnpm-workspace.yaml
-pnpm install --no-frozen-lockfile >/dev/null
+# A catalog entry cannot be a file: spec, so the tarball goes in as an override.
+node - "$tarball" <<'JS'
+const fs = require('node:fs');
+const manifest = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+manifest.pnpm.overrides['@rails49/detector'] = `file:${process.argv[2]}`;
+fs.writeFileSync('package.json', JSON.stringify(manifest, null, 2) + '\n');
+JS
+pnpm install --no-frozen-lockfile
+
+pnpm --filter @occupancy/ui ls @rails49/detector --json | node -e '
+const [ui] = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
+const resolved = ui.dependencies["@rails49/detector"].resolved;
+if (!resolved.startsWith("file:")) {
+  console.error(`❌ the UI has @rails49/detector from ${resolved}, not the tarball`);
+  process.exit(1);
+}'
 
 # One onnxruntime-web: the ort.env.wasm the UI configures must be the one the
 # detector's session reads (ui/src/detectorSession.ts).
