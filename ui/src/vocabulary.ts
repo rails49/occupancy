@@ -1,4 +1,4 @@
-import { VOCABULARY } from '@occupancy/config';
+import r49Data from '@rails49/r49/data.json';
 import { vocabularySubtypes, type VocabularyNode } from '@rails49/r49';
 
 /**
@@ -19,10 +19,10 @@ export { isKnownClass } from '@rails49/r49';
  *
  * A pure module for the same reason `geometry.ts` is one: it is arithmetic over
  * data, and a component cannot be tested in jsdom. Everything here is derived
- * from the vocabulary in `@rails49/r49`'s data file, reached through the generated
- * `@occupancy/config`, so **a subtype added in an `@rails49/r49` release reaches
- * the editor's menu at the next bump and regenerate, with no code edit** — and no class name is written anywhere
- * else in `ui/` (`SPEC.md` § Parameters live in `config.yaml`).
+ * from the vocabulary in `@rails49/r49`'s data file, read directly, so **a
+ * subtype added in an `@rails49/r49` release reaches the editor's menu at the
+ * next version bump, with no code edit** — and no class name is written
+ * anywhere else in `ui/` (ADR 0018).
  *
  * Two rules the tree is read with, both of which are wrong somewhere if
  * reimplemented:
@@ -52,7 +52,7 @@ export interface ClassChoice {
 }
 
 /** The authored taxonomy. A separate name so the default is legible. */
-const AUTHORED: VocabularyNode = VOCABULARY;
+const AUTHORED: VocabularyNode = r49Data.vocabulary;
 
 /**
  * The subtypes of a node, in authored order. Shared with the validator through
@@ -71,9 +71,10 @@ const subtypes = vocabularySubtypes;
  *
  * **Exactly one root**, and both other counts throw rather than guess. None
  * leaves a new car with no class to be created as, and a second makes "the
- * root" — the thing every class must be rooted at — ambiguous. `bin/generate_config.py`
- * rejects an empty vocabulary, so reaching either case means a hand-edited
- * `lib/config`, which is already a documented mistake.
+ * root" — the thing every class must be rooted at — ambiguous. The data file
+ * is `@rails49/r49`'s, so reaching either case means a release of it broke the
+ * rule; `tests/vocabulary.test.ts` reads the pinned file and fails the gate
+ * before such a bump lands.
  *
  * @throws If the vocabulary does not name exactly one root class.
  */
@@ -81,8 +82,8 @@ export function rootClass(vocabulary: VocabularyNode = AUTHORED): string {
   const roots = subtypes(vocabulary);
   if (roots.length !== 1) {
     throw new Error(
-      `The vocabulary in @occupancy/config must name exactly one root class, found ${roots.length}. ` +
-        'Regenerate it: pnpm config:generate'
+      `The vocabulary in @rails49/r49's data file (@rails49/r49/data.json) must name exactly one ` +
+        `root class, found ${roots.length}.`
     );
   }
   return roots[0][0];

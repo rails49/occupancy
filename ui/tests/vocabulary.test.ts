@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { VOCABULARY } from '@occupancy/config';
+import r49Data from '@rails49/r49/data.json';
 import { classChoices, isKnownClass, rootClass } from '../src/vocabulary.js';
 import type { VocabularyNode } from '../src/vocabulary.js';
 
 /**
  * A taxonomy deeper than the authored one, so the nesting rules are exercised
- * against a shape `config.yaml` may grow into rather than only the shape it has
+ * against a shape `@rails49/r49`'s vocabulary may grow into rather than only the shape it has
  * today. The point of the whole module is that this file is the *only* place a
  * class name is written in `ui/`.
  */
@@ -36,7 +36,9 @@ describe('rootClass()', () => {
   });
 
   it('reads the authored vocabulary without being told what it says', () => {
-    expect(rootClass()).toBe(Object.keys(VOCABULARY)[0]);
+    // The gate-time check that the pinned `@rails49/r49` names exactly one
+    // root: `rootClass()` throws on any other count.
+    expect(rootClass()).toBe(Object.keys(r49Data.vocabulary)[0]);
   });
 });
 
@@ -81,7 +83,7 @@ describe('classChoices()', () => {
   });
 
   it('is generated from the authored vocabulary, with no list in the code', () => {
-    const authored = VOCABULARY as VocabularyNode;
+    const authored: VocabularyNode = r49Data.vocabulary;
     const root = authored[rootClass()] as VocabularyNode;
 
     expect(classChoices().map(c => c.name)).toEqual(Object.keys(root));
