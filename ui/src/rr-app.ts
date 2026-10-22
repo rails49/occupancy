@@ -101,7 +101,7 @@ export class RRApp extends LitElement {
       `
     });
     this.renderRoot.appendChild(alert);
-    return (alert as any).toast();
+    return alert.toast();
   }
 
   /**

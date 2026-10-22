@@ -119,18 +119,15 @@ opens a bump pull request here
 
 ## Coding standards
 
-* Strongly typed TypeScript. Avoid `any`. The `as any` casts that exist (Shoelace `toast()`, blob
-  construction, loosely typed manifest reads) are debt, not precedent — don't add more, and prefer a
-  narrow local interface or a type guard over widening.
-* Styles belong in the component's `static styles`. Inline `style=` attributes survive in
-  `rr-live-view` and `rr-settings-dialog`; new code doesn't add to them. **Custom properties** are
-  the accepted exception, in both directions: Shoelace part overrides (`style="--width: 500px"`),
-  and a value a component can only compute at render time (`rr-viewer`'s zoom transform, whose
-  *rule* stays in `static styles` and whose three numbers are written as `--zoom-*`). A rule written
-  inline is still a rule in the wrong place.
-* Compose from small elements. All custom elements are `rr-<noun>[-<qualifier>]`; non-element modules
-  use plain camelCase filenames (`carMarker.ts`, `capture.ts`). Add the `HTMLElementTagNameMap`
-  declaration block at the bottom of every element file.
+* `pnpm lint` ([`../eslint.config.mjs`](../eslint.config.mjs), run by the gate) checks `src/`: no
+  `any`, an inline `style=` sets custom properties only, element tags are `rr-<noun>[-<qualifier>]`,
+  and each element file declares its tag in `HTMLElementTagNameMap`.
+* Where a type is loose, write a narrow local interface or a type guard.
+* A value a component can only compute at render time goes in a custom property, and its rule stays
+  in `static styles` (`rr-viewer`'s zoom transform writes three numbers as `--zoom-*`). Shoelace part
+  overrides are custom properties too (`style="--width: 500px"`).
+* Compose from small elements. Non-element modules use plain camelCase filenames (`carMarker.ts`,
+  `capture.ts`).
 * Document each component with a short purpose comment and its interface (properties in, events out).
   Update `README.md`'s table for that component in the same change.
 * Support current Chrome, Safari, and Firefox. Do not constrain features to accommodate other browsers.

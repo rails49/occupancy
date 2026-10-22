@@ -785,8 +785,8 @@ export class RREditorView extends LitElement {
       const input = document.createElement('input');
       input.type = 'file';
       input.accept = 'image/jpeg,image/png';
-      input.onchange = async (event: any) => {
-        const file = event.target.files[0];
+      input.onchange = async (event: Event) => {
+        const file = (event.target as HTMLInputElement).files?.[0];
         if (file) {
           const buffer = await file.arrayBuffer();
           await session.addImage(`img_${make_id(2)}.jpg`, new Uint8Array(buffer));

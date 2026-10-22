@@ -129,6 +129,11 @@ export class RRDiagnosticsReport extends LitElement {
       background: var(--sl-color-neutral-200);
     }
 
+    .bar span {
+      width: var(--share);
+      background: var(--kind);
+    }
+
     .legend {
       margin: 0 1.25rem 0.75rem;
       color: var(--sl-color-neutral-600);
@@ -145,6 +150,7 @@ export class RRDiagnosticsReport extends LitElement {
       height: 0.6rem;
       border-radius: 2px;
       margin-right: 0.3rem;
+      background: var(--kind);
     }
 
     .flag {
@@ -407,16 +413,14 @@ export class RRDiagnosticsReport extends LitElement {
       <div class="bar">
         ${KINDS.map(
           kind => html`<span
-            style="width:${total ? (diagnostics.counts[kind] / total) * 100 : 0}%;background:${KIND_COLOR[
-              kind
-            ]}"
+            style="--share:${total ? (diagnostics.counts[kind] / total) * 100 : 0}%;--kind:${KIND_COLOR[kind]}"
           ></span>`
         )}
       </div>
 
       <div class="legend">
         ${KINDS.map(
-          kind => html`<span><i style="background:${KIND_COLOR[kind]}"></i>${KIND_LABEL[kind]}</span>`
+          kind => html`<span><i style="--kind:${KIND_COLOR[kind]}"></i>${KIND_LABEL[kind]}</span>`
         )}
         ${diagnostics.incompleteImages > 0
           ? html`<span class="flag"
