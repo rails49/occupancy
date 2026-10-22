@@ -50,6 +50,9 @@ echo "✅ lib/config matches config.yaml."
 echo "🔍 Running TypeScript typecheck..."
 pnpm -r typecheck
 
+echo "🧹 Linting the UI..."
+pnpm lint
+
 # Run TypeScript tests
 echo "🧪 Running TypeScript tests..."
 pnpm test

@@ -5,6 +5,7 @@
   "packageManager": "pnpm@9.15.9",
   "scripts": {
     "typecheck": "pnpm -r typecheck",
+    "lint": "node --test 'eslint/*.test.mjs' && eslint ui/src",
     "test": "pnpm -r test",
     "build": "pnpm -r build",
     "deploy": "./bin/deploy.sh",
@@ -12,7 +13,9 @@
   },
   "devDependencies": {
     "@rails49/r49": "catalog:",
-    "typescript": "^5.4.5"
+    "eslint": "^9.39.5",
+    "typescript": "^5.4.5",
+    "typescript-eslint": "^8.72.0"
   },
   "pnpm": {
     "overrides": {
