@@ -29,7 +29,8 @@ What each kind of doc holds: org [ADR-0021](https://github.com/rails49/.github/b
   nothing builds), the gap is the planned migration; leave it unless the task
   is that migration.
 - The `.r49` format is `@rails49/r49`'s, pinned once in `pnpm-workspace.yaml`.
-  A format change is a release in `rails49/r49`, then a bump here (ADR 0018).
+  A format change is a release in `rails49/r49`, then a bump here
+  (org [ADR-0022](https://github.com/rails49/.github/blob/main/docs/adr/0022-the-r49-format-is-r49s-and-each-consumer-pins-it.md)).
 - The detector is `@rails49/detector`, pinned in `pnpm-workspace.yaml`'s
   catalog. A detector change is a release in `rails49/detector`, then a bump
   here (ADR 0019). What the pinned version holds: `docs/SYSTEM.md` § The model.

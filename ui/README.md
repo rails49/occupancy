@@ -120,7 +120,6 @@ rr-app                          ← shell: owns the editing session and the view
 > [#49]: https://github.com/rails49/occupancy/issues/49
 > [#52]: https://github.com/rails49/occupancy/issues/52
 > [#7]: https://github.com/rails49/occupancy/issues/7
-> [#82]: https://github.com/rails49/occupancy/issues/82
 > [#85]: https://github.com/rails49/occupancy/issues/85
 > [#87]: https://github.com/rails49/occupancy/issues/87
 > [#94]: https://github.com/rails49/occupancy/issues/94
@@ -172,8 +171,8 @@ rr-app ─────────── rr-editor-view ────────
   pure arithmetic where re-running inference is twenty seconds of WASM.
 * **Only two views load a model, and they load it the same way.** Both go through
   `detectorSession.ts`, which is the one place `ort.env.wasm.wasmPaths` is set and the one place the
-  model URL is read. The CNN is retained and retrainable
-  but nothing loads it ([#7], [#85]): L1 is a pure function of L0, so the per-sensor answer is a
+  model URL is read. The classifier is in rails49/detector
+  and nothing loads it ([#7], [#85]): L1 is a pure function of L0, so the per-sensor answer is a
   geometric consequence of the detector's boxes and there is nothing for a second model to say.
 
 Lit does not observe mutations *inside* `R49Archive`. The session tells its listeners after every
@@ -1228,10 +1227,9 @@ The shipped detector run over an opened archive, read against the labels a human
 |---|---|
 | `archive` | `R49Archive \| null` |
 
-* **This is the first thing that measures the artifact that ships.** The only figures that exist for
-  the detector come from the training run's own validation split on `best.pt`; nothing has scored
-  `detector_int8.ort`, whose quantisation is Conv-only because quantising the whole graph zeroed
-  every score ([#82]). What this reports is **agreement between one model and one archive's labels**
+* **This is the first thing that measures the artifact that ships.** Nothing else scores the
+  quantized model this app loads against labels; how it is trained and quantized is
+  rails49/detector's. What this reports is **agreement between one model and one archive's labels**
   — not accuracy, and not a generalization estimate, which rails49/detector's `SPEC.md` § Accuracy makes a property
   of a held-out protocol over a corpus that does not exist yet.
 * Sweeps images **sequentially**: one ORT session and one WASM heap, so concurrent `detect` calls

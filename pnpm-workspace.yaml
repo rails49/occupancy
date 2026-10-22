@@ -3,7 +3,7 @@ packages:
   - "tools/*"
   - "ui"
 # The packages from rails49/r49 and rails49/detector, pinned once for every
-# package here (ADR 0018, ADR 0019).
+# package here (org ADR-0022, ADR 0019).
 catalog:
   "@rails49/detector": 0.0.1
   "@rails49/r49": 0.1.0
