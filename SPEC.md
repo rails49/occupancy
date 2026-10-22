@@ -298,12 +298,13 @@ The UI also runs the detector:
 
 1. On a live camera stream: the live view draws L0 boxes and reports L1 per sensor ([#85](https://github.com/rails49/occupancy/issues/85)). Testing and demo only; throughput is not critical. Built.
 2. Highlight detection errors and high-loss samples (training or test set) for diagnosis. Partly built: archive diagnostics ([#87](https://github.com/rails49/occupancy/issues/87)) scores the detector against one archive's labels. Nothing yet reviews the training and test splits.
-3. Real-time occupancy, for example on a phone, sent over MQTT to a controller such as [Rocrail](https://www.rocrail.online/). Measured and viable; see the runtime contract below. Not built.
+3. Real-time occupancy, for example on a phone, sent over MQTT to a controller such as [Rocrail](https://www.rocrail.online/). Measured and viable; see rails49/detector's [SPEC § Inference cost](https://github.com/rails49/detector/blob/main/SPEC.md#inference-cost) and the runtime contract below. Not built.
 
 #### Live-view runtime contract
 
 The detector's measured cost is in rails49/detector's [SPEC § Inference cost](https://github.com/rails49/detector/blob/main/SPEC.md#inference-cost). What the live view takes from it:
 
+* Plan the frame loop against the slowest device measured, not the phone.
 * Create the ORT session once at view mount, never per frame. The loading state must last several seconds.
 * Threading needs cross-origin isolation, so everything the app fetches comes from origin ([ADR 0006](docs/adr/0006-the-onnx-runtime-ships-from-origin.md)).
 
@@ -315,7 +316,7 @@ Change detection is used where a wrong answer costs a warning or a wasted frame:
 
 1. Camera-drift detection. Built ([map #89](https://github.com/rails49/occupancy/issues/89)); see [Image Alignment](#image-alignment). It uses block-wise phase correlation rather than frame differencing. On `tools/drift-bench` two pixel-differencing baselines reach AUC 0.915, and the structural check reaches 1.000 with every legitimate case scoring zero.
 2. Re-classification gating. In the live view, skip inference on frames where nothing changed. A false negative costs a stale frame, never a wrong occupancy report. Relevant to [Testing and Demo](#testing-and-demo) item 3. Not scheduled; raise it as its own request. "Has the frame changed" and "has the camera moved" are different questions, so item 1 does not answer it.
-3. Change proposes, a model decides. Change detection nominates regions and the CNN or detector decides each one. That is option 2 or 3 with a cheap front end, so it still needs DPT above 20. A possible future optimisation, not specified here.
+3. Change proposes, a model decides. Change detection nominates regions and the CNN or detector decides each one. That is option 2 or 3 with a cheap front end, so it still needs DPT above the detector's [minimum](https://github.com/rails49/detector/blob/main/SPEC.md#minimum-dpt). A possible future optimisation, not specified here.
 
 > Licensing, should EX-SensorCAM code ever be reused: EX-SensorCAM is GPL-3.0, not AGPL-3.0. GPLv3 §13 permits combining it with an AGPLv3 work, but it is a distinct licence and must be recorded as one.
 
