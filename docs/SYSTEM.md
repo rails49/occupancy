@@ -83,8 +83,9 @@ pins (ADR 0018).
 | `@occupancy/detector` | `lib/detector/src/index.ts` |
 | `@occupancy/classifier` | `lib/classifier/README.md` |
 
-The drift tolerance is `layout.max_drift_track_fraction`. It becomes pixels only
-in `ui/src/driftSession.ts`'s `maxDriftPx` (ADR 0013).
+The drift tolerance is `MAX_DRIFT_TRACK_FRACTION`, a constant in
+`ui/src/driftSession.ts`. It becomes pixels only in that file's `maxDriftPx`
+(ADR 0013).
 
 ## Model files and releases
 

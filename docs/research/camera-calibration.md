@@ -17,7 +17,7 @@ MSR-TR-98-71 / TPAMI 2000; Abdel-Aziz & Karara 1971 (the original DLT paper, rep
 definitions quoted verbatim from the spec PDF); the W3C MediaStream Image Capture spec; USGS
 orthoimagery definitions; and derivations worked here with every step shown. Numbers use this
 repo's constants: HO model gauge 1435/87 ≈ 16.49 mm, `min_dpt` 20,
-`max_drift_track_fraction` 0.25 (`config.yaml`).*
+`MAX_DRIFT_TRACK_FRACTION` 0.25 (`ui/src/driftSession.ts`).*
 
 ---
 
@@ -141,7 +141,7 @@ Scale error `ε(z) = z/(h−z)`:
 
 Relief displacement `Δρ = ρ·z/(h−z)`, camera over the layout center (ρ_max = 1118 mm), expressed
 against this repo's units — one HO track gauge = 16.49 mm, drift refusal at 0.25 gauge
-(`max_drift_track_fraction`) **[REPO]**:
+(`MAX_DRIFT_TRACK_FRACTION`) **[REPO]**:
 
 | position, h = 1 m | z = 85 mm | z = 230 mm |
 |---|---|---|

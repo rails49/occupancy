@@ -60,7 +60,7 @@ export type SensorState =
  * @param input.drifted    Whether the camera has moved away from the pose the
  *                         archive was authored against — `@occupancy/drift`
  *                         measured against a fraction of a track width
- *                         (`layout.max_drift_track_fraction`). Optional,
+ *                         (`MAX_DRIFT_TRACK_FRACTION` in `driftSession.ts`). Optional,
  *                         defaulting to `false`, because a caller with no drift
  *                         check running is not asserting that the camera is
  *                         steady — it is saying it does not know, and that was

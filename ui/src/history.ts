@@ -240,10 +240,8 @@ const INERT_GESTURE: HistoryGesture = { commit: async () => false };
  * only bites when images are being deleted, which is when retention genuinely
  * is expensive and a saved file is the fallback.
  *
- * Not a `config.yaml` value: that file is scoped to parameters that must agree
- * *across stages*, and a browser memory ceiling agrees with nothing outside
- * `ui/`. Putting it there would force a `lib/config` regeneration for a number
- * no other stage can read.
+ * A UI constant: a browser memory ceiling agrees with nothing outside `ui/`,
+ * and `ui/` reads no generated config (#236).
  */
 export const DEFAULT_HISTORY_BUDGET_BYTES = 256 * 1024 * 1024;
 

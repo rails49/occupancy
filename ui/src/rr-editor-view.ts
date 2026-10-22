@@ -108,7 +108,7 @@ function classOfReclassifyRow(id: string): string | null {
  * The taxonomy as menu rows, for one car.
  *
  * Generated from the vocabulary in `@rails49/r49`'s data file (`vocabulary.ts`), so
- * adding a subtype there and regenerating changes this menu with **no code
+ * a release adding a subtype there changes this menu at the version bump with **no code
  * edit** — and the root is not among them, because it is required in the
  * stored class and absent from the UI (`SPEC.md` § Parameters live in
  * `config.yaml`).

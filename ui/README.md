@@ -552,7 +552,7 @@ covered today.
 | `overlayFit(media, frame)` | `{ sx, sy, aspectMismatch }` — how the authored frame maps onto the media's own pixel grid, which is what the overlay's content group is scaled by. Uniform for a photograph of the frame's shape at any pixel count; the identity while nothing is loaded |
 | `OverlayFit` | `{ sx, sy, aspectMismatch }` |
 
-**Both constants come from `@occupancy/config`.** The scale ratio cancels out of the width formula —
+**Both constants stay in `@occupancy/detector`**, whose `carWidthPx` this re-exports. The scale ratio cancels out of the width formula —
 a car is 2.09 track-widths wide in **every** scale — so no scale lookup belongs anywhere in `ui/`,
 and no gauge arithmetic is reimplemented here.
 
@@ -645,9 +645,9 @@ ignores `frame` entirely: it names an exact pixel, wherever that pixel is.
 
 The authored class taxonomy, read as a tree. A pure module for the same reason `geometry.ts` is one,
 and the **only place in `ui/` that a class name comes from** — every value here is derived from
-the vocabulary in `@rails49/r49`'s data file, reached through the generated `@occupancy/config`, so a
-subtype added in an `@rails49/r49` release reaches the editor's menu at the next version bump and
-`pnpm config:generate`, with no code edit.
+the vocabulary in `@rails49/r49`'s data file, read directly as `@rails49/r49/data.json`, so a
+subtype added in an `@rails49/r49` release reaches the editor's menu at the next version bump, with
+no code edit.
 
 | Export | Description |
 |---|---|

@@ -224,7 +224,7 @@ Camera [drift](GLOSSARY.md#drift) is detected, and classification is refused pas
 
 * Nothing records the camera pose. The archive's images are the pose record, and the reference is derived from them at load time.
 * `@occupancy/drift` compares the structure of a frame against the [reference image](GLOSSARY.md#drift) by block-wise phase correlation, which ignores illumination, and reports a displacement in `camera.resolution` pixels.
-* The tolerance is `layout.max_drift_track_fraction`, a fraction of a track width. It is a tolerance, not a detection floor: the check resolves much smaller displacements.
+* The tolerance is `MAX_DRIFT_TRACK_FRACTION` in `ui/src/driftSession.ts`, a fraction of a track width. It is a tolerance, not a detection floor: the check resolves much smaller displacements.
 * Past the tolerance the live view reports every sensor as unknown with reason `drift`, with a visible override.
 * The editor shows every image's drift against the reference, so moving a thumbnail to the front re-measures all of them. Image order therefore carries meaning.
 * Correction is out of scope.

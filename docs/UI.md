@@ -148,10 +148,10 @@ before it, which is worse than having no undo. Rules, from entries being scoped 
 
 ## The vocabulary (#35)
 
-`vocabulary.ts` reads the vocabulary out of `@rails49/r49`'s data file through the generated
-`@occupancy/config` and is the **only place in `ui/` a class name comes from** — including the class
+`vocabulary.ts` reads the vocabulary out of `@rails49/r49`'s data file (`@rails49/r49/data.json`)
+and is the **only place in `ui/` a class name comes from** — including the class
 a new car is created as, which is the taxonomy's root rather than a literal `'stock'`. A hardcoded
-class anywhere in `ui/` breaks the config→menu path while still typechecking. Rules, each stated in
+class anywhere in `ui/` breaks the data-file→menu path while still typechecking. Rules, each stated in
 `SPEC.md` § Parameters live in `config.yaml`:
 
 * **The root is required in the stored class and never rendered.** An unrooted class is a
@@ -480,7 +480,7 @@ clamps to its own working resolution internally; letting it do that is what keep
 one thing.
 
 **The tolerance is a fraction of a track width, and `maxDriftPx(dpt)` here is the only place that
-multiplies.** `layout.max_drift_track_fraction` (0.25) times the layout's DPT — which *is* pixels per
+multiplies.** `MAX_DRIFT_TRACK_FRACTION` (0.25), a constant beside it, times the layout's DPT — which *is* pixels per
 track gauge — gives the tolerance in the frame the sensors were authored in. A fraction rather than a
 pixel count because the failure is geometric: occupancy breaks when a sensor stops sitting on the car
 it reads, and both boundaries for that (falling off the box, sliding onto a neighbouring track's car)

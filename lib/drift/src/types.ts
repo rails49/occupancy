@@ -28,7 +28,7 @@ export interface GrayPlane {
  * What a frame's comparison against the reference set came to.
  *
  * There is no verdict here, deliberately. Whether `displacementPx` counts as
- * drift is `layout.max_drift_track_fraction` in `config.yaml`, read by the consumer — the
+ * drift is the consumer's: `MAX_DRIFT_TRACK_FRACTION` in `ui/src/driftSession.ts` — the
  * live view refuses on it and the editor warns on it, two responses to one
  * number (SPEC's asymmetric-response decision, map #89). A module that decided
  * would force both surfaces to agree about policy as well as measurement.
