@@ -109,7 +109,7 @@ The relation between image and layout is expressed as [DPT](GLOSSARY.md#calibrat
 
 Example. Two points in an N-scale layout are 1000 pixels apart in the image and 250 mm apart on the layout: 4 pixels per millimetre. Track gauge in N is `STANDARD_GAUGE/160 = 1435/160 ≈ 9 mm` (`STANDARD_GAUGE` is defined in the `.r49` library). DPT is 4 × 9 = 36.
 
-The editor warns below `@rails49/detector`'s `MIN_DPT` and never blocks. The value and the reason for it are in rails49/detector's [SPEC § The minimum DPT is 20](https://github.com/rails49/detector/blob/main/SPEC.md#the-minimum-dpt-is-20).
+The editor warns below `@rails49/detector`'s `MIN_DPT` and never blocks. The value and the reason for it are in rails49/detector's [SPEC § Minimum DPT](https://github.com/rails49/detector/blob/main/SPEC.md#minimum-dpt).
 
 The [fixtures](GLOSSARY.md#layout-and-archive) sit at DPT 18–19. They exercise every code path in the editor, but they are not training data. Training will use new, higher-DPT images. Do not tune model accuracy against the fixtures or treat their numbers as predictive.
 
