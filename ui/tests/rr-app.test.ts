@@ -6,22 +6,8 @@ import { R49Archive, getDPT } from '@rails49/r49';
 import type { NotifyDetail } from '../src/rr-editor-view.js';
 import type { EditHistory } from '../src/history.js';
 
-// Mock global fetch for config.json
-global.fetch = vi.fn().mockImplementation((url: string) => {
-  if (url.endsWith('config.json')) {
-    return Promise.resolve({
-      ok: true,
-      json: () => Promise.resolve({
-        dpt: 30,
-        crop_size: 96,
-        labels: ['track', 'train'],
-        mean: [0.485, 0.456, 0.406],
-        std: [0.229, 0.224, 0.225]
-      })
-    });
-  }
-  return Promise.resolve({ ok: false });
-});
+// Mock global fetch
+global.fetch = vi.fn().mockResolvedValue({ ok: false });
 
 describe('rr-app', () => {
   let archive: R49Archive;

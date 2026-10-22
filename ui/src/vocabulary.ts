@@ -22,7 +22,7 @@ export { isKnownClass } from '@rails49/r49';
  * from the vocabulary in `@rails49/r49`'s data file, read directly, so **a
  * subtype added in an `@rails49/r49` release reaches the editor's menu at the
  * next version bump, with no code edit** — and no class name is written
- * anywhere else in `ui/` (ADR 0018).
+ * anywhere else in `ui/` (org ADR-0022).
  *
  * Two rules the tree is read with, both of which are wrong somewhere if
  * reimplemented:

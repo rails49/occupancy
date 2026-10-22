@@ -338,7 +338,7 @@ The `.r49` file also carries the layout's name, description, contact and scale, 
 
 ## Format
 
-The `.r49` format is defined in rails49/r49's [FORMAT.md](https://github.com/rails49/r49/blob/main/FORMAT.md) ([ADR 0018](docs/adr/0018-the-r49-format-is-defined-in-rails49-r49.md)). This repository reads and writes it through `@rails49/r49`, pinned in `pnpm-workspace.yaml`. The detector comes the same way, as `@rails49/detector` ([ADR 0019](docs/adr/0019-detection-and-training-move-to-rails49-detector.md)).
+The `.r49` format is defined in rails49/r49's [FORMAT.md](https://github.com/rails49/r49/blob/main/FORMAT.md) (org [ADR-0022](https://github.com/rails49/.github/blob/main/docs/adr/0022-the-r49-format-is-r49s-and-each-consumer-pins-it.md)). This repository reads and writes it through `@rails49/r49`, pinned in `pnpm-workspace.yaml`. The detector comes the same way, as `@rails49/detector` ([ADR 0019](docs/adr/0019-detection-and-training-move-to-rails49-detector.md)).
 
 ## Out of Scope, and Known Gaps
 
@@ -368,4 +368,4 @@ The first list is ruled out and will not be built here. The second is in scope b
 
 ---
 
-*Design decisions, open questions and the research behind them are tracked on the wayfinder maps. The format and labeling decisions came from [#2](https://github.com/rails49/occupancy/issues/2); the accuracy campaign and the input geometry are [#125](https://github.com/rails49/occupancy/issues/125), which is open.*
+*Design decisions, open questions and the research behind them are tracked on the wayfinder maps. The format and labeling decisions came from [#2](https://github.com/rails49/occupancy/issues/2); the accuracy campaign and the input geometry are [rails49/detector#2](https://github.com/rails49/detector/issues/2), which is open.*

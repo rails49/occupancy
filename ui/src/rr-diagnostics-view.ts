@@ -46,17 +46,15 @@ type RunState =
  * Archive diagnostics: the shipped detector run over an opened `.r49`, read
  * against the labels a human authored (#87).
  *
- * **This is the first thing that measures the artifact that ships.** The only
- * figures that exist for the detector come from the training run's own
- * validation split on `best.pt`; nothing has ever scored the quantized model
- * this app actually loads, whose quantization is Conv-only because quantizing
- * the whole graph zeroed every score (#82). (Its filename is deliberately not
- * written here — the detector package is the one place that names it, and
+ * **This is the first thing that measures the artifact that ships.** Nothing
+ * else scores the quantized model this app loads against labels; how it is
+ * trained and quantized is rails49/detector's. (Its filename is deliberately
+ * not written here — the detector package is the one place that names it, and
  * `tests/modelAssets.test.ts` fails if any view does.) What this view reports
  * is agreement between one model and
  * one archive's labels — **not** an accuracy figure, and not a generalization
- * estimate, which `SPEC.md` § Accuracy makes a property of a held-out protocol
- * over a corpus that does not exist yet.
+ * estimate, which rails49/detector's `SPEC.md` § Accuracy makes a property of a
+ * held-out protocol over a corpus that does not exist yet.
  *
  * Two surfaces, one behind the other: the report answers "how is it doing on
  * this archive", and reviewing a row opens the queue on that image's

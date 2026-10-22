@@ -14,8 +14,8 @@
  * writes to. That directory and the entry are `modelCopy.ts`'s, which the
  * config can import; this module is the run-time half.
  *
- * The detector is the **only** model in the bundle. The CNN is retained and
- * retrainable (`SPEC.md` § Option 2) but nothing loads it: L1 is a pure
+ * The detector is the **only** model in the bundle. The classifier is in
+ * rails49/detector and nothing here loads it: L1 is a pure
  * function of L0, so the per-sensor answer is a geometric consequence of the
  * detector's boxes and there is nothing left for a second model to say. One
  * model, one ORT session, one vocabulary — settled in issue #7.

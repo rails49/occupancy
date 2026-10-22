@@ -8,11 +8,11 @@
 /**
  * The package entry the build resolves to find the model (ADR 0019).
  *
- * The model is gitignored, and absent on a fresh clone: the copy is conditional
- * on the file existing, so a build with no local model succeeds and the live
- * view reports every sensor `unknown` / `no-model` rather than failing to
- * start. That is what keeps `bin/test.sh` runnable without downloading
- * anything.
+ * A package version without a model has no `./model` entry (0.0.x has none).
+ * The copy is conditional on the entry resolving, so a build with no model
+ * succeeds and the live view reports every sensor `unknown` / `no-model`
+ * rather than failing to start. That is what keeps `bin/test.sh` runnable
+ * without downloading anything.
  */
 export const DETECTOR_MODEL_ENTRY = '@rails49/detector/model';
 

@@ -38,7 +38,7 @@ no labels, below `MIN_DPT`. They exercise the code and are not training data.
 are consumed as TypeScript source; nothing under `lib/` is built or published.
 `lib/CLAUDE.md` holds their interface rules. The `.r49` format package,
 `@rails49/r49`, and the detector package, `@rails49/detector`, come from npm at
-the versions `pnpm-workspace.yaml`'s catalog pins (ADR 0018, ADR 0019).
+the versions `pnpm-workspace.yaml`'s catalog pins (org ADR-0022, ADR 0019).
 
 | Package | Described in |
 | :--- | :--- |

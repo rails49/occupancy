@@ -395,7 +395,7 @@ code. `tests/modelAssets.test.ts` fails if any of these files names
 the filename, and builds the UI with a stand-in at the package's entry to check it lands at the URL.
 
 **The CNN is retained but not loaded, and the bundle no longer carries it.** The classifier
-stays retrainable in rails49/detector (SPEC § Option 2), but `ui` does not depend on it and Vite
+is in rails49/detector ([SPEC § CNN crops, for the classifier](https://github.com/rails49/detector/blob/main/SPEC.md#cnn-crops-for-the-classifier)), but `ui` does not depend on it and Vite
 copies no `model_int8.ort`. L1 is a pure function of L0 (`SPEC.md` § Occupancy Output), so the
 per-sensor answer is a geometric consequence of the detector's boxes and there is nothing left for a
 second model to say — one model, one ORT session, one vocabulary, settled in #7. Reintroducing a

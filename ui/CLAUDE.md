@@ -188,6 +188,6 @@ caught none of the six. Two more things follow, and both are load-bearing:
   fires, fires once per page, and reaches `loadDetector` with the assets module's URL. An assignment
   behind a condition that never fires would pass the first and fail the second.
 
-Run `pnpm test` from the repo root after changes here: it covers `lib/*` too, and `ui` consumes
-those packages as TypeScript source, so a library change breaks the UI at typecheck rather than at
-publish.
+Run `pnpm test` from the repo root after changes here: it covers `lib/*` too. `ui` consumes
+`lib/drift` as TypeScript source, so a change there breaks the UI at typecheck. `@rails49/detector`
+comes from npm as a built `dist/`; a change to it reaches the UI only at a version bump.
