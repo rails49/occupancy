@@ -18,8 +18,21 @@
 
 import { createDriftCheck, fromImageData } from '@occupancy/drift';
 import type { DriftCheck, GrayPlane } from '@occupancy/drift';
-import { MAX_DRIFT_TRACK_FRACTION } from '@occupancy/config';
 import type { R49Archive } from '@rails49/r49';
+
+/**
+ * The drift tolerance: the largest drift still taken as the pose, as a
+ * fraction of one track width (ADR 0013,
+ * `docs/adr/0013-drift-is-measured-against-the-first-image.md`).
+ *
+ * Why 0.25: a sensor fails when it slides off its car or onto a neighbouring
+ * track's, and both sit about one track width away, so a quarter is roughly a
+ * 4x margin — ~4.7 px at the fixture corpus's DPT 18-19, which ordinary
+ * mounting holds. Unmeasured: validation is synthetic warps of tripod shots,
+ * so nothing says how often a real camera drifts this far, which is why the
+ * live view's refusal carries an override.
+ */
+export const MAX_DRIFT_TRACK_FRACTION = 0.25;
 
 /**
  * How far the camera may appear to have moved before it counts as drift, in

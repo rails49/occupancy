@@ -26,7 +26,8 @@ import { highlightStyles } from './highlight.js';
 import { matteTokens } from './matte.js';
 import { isKnownClass } from './vocabulary.js';
 import type { ReferencePoint, CarLabel, Point, Sensor } from '@rails49/r49';
-import type { Detection, SensorState } from '@occupancy/detector';
+import type { Detection } from '@occupancy/detector';
+import type { SensorState } from './occupancy.js';
 import '@shoelace-style/shoelace/dist/components/tooltip/tooltip.js';
 
 export const viewerStyles = css`
@@ -273,7 +274,7 @@ export interface ViewerContextMenuDetail extends Omit<ViewerPointerDetail, 'orig
  * calibration points, sensors, cars; the live view passes what a frame
  * produced — `detections` (L0) and `sensorStates` (L1) over the same sensor
  * list. Nothing here computes either: `occupancy()` is a pure function in
- * `@occupancy/detector` and the viewer is handed its answer, exactly as it is
+ * `occupancy.ts` and the viewer is handed its answer, exactly as it is
  * handed the cars.
  *
  * **It reports pointer gestures; it still authors nothing.** The v3 machinery

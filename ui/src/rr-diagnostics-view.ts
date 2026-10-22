@@ -3,9 +3,9 @@ import { lookTheme } from '@rails49/look';
 import { customElement, property, state } from 'lit/decorators.js';
 import type { R49Archive } from '@rails49/r49';
 import { getDPT } from '@rails49/r49';
+import { CONFIDENCE_THRESHOLD } from '@occupancy/detector';
 import type { Detection, Frame } from '@occupancy/detector';
 import type { Detector } from '@occupancy/detector/browser';
-import { DETECTOR_CONFIDENCE_THRESHOLD } from '@occupancy/config';
 import { openDetector, DETECTOR_SOURCE } from './detectorSession.js';
 import { diagnoseImage, rollUp } from './diagnostics.js';
 import type { ArchiveDiagnostics } from './diagnostics.js';
@@ -20,7 +20,7 @@ const DEFAULT_RESOLUTION: Frame = { width: 1920, height: 1080 };
 /**
  * The confidence floor inference is actually run at.
  *
- * Far below `DETECTOR_CONFIDENCE_THRESHOLD` on purpose, and this is the whole
+ * Far below `CONFIDENCE_THRESHOLD` on purpose, and this is the whole
  * reason `detect` takes a `minConfidence` override. Running at the shipped
  * threshold would throw away every box between 0.05 and it — exactly the boxes
  * that answer "what would a lower threshold have caught?". Running low once and
@@ -51,7 +51,7 @@ type RunState =
  * validation split on `best.pt`; nothing has ever scored the quantized model
  * this app actually loads, whose quantization is Conv-only because quantizing
  * the whole graph zeroed every score (#82). (Its filename is deliberately not
- * written here — `modelAssets.ts` is the one place that names it, and
+ * written here — the detector package is the one place that names it, and
  * `tests/modelAssets.test.ts` fails if any view does.) What this view reports
  * is agreement between one model and
  * one archive's labels — **not** an accuracy figure, and not a generalization
@@ -73,7 +73,7 @@ export class RRDiagnosticsView extends LitElement {
   @state() private _raw: readonly RawImageResult[] = [];
   @state() private _urls: ReadonlyMap<string, string> = new Map();
   @state() private _dpt: number | null = null;
-  @state() private _threshold = DETECTOR_CONFIDENCE_THRESHOLD;
+  @state() private _threshold = CONFIDENCE_THRESHOLD;
   /** The image whose queue is open, or `null` on the report. */
   @state() private _reviewing: string | null = null;
 

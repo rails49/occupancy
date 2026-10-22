@@ -4,6 +4,7 @@ import { R49Archive } from '@rails49/r49';
 import type { Detection } from '@occupancy/detector';
 import '../src/rr-live-view.js';
 import { RRLiveView } from '../src/rr-live-view.js';
+import { DETECTOR_MODEL_URL } from '../modelAssets.js';
 
 // What the detector would find, when it loads. The loop is driven by
 // requestAnimationFrame off a <video> jsdom never gives a readyState to, so
@@ -44,6 +45,7 @@ vi.mock('../src/driftSession.js', async importOriginal => {
   // inside the two functions replaced below.
   const actual = await importOriginal<typeof import('../src/driftSession.js')>();
   return {
+    MAX_DRIFT_TRACK_FRACTION: actual.MAX_DRIFT_TRACK_FRACTION,
     maxDriftPx: actual.maxDriftPx,
     driftVerdict: actual.driftVerdict,
     openDriftCheck: (...args: unknown[]) => (openDriftCheck as any)(...args),
@@ -134,7 +136,8 @@ describe('rr-live-view', () => {
   it('loads the detector the bundle ships, and no classifier', async () => {
     await fixture<RRLiveView>(html`<rr-live-view .archive=${archive}></rr-live-view>`);
 
-    expect(loadDetector).toHaveBeenCalledWith('/models/detector_int8.ort');
+    // The URL, not a filename: the filename is the detector package's (#234).
+    expect(loadDetector).toHaveBeenCalledWith(DETECTOR_MODEL_URL);
   });
 
   it('passes the layout sensors and their states down, never markers', async () => {
@@ -148,7 +151,7 @@ describe('rr-live-view', () => {
   });
 
   it('warns that every sensor reads unknown when the model will not load', async () => {
-    loadDetector.mockRejectedValue(new Error('404 on detector_int8.ort'));
+    loadDetector.mockRejectedValue(new Error(`404 on ${DETECTOR_MODEL_URL}`));
 
     const el = await fixture<RRLiveView>(html`<rr-live-view .archive=${archive}></rr-live-view>`);
     // The load goes through `openDetector` since #87, so the rejection reaches
@@ -160,6 +163,24 @@ describe('rr-live-view', () => {
     const notice = el.shadowRoot!.textContent ?? '';
     expect(notice).to.contain('unknown');
     expect(notice).to.contain('export_onnx.py');
+  });
+
+  it('reports every sensor unknown / no-model when the build shipped no model', async () => {
+    // A clone with no local model builds without one (`modelAssets.test.ts`),
+    // so the fetch 404s. The loop runs anyway, and L1 says why it cannot
+    // answer rather than reporting the sensors clear.
+    archive.getManifest().layout.sensors.push({ id: 'S2abcdefghi', x: 20, y: 80 });
+    loadDetector.mockRejectedValue(new Error(`404 on ${DETECTOR_MODEL_URL}`));
+
+    const el = await fixture<RRLiveView>(html`<rr-live-view .archive=${archive}></rr-live-view>`);
+    standInReadySource(el);
+    const viewer = el.shadowRoot!.querySelector('rr-viewer')!;
+    await waitFor(el, () => (viewer.sensorStates?.size ?? 0) === 2);
+
+    expect([...viewer.sensorStates!.entries()]).to.deep.equal([
+      ['S1abcdefghi', { state: 'unknown', reason: 'no-model' }],
+      ['S2abcdefghi', { state: 'unknown', reason: 'no-model' }],
+    ]);
   });
 
   it('warns about calibration before a frame has ever run', async () => {

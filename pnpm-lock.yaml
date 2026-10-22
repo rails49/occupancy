@@ -112,10 +112,10 @@ importers:
       onnxruntime-common:
         specifier: ^1.26.0
         version: 1.26.0
+    devDependencies:
       onnxruntime-web:
         specifier: ^1.26.0
         version: 1.26.0
-    devDependencies:
       typescript:
         specifier: ^5.4.5
         version: 5.9.3
@@ -162,9 +162,6 @@ importers:
       '@lit/reactive-element':
         specifier: ^2.1.2
         version: 2.1.2
-      '@occupancy/config':
-        specifier: workspace:*
-        version: link:../lib/config
       '@occupancy/detector':
         specifier: workspace:*
         version: link:../lib/detector
@@ -190,7 +187,7 @@ importers:
         specifier: ^3.3.2
         version: 3.3.2
       onnxruntime-web:
-        specifier: ^1.25.1
+        specifier: ^1.26.0
         version: 1.26.0
     devDependencies:
       '@open-wc/testing':

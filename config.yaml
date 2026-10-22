@@ -1,11 +1,4 @@
 # ====================================================================================
-# Global parameters
-# ====================================================================================
-global:
-  # Base domain name the site is published under
-  rails_domain: "rails49.org"
-
-# ====================================================================================
 # Classifier parameters (syncs to config.json during model export)
 # ====================================================================================
 classifier:
@@ -54,44 +47,6 @@ layout:
   # persistently, never blocks — the fixture corpus lives at DPT 18-19. Under
   # `layout` and not `classifier` because it gates the editor.
   min_dpt: 20
-  # Largest apparent camera displacement still treated as the canonical pose,
-  # **as a fraction of one track width**. Above it the frame has drifted: the
-  # live view refuses to classify (with an override) and the editor warns
-  # without blocking. One authored number, two responses — @occupancy/drift
-  # measures and decides nothing, so this is where the policy lives (#93, #97).
-  #
-  # A fraction of track and not a pixel count, because the consequence is
-  # geometric. DPT *is* pixels per track gauge, so `fraction * DPT` is the
-  # tolerance in the frame the sensors are authored in — and the same physical
-  # misalignment matters equally at DPT 18 and DPT 90, while the same *pixel*
-  # count means five times as much at one as at the other. An absolute number
-  # would have to be re-picked for every camera, lens and mounting distance.
-  #
-  # ⚠️  This is a **tolerance, not a detection floor**, and conflating the two was
-  # the first version's mistake (it read 0.5 px — the check's own quantum, which
-  # is unreachable without precision mounting and says nothing about when
-  # occupancy breaks). `tools/drift-bench` scores every legitimate case at exactly
-  # 0 and the gentlest synthetic drift at ~2 px in a 1920-wide frame, so the check
-  # can *detect* far less than this accepts. It should: detectability and
-  # consequence are different questions, and refusing on a drift too small to move
-  # a sensor off its track would be refusing on nothing.
-  #
-  # Where 0.25 comes from. Occupancy fails when a sensor stops sitting on the car
-  # it is meant to read — either falling outside the box (a false clear) or
-  # sliding onto a neighbouring track's car (a false occupied). Both boundaries
-  # sit near **one whole track width**: the width-normalized box is 2.09 track
-  # widths across, so a centreline sensor has ~1.05 track widths of lateral
-  # margin, and adjacent track centres are spaced on that same order. A quarter
-  # of a track width is therefore roughly a 4x margin on the failure that
-  # matters, and at the fixture corpus's DPT 18-19 it comes to ~4.7 px — reachable
-  # with ordinary mounting, where sub-pixel stability is not.
-  #
-  # Still provisional, and now in the other direction: nothing has measured how
-  # often a real camera drifts this far, because validation is entirely synthetic
-  # (the fixtures were shot on a tripod). A live camera also brings rolling
-  # shutter, autofocus breathing and video compression that no warped still
-  # reproduces. That is why the live view's refusal carries an override (#94).
-  max_drift_track_fraction: 0.25
 
 # ====================================================================================
 # Detector parameters (YOLO26n-OBB)

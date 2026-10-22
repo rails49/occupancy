@@ -12,9 +12,9 @@
 // is out of scope by decision (issue #12 option 3, map #89): detection converts
 // today's silent wrongness into a loud refusal, which is most of the safety
 // value for a fraction of the effort. It also decides no verdicts: the number
-// this returns becomes drift or not-drift against `layout.max_drift_track_fraction` in
-// `config.yaml`, because the live view refuses on it and the editor only warns,
-// and one module cannot hold two policies.
+// this returns becomes drift or not-drift against the UI's `MAX_DRIFT_TRACK_FRACTION`
+// in `ui/src/driftSession.ts`, because the live view refuses on it and the editor
+// only warns, and one module cannot hold two policies.
 //
 // One entry point, unlike `classifier` and `detector`. Those split to keep a
 // platform's runtime out of the other platform's bundle; this package is
@@ -47,5 +47,5 @@ export type { RgbaImage } from './plane.ts';
 // know a live stream and an archive photo differ.
 //
 // Withheld: a threshold, a boolean, and anything else shaped like a verdict.
-// See above: `layout.max_drift_track_fraction` is `@occupancy/config`'s, and re-exporting
-// it here would give it a second import path and an implied second owner.
+// See above: the drift tolerance is `ui/src/driftSession.ts`'s, and a copy here
+// would give it a second home and an implied second owner.

@@ -44,6 +44,7 @@ you are touching:
 | `calibrationMarker.ts`, `sensorMarker.ts`, `carMarker.ts` | Markers are modules, not elements |
 | `base` in `vite.config.ts`, `/ort/`, `/shoelace`, `modelAssets.ts` | Absolute asset paths |
 | `detectorSession.ts`, the model | Model loading lives in `detectorSession.ts` |
+| `occupancy.ts`, `SensorState` | L1 lives in `occupancy.ts` |
 | `driftSession.ts`, drift readouts | Camera drift lives in `driftSession.ts` |
 | `diagnostics.ts`, `rr-diagnostics-view` | Diagnostics reads the model against the labels |
 

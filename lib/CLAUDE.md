@@ -4,8 +4,9 @@ All written in TypeScript, all consumed as source — nothing here is built or
 published. `ui/` and `dataset/` are the only consumers.
 
 * `classifier` : ONNX Runtime image classifier (browser and node targets)
-* `detector` : car boxes — the YOLO OBB session (browser), the L0 decode, the
-  L1 occupancy geometry, and the span→box construction the exporter uses
+* `detector` : car boxes — the YOLO OBB session (browser), the L0 decode, and
+  the span→box construction the exporter uses. L1 is the UI's
+  (`ui/src/occupancy.ts`, ADR 0019)
 * `drift` : camera-drift detection — block-wise phase correlation over an
   archive's own images, measuring only, deciding nothing
 * `config` : **generated** from `config.yaml` — layout and detector constants
@@ -75,22 +76,29 @@ Three rules:
   code that ships rather than a copy of it. The canvas work lives in
   `ui/src/driftSession.ts`, which is the `detectorSession.ts` of that path.
 
-  It also exports **no verdict**. `layout.max_drift_track_fraction` is
-  `@occupancy/config`'s, because the live view refuses on it and the editor only
-  warns — one authored number, two responses, and a module that decided would
+  It also exports **no verdict**. The drift tolerance, `MAX_DRIFT_TRACK_FRACTION`,
+  is a constant in `ui/src/driftSession.ts`, because the live view refuses on it
+  and the editor only warns — one number, two responses, and a module that decided would
   force both surfaces to agree about policy as well as about measurement. It is a
   fraction of a *track width*, not a pixel count: `ui/src/driftSession.ts`'s
   `maxDriftPx` multiplies it by the layout's DPT, which is the only place that
   conversion happens.
 
 * **`detector` has two, and the second one is the same idea.** `.` is pure —
-  types and geometry, importable from node, which is how `dataset` gets
-  `spanToPolygon` — and `./browser` carries the ORT session. There is no
+  types, geometry and the two thresholds, importable from node, which is how
+  `dataset` gets `spanToPolygon` and the editor gets `MIN_DPT` without loading
+  ORT — and `./browser` carries the ORT session. There is no
   `./geometry`: pure geometry has no dependency to keep out of anything, so a
   third entry point would be ceremony. `loadDetector` is a factory rather than
   a constructor plus `await load()` on purpose — an unloaded session cannot be
   represented, so `detect` has no null branch and "model not loaded" stays the
   view's `unknown` rather than an empty detection list.
+
+  `./model` is not a module: it resolves to the `.ort` file, which the UI
+  build copies into the bundle when it exists (ADR 0019). An `exports` target
+  may not leave the package, so `models` is a link to `detector/models/`,
+  where the exporter writes, until the split. `DETECTOR_MODEL_FILE` on `.` is
+  the same name, for the browser's fetch.
 
 ## Adding an export
 

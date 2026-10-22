@@ -3,14 +3,20 @@ import { lookTheme } from '@rails49/look';
 import { customElement, property, state, query } from 'lit/decorators.js';
 import type { R49Archive } from '@rails49/r49';
 import { getDPT } from '@rails49/r49';
-import { MAX_DRIFT_TRACK_FRACTION } from '@occupancy/config';
-import { occupancy } from '@occupancy/detector';
-import type { Detection, Frame, SensorState } from '@occupancy/detector';
+import type { Detection, Frame } from '@occupancy/detector';
 import type { Detector } from '@occupancy/detector/browser';
 import type { DriftResult } from '@occupancy/drift';
 import { getCameraStream } from './capture.js';
 import { openDetector, DETECTOR_SOURCE } from './detectorSession.js';
-import { driftVerdict, grabPlane, maxDriftPx, openDriftCheck } from './driftSession.js';
+import { occupancy } from './occupancy.js';
+import type { SensorState } from './occupancy.js';
+import {
+  MAX_DRIFT_TRACK_FRACTION,
+  driftVerdict,
+  grabPlane,
+  maxDriftPx,
+  openDriftCheck,
+} from './driftSession.js';
 import type { DriftSession } from './driftSession.js';
 import { downloadDriftCsv, driftCsvName, driftRow } from './driftRecording.js';
 import type { DriftRow } from './driftRecording.js';
@@ -125,7 +131,7 @@ export class RRLiveView extends LitElement {
    * Whether the user has overridden the refusal for this session.
    *
    * The override exists because the check's false-positive rate is young: every
-   * number behind `layout.max_drift_track_fraction` comes from synthetic warps,
+   * number behind `MAX_DRIFT_TRACK_FRACTION` comes from synthetic warps,
    * and a live camera brings rolling shutter and autofocus that no warp
    * reproduces (#89 § Notes). It is deliberately **not** sticky across a
    * remount — a new session should start by telling the truth again.

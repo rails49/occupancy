@@ -29,9 +29,9 @@ the images at load time, and both UI views gate on them (#89).
         │       ▼
         │   detector/models/             detector_int8.ort (not in git)
         │       │
-        │       └─▶ lib/detector/         loadDetector → L0 → occupancy() → L1
+        │       └─▶ lib/detector/         loadDetector → L0
         │               │
-        │               └─▶ ui/           rr-live-view: L0 boxes, sensors   #85
+        │               └─▶ ui/           occupancy() → L1; rr-live-view: L0 boxes, sensors   #85
         │
         └── parked: no crop derivation runs (#8, #18)
                 ▼
@@ -83,8 +83,9 @@ pins (ADR 0018).
 | `@occupancy/detector` | `lib/detector/src/index.ts` |
 | `@occupancy/classifier` | `lib/classifier/README.md` |
 
-The drift tolerance is `layout.max_drift_track_fraction`. It becomes pixels only
-in `ui/src/driftSession.ts`'s `maxDriftPx` (ADR 0013).
+The drift tolerance is `MAX_DRIFT_TRACK_FRACTION`, a constant in
+`ui/src/driftSession.ts`. It becomes pixels only in that file's `maxDriftPx`
+(ADR 0013).
 
 ## Model files and releases
 
@@ -94,9 +95,12 @@ matching GitHub Release, and uploading `model_int8.ort` and `config.json` as
 assets. `bin/test.sh` downloads no model.
 
 The only model that ships is `detector/models/detector_int8.ort` (3.4 MiB).
-Vite copies it into the bundle only if it exists; without it the live view
-shows a no-model banner and reports every sensor `unknown`. The filename is
-written once, in `ui/modelAssets.ts` (`ui/tests/modelAssets.test.ts`).
+The detector package exposes it as its `./model` exports entry, through the
+`lib/detector/models` link (ADR 0019). Vite resolves that entry and copies the
+file into the bundle only if it exists; without it the live view shows a
+no-model banner and reports every sensor `unknown`. The filename is written
+only in the detector package (`lib/detector/tests/model.test.ts`); the UI names
+none (`ui/tests/modelAssets.test.ts`).
 
 ## Deploy
 

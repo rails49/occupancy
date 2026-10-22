@@ -148,10 +148,10 @@ before it, which is worse than having no undo. Rules, from entries being scoped 
 
 ## The vocabulary (#35)
 
-`vocabulary.ts` reads the vocabulary out of `@rails49/r49`'s data file through the generated
-`@occupancy/config` and is the **only place in `ui/` a class name comes from** — including the class
+`vocabulary.ts` reads the vocabulary out of `@rails49/r49`'s data file (`@rails49/r49/data.json`)
+and is the **only place in `ui/` a class name comes from** — including the class
 a new car is created as, which is the taxonomy's root rather than a literal `'stock'`. A hardcoded
-class anywhere in `ui/` breaks the config→menu path while still typechecking. Rules, each stated in
+class anywhere in `ui/` breaks the data-file→menu path while still typechecking. Rules, each stated in
 `SPEC.md` § Parameters live in `config.yaml`:
 
 * **The root is required in the stored class and never rendered.** An unrooted class is a
@@ -384,11 +384,16 @@ the live view keeps its loop running and reports every sensor `unknown`, because
 total and that is a state SPEC names, while the diagnostics view has no partial answer to give and
 says so. Folding that into the loader would take the choice away from both.
 
-**Which model ships is named once, in `ui/modelAssets.ts`.** It used to be two literals in two files
-that run in different worlds — a build-time copy target in `vite.config.ts` and a run-time fetch
-here — and the gap between them is invisible to the typechecker *and* to the build: a rename touched
-one and 404'd the moment the camera came up. Both now import the constant, and
-`tests/modelAssets.test.ts` fails if either file names the filename itself.
+**Which model ships is named by the detector package, and the UI names no model file** (#234,
+ADR 0019). It used to be two literals in two files that run in different worlds — a build-time copy
+target in `vite.config.ts` and a run-time fetch here — and the gap between them is invisible to the
+typechecker *and* to the build: a rename touched one and 404'd the moment the camera came up. The
+build now copies whatever `@occupancy/detector/model` resolves to (`ui/modelCopy.ts` names the entry
+and the bundle directory), and the fetch goes to `modelAssets.ts`'s `DETECTOR_MODEL_URL`, built from
+the package's `DETECTOR_MODEL_FILE`. They are two modules because `vite.config.ts` cannot import
+anything that imports the package: Vite's config loader leaves workspace packages to Node, which
+cannot load their TypeScript source. `tests/modelAssets.test.ts` fails if any of these files names
+the filename, and builds the UI with a stand-in at the package's entry to check it lands at the URL.
 
 **The CNN is retained but not loaded, and the bundle no longer carries it.** `@occupancy/classifier`
 stays in `lib/` and stays retrainable (SPEC § Option 2), but `ui` does not depend on it and Vite
@@ -411,7 +416,10 @@ requests `executionProviders: ['wasm']` and needs none of jsep, so `detectorSess
 `lib/detector/src/browser.ts` and `lib/classifier/src/browser.ts` all import
 **`onnxruntime-web/wasm`**, whose 12.42 MiB binary fits. Those specifiers must stay identical: two
 specifiers are two module instances, and the
-`ort.env.wasm` set here would not be the one the detector's session reads. `ui/ortAssets.ts` holds
+`ort.env.wasm` set here would not be the one the detector's session reads. Two versions would be
+two instances as well, and worse, the WASM files copied from the UI's install would not match the
+JavaScript bundled from the detector's: `@occupancy/detector` takes `onnxruntime-web` as a peer
+dependency, so the UI's own dependency decides the one version (ADR 0019). `ui/ortAssets.ts` holds
 the reasoning and the copy targets; `tests/ortAssets.test.ts` holds the chain to them.
 
 **Only two ORT files are copied** — the binary and `ort-wasm-simd-threaded.mjs`, its Emscripten
@@ -431,6 +439,18 @@ Vite copies the model into the bundle only if `detector/models/` exists, so buil
 must keep working with no local model present — that directory is gitignored and absent on a fresh
 clone. Without it the live view starts, shows the no-model banner and reports every sensor
 `unknown`.
+
+## L1 lives in `occupancy.ts` (#231)
+
+`occupancy()`, `SensorState` and `UnknownReason` are the UI's, not `@occupancy/detector`'s
+(ADR 0019). Sensors are authored in the editor and training never reads them, so the per-sensor
+answer belongs with the app that reports it, and ADR 0005's bias toward occupied is a rule about
+that report. What L1 builds on stays in the package: the `Detection` shape and `carWidthPx`, the
+width it substitutes for the predicted one. `covers`, the strict point-in-oriented-box test, sits
+beside `occupancy()` because nothing else calls it.
+
+It is pure and total — one state per sensor, always — so the live view hands `rr-viewer`'s sensor
+markers one answer and never builds an `unknown` itself.
 
 ## Camera drift lives in `driftSession.ts`, and the two views answer it differently (#89)
 
@@ -460,7 +480,7 @@ clamps to its own working resolution internally; letting it do that is what keep
 one thing.
 
 **The tolerance is a fraction of a track width, and `maxDriftPx(dpt)` here is the only place that
-multiplies.** `layout.max_drift_track_fraction` (0.25) times the layout's DPT — which *is* pixels per
+multiplies.** `MAX_DRIFT_TRACK_FRACTION` (0.25), a constant beside it, times the layout's DPT — which *is* pixels per
 track gauge — gives the tolerance in the frame the sensors were authored in. A fraction rather than a
 pixel count because the failure is geometric: occupancy breaks when a sensor stops sitting on the car
 it reads, and both boundaries for that (falling off the box, sliding onto a neighbouring track's car)

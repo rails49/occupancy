@@ -183,7 +183,7 @@ export function makeScratch(grid: BlockGrid): CorrelationScratch {
  * legitimate cases all read 0.00000 (#92), and a threshold placed under a hard
  * zero is a different kind of claim from one placed under a noise floor. The
  * cost is a quantum of one working pixel — well inside the tolerance
- * `layout.max_drift_track_fraction` sets, which is a quarter of a track width
+ * the UI's `MAX_DRIFT_TRACK_FRACTION` sets, which is a quarter of a track width
  * and so tens of times larger at any realistic DPT.
  */
 function blockShift(

@@ -8,7 +8,8 @@ import type {
   ViewerPointerEventName,
 } from '../src/rr-viewer.js';
 import { HIGHLIGHT_CLASS } from '../src/highlight.js';
-import type { Detection, SensorState } from '@occupancy/detector';
+import type { Detection } from '@occupancy/detector';
+import type { SensorState } from '../src/occupancy.js';
 
 // Mock ResizeObserver
 class MockResizeObserver {

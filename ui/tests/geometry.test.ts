@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import type { ReferencePoint, CarLabel, Sensor } from '@rails49/r49';
-import { STANDARD_GAUGE, STANDARD_WIDTH } from '@occupancy/config';
 import {
   coupledEnds,
   samePoint,
@@ -69,7 +68,9 @@ describe('trackWidthPx', () => {
 
 describe('carWidthPx', () => {
   it('is DPT x STANDARD_WIDTH / STANDARD_GAUGE', () => {
-    expect(carWidthPx(20)).to.be.closeTo((20 * STANDARD_WIDTH) / STANDARD_GAUGE, 1e-9);
+    // Written out: a 3000 mm standard width over `@rails49/r49`'s 1435 mm
+    // standard gauge.
+    expect(carWidthPx(20)).to.be.closeTo((20 * 3000) / 1435, 1e-9);
   });
 
   it('is 2.09 track widths at any DPT, so no scale enters the arithmetic', () => {

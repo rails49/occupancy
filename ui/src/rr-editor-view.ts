@@ -2,7 +2,7 @@ import { LitElement, html, css } from 'lit';
 import { customElement, property, query, state } from 'lit/decorators.js';
 import { calibrationFit, getDPT, make_id } from '@rails49/r49';
 import type { Image, ManifestData, Point } from '@rails49/r49';
-import { MIN_DPT } from '@occupancy/config';
+import { MIN_DPT } from '@occupancy/detector';
 import { captureFromCamera } from './capture.js';
 import { DriftMeasurements } from './driftMeasurements.js';
 import { driftVerdict, measureAgainst } from './driftSession.js';
@@ -108,7 +108,7 @@ function classOfReclassifyRow(id: string): string | null {
  * The taxonomy as menu rows, for one car.
  *
  * Generated from the vocabulary in `@rails49/r49`'s data file (`vocabulary.ts`), so
- * adding a subtype there and regenerating changes this menu with **no code
+ * a release adding a subtype there changes this menu at the version bump with **no code
  * edit** — and the root is not among them, because it is required in the
  * stored class and absent from the UI (`SPEC.md` § Parameters live in
  * `config.yaml`).
@@ -275,7 +275,7 @@ export interface NotifyDetail {
  * to keep what an undo changed on screen.
  *
  * DPT is reported live, with the fit residual once the fit is over-determined,
- * and a DPT below `layout.min_dpt` warns and blocks nothing. See `SPEC.md`
+ * and a DPT below the detector's `MIN_DPT` warns and blocks nothing. See `SPEC.md`
  * § Reference points.
  */
 @customElement('rr-editor-view')

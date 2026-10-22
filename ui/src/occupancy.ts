@@ -1,6 +1,33 @@
-import type { Sensor } from '@rails49/r49';
-import { carWidthPx, covers } from './geometry.ts';
-import type { Detection, Frame, SensorState, UnknownReason } from './types.ts';
+import { carWidthPx } from '@occupancy/detector';
+import type { Detection, Frame } from '@occupancy/detector';
+import type { Point, Sensor } from '@rails49/r49';
+
+/**
+ * Why a sensor could not be answered.
+ *
+ * `drift` is the one that is a **refusal** rather than an absence: a model is
+ * loaded, calibration resolves, the sensor is in frame, and the answer is still
+ * withheld because the camera no longer sees what the archive was authored
+ * against. It was omitted from this union until `@occupancy/drift` could produce
+ * it (issue #12 → #94); the other three describe missing capability, and this
+ * one describes measurement that would be wrong.
+ */
+export type UnknownReason = 'no-model' | 'no-calibration' | 'outside-frame' | 'drift';
+
+/**
+ * One sensor's L1 state.
+ *
+ * `occupied` carries the covering detection rather than a bare confidence:
+ * nothing is lost (`detection.confidence`) and a consumer debugging a phantom
+ * can highlight *which* box answered. `clear` carries no confidence at all —
+ * absent, not `0.0` and not `1.0` — because nothing scored it; that is what
+ * keeps a miss from arriving as a confident-looking number with no measurement
+ * behind it.
+ */
+export type SensorState =
+  | { readonly state: 'occupied'; readonly detection: Detection }
+  | { readonly state: 'clear' }
+  | { readonly state: 'unknown'; readonly reason: UnknownReason };
 
 /**
  * L1: per-sensor occupancy, as a pure function of L0.
@@ -33,7 +60,7 @@ import type { Detection, Frame, SensorState, UnknownReason } from './types.ts';
  * @param input.drifted    Whether the camera has moved away from the pose the
  *                         archive was authored against — `@occupancy/drift`
  *                         measured against a fraction of a track width
- *                         (`layout.max_drift_track_fraction`). Optional,
+ *                         (`MAX_DRIFT_TRACK_FRACTION` in `driftSession.ts`). Optional,
  *                         defaulting to `false`, because a caller with no drift
  *                         check running is not asserting that the camera is
  *                         steady — it is saying it does not know, and that was
@@ -99,4 +126,32 @@ export function occupancy(input: {
 
 function unknown(reason: UnknownReason): SensorState {
   return { state: 'unknown', reason };
+}
+
+/**
+ * Whether an oriented box of the given width **strictly contains** a point.
+ *
+ * Tested in the box's own axes rather than against its corners: a point is
+ * inside when its along-axis and across-axis offsets from the centre are both
+ * within the respective half-extents. Four corners and a winding rule would
+ * answer the same question with more ways to be wrong.
+ *
+ * No tolerance epsilon, per SPEC. Any value would be unvalidatable, the lateral
+ * direction already carries ~1.4 m prototype of slack from the derived width,
+ * and at a coupler two boxes abut on a shared endpoint so a point between
+ * coupled cars is already inside one of them. A real gap between uncoupled cars
+ * should read `clear`, and an epsilon would manufacture a phantom there.
+ *
+ * Exported for its tests only: `occupancy` is the only caller.
+ */
+export function covers(detection: Detection, widthPx: number, point: Point): boolean {
+  const dx = point.x - detection.centre.x;
+  const dy = point.y - detection.centre.y;
+  const ux = Math.cos(detection.angle);
+  const uy = Math.sin(detection.angle);
+
+  const along = dx * ux + dy * uy;
+  const across = -dx * uy + dy * ux;
+
+  return Math.abs(along) < detection.length / 2 && Math.abs(across) < widthPx / 2;
 }

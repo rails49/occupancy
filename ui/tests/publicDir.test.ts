@@ -5,8 +5,8 @@ import path from 'node:path';
 // `ui/public` is the one directory vite copies into `dist/` verbatim, with no
 // manifest of what it holds and no transform on the way — and `bin/deploy.sh`
 // uploads `dist/` to production. Everything else in the bundle is named
-// somewhere: `ortAssets.ts` names the runtime, `modelAssets.ts` names the
-// model, and a test holds each of them to it. `public/` is named by nothing,
+// somewhere: `ortAssets.ts` names the runtime, `modelCopy.ts` names the
+// model's package entry, and a test holds each of them to it. `public/` is named by nothing,
 // so what ships from it is whatever happens to be sitting there.
 //
 // That is how a symlink to a 21 MB corpus checkout came to be published

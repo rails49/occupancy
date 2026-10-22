@@ -552,7 +552,7 @@ covered today.
 | `overlayFit(media, frame)` | `{ sx, sy, aspectMismatch }` — how the authored frame maps onto the media's own pixel grid, which is what the overlay's content group is scaled by. Uniform for a photograph of the frame's shape at any pixel count; the identity while nothing is loaded |
 | `OverlayFit` | `{ sx, sy, aspectMismatch }` |
 
-**Both constants come from `@occupancy/config`.** The scale ratio cancels out of the width formula —
+**Both constants are `@occupancy/config`'s**, and `ui/` reaches them only through `@occupancy/detector`'s `carWidthPx`, which this re-exports. The scale ratio cancels out of the width formula —
 a car is 2.09 track-widths wide in **every** scale — so no scale lookup belongs anywhere in `ui/`,
 and no gauge arithmetic is reimplemented here.
 
@@ -645,9 +645,9 @@ ignores `frame` entirely: it names an exact pixel, wherever that pixel is.
 
 The authored class taxonomy, read as a tree. A pure module for the same reason `geometry.ts` is one,
 and the **only place in `ui/` that a class name comes from** — every value here is derived from
-the vocabulary in `@rails49/r49`'s data file, reached through the generated `@occupancy/config`, so a
-subtype added in an `@rails49/r49` release reaches the editor's menu at the next version bump and
-`pnpm config:generate`, with no code edit.
+the vocabulary in `@rails49/r49`'s data file, read directly as `@rails49/r49/data.json`, so a
+subtype added in an `@rails49/r49` release reaches the editor's menu at the next version bump, with
+no code edit.
 
 | Export | Description |
 |---|---|
@@ -934,7 +934,7 @@ inside a car already labelled ([#43]). `rr-app` owns the toast.
     coplanar points. Below that the fit reproduces its input exactly, so a zero would claim an
     agreement nothing checked. It is what makes a mis-typed coordinate visible instead of silently
     absorbed into the scale.
-  * **Below `MIN_DPT`**, the bar takes the `below-minimum` warning style and says so. It **blocks
+  * **Below `@occupancy/detector`'s `MIN_DPT`**, the bar takes the `below-minimum` warning style and says so. It **blocks
     nothing** — the six fixture archives sit at DPT 18–19, under the threshold of 20, and must stay
     openable and editable.
 * **Frame mismatch** (`.frame-warning`), from the viewer's `rr-media-frame`. Shown only when the
@@ -1238,7 +1238,9 @@ The shipped detector run over an opened archive, read against the labels a human
 * Sweeps images **sequentially**: one ORT session and one WASM heap, so concurrent `detect` calls
   would queue inside the session anyway while making the progress count meaningless and holding
   every decoded bitmap in memory at once.
-* Runs inference at a confidence floor **far below** `DETECTOR_CONFIDENCE_THRESHOLD` and filters
+* Starts the report at `@occupancy/detector`'s `CONFIDENCE_THRESHOLD`, the default `detect` applies
+  in the live view, so an untouched report describes what ships.
+* Runs inference at a confidence floor **far below** `CONFIDENCE_THRESHOLD` and filters
   afterwards. That is what `detect`'s `minConfidence` override is for: running at the shipped
   threshold would discard exactly the boxes that answer "what would a lower threshold have caught?".
 * **A missing model is fatal here**, unlike the live view. There, `occupancy()` is total and an

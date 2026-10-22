@@ -8,7 +8,7 @@
  *
  * **Not in `@occupancy/detector`, deliberately.** That package's root is the
  * car-box geometry both sides of the model need — `carWidthPx`, `spanToPolygon`,
- * `boxCorners`, `occupancy`. Scoring is a different job: it belongs to whoever
+ * `boxCorners`. Scoring is a different job: it belongs to whoever
  * is *evaluating*, and today that is one view in one app. `lib/detector`'s own
  * interface notes say to add a `./node` entry point "when something wants to
  * score a corpus offline, not before"; the same restraint applies to the

@@ -1,9 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { driftVerdict } from '../src/driftSession.ts';
+import { MAX_DRIFT_TRACK_FRACTION, driftVerdict, maxDriftPx } from '../src/driftSession.ts';
 
-// DPT 89.6875 with `max_drift_track_fraction: 0.25` puts the tolerance at
+// DPT 89.6875 with `MAX_DRIFT_TRACK_FRACTION` of 0.25 puts the tolerance at
 // 22.421875 px — the same layout the editor's drift tests calibrate.
 const DPT = 89.6875;
+
+describe('MAX_DRIFT_TRACK_FRACTION', () => {
+  it('is a quarter of a track width, and maxDriftPx scales it by DPT', () => {
+    expect(MAX_DRIFT_TRACK_FRACTION).toBe(0.25);
+    expect(maxDriftPx(DPT)).toBe(MAX_DRIFT_TRACK_FRACTION * DPT);
+  });
+});
 
 describe('driftVerdict', () => {
   it('passes a drift inside the tolerance', () => {

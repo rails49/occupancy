@@ -2,10 +2,11 @@
 // (WebGPU/WebNN) binary, which is over Cloudflare's per-file limit and which
 // `executionProviders: ['wasm']` below never uses. See `ui/ortAssets.ts`.
 import * as ort from 'onnxruntime-web/wasm';
-import { DETECTOR_CONFIDENCE_THRESHOLD, DETECTOR_INPUT } from '@occupancy/config';
+import { DETECTOR_INPUT } from '@occupancy/config';
 import { decodeDetections } from './decode.ts';
 import { gridToReport } from './letterbox.ts';
 import { paintLetterbox } from './preprocess.ts';
+import { CONFIDENCE_THRESHOLD } from './thresholds.ts';
 import type { Detection, Frame } from './types.ts';
 
 const [GRID_WIDTH, GRID_HEIGHT] = DETECTOR_INPUT;
@@ -23,7 +24,7 @@ export interface Detector {
    * @param report The coordinate system to answer in, normally
    *               `camera.resolution`. The source's own pixel count, the model
    *               grid and the letterbox bars all stay inside.
-   * @param options.minConfidence Overrides `DETECTOR_CONFIDENCE_THRESHOLD` for
+   * @param options.minConfidence Overrides `CONFIDENCE_THRESHOLD` for
    *               this call, so diagnostics can see what a lower threshold
    *               would have caught without re-running inference.
    * @throws If the source has no dimensions yet — a video before its metadata
@@ -156,7 +157,7 @@ class BrowserDetector implements Detector {
       output.data as Float32Array,
       output.dims,
       gridToReport(frame, grid, report),
-      options?.minConfidence ?? DETECTOR_CONFIDENCE_THRESHOLD
+      options?.minConfidence ?? CONFIDENCE_THRESHOLD
     );
   }
 
