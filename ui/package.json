@@ -14,7 +14,6 @@
   },
   "dependencies": {
     "@lit/reactive-element": "^2.1.2",
-    "@occupancy/config": "workspace:*",
     "@occupancy/detector": "workspace:*",
     "@occupancy/drift": "workspace:*",
     "@rails49/look": "github:rails49/look#v0.9.0",
