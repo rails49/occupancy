@@ -3,7 +3,7 @@
 // This file is the package's interface — the only surface consumers may rely
 // on. Anything not exported here is internal and may change without notice.
 // Per-symbol documentation lives on the declarations in ./types.ts,
-// ./geometry.ts, ./classIndex.ts, ./overlap.ts and ./thresholds.ts, because TypeScript discards doc comments
+// ./geometry.ts, ./classIndex.ts, ./overlap.ts, ./thresholds.ts and ./model.ts, because TypeScript discards doc comments
 // written on re-export statements.
 //
 // The name undersells it. This root entry point is really the **car box**
@@ -54,6 +54,12 @@ export { convexIntersectionArea, polygonArea, polygonIoU } from './overlap.ts';
 // diagnostics view starts from the same value the live view gets (#232).
 // `config.yaml` still authors both until the split (ADR 0019).
 export { CONFIDENCE_THRESHOLD, MIN_DPT } from './thresholds.ts';
+
+//── The model ────────────────────────────────────────────────────────────────
+// The file itself is the `./model` entry, which a build resolves and copies
+// (ADR 0019); this is its name, which a browser fetches it by. The package is
+// the only place either is written, so the copy and the fetch cannot disagree.
+export { DETECTOR_MODEL_FILE } from './model.ts';
 
 // Withheld: `occupancy`, `SensorState` and `UnknownReason`, with `covers`, the
 // point-in-oriented-box test. L1 moved to the UI (#231, ADR 0019); it builds

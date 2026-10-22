@@ -94,6 +94,12 @@ Three rules:
   represented, so `detect` has no null branch and "model not loaded" stays the
   view's `unknown` rather than an empty detection list.
 
+  `./model` is not a module: it resolves to the `.ort` file, which the UI
+  build copies into the bundle when it exists (ADR 0019). An `exports` target
+  may not leave the package, so `models` is a link to `detector/models/`,
+  where the exporter writes, until the split. `DETECTOR_MODEL_FILE` on `.` is
+  the same name, for the browser's fetch.
+
 ## Adding an export
 
 1. Write the TSDoc on the declaration in the implementation module.
