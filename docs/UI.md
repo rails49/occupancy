@@ -411,7 +411,10 @@ requests `executionProviders: ['wasm']` and needs none of jsep, so `detectorSess
 `lib/detector/src/browser.ts` and `lib/classifier/src/browser.ts` all import
 **`onnxruntime-web/wasm`**, whose 12.42 MiB binary fits. Those specifiers must stay identical: two
 specifiers are two module instances, and the
-`ort.env.wasm` set here would not be the one the detector's session reads. `ui/ortAssets.ts` holds
+`ort.env.wasm` set here would not be the one the detector's session reads. Two versions would be
+two instances as well, and worse, the WASM files copied from the UI's install would not match the
+JavaScript bundled from the detector's: `@occupancy/detector` takes `onnxruntime-web` as a peer
+dependency, so the UI's own dependency decides the one version (ADR 0019). `ui/ortAssets.ts` holds
 the reasoning and the copy targets; `tests/ortAssets.test.ts` holds the chain to them.
 
 **Only two ORT files are copied** — the binary and `ort-wasm-simd-threaded.mjs`, its Emscripten
