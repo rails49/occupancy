@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fixture, html } from '@open-wc/testing';
 import { R49Archive, getDPT } from '@rails49/r49';
+import { MIN_DPT } from '@occupancy/detector';
 import type { ReferencePoint, CarLabel, Point, Sensor, WorldPoint } from '@rails49/r49';
 import { EditSession } from '../src/editSession.js';
 import { HIGHLIGHT_DURATION_MS } from '../src/highlight.js';
@@ -180,7 +181,7 @@ describe('rr-editor-view', () => {
       const bar = el.shadowRoot!.querySelector('.dpt-bar')!;
       expect(bar.classList.contains('below-minimum')).to.be.true;
       expect(bar.textContent).to.contain('DPT 17.9');
-      expect(bar.textContent).to.contain('20');
+      expect(bar.textContent).to.contain(`minimum of ${MIN_DPT}`);
     });
   });
 

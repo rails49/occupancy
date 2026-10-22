@@ -85,8 +85,9 @@ Three rules:
   conversion happens.
 
 * **`detector` has two, and the second one is the same idea.** `.` is pure —
-  types and geometry, importable from node, which is how `dataset` gets
-  `spanToPolygon` — and `./browser` carries the ORT session. There is no
+  types, geometry and the two thresholds, importable from node, which is how
+  `dataset` gets `spanToPolygon` and the editor gets `MIN_DPT` without loading
+  ORT — and `./browser` carries the ORT session. There is no
   `./geometry`: pure geometry has no dependency to keep out of anything, so a
   third entry point would be ceremony. `loadDetector` is a factory rather than
   a constructor plus `await load()` on purpose — an unloaded session cannot be

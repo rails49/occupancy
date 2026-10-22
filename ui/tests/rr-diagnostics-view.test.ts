@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { fixture, html } from '@open-wc/testing';
 import { R49Archive } from '@rails49/r49';
+import { CONFIDENCE_THRESHOLD } from '@occupancy/detector';
 import type { Detection } from '@occupancy/detector';
 import '../src/rr-diagnostics-view.js';
 import type { RRDiagnosticsView } from '../src/rr-diagnostics-view.js';
@@ -244,6 +245,17 @@ describe('rr-diagnostics-view', () => {
     expect(report(el)!.sweeping).to.be.false;
     expect(report(el)!.diagnostics!.images).to.have.lengthOf(3);
     expect(detect).toHaveBeenCalledTimes(3);
+  });
+
+  it("reports at the detector's own threshold until the user moves it", async () => {
+    // The live view takes `detect`'s default, which is this constant; the
+    // report has to start from the same number to describe what ships (#232).
+    const el = await fixture<RRDiagnosticsView>(
+      html`<rr-diagnostics-view .archive=${await archiveOf(1)}></rr-diagnostics-view>`
+    );
+    await waitFor(el, () => report(el)?.diagnostics?.images.length === 1);
+
+    expect(report(el)!.threshold).to.equal(CONFIDENCE_THRESHOLD);
   });
 
   it('re-scores at a new threshold without running inference again', async () => {

@@ -934,7 +934,7 @@ inside a car already labelled ([#43]). `rr-app` owns the toast.
     coplanar points. Below that the fit reproduces its input exactly, so a zero would claim an
     agreement nothing checked. It is what makes a mis-typed coordinate visible instead of silently
     absorbed into the scale.
-  * **Below `MIN_DPT`**, the bar takes the `below-minimum` warning style and says so. It **blocks
+  * **Below `@occupancy/detector`'s `MIN_DPT`**, the bar takes the `below-minimum` warning style and says so. It **blocks
     nothing** — the six fixture archives sit at DPT 18–19, under the threshold of 20, and must stay
     openable and editable.
 * **Frame mismatch** (`.frame-warning`), from the viewer's `rr-media-frame`. Shown only when the
@@ -1238,7 +1238,9 @@ The shipped detector run over an opened archive, read against the labels a human
 * Sweeps images **sequentially**: one ORT session and one WASM heap, so concurrent `detect` calls
   would queue inside the session anyway while making the progress count meaningless and holding
   every decoded bitmap in memory at once.
-* Runs inference at a confidence floor **far below** `DETECTOR_CONFIDENCE_THRESHOLD` and filters
+* Starts the report at `@occupancy/detector`'s `CONFIDENCE_THRESHOLD`, the default `detect` applies
+  in the live view, so an untouched report describes what ships.
+* Runs inference at a confidence floor **far below** `CONFIDENCE_THRESHOLD` and filters
   afterwards. That is what `detect`'s `minConfidence` override is for: running at the shipped
   threshold would discard exactly the boxes that answer "what would a lower threshold have caught?".
 * **A missing model is fatal here**, unlike the live view. There, `occupancy()` is total and an
