@@ -77,7 +77,7 @@ The bias toward occupied lives in L1. L0 stays raw, so a consumer that wants a s
 
 ### Output encoding
 
-L0 detections are reported in `camera.resolution` pixel coordinates: centre `{x, y}`, length px, width px, orientation in radians from the +x axis, plus class and confidence.
+L0 detections are reported in `camera.resolution` pixel coordinates. Their fields are `@rails49/detector`'s: see rails49/detector's [SPEC § The runtime reports detections in the caller's frame](https://github.com/rails49/detector/blob/main/SPEC.md#the-runtime-reports-detections-in-the-callers-frame).
 
 That frame is the only stable one. The model's input size changes on re-export. The video's natural size varies per device. Normalized 0…1 coordinates lose the link to DPT. Sensors, labels and calibration are already authored in `camera.resolution`, so the point-in-box test needs no conversion, the SVG viewBox maps 1:1 onto it, and any length converts to millimetres with one DPT multiply. No millimetre field is stored.
 
@@ -109,7 +109,7 @@ The relation between image and layout is expressed as [DPT](GLOSSARY.md#calibrat
 
 Example. Two points in an N-scale layout are 1000 pixels apart in the image and 250 mm apart on the layout: 4 pixels per millimetre. Track gauge in N is `STANDARD_GAUGE/160 = 1435/160 ≈ 9 mm` (`STANDARD_GAUGE` is defined in the `.r49` library). DPT is 4 × 9 = 36.
 
-DPT must exceed 20. Below that a car is too few pixels across for the detector to place it reliably. The threshold is `@rails49/detector`'s `MIN_DPT`. The editor warns below it and never blocks.
+The editor warns below `@rails49/detector`'s `MIN_DPT` and never blocks. The value and the reason for it are in rails49/detector's [SPEC § Minimum DPT](https://github.com/rails49/detector/blob/main/SPEC.md#minimum-dpt).
 
 The [fixtures](GLOSSARY.md#layout-and-archive) sit at DPT 18–19. They exercise every code path in the editor, but they are not training data. Training will use new, higher-DPT images. Do not tune model accuracy against the fixtures or treat their numbers as predictive.
 
@@ -193,7 +193,7 @@ The format and the editor store two kinds of geometry, in pixel coordinates:
 | Cars | A [span](GLOSSARY.md#cars-and-labels): two points along the car's centerline | Per image | Yes, the detector's only class | Yes |
 | Sensors | A single point | Per layout | No, an output specification | No |
 
-1. Cars. Width is not stored; every car is drawn at the [car width](GLOSSARY.md#cars-and-labels). [Trains and couplings](GLOSSARY.md#cars-and-labels) are derived from coincident ends and never labeled. Each car carries [provenance](#provenance-is-required-not-optional).
+1. Cars. Width is not stored; every car is drawn at the [car width](GLOSSARY.md#cars-and-labels) (rails49/detector's [SPEC § Car width](https://github.com/rails49/detector/blob/main/SPEC.md#car-width-is-derived-from-dpt-never-stored)). [Trains and couplings](GLOSSARY.md#cars-and-labels) are derived from coincident ends and never labeled. Each car carries [provenance](#provenance-is-required-not-optional).
 
 2. [Sensors](GLOSSARY.md#occupancy) are where the deployed system must answer, and they never enter a loss. What they answer with is [Occupancy Output](#occupancy-output). They stay points, not spans: L0 carries full car pose, so block semantics can be derived later, and authoring intervals is UI for a consumer that does not exist yet. Sensors carry no provenance, since no model proposes where a person wants an answer.
 
@@ -298,29 +298,17 @@ The UI also runs the detector:
 
 1. On a live camera stream: the live view draws L0 boxes and reports L1 per sensor ([#85](https://github.com/rails49/occupancy/issues/85)). Testing and demo only; throughput is not critical. Built.
 2. Highlight detection errors and high-loss samples (training or test set) for diagnosis. Partly built: archive diagnostics ([#87](https://github.com/rails49/occupancy/issues/87)) scores the detector against one archive's labels. Nothing yet reviews the training and test splits.
-3. Real-time occupancy, for example on a phone, sent over MQTT to a controller such as [Rocrail](https://www.rocrail.online/). Measured and viable; see the runtime contract below. Not built.
+3. Real-time occupancy, for example on a phone, sent over MQTT to a controller such as [Rocrail](https://www.rocrail.online/). Measured and viable; see rails49/detector's [SPEC § Inference cost](https://github.com/rails49/detector/blob/main/SPEC.md#inference-cost) and the runtime contract below. Not built.
 
 #### Live-view runtime contract
 
-Measured in [issue #11](https://github.com/rails49/occupancy/issues/11) against the static-INT8 `.ort` under ORT-web 1.26.0 (WASM EP). Median steady-state `session.run()`, 20 timed passes after 3 warmups:
+The detector's measured cost is in rails49/detector's [SPEC § Inference cost](https://github.com/rails49/detector/blob/main/SPEC.md#inference-cost). What the live view takes from it:
 
-| Device | Threads | 960×544 | 640×384 |
-| :--- | ---: | ---: | ---: |
-| iPhone (iOS 26.5.2, Safari) | 4 | 120.1 ms | 86.0 ms |
-| iPhone | 1 | 191.3 ms | 103.8 ms |
-| iPad (iOS 26.5.2, Chrome) | 8 | 444.9 ms | 277.9 ms |
-| MacBook i7-7820HQ (Chrome) | 1 | 297.7 ms | 138.5 ms |
+* Plan the frame loop against the slowest device measured, not the phone.
+* Create the ORT session once at view mount, never per frame. The loading state must last several seconds.
+* Threading needs cross-origin isolation, so everything the app fetches comes from origin ([ADR 0006](docs/adr/0006-the-onnx-runtime-ships-from-origin.md)).
 
-What an implementer takes from this:
-
-* The phone is the fastest device measured. It beats the 2017 laptop by 2.5×.
-* Plan against ~450 ms. The spread across two current iOS devices is 3.7×. The iPad was slowest despite reporting 8 cores, possibly thread oversubscription on big.LITTLE.
-* Create the ORT session once at view mount, never per frame, and tolerate a slow start. Time to first result is 1.0–4.5 s; session creation alone ranged from 32 ms to 3637 ms. The 3.4 MB model fetch took 22–574 ms. The loading state must last several seconds.
-* Threading gains ~1.2–1.6×. It needs cross-origin isolation, so everything the app fetches comes from origin ([ADR 0006](docs/adr/0006-the-onnx-runtime-ships-from-origin.md)). iOS supports it: `crossOriginIsolated` and `SharedArrayBuffer` were confirmed on iPhone and iPad.
-
-The remaining speed-up is [change-detection frame gating](#secondary-uses-of-change-detection). Region-of-interest or tiled inference saves no time: N tiles cost the same convolution work plus N times the fixed overhead, and cropping to the model's fixed input only upsamples the region. Cropping saves time only by discarding part of the layout.
-
-> These figures measure `session.run()` alone, with no capture and no pre- or post-processing. Input was random; the NMS-free head emits 300 slots whatever the content, so latency does not depend on content. Quote medians, not p95: scheduler and thermal noise dominate the spread on every device.
+The remaining speed-up is [change-detection frame gating](#secondary-uses-of-change-detection).
 
 ### Secondary uses of change detection
 
@@ -328,7 +316,7 @@ Change detection is used where a wrong answer costs a warning or a wasted frame:
 
 1. Camera-drift detection. Built ([map #89](https://github.com/rails49/occupancy/issues/89)); see [Image Alignment](#image-alignment). It uses block-wise phase correlation rather than frame differencing. On `tools/drift-bench` two pixel-differencing baselines reach AUC 0.915, and the structural check reaches 1.000 with every legitimate case scoring zero.
 2. Re-classification gating. In the live view, skip inference on frames where nothing changed. A false negative costs a stale frame, never a wrong occupancy report. Relevant to [Testing and Demo](#testing-and-demo) item 3. Not scheduled; raise it as its own request. "Has the frame changed" and "has the camera moved" are different questions, so item 1 does not answer it.
-3. Change proposes, a model decides. Change detection nominates regions and the CNN or detector decides each one. That is option 2 or 3 with a cheap front end, so it still needs DPT above 20. A possible future optimisation, not specified here.
+3. Change proposes, a model decides. Change detection nominates regions and the CNN or detector decides each one. That is option 2 or 3 with a cheap front end, so it still needs DPT above the detector's [minimum](https://github.com/rails49/detector/blob/main/SPEC.md#minimum-dpt). A possible future optimisation, not specified here.
 
 > Licensing, should EX-SensorCAM code ever be reused: EX-SensorCAM is GPL-3.0, not AGPL-3.0. GPLv3 §13 permits combining it with an AGPLv3 work, but it is a distinct licence and must be recorded as one.
 
