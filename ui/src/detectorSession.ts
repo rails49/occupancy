@@ -7,7 +7,7 @@
  * app serves, and it is the only place that knows the app's base path. Written
  * twice, the second copy is the one that silently 404s under a changed `base`,
  * which is exactly the failure `modelAssets.ts` exists to prevent for the model
- * filename.
+ * URL.
  *
  * **The `onnxruntime-web/wasm` specifier is the load-bearing detail.** It must
  * match `lib/detector/src/browser.ts` character for character: two specifiers

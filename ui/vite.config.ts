@@ -3,9 +3,10 @@ import { viteStaticCopy } from 'vite-plugin-static-copy';
 import basicSsl from '@vitejs/plugin-basic-ssl';
 import type { InlineConfig } from 'vitest';
 import fs from 'fs';
+import { createRequire } from 'module';
 import path from 'path';
 import { ORT_WASM_BINARY, ortCopyTargets } from './ortAssets.js';
-import { detectorCopyTarget } from './modelAssets.js';
+import { DETECTOR_MODEL_DEST, DETECTOR_MODEL_ENTRY } from './modelCopy.js';
 
 interface VitestConfig extends UserConfig {
   test?: InlineConfig;
@@ -79,7 +80,30 @@ const serveProtoFixtures = {
   },
 };
 
-const includeModels = fs.existsSync(path.resolve(__dirname, detectorCopyTarget.src));
+/**
+ * The `vite-plugin-static-copy` target for the detector, or `null` with no
+ * local model.
+ *
+ * Resolved through the detector package's `./model` entry, so the filename is
+ * the package's (ADR 0019). Resolution fails with `MODULE_NOT_FOUND` when the
+ * file is absent, which is a fresh clone's normal state: the build goes on
+ * without it and the live view reports every sensor `unknown` / `no-model`.
+ * Any other failure — the entry gone from the package — stops the build.
+ *
+ * `src` is relative to `ui/`, which is what the plugin resolves against.
+ */
+export function detectorCopyTarget(): { src: string; dest: string } | null {
+  let file: string;
+  try {
+    file = createRequire(import.meta.url).resolve(DETECTOR_MODEL_ENTRY);
+  } catch (err) {
+    if ((err as { code?: unknown }).code === 'MODULE_NOT_FOUND') return null;
+    throw err;
+  }
+  return { src: path.relative(__dirname, file), dest: DETECTOR_MODEL_DEST };
+}
+
+const detectorTarget = detectorCopyTarget();
 
 export const config: VitestConfig = {
   base: '/',
@@ -93,9 +117,9 @@ export const config: VitestConfig = {
         ...ortCopyTargets,
         // The detector, and nothing else: the CNN is retained but no longer
         // loaded (#7, #85), so shipping it would be 11 MB nothing fetches. The
-        // filename is `modelAssets.ts`'s, shared with the `loadDetector` call
-        // that must agree with it.
-        ...(includeModels ? [detectorCopyTarget] : []),
+        // filename is the detector package's, and `modelAssets.ts` builds the
+        // URL the `loadDetector` call fetches from it.
+        ...(detectorTarget ? [detectorTarget] : []),
       ],
     }) as any,
     dropUnfetchableOrtWasm,

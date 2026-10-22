@@ -51,7 +51,7 @@ type RunState =
  * validation split on `best.pt`; nothing has ever scored the quantized model
  * this app actually loads, whose quantization is Conv-only because quantizing
  * the whole graph zeroed every score (#82). (Its filename is deliberately not
- * written here — `modelAssets.ts` is the one place that names it, and
+ * written here — the detector package is the one place that names it, and
  * `tests/modelAssets.test.ts` fails if any view does.) What this view reports
  * is agreement between one model and
  * one archive's labels — **not** an accuracy figure, and not a generalization

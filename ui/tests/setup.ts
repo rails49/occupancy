@@ -1,10 +1,15 @@
 import { vi } from 'vitest';
 
+// The DOM polyfills below are guarded on a DOM being there at all: a test file
+// that runs `vite build` asks for the node environment, where esbuild refuses
+// jsdom's `TextEncoder` (`modelAssets.test.ts`).
+const hasDom = typeof window !== 'undefined';
+
 // Mock getAnimations and animate for Shoelace components
-if (typeof Element.prototype.getAnimations === 'undefined') {
+if (hasDom && typeof Element.prototype.getAnimations === 'undefined') {
   Element.prototype.getAnimations = () => [];
 }
-if (typeof Element.prototype.animate === 'undefined') {
+if (hasDom && typeof Element.prototype.animate === 'undefined') {
   Element.prototype.animate = () => ({
     finished: Promise.resolve(),
     cancel: vi.fn(),
@@ -46,7 +51,7 @@ if (typeof global.URL.revokeObjectURL === 'undefined') {
 }
 
 // Mock window.matchMedia
-if (typeof window.matchMedia === 'undefined') {
+if (hasDom && typeof window.matchMedia === 'undefined') {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
     value: vi.fn().mockImplementation(query => ({
