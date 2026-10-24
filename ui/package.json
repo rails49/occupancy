@@ -16,7 +16,7 @@
     "@lit/reactive-element": "^2.1.2",
     "@occupancy/drift": "workspace:*",
     "@rails49/detector": "catalog:",
-    "@rails49/look": "github:rails49/look#v0.9.0",
+    "@rails49/look": "github:rails49/look#v0.10.0",
     "@rails49/r49": "catalog:",
     "@shoelace-style/shoelace": "^2.20.1",
     "lit": "^3.3.2",
