@@ -428,24 +428,24 @@ export class EditSession {
   }
 
   /**
-   * Adds an image at the end of the list and shows it. While nothing in the
-   * archive is positioned in pixels — no image, calibration point or sensor —
-   * `camera.resolution` becomes `size`, so a new archive takes the size of its
-   * first image (#254).
+   * Adds an image at the end of the list and shows it. Sets `camera.resolution`
+   * to `size` while nothing is positioned in pixels (`SPEC.md` § Images).
    */
   async addImage(filename: string, bytes: Uint8Array, size?: Size) {
     await this._record('add image', { kind: 'images' }, () => {
-      const manifest = this.archive.getManifest();
-      const { images, layout } = manifest;
-      const unpositioned =
-        images.length === 0 && layout.calibration.points.length === 0 && layout.sensors.length === 0;
-      if (size && unpositioned) {
-        manifest.camera.resolution = { width: size.width, height: size.height };
+      if (size && this._nothingPositioned()) {
+        this.archive.getManifest().camera.resolution = { width: size.width, height: size.height };
       }
       return this.archive.addImage(filename, bytes);
     });
     this.selectImage(filename);
   }
+  /** No image, calibration point or sensor: nothing is in `camera.resolution`'s pixels. */
+  private _nothingPositioned(): boolean {
+    const { images, layout } = this.archive.getManifest();
+    return images.length === 0 && layout.calibration.points.length === 0 && layout.sensors.length === 0;
+  }
+
 
   /** Deletes an image. Deleting the one on screen shows its neighbour. */
   async deleteImage(filename: string) {

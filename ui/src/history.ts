@@ -1,4 +1,4 @@
-import type { R49Archive, ReferencePoint, Image, Layout, ManifestData, Point } from '@rails49/r49';
+import type { Camera, R49Archive, ReferencePoint, Image, Layout, Point } from '@rails49/r49';
 
 /**
  * Undo/redo for the editor, as scoped snapshots of the manifest.
@@ -17,7 +17,7 @@ import type { R49Archive, ReferencePoint, Image, Layout, ManifestData, Point } f
  *    author, and therefore no way to write one that silently produces a subtly
  *    wrong manifest — the failure that would surface a training run later.
  * 2. **Scoped, not whole-manifest.** Every edit targets exactly one image
- *    record, the layout, or the images array, so an entry costs kilobytes
+ *    record, the layout, or the images array with `camera.resolution`, so an entry costs kilobytes
  *    rather than the hundreds of KB a fully labeled manifest runs to. The
  *    corollary the editor must honour: **key on label `id`, never on object
  *    identity** — applying a snapshot replaces the objects wholesale.
@@ -43,7 +43,7 @@ export type HistoryTarget =
 /** What an `images` entry snapshots. */
 interface ImagesSnapshot {
   images: Image[];
-  resolution: ManifestData['camera']['resolution'];
+  resolution: Camera['resolution'];
 }
 
 /**

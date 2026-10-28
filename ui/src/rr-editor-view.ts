@@ -257,6 +257,11 @@ export interface NotifyDetail {
   readonly message: string;
 }
 
+/** Adds an image with its decoded size, which a new archive takes (#254). */
+async function addMeasured(session: EditSession, filename: string, bytes: Uint8Array) {
+  await session.addImage(filename, bytes, await imageSize(bytes));
+}
+
 /** An image's blob URLs: full size for the viewer, a small copy for the strip. */
 interface ImageUrls {
   full: string;
@@ -783,16 +788,12 @@ export class RREditorView extends LitElement {
       input.accept = 'image/jpeg,image/png';
       input.onchange = async (event: Event) => {
         const file = (event.target as HTMLInputElement).files?.[0];
-        if (file) {
-          const bytes = new Uint8Array(await file.arrayBuffer());
-          await session.addImage(`img_${make_id(2)}.jpg`, bytes, await imageSize(bytes));
-        }
+        if (file) await addMeasured(session, `img_${make_id(2)}.jpg`, new Uint8Array(await file.arrayBuffer()));
       };
       input.click();
     } else if (source === 'camera') {
       try {
-        const bytes = await captureFromCamera();
-        await session.addImage(`capture_${make_id(3)}.jpg`, bytes, await imageSize(bytes));
+        await addMeasured(session, `capture_${make_id(3)}.jpg`, await captureFromCamera());
       } catch (err) {
         console.error('Failed to capture from camera', err);
       }
