@@ -1,9 +1,9 @@
 /**
  * Opening a drift check against an archive, in one place.
  *
- * Two surfaces need one — the live view refuses to classify on it (#94) and the
- * editor warns on it (#95) — and everything platform-specific about getting
- * there lives here rather than in either. `@occupancy/drift` takes a
+ * The live view refuses to classify on it (#94). The editor does not measure
+ * drift (#252). Everything platform-specific about getting there lives here
+ * rather than in the view. `@occupancy/drift` takes a
  * `GrayPlane`, deliberately: `ImageData` does not exist in Node and the
  * benchmark is a first-class consumer, so somebody has to hold the canvas, and
  * this is the `detectorSession.ts` of the drift path.
@@ -38,9 +38,9 @@ export const MAX_DRIFT_TRACK_FRACTION = 0.25;
  * How far the camera may appear to have moved before it counts as drift, in
  * `camera.resolution` pixels.
  *
- * **The one place `MAX_DRIFT_TRACK_FRACTION` is multiplied by a DPT.** Both
- * surfaces need the number — the live view refuses on it and prints it, the
- * editor warns on it — and written twice it is the `carWidthPx` mistake again: a
+ * **The one place `MAX_DRIFT_TRACK_FRACTION` is multiplied by a DPT.** Two
+ * places need the number — the live view refuses on it and prints it, the
+ * drift recording judges each sample by it — and written twice it is the `carWidthPx` mistake again: a
  * constant that biases a safety decision, living in two files with nothing
  * checking that they agree.
  *
@@ -72,8 +72,8 @@ export interface DriftVerdict {
 }
 
 /**
- * Judge a drift measurement, for the editor's row and the live view's refusal
- * alike, so the two cannot disagree about where the line is.
+ * Judge a drift measurement, for the live view's refusal and the drift
+ * recording alike, so the two cannot disagree about where the line is.
  *
  * @returns `null` when `dpt` is `null` — see {@link maxDriftPx}.
  */
@@ -160,8 +160,7 @@ export async function planeFromBytes(bytes: Uint8Array): Promise<GrayPlane> {
  *
  * Position 0 closes it, and the reorder control is what makes the choice
  * legible rather than hidden: dragging a thumbnail to the front changes the
- * reference, and because the editor shows **every** image's drift against it,
- * every number on screen updates when you do. A rule keyed on something the
+ * reference. A rule keyed on something the
  * user cannot see — the oldest filename, say — would be safer against accident
  * and much harder to understand or correct.
  *
@@ -186,29 +185,4 @@ async function checkAgainst(archive: R49Archive, filename: string): Promise<Drif
   if (!bytes) return null;
   const plane: GrayPlane = await planeFromBytes(bytes);
   return createDriftCheck([plane]);
-}
-
-/**
- * The editor's measuring function: one image of the archive against another,
- * by filename, in the reference's pixels.
- *
- * The drift check for a reference is built once and kept until a different
- * reference is asked for, so adding an image costs one decode, not two.
- *
- * @throws if either image has no bytes in the archive, or decoding fails
- */
-export function measureAgainst(
-  archive: R49Archive
-): (reference: string, image: string) => Promise<number> {
-  let cached: { reference: string; check: Promise<DriftCheck | null> } | null = null;
-  return async (reference, image) => {
-    if (cached?.reference !== reference) {
-      cached = { reference, check: checkAgainst(archive, reference) };
-    }
-    const check = await cached.check;
-    if (!check) throw new Error(`drift: reference ${reference} has no image bytes`);
-    const bytes = await archive.getImage(image);
-    if (!bytes) throw new Error(`drift: ${image} has no image bytes`);
-    return (await check.check(await planeFromBytes(bytes))).displacementPx;
-  };
 }

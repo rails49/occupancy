@@ -4,8 +4,6 @@ import { calibrationFit, getDPT, make_id } from '@rails49/r49';
 import type { Image, ManifestData, Point } from '@rails49/r49';
 import { MIN_DPT } from '@rails49/detector';
 import { captureFromCamera } from './capture.js';
-import { DriftMeasurements } from './driftMeasurements.js';
-import { driftVerdict, measureAgainst } from './driftSession.js';
 import type { ClickResult, Drag, EditSession, MenuSubject, Reveal } from './editSession.js';
 import {
   boundsOfPoints,
@@ -24,6 +22,7 @@ import type { ClassChoice } from './vocabulary.js';
 import { lookTheme, TURN_HEIGHT_PX } from '@rails49/look';
 import type { HistoryHighlight } from './history.js';
 import { HIGHLIGHT_DURATION_MS } from './highlight.js';
+import { makeThumbnail } from './thumbnail.js';
 import type {
   ViewerContextMenuDetail,
   ViewerHighlight,
@@ -264,7 +263,7 @@ export interface NotifyDetail {
  * The session holds the editing rules and the state they depend on: the tool,
  * the chain, drags, and the image on screen. This element holds what is only
  * for display — dialogs and menus and what they are open on, zoom and pan, the
- * highlight after an undo, blob URLs, and the drift readout — and re-renders
+ * highlight after an undo, and blob URLs — and re-renders
  * whenever the session changes. See ADR 0017.
  *
  * Takes `session`. Emits `rr-notify` (`NotifyDetail`) when a click is refused.
@@ -283,6 +282,8 @@ export class RREditorView extends LitElement {
   /** The archive being edited, with its rules and history. Created by `rr-app`. */
   @property({ attribute: false }) session: EditSession | null = null;
   @state() private _imageUrls: Map<string, string> = new Map();
+  /** A small copy of each image for the thumbnail strip (#252), by filename. */
+  @state() private _thumbnailUrls: Map<string, string> = new Map();
   /**
    * The loaded image's size against the archive's, when the two are different
    * **shapes**, and `null` whenever they agree.
@@ -294,12 +295,6 @@ export class RREditorView extends LitElement {
    * stated here, above the image it is about.
    */
   @state() private _frameMismatch: ViewerMediaFrameDetail | null = null;
-  /**
-   * Each image's drift from the archive's reference image (#95, #118), kept in
-   * step with the image list on every update. Held only in memory: a drift
-   * verdict is derived, and derived state is never stored in a v4 manifest.
-   */
-  private _drift: DriftMeasurements | null = null;
   /** Stops listening to the session. */
   private _unsubscribe: (() => void) | null = null;
   /** The reference point a dialog is open on, or null when none is. */
@@ -405,8 +400,7 @@ export class RREditorView extends LitElement {
     }
 
     .dpt-bar,
-    .frame-warning,
-    .drift-warning {
+    .frame-warning {
       flex-shrink: 0;
       padding: 0.5rem 1rem;
       font-family: var(--sl-font-mono);
@@ -418,36 +412,16 @@ export class RREditorView extends LitElement {
 
     /* A frame mismatch gets the DPT bar's warning treatment because it is the
        same kind of statement: the archive is inconsistent with what it is being
-       asked to do, and editing is not blocked. Camera drift is the third of
-       exactly that kind, which is why it shares the row and the colour rather
-       than inventing a louder one — the live view is where drift is allowed to
-       shout, because there a machine is reading the output (#94, #95). */
+       asked to do, and editing is not blocked. */
     .dpt-bar.uncalibrated,
     .dpt-bar.below-minimum,
-    .frame-warning,
-    .drift-warning {
+    .frame-warning {
       background: var(--sl-color-warning-100);
       color: var(--sl-color-warning-800);
     }
 
-    /* Three of the four drift states are not findings, and they keep the neutral
-       treatment so that amber goes on meaning "something is wrong" and nothing
-       else: a check in flight, an image measured and inside tolerance, and the
-       reference image itself. Only a measurement past the tolerance is amber.
-
-       The measured-and-fine row exists because the *reference* is user-movable
-       (#118): a bar that appeared only on failure would let a reorder change the
-       pose with nothing on screen moving. */
-    .drift-warning.checking,
-    .drift-warning.steady,
-    .drift-warning.reference {
-      background: var(--sl-color-neutral-100);
-      color: var(--sl-color-neutral-700);
-    }
-
     .dpt-bar .detail,
-    .frame-warning .detail,
-    .drift-warning .detail {
+    .frame-warning .detail {
       margin-left: 1.5rem;
     }
 
@@ -476,7 +450,6 @@ export class RREditorView extends LitElement {
     @media (max-height: ${TURN_HEIGHT_PX}px) {
       .dpt-bar,
       .frame-warning,
-      .drift-warning,
       .complete-bar {
         padding: 0.3rem 1rem;
       }
@@ -492,15 +465,12 @@ export class RREditorView extends LitElement {
       this._cursor = null;
       this._imageUrls.forEach(url => URL.revokeObjectURL(url));
       this._imageUrls = new Map();
-      // Filenames and zoom rects mean nothing on the next archive.
-      this._drift?.stop();
-      this._drift = this.session
-        ? new DriftMeasurements(measureAgainst(this.session.archive), () => this.requestUpdate())
-        : null;
+      this._thumbnailUrls.forEach(url => URL.revokeObjectURL(url));
+      this._thumbnailUrls = new Map();
+      // Zoom rects mean nothing on the next archive.
       this._fitZoom();
     }
     if (!this.session?.anchor) this._cursor = null;
-    this._drift?.sync(this._images().map(image => image.filename));
   }
 
   updated() {
@@ -520,7 +490,6 @@ export class RREditorView extends LitElement {
     window.removeEventListener('keydown', this._onKeyDown);
     this._unsubscribe?.();
     this._unsubscribe = null;
-    this._drift?.stop();
     // An open drag would hold undo shut until the archive is replaced.
     if (this._gesture) void this._endGesture(this._gesture);
     // A timer outliving the element would write state into a detached one.
@@ -545,30 +514,42 @@ export class RREditorView extends LitElement {
   }
 
   /**
-   * Makes a blob URL for each image that has none, and revokes those of
-   * images that are gone. Filenames are never reused, so a URL stays valid
-   * for as long as its image is in the list.
+   * Makes a blob URL and a thumbnail URL for each image that has none, and
+   * revokes those of images that are gone. Filenames are never reused, so a URL
+   * stays valid for as long as its image is in the list. Every full-size URL is
+   * made before any thumbnail, so the image on screen does not wait for the
+   * strip. An image that does not decode uses its full-size URL in the strip.
    */
   private async _syncImageUrls() {
     const session = this.session;
     if (!session) return;
     const filenames = new Set(this._images().map(image => image.filename));
     let changed = false;
-    for (const [filename, url] of this._imageUrls) {
-      if (filenames.has(filename)) continue;
-      URL.revokeObjectURL(url);
-      this._imageUrls.delete(filename);
-      changed = true;
+    for (const urls of [this._imageUrls, this._thumbnailUrls]) {
+      for (const [filename, url] of urls) {
+        if (filenames.has(filename)) continue;
+        URL.revokeObjectURL(url);
+        urls.delete(filename);
+        changed = true;
+      }
     }
+    const blobs = new Map<string, Blob>();
     for (const filename of filenames) {
       if (this._imageUrls.has(filename)) continue;
       const data = await session.archive.getImage(filename);
       if (this.session !== session || this._imageUrls.has(filename) || !data) continue;
       const blob = new Blob([data as BlobPart], { type: 'image/jpeg' });
       this._imageUrls.set(filename, URL.createObjectURL(blob));
+      blobs.set(filename, blob);
       changed = true;
     }
     if (changed) this.requestUpdate();
+    for (const [filename, blob] of blobs) {
+      const thumbnail = await makeThumbnail(blob).catch(() => blob);
+      if (this.session !== session || !this._imageUrls.has(filename)) continue;
+      this._thumbnailUrls.set(filename, URL.createObjectURL(thumbnail));
+      this.requestUpdate();
+    }
   }
 
   /**
@@ -1145,81 +1126,6 @@ export class RREditorView extends LitElement {
   }
 
   /**
-   * The camera-drift row for the image on screen.
-   *
-   * **Shown for every image, not only the ones that fail** (#118). The reference
-   * is `images[0]` and the user can move it by dragging the strip, so the only
-   * thing that keeps that choice honest is seeing what it decided about each
-   * image: a bar that appeared only past the tolerance would let a reorder change
-   * the pose with nothing on screen moving. Position 0 says so in as many words
-   * rather than reading 0.0 px — "zero because it is the reference" and "measured
-   * and found steady" are different claims, and only the first is true there.
-   *
-   * Persistent: it is a property of the image, not of the moment it was added, so
-   * it survives looking at another image and coming back — a toast would be gone
-   * by the time the user started labeling, which is when it matters.
-   *
-   * It names the displacement in pixels **and** track widths, for the same reason
-   * the frame-mismatch bar names both sizes: "drifted" alone cannot tell a knocked
-   * tripod from a camera moved to photograph a different corner of the layout, and
-   * those call for different decisions.
-   *
-   * **What it says about the consequence is narrower than it first was, and the
-   * narrower version is the true one.** Labeling this image is fine: a car span is
-   * authored on this image's own pixels, so it is self-consistent whatever the
-   * camera did, and nothing about the shift reaches the training data derived from
-   * it. What the copy warns about is the per-*layout* geometry — the sensors and
-   * calibration drawn over this image were authored against the reference, so the
-   * overlay is misplaced here. Telling a labeler their labels are poisoned when
-   * they are not would train them to ignore the bar.
-   */
-  private _renderDriftWarning(image: Image) {
-    const dpt = getDPT(this.session!.archive.getManifest());
-    // No track width to take a fraction of, and the calibration gate already has
-    // the labeler's attention. Nothing to say.
-    const row = this._drift?.row(image.filename);
-    if (dpt === null || !row) return '';
-
-    if (row.kind === 'reference') {
-      return html`<div class="drift-warning reference">
-        Reference image — zero drift by definition
-        <span class="detail">
-          every other image, and the live view's camera, is measured against this one.
-          Drag another thumbnail to the front of the strip to make it the reference instead.
-        </span>
-      </div>`;
-    }
-
-    if (row.kind === 'measuring') {
-      return html`<div class="drift-warning checking">
-        Measuring this image against the reference for camera drift…
-      </div>`;
-    }
-
-    const { px, tracks, tolerancePx, past } = driftVerdict(row.px, dpt)!;
-    const measurement = html`Camera moved ${px.toFixed(1)} px (${tracks.toFixed(2)} track widths)
-      from the reference`;
-
-    if (!past) {
-      return html`<div class="drift-warning steady">
-        ${measurement}
-        <span class="detail">within the ${tolerancePx.toFixed(1)} px this layout allows.</span>
-      </div>`;
-    }
-
-    return html`<div class="drift-warning">
-      ${measurement}
-      <span class="detail">
-        past the ${tolerancePx.toFixed(1)} px this layout allows.
-        <strong>Labeling this image is unaffected</strong> — a car span is authored on its own
-        pixels. What is off is the sensor and calibration overlay, which was authored against the
-        reference image.
-        Nothing is blocked: re-aim and re-capture, or keep it deliberately.
-      </span>
-    </div>`;
-  }
-
-  /**
    * The completeness control, for the image on screen.
    *
    * It sits **directly above the thumbnail bar**, which is where the same flag
@@ -1286,8 +1192,6 @@ export class RREditorView extends LitElement {
 
             ${this._renderFrameMismatch()}
 
-            ${currentImage ? this._renderDriftWarning(currentImage) : ''}
-
             <div class="viewer-wrap">
               <rr-viewer
                 .src=${src}
@@ -1314,7 +1218,7 @@ export class RREditorView extends LitElement {
             ${currentImage ? this._renderCompleteness(currentImage) : ''}
 
             <rr-thumbnail-bar
-              .images=${manifest.images.map(img => this._imageUrls.get(img.filename) || '')}
+              .images=${manifest.images.map(img => this._thumbnailUrls.get(img.filename) || '')}
               .complete=${manifest.images.map(img => img.labeled_complete)}
               .selectedIndex=${this.session.imageIndex}
               @rr-image-select=${this._onImageSelect}

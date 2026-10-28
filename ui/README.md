@@ -123,7 +123,6 @@ rr-app                          ← shell: owns the editing session and the view
 > [#85]: https://github.com/rails49/occupancy/issues/85
 > [#87]: https://github.com/rails49/occupancy/issues/87
 > [#94]: https://github.com/rails49/occupancy/issues/94
-> [#95]: https://github.com/rails49/occupancy/issues/95
 > [#118]: https://github.com/rails49/occupancy/issues/118
 > [#139]: https://github.com/rails49/occupancy/issues/139
 > [#148]: https://github.com/rails49/occupancy/issues/148
@@ -131,6 +130,7 @@ rr-app                          ← shell: owns the editing session and the view
 > [#151]: https://github.com/rails49/occupancy/issues/151
 > [#206]: https://github.com/rails49/occupancy/issues/206
 > [#217]: https://github.com/rails49/occupancy/issues/217
+> [#252]: https://github.com/rails49/occupancy/issues/252
 
 ## State and data flow
 
@@ -154,8 +154,8 @@ rr-app ─────────── rr-editor-view ────────
   it, so abandoning one leaves both the manifest and the stack untouched — however many cars the
   chain already wrote, since each of those is its own committed entry.
 * **`rr-editor-view` owns:** blob URLs for the images, the cursor the rubber band follows, the
-  dialog or menu that is open and what it is open on, the highlight after an undo, and the drift
-  readout. It also owns the one control that sets `labeled_complete`, which is the only place in the
+  dialog or menu that is open and what it is open on, the highlight after an undo, and the
+  thumbnails. It also owns the one control that sets `labeled_complete`, which is the only place in the
   format a human asserts something about absence. **The zoom is view state** ([#44]): a rect of the
   authored frame it hands the viewer, `null` for fit. It records nothing, it survives an image
   change and a live chain, New and Open drop it, and a **reveal pans to keep what an undo changed on
@@ -840,7 +840,7 @@ zero) the clamp is the identity and the menu lands at the cursor.
 Shows an archive's images and what is authored on them, and turns pointer, dialog and menu events
 into calls on an `EditSession` (`editSession.ts`). The editing rules are the session's; this
 element holds dialogs and menus and what they are open on, zoom and pan, the highlight after an
-undo, blob URLs, and the drift readout, and re-renders on every change the session reports.
+undo, and blob URLs, and re-renders on every change the session reports.
 
 | Property | Type | Description |
 |---|---|---|
@@ -851,28 +851,13 @@ inside a car already labelled ([#43]). `rr-app` owns the toast.
 
 * Makes a blob URL for each image when it first appears in the image list and revokes it when the
   image goes. A new session revokes them all.
-* **Camera-drift readout, one row per image** ([#95], [#118]). Every image is measured against the
-  archive's **reference image — `images[0]`, the first thumbnail** — and the row above the viewer shows
-  the result for the image on screen. Four states: `.reference` at position 0 ("zero drift by
-  definition", plus how to change it), `.checking` while a measurement runs, `.steady` for a
-  measurement inside `maxDriftPx(dpt)`, and an amber warning past it. The warning names the
-  displacement in pixels *and* track widths; **nothing is blocked**, exactly as with a below-`MIN_DPT`
-  DPT.
-
-  `.steady` is not decoration: the reference is **user-movable** by dragging the strip, so a row that
-  appeared only on failure would let a reorder re-point the pose with nothing on screen moving. For the
-  same reason a new reference image — by reorder, by delete, or by undo or redo of either — re-measures
-  the whole archive, and an add measures only the new image (appending cannot move position 0).
-
-  The bar says explicitly that **labeling this image is unaffected** — a car span is authored on the
-  image's own pixels, so the training data derived from it is self-consistent whatever the camera did;
-  what is off is the per-*layout* sensor and calibration overlay. An uncalibrated layout resolves no
-  tolerance and shows no row at all. The check runs
-  unawaited, with a neutral "checking…" row meanwhile, and warnings are keyed by filename **in memory
-  only** — a verdict is derived, v4 stores no derived state, and the archive's images already are the
-  pose record. A first image finds no references and earns no warning: "nothing to have drifted from"
-  is not "checked and found steady". Cleared wholesale when the archive changes, since a filename
-  means nothing on the next one.
+* **Thumbnails are small copies** ([#252], `thumbnail.ts`): each image is decoded once into a JPEG
+  `THUMBNAIL_WIDTH` (256) px wide, after every full-size URL exists, and the strip gets those URLs.
+  Handing the strip the full-size URLs made the browser hold every 48 MP image decoded. An image
+  that does not decode shows its full-size URL in the strip.
+* **No camera-drift readout** ([#252]). Decoding each image at full size to measure drift stalled
+  the editor ~1.5 s per 48 MP image, and drift does not reach training data: a car label is drawn on
+  its own image's pixels. The live view keeps its check ([#94]).
 * **Pointer input.** A **click** — `rr-pointer-down` then `rr-pointer-up` within
   `CLICK_SLOP_SCREEN_PX`, on the same `pointerId` — goes to `session.click` with the **press**
   position and the press's `imagePxPerScreenPx`. What comes back is a dialog to open

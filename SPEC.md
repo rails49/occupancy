@@ -177,7 +177,7 @@ Camera [drift](GLOSSARY.md#drift) is detected, and classification is refused pas
 * `@occupancy/drift` compares the structure of a frame against the [reference image](GLOSSARY.md#drift) by block-wise phase correlation, which ignores illumination, and reports a displacement in `camera.resolution` pixels.
 * The tolerance is `MAX_DRIFT_TRACK_FRACTION` in `ui/src/driftSession.ts`, a fraction of a track width. It is a tolerance, not a detection floor: the check resolves much smaller displacements.
 * Past the tolerance the live view reports every sensor as unknown with reason `drift`, with a visible override.
-* The editor shows every image's drift against the reference, so moving a thumbnail to the front re-measures all of them. Image order therefore carries meaning.
+* The editor does not measure drift ([#252](https://github.com/rails49/occupancy/issues/252)). A car label is drawn on its own image's pixels, so drift does not reach training data. Moving a thumbnail to the front changes the reference image the live view measures against.
 * Correction is out of scope.
 
 Validation is synthetic: the fixtures were shot on a tripod, so `tools/drift-bench` warps them. That is why the override exists.

@@ -451,7 +451,7 @@ beside `occupancy()` because nothing else calls it.
 It is pure and total — one state per sensor, always — so the live view hands `rr-viewer`'s sensor
 markers one answer and never builds an `unknown` itself.
 
-## Camera drift lives in `driftSession.ts`, and the two views answer it differently (#89)
+## Camera drift lives in `driftSession.ts`, and only the live view measures it (#89, #252)
 
 `ui/src/driftSession.ts` is the drift path's `detectorSession.ts`: the sole place that holds a
 canvas for it. `@occupancy/drift` takes a `GrayPlane` and not an `ImageData` on purpose — the
@@ -467,8 +467,7 @@ set, so the drifted pose then scored ~0 and the refusal never fired again. One a
 permanently widened the accepted pose.
 
 Position 0 closes it, and **the reorder control is what keeps the choice legible rather than hidden**:
-dragging a thumbnail to the front re-points the comparison, and because the editor shows *every*
-image's drift against the reference, every number on screen moves when you do. A rule keyed on
+dragging a thumbnail to the front re-points the comparison. A rule keyed on
 something invisible — the oldest filename, say — would be safer against accident and much harder to
 understand or correct. That trade was made deliberately; see #118's resolution.
 
@@ -531,41 +530,9 @@ measuring the moment it fired could not see it happen.
 > 0.53 s of arithmetic took **6 s** wall-clock in a backgrounded tab — the exact case a phone puts the
 > live view in. `MessageChannel` is not subject to timer throttling. Do not "simplify" it back.
 
-**The editor measures every image and blocks nothing** (#95, #118) — the `MIN_DPT` precedent exactly.
-The row above the viewer has four states, and only one of them is amber:
-
-| state | when |
-| :--- | :--- |
-| `.reference` | position 0 — "zero drift by definition", plus how to change it |
-| `.checking` | a measurement in flight |
-| `.steady` | measured, inside the tolerance — the number, stated |
-| *(amber)* | measured, past the tolerance — the warning |
-
-**`.steady` exists because the reference is user-movable.** A row that appeared only past the
-tolerance would let a reorder re-point the pose with nothing on screen moving, which is exactly the
-silence #118 was about. And position 0 says "reference" rather than reading `0.0 px`: "zero because it
-*is* the reference" and "measured and found steady" are different claims, and only the first is true
-there.
-
-Measurements are held in memory and never stored: a drift verdict is derived, v4 stores no derived
-state (#6), and the archive's images already *are* the pose record. An image with no row has **not
-been measured** (or its measurement failed) — which the render distinguishes from measuring zero.
-
-`ui/src/driftMeasurements.ts` holds them (#167). The editor tells it the image filenames on every
-update and nothing else; it works out what changed itself:
-
-* **a different `images[0]`** → every measurement against the old reference is dropped and every
-  image is measured again. A reorder, a delete of position 0, and an undo or redo of either all look
-  the same from here, which is the point: no path has to remember to say so.
-* **a new filename** → that image alone is measured. Appending cannot move position 0.
-* **a filename gone** → its row is dropped, and measured again if an undo brings it back.
-
-Each result is tagged with the reference it was measured against and dropped if that is no longer
-the reference. Images are measured one at a time, whether or not the layout is calibrated — the pixels
-need no DPT — but no row shows until a DPT resolves, since a fraction of a track width needs a track
-width and the calibration gate already has the labeler's attention. `driftVerdict` in
-`driftSession.ts` turns a measurement and a DPT into the numbers the row and the live view's refusal
-both print.
+**The editor measures no drift** (#252). It used to measure every image against the reference and
+warn (#95, #118). Decoding each image at full size for that stalled it ~1.5 s per 48 MP image, and
+drift does not reach training data: a car label is drawn on its own image's pixels.
 
 ## Diagnostics reads the model against the labels (#87)
 
