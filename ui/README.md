@@ -853,11 +853,8 @@ inside a car already labelled ([#43]). `rr-app` owns the toast.
   image goes. A new session revokes them all.
 * **Thumbnails are small copies** ([#252], `thumbnail.ts`): each image is decoded once into a JPEG
   `THUMBNAIL_WIDTH` (256) px wide, after every full-size URL exists, and the strip gets those URLs.
-  Handing the strip the full-size URLs made the browser hold every 48 MP image decoded. An image
-  that does not decode shows its full-size URL in the strip.
-* **No camera-drift readout** ([#252]). Decoding each image at full size to measure drift stalled
-  the editor ~1.5 s per 48 MP image, and drift does not reach training data: a car label is drawn on
-  its own image's pixels. The live view keeps its check ([#94]).
+  An image that does not decode shows its full-size URL in the strip.
+* **No camera-drift readout** (ADR 0020). The live view keeps its check ([#94]).
 * **Pointer input.** A **click** — `rr-pointer-down` then `rr-pointer-up` within
   `CLICK_SLOP_SCREEN_PX`, on the same `pointerId` — goes to `session.click` with the **press**
   position and the press's `imagePxPerScreenPx`. What comes back is a dialog to open

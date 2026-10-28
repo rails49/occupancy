@@ -238,16 +238,13 @@ describe('rr-editor-view', () => {
     });
   });
 
-  describe('drift (#252)', () => {
-    // The editor measures no camera drift: decoding every image at full size
-    // stalled it for ~1.5 s per 48 MP image. The live view keeps its check.
-    it('reads each image once and shows no drift row', async () => {
+  describe('drift (ADR 0020)', () => {
+    it('reads each image once, measuring no drift', async () => {
       const el = await render();
       await flush();
       await el.updateComplete;
 
       expect(archive.getImage).toHaveBeenCalledOnce();
-      expect(el.shadowRoot!.querySelector('.drift-warning')).to.equal(null);
     });
   });
 
@@ -1215,6 +1212,27 @@ describe('rr-editor-view', () => {
       expect(urls.get(bar(el).images[0])).to.equal(THUMBNAIL);
       expect(urls.get(viewer.src!)).to.not.equal(THUMBNAIL);
       expect(makeThumbnail).toHaveBeenCalledWith(urls.get(viewer.src!));
+    });
+
+    it('drops a thumbnail finished after its image was deleted and restored', async () => {
+      let finish: (thumb: Blob) => void = () => {};
+      makeThumbnail.mockImplementationOnce(() => new Promise(resolve => (finish = resolve)));
+      const el = await mount();
+      await flush();
+      const create = vi.mocked(URL.createObjectURL);
+      expect(create).toHaveBeenCalledOnce();
+
+      bar(el).dispatchEvent(new CustomEvent('rr-image-delete', { detail: { index: 0 } }));
+      await flush();
+      await el.session!.undo();
+      await flush();
+      await el.updateComplete;
+      // The restored image has its own full-size and thumbnail URLs.
+      expect(create).toHaveBeenCalledTimes(3);
+
+      finish(THUMBNAIL);
+      await flush();
+      expect(create).toHaveBeenCalledTimes(3);
     });
 
     it('shows the full-size image in the strip when it does not decode', async () => {

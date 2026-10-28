@@ -1,10 +1,4 @@
-/**
- * A small copy of an archive image for the thumbnail strip (#252).
- *
- * The strip shows each image in a 64 px box. Handing it the full-size blob URL
- * makes the browser hold every image decoded at full size, about 195 MB each at
- * 48 MP, which is enough to evict the image on screen and stall the viewer.
- */
+/** A small copy of an archive image for the thumbnail strip (#252). */
 
 /** Width of a thumbnail in pixels: the strip's 64 px box at up to 4x. */
 export const THUMBNAIL_WIDTH = 256;

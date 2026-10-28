@@ -68,7 +68,7 @@ describe('createDriftCheck', () => {
 
   it('names the reference the frame agreed with', async () => {
     // A `min` over references, so agreeing with any archive image is agreement —
-    // and `refIndex` says which, because the editor's warning copy names it.
+    // and `refIndex` says which.
     const refs = [renderScene(W, H, 0, 0), renderScene(W, H, 40, 0), renderScene(W, H, 0, 40)];
     const check = await createDriftCheck(refs);
     expect(check.refCount).toBe(3);

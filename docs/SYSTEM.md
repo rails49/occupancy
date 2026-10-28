@@ -46,7 +46,7 @@ the versions `pnpm-workspace.yaml`'s catalog pins (org ADR-0022, ADR 0019).
 
 The drift tolerance is `MAX_DRIFT_TRACK_FRACTION`, a constant in
 `ui/src/driftSession.ts`. It becomes pixels only in that file's `maxDriftPx`
-(ADR 0013).
+(ADR 0020).
 
 ## The model
 

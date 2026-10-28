@@ -462,14 +462,12 @@ this is that somebody. It exports `openDriftCheck(archive)`, `grabPlane(source, 
 
 **One image defines the pose: `images[0]`, the first thumbnail in the strip** (#118). What shipped
 first made every image a reference and scored the minimum over them, which had a hole — an image
-captured from a moved camera and kept anyway (the editor warns, it never blocks) joined the reference
+captured from a moved camera and kept anyway joined the reference
 set, so the drifted pose then scored ~0 and the refusal never fired again. One accepted warning
 permanently widened the accepted pose.
 
-Position 0 closes it, and **the reorder control is what keeps the choice legible rather than hidden**:
-dragging a thumbnail to the front re-points the comparison. A rule keyed on
-something invisible — the oldest filename, say — would be safer against accident and much harder to
-understand or correct. That trade was made deliberately; see #118's resolution.
+Position 0 closes it: dragging a thumbnail to the front re-points the comparison. Since the editor
+stopped showing drift, nothing on screen shows that change (ADR 0020).
 
 **References are decoded at their native resolution, and that is load-bearing.** `displacementPx` is
 reported in the frame of the *first* reference, so handing the check pre-shrunk images silently
@@ -530,9 +528,7 @@ measuring the moment it fired could not see it happen.
 > 0.53 s of arithmetic took **6 s** wall-clock in a backgrounded tab — the exact case a phone puts the
 > live view in. `MessageChannel` is not subject to timer throttling. Do not "simplify" it back.
 
-**The editor measures no drift** (#252). It used to measure every image against the reference and
-warn (#95, #118). Decoding each image at full size for that stalled it ~1.5 s per 48 MP image, and
-drift does not reach training data: a car label is drawn on its own image's pixels.
+**The editor measures no drift** (ADR 0020).
 
 ## Diagnostics reads the model against the labels (#87)
 

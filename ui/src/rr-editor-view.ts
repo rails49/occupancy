@@ -256,6 +256,20 @@ export interface NotifyDetail {
   readonly message: string;
 }
 
+/** An image's blob URLs: full size for the viewer, a small copy for the strip. */
+interface ImageUrls {
+  full: string;
+  thumbnail: string | null;
+}
+
+/** Revokes both of an image's URLs, and marks them revoked by emptying `full`. */
+function revokeImageUrls(urls: ImageUrls) {
+  URL.revokeObjectURL(urls.full);
+  if (urls.thumbnail) URL.revokeObjectURL(urls.thumbnail);
+  urls.full = '';
+  urls.thumbnail = null;
+}
+
 /**
  * Main editor view: shows an archive's images and what is authored on them,
  * and turns pointer, dialog and menu events into calls on an `EditSession`.
@@ -281,9 +295,11 @@ export interface NotifyDetail {
 export class RREditorView extends LitElement {
   /** The archive being edited, with its rules and history. Created by `rr-app`. */
   @property({ attribute: false }) session: EditSession | null = null;
-  @state() private _imageUrls: Map<string, string> = new Map();
-  /** A small copy of each image for the thumbnail strip (#252), by filename. */
-  @state() private _thumbnailUrls: Map<string, string> = new Map();
+  /**
+   * Blob URLs for each image, by filename: the full-size image for the viewer,
+   * and a small copy for the thumbnail strip (#252), `null` until it is made.
+   */
+  @state() private _imageUrls: Map<string, ImageUrls> = new Map();
   /**
    * The loaded image's size against the archive's, when the two are different
    * **shapes**, and `null` whenever they agree.
@@ -463,10 +479,8 @@ export class RREditorView extends LitElement {
       this._clearHighlight();
       this._frameMismatch = null;
       this._cursor = null;
-      this._imageUrls.forEach(url => URL.revokeObjectURL(url));
+      this._imageUrls.forEach(revokeImageUrls);
       this._imageUrls = new Map();
-      this._thumbnailUrls.forEach(url => URL.revokeObjectURL(url));
-      this._thumbnailUrls = new Map();
       // Zoom rects mean nothing on the next archive.
       this._fitZoom();
     }
@@ -525,29 +539,29 @@ export class RREditorView extends LitElement {
     if (!session) return;
     const filenames = new Set(this._images().map(image => image.filename));
     let changed = false;
-    for (const urls of [this._imageUrls, this._thumbnailUrls]) {
-      for (const [filename, url] of urls) {
-        if (filenames.has(filename)) continue;
-        URL.revokeObjectURL(url);
-        urls.delete(filename);
-        changed = true;
-      }
+    for (const [filename, urls] of this._imageUrls) {
+      if (filenames.has(filename)) continue;
+      revokeImageUrls(urls);
+      this._imageUrls.delete(filename);
+      changed = true;
     }
-    const blobs = new Map<string, Blob>();
+    const made = new Map<ImageUrls, Blob>();
     for (const filename of filenames) {
       if (this._imageUrls.has(filename)) continue;
       const data = await session.archive.getImage(filename);
       if (this.session !== session || this._imageUrls.has(filename) || !data) continue;
       const blob = new Blob([data as BlobPart], { type: 'image/jpeg' });
-      this._imageUrls.set(filename, URL.createObjectURL(blob));
-      blobs.set(filename, blob);
+      const urls: ImageUrls = { full: URL.createObjectURL(blob), thumbnail: null };
+      this._imageUrls.set(filename, urls);
+      made.set(urls, blob);
       changed = true;
     }
     if (changed) this.requestUpdate();
-    for (const [filename, blob] of blobs) {
+    for (const [urls, blob] of made) {
       const thumbnail = await makeThumbnail(blob).catch(() => blob);
-      if (this.session !== session || !this._imageUrls.has(filename)) continue;
-      this._thumbnailUrls.set(filename, URL.createObjectURL(thumbnail));
+      // Revoked while the thumbnail was made: the image went, or the session did.
+      if (urls.full === '') continue;
+      urls.thumbnail = URL.createObjectURL(thumbnail);
       this.requestUpdate();
     }
   }
@@ -1181,7 +1195,7 @@ export class RREditorView extends LitElement {
   render() {
     const manifest = this.session?.archive.getManifest();
     const currentImage = this.session?.image;
-    const src = currentImage ? this._imageUrls.get(currentImage.filename) : null;
+    const src = currentImage ? this._imageUrls.get(currentImage.filename)?.full : null;
 
     return html`
       <div class="main-content">
@@ -1218,7 +1232,7 @@ export class RREditorView extends LitElement {
             ${currentImage ? this._renderCompleteness(currentImage) : ''}
 
             <rr-thumbnail-bar
-              .images=${manifest.images.map(img => this._thumbnailUrls.get(img.filename) || '')}
+              .images=${manifest.images.map(img => this._imageUrls.get(img.filename)?.thumbnail || '')}
               .complete=${manifest.images.map(img => img.labeled_complete)}
               .selectedIndex=${this.session.imageIndex}
               @rr-image-select=${this._onImageSelect}

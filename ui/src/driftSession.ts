@@ -1,9 +1,8 @@
 /**
  * Opening a drift check against an archive, in one place.
  *
- * The live view refuses to classify on it (#94). The editor does not measure
- * drift (#252). Everything platform-specific about getting there lives here
- * rather than in the view. `@occupancy/drift` takes a
+ * The live view refuses to classify on it (#94), and everything
+ * platform-specific about getting there lives here rather than in the view. `@occupancy/drift` takes a
  * `GrayPlane`, deliberately: `ImageData` does not exist in Node and the
  * benchmark is a first-class consumer, so somebody has to hold the canvas, and
  * this is the `detectorSession.ts` of the drift path.
@@ -22,8 +21,8 @@ import type { R49Archive } from '@rails49/r49';
 
 /**
  * The drift tolerance: the largest drift still taken as the pose, as a
- * fraction of one track width (ADR 0013,
- * `docs/adr/0013-drift-is-measured-against-the-first-image.md`).
+ * fraction of one track width (ADR 0020,
+ * `docs/adr/0020-only-the-live-view-measures-drift.md`).
  *
  * Why 0.25: a sensor fails when it slides off its car or onto a neighbouring
  * track's, and both sit about one track width away, so a quarter is roughly a
@@ -154,15 +153,12 @@ export async function planeFromBytes(bytes: Uint8Array): Promise<GrayPlane> {
  * **One image defines the pose, and it is the one the user can see and move.**
  * The alternative — every image a reference, scored as the minimum over them —
  * is what shipped first, and it had a hole: an image captured from a moved
- * camera and kept anyway (the editor warns, it never blocks) joined the
+ * camera and kept anyway joined the
  * reference set, so the drifted pose then scored ~0 and the refusal never fired
  * again. One accepted warning permanently widened the accepted pose (#118).
  *
- * Position 0 closes it, and the reorder control is what makes the choice
- * legible rather than hidden: dragging a thumbnail to the front changes the
- * reference. A rule keyed on something the
- * user cannot see — the oldest filename, say — would be safer against accident
- * and much harder to understand or correct.
+ * Position 0 closes it: dragging a thumbnail to the front changes the
+ * reference (ADR 0020).
  *
  * Returns `null` for an archive with no decodable first image, which is a real
  * state and not an error: a layout that has just been created has no pose to
