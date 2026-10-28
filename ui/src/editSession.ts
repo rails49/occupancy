@@ -18,7 +18,7 @@ import {
   samePoint,
   DEFAULT_GRAB_RADIUS_SCREEN_PX,
 } from './geometry.js';
-import type { DragHandle, HitKind, HitScene, HitTarget, HitTolerance } from './geometry.js';
+import type { DragHandle, HitKind, HitScene, HitTarget, HitTolerance, Size } from './geometry.js';
 import { EditHistory, revealTarget } from './history.js';
 import type { HistoryEntry, HistoryGesture, HistoryHighlight, HistoryTarget } from './history.js';
 import { TOOLS } from './tools.js';
@@ -427,9 +427,23 @@ export class EditSession {
     });
   }
 
-  /** Adds an image at the end of the list and shows it. */
-  async addImage(filename: string, bytes: Uint8Array) {
-    await this._record('add image', { kind: 'images' }, () => this.archive.addImage(filename, bytes));
+  /**
+   * Adds an image at the end of the list and shows it. While nothing in the
+   * archive is positioned in pixels — no image, calibration point or sensor —
+   * `camera.resolution` becomes `size`, so a new archive takes the size of its
+   * first image (#254).
+   */
+  async addImage(filename: string, bytes: Uint8Array, size?: Size) {
+    await this._record('add image', { kind: 'images' }, () => {
+      const manifest = this.archive.getManifest();
+      const { images, layout } = manifest;
+      const unpositioned =
+        images.length === 0 && layout.calibration.points.length === 0 && layout.sensors.length === 0;
+      if (size && unpositioned) {
+        manifest.camera.resolution = { width: size.width, height: size.height };
+      }
+      return this.archive.addImage(filename, bytes);
+    });
     this.selectImage(filename);
   }
 

@@ -16,9 +16,9 @@ import type { SlCheckbox } from '@shoelace-style/shoelace';
 import type { Rect } from '../src/geometry.js';
 
 
-// The camera and the thumbnail are both mocked: one needs `getUserMedia` and the
-// other `createImageBitmap` and `OffscreenCanvas`, and jsdom has none of them.
-// `thumbnail.test.ts` covers the thumbnail itself.
+// The camera, the image size and the thumbnail are mocked: one needs
+// `getUserMedia` and the others `createImageBitmap` and `OffscreenCanvas`, and
+// jsdom has none of them. `imageSize.test.ts` and `thumbnail.test.ts` cover those two.
 const captureFromCamera = vi.fn(async () => new Uint8Array([1, 2, 3]));
 const THUMBNAIL = new Blob(['thumbnail'], { type: 'image/jpeg' });
 const makeThumbnail = vi.fn(async (_image: Blob) => THUMBNAIL);
@@ -27,6 +27,11 @@ vi.mock('../src/capture.js', () => ({
   DEFAULT_CAMERA_CONSTRAINTS: { video: true, audio: false },
   getCameraStream: async () => ({ getTracks: () => [] }),
   captureFromCamera: () => captureFromCamera(),
+}));
+
+const imageSize = vi.fn(async (_bytes: Uint8Array) => ({ width: 8064, height: 6048 }));
+vi.mock('../src/imageSize.js', () => ({
+  imageSize: (bytes: Uint8Array) => imageSize(bytes),
 }));
 
 vi.mock('../src/thumbnail.js', () => ({
@@ -1161,6 +1166,18 @@ describe('rr-editor-view', () => {
 
       expect(archive.getManifest().images).to.have.length(2);
       expect(bar(el).selectedIndex).to.equal(1);
+    });
+
+    it('gives a new archive the size of its first image (#254)', async () => {
+      archive.setManifest({ ...archive.getManifest(), images: [] });
+      const el = await mount();
+
+      bar(el).dispatchEvent(new CustomEvent('rr-image-add', { detail: { source: 'camera' } }));
+      await flush();
+      await el.updateComplete;
+
+      expect(imageSize).toHaveBeenCalledWith(new Uint8Array([1, 2, 3]));
+      expect(archive.getManifest().camera.resolution).toEqual({ width: 8064, height: 6048 });
     });
 
     it('keeps the image on screen through a reorder', async () => {

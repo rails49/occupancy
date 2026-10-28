@@ -22,6 +22,7 @@ import type { ClassChoice } from './vocabulary.js';
 import { lookTheme, TURN_HEIGHT_PX } from '@rails49/look';
 import type { HistoryHighlight } from './history.js';
 import { HIGHLIGHT_DURATION_MS } from './highlight.js';
+import { imageSize } from './imageSize.js';
 import { makeThumbnail } from './thumbnail.js';
 import type {
   ViewerContextMenuDetail,
@@ -783,14 +784,15 @@ export class RREditorView extends LitElement {
       input.onchange = async (event: Event) => {
         const file = (event.target as HTMLInputElement).files?.[0];
         if (file) {
-          const buffer = await file.arrayBuffer();
-          await session.addImage(`img_${make_id(2)}.jpg`, new Uint8Array(buffer));
+          const bytes = new Uint8Array(await file.arrayBuffer());
+          await session.addImage(`img_${make_id(2)}.jpg`, bytes, await imageSize(bytes));
         }
       };
       input.click();
     } else if (source === 'camera') {
       try {
-        await session.addImage(`capture_${make_id(3)}.jpg`, await captureFromCamera());
+        const bytes = await captureFromCamera();
+        await session.addImage(`capture_${make_id(3)}.jpg`, bytes, await imageSize(bytes));
       } catch (err) {
         console.error('Failed to capture from camera', err);
       }

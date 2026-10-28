@@ -95,7 +95,7 @@ The detector runs entirely in the browser via ONNX Runtime; the application is f
 
 ### Images
 
-An archive holds a list of images of the layout taken with an overhead camera. The UI adds and removes images.
+An archive holds a list of images of the layout taken with an overhead camera. The UI adds and removes images. While nothing in the archive is positioned in pixels (no image, calibration point or sensor), adding an image sets `camera.resolution` to its size ([#254](https://github.com/rails49/occupancy/issues/254)).
 
 ### Calibration
 
