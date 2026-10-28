@@ -1,4 +1,4 @@
-import type { R49Archive, ReferencePoint, Image, Layout, Point } from '@rails49/r49';
+import type { Camera, R49Archive, ReferencePoint, Image, Layout, Point } from '@rails49/r49';
 
 /**
  * Undo/redo for the editor, as scoped snapshots of the manifest.
@@ -17,7 +17,7 @@ import type { R49Archive, ReferencePoint, Image, Layout, Point } from '@rails49/
  *    author, and therefore no way to write one that silently produces a subtly
  *    wrong manifest — the failure that would surface a training run later.
  * 2. **Scoped, not whole-manifest.** Every edit targets exactly one image
- *    record, the layout, or the images array, so an entry costs kilobytes
+ *    record, the layout, or the images array with `camera.resolution`, so an entry costs kilobytes
  *    rather than the hundreds of KB a fully labeled manifest runs to. The
  *    corollary the editor must honour: **key on label `id`, never on object
  *    identity** — applying a snapshot replaces the objects wholesale.
@@ -34,8 +34,17 @@ export type HistoryTarget =
   | { kind: 'layout' }
   /** One image record — its car labels and `labeled_complete`. */
   | { kind: 'image'; filename: string }
-  /** The images array itself — add, remove, reorder. */
+  /**
+   * The images array — add, remove, reorder — and `camera.resolution`, the
+   * frame they share, which adding the first image sets (#254).
+   */
   | { kind: 'images' };
+
+/** What an `images` entry snapshots. */
+interface ImagesSnapshot {
+  images: Image[];
+  resolution: Camera['resolution'];
+}
 
 /**
  * One object an entry changed, for the reveal to point at.
@@ -534,7 +543,8 @@ export class EditHistory {
     after: string,
     blobs: Map<string, Uint8Array>
   ): Promise<void> {
-    const names = (json: string) => new Set((JSON.parse(json) as Image[]).map((img) => img.filename));
+    const names = (json: string) =>
+      new Set((JSON.parse(json) as ImagesSnapshot).images.map((img) => img.filename));
     const wasPresent = names(before);
     const isPresent = names(after);
 
@@ -553,7 +563,7 @@ export class EditHistory {
   }
 
   /** Reads the target subtree out of the live manifest. */
-  private _read(target: HistoryTarget): Layout | Image | Image[] | null {
+  private _read(target: HistoryTarget): Layout | Image | ImagesSnapshot | null {
     const manifest = this._archive!.getManifest();
     switch (target.kind) {
       case 'layout':
@@ -561,7 +571,7 @@ export class EditHistory {
       case 'image':
         return manifest.images.find((img) => img.filename === target.filename) ?? null;
       case 'images':
-        return manifest.images;
+        return { images: manifest.images, resolution: manifest.camera.resolution };
     }
   }
 
@@ -587,7 +597,7 @@ export class EditHistory {
       case 'images': {
         // Reconcile the zip's payload before the manifest, so a restored entry
         // never names bytes that are not there.
-        const wanted = data as Image[];
+        const { images: wanted, resolution } = data as ImagesSnapshot;
         const wantedNames = new Set(wanted.map((img) => img.filename));
         const present = new Set(manifest.images.map((img) => img.filename));
 
@@ -600,6 +610,7 @@ export class EditHistory {
           if (bytes) await archive.addImage(filename, bytes);
         }
         manifest.images = clone(wanted);
+        manifest.camera.resolution = resolution;
         return;
       }
     }

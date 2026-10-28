@@ -1313,6 +1313,63 @@ describe('EditSession', () => {
       expect(s.history.undoEntry!.target).toEqual({ kind: 'images' });
     });
 
+    describe('the first image sets camera.resolution (#254)', () => {
+      const SIZE = { width: 8064, height: 6048 };
+      const resolution = (s: EditSession) => s.archive.getManifest().camera.resolution;
+
+      it('takes the size of the first image into an uncalibrated archive', async () => {
+        const s = session({ images: [], calibrated: false });
+
+        await s.addImage('a.jpg', Uint8Array.from([1]), SIZE);
+
+        expect(resolution(s)).toEqual(SIZE);
+      });
+
+      it('restores the old size when the add is undone, and the new one on redo', async () => {
+        const s = session({ images: [], calibrated: false });
+        await s.addImage('a.jpg', Uint8Array.from([1]), SIZE);
+
+        await s.undo();
+        expect(resolution(s)).toEqual({ width: 2000, height: 2000 });
+        await s.redo();
+        expect(resolution(s)).toEqual(SIZE);
+      });
+
+      it('keeps the size once an image is in the archive', async () => {
+        const s = await withBytes(['a.jpg']);
+        s.archive.getManifest().layout.calibration.points = [];
+
+        await s.addImage('b.jpg', Uint8Array.from([9]), SIZE);
+
+        expect(resolution(s)).toEqual({ width: 2000, height: 2000 });
+      });
+
+      it('keeps the size while calibration points are positioned in it', async () => {
+        const s = session({ images: [], calibrated: true });
+
+        await s.addImage('a.jpg', Uint8Array.from([1]), SIZE);
+
+        expect(resolution(s)).toEqual({ width: 2000, height: 2000 });
+      });
+
+      it('keeps the size while sensors are positioned in it', async () => {
+        const s = session({ images: [], calibrated: false });
+        s.archive.getManifest().layout.sensors = [{ id: 's1', x: 5, y: 5 }];
+
+        await s.addImage('a.jpg', Uint8Array.from([1]), SIZE);
+
+        expect(resolution(s)).toEqual({ width: 2000, height: 2000 });
+      });
+
+      it('keeps the size when the image did not decode', async () => {
+        const s = session({ images: [], calibrated: false });
+
+        await s.addImage('a.jpg', Uint8Array.from([1]));
+
+        expect(resolution(s)).toEqual({ width: 2000, height: 2000 });
+      });
+    });
+
     it('ends a live chain when an image is added', async () => {
       const s = await withBytes(['a.jpg']);
       s.selectTool('car');

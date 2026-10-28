@@ -131,6 +131,7 @@ rr-app                          ← shell: owns the editing session and the view
 > [#206]: https://github.com/rails49/occupancy/issues/206
 > [#217]: https://github.com/rails49/occupancy/issues/217
 > [#252]: https://github.com/rails49/occupancy/issues/252
+> [#254]: https://github.com/rails49/occupancy/issues/254
 
 ## State and data flow
 
@@ -218,7 +219,8 @@ hijack Cmd+Z mid-typing. A press with a drag still live does nothing (see `histo
   apply it, and tell the editor what to highlight ([#37]). A live chain takes every undo ([#33]).
 
 * New builds an empty **v4** manifest — layout `'New Layout'`, scale `N`, resolution
-  1920×1080, empty calibration points and no sensors. It **clears the binding**: the new archive is
+  1920×1080 until the first image replaces it ([#254]), empty calibration points and no
+  sensors. It **clears the binding**: the new archive is
   emphatically not the file that was open.
 * Open and Save go through `persistence.ts`, which owns the choice between
   overwriting a file and downloading a new generation ([#48]). The binding is set **only once the
@@ -1000,7 +1002,7 @@ it gets the objects the entry changed.
 | `rightClick(point, scale)` | Ends a live chain, or returns the `MenuSubject` a menu acts on |
 | `placeReferencePoint`, `editReferencePoint`, `nameSensor`, `delete`, `reclassifyCar`, `setComplete` | The answers to a dialog, a menu row or the checkbox |
 | `editLayout`, `setCameraHeight` | The settings dialog's edits, one `layout` entry each |
-| `addImage`, `deleteImage`, `reorderImages` | The image list. Deleting the image on screen shows its neighbour |
+| `addImage`, `deleteImage`, `reorderImages` | The image list. Deleting the image on screen shows its neighbour. `addImage` may set `camera.resolution` (`SPEC.md` § Images, [#254]) |
 | `undo`, `redo` | Select the image the entry is on, apply it, and report what changed |
 | `subscribe(listener)` | Returns a function that stops it |
 

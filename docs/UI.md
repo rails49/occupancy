@@ -85,7 +85,8 @@ Nothing enforces this. A component that reaches into `.archive` directly still t
 renders, and leaves a stack that is *wrong* rather than merely short: undo then reverses the edit
 before it, which is worse than having no undo. Rules, from entries being scoped snapshots:
 
-* **Declare the subtree you actually touch** (`layout`, one `image`, or the `images` array).
+* **Declare the subtree you actually touch** (`layout`, one `image`, or the `images` array, whose
+  entry also holds `camera.resolution`).
   Mis-declaring it is the only class of bug this design admits; `tests/history.test.ts` fuzzes a
   round-trip specifically to catch it. Cars are per **image** and sensors are per **layout**, so a
   car edit targets `{ kind: 'image', filename }` and a sensor edit targets `layout` — a drag picks

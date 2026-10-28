@@ -124,6 +124,22 @@ describe('EditHistory', () => {
     expect(await archive.getImage('new.jpg')).toEqual(payload);
   });
 
+  it('restores camera.resolution with an images entry (#254)', async () => {
+    const archive = await makeArchive(0);
+    const history = attached(archive);
+    const before = structuredClone(archive.getManifest().camera.resolution);
+
+    await history.record('add image', { kind: 'images' }, () => {
+      archive.getManifest().camera.resolution = { width: 8064, height: 6048 };
+      return archive.addImage('new.jpg', bytes(1));
+    });
+    await history.undo();
+    expect(archive.getManifest().camera.resolution).toEqual(before);
+
+    await history.redo();
+    expect(archive.getManifest().camera.resolution).toEqual({ width: 8064, height: 6048 });
+  });
+
   it('warns when a removal is recorded without retaining its bytes', async () => {
     const archive = await makeArchive();
     const history = attached(archive);
