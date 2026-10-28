@@ -56,9 +56,8 @@ Three rules:
   `ui/src/driftSession.ts`, which is the `detectorSession.ts` of that path.
 
   It also exports **no verdict**. The drift tolerance, `MAX_DRIFT_TRACK_FRACTION`,
-  is a constant in `ui/src/driftSession.ts`, because the live view refuses on it
-  and the editor only warns — one number, two responses, and a module that decided would
-  force both surfaces to agree about policy as well as about measurement. It is a
+  is a constant in `ui/src/driftSession.ts`, because refusing on it is the live view's
+  policy, and a module that decided would hold policy as well as measurement. It is a
   fraction of a *track width*, not a pixel count: `ui/src/driftSession.ts`'s
   `maxDriftPx` multiplies it by the layout's DPT, which is the only place that
   conversion happens.

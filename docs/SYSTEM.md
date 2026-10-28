@@ -11,14 +11,13 @@ Each directory is a stage in one data path. The detector is trained in
 the `@rails49/detector` package; its own stages are in rails49/detector's
 [`docs/SYSTEM.md`](https://github.com/rails49/detector/blob/main/docs/SYSTEM.md#the-pipeline).
 `lib/drift` trains nothing: it derives reference spectra from the images at
-load time, and both UI views gate on them (#89).
+load time, and the live view gates on them (#89). The editor does not (#252).
 
 ```
 .r49 archives (rails49/r49)         v4: layout photos, calibration, labels
         │
         ├── lib/drift/                   createDriftCheck(images)
         │       ├─▶ ui/rr-live-view       refuse to classify + override   #94
-        │       ├─▶ ui/rr-editor-view     warn, never block               #95
         │       └─▶ tools/drift-bench     736 synthetic cases
         │
         └── rails49/detector             training-data export, training, model
@@ -47,7 +46,7 @@ the versions `pnpm-workspace.yaml`'s catalog pins (org ADR-0022, ADR 0019).
 
 The drift tolerance is `MAX_DRIFT_TRACK_FRACTION`, a constant in
 `ui/src/driftSession.ts`. It becomes pixels only in that file's `maxDriftPx`
-(ADR 0013).
+(ADR 0020).
 
 ## The model
 

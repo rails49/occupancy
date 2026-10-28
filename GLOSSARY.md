@@ -68,17 +68,17 @@ One of the six archives kept to exercise the code. See [docs/SYSTEM.md](docs/SYS
 ### Drift
 
 **Pose**:
-The camera position the images of an archive share. See [ADR 0013](docs/adr/0013-drift-is-measured-against-the-first-image.md).
+The camera position the images of an archive share. See [ADR 0020](docs/adr/0020-only-the-live-view-measures-drift.md).
 
 **Reference image**:
-The first image in an archive, whose pose drift is measured against. See [ADR 0013](docs/adr/0013-drift-is-measured-against-the-first-image.md).
+The first image in an archive, whose pose drift is measured against. See [ADR 0020](docs/adr/0020-only-the-live-view-measures-drift.md).
 
 **Drift**:
 How far the camera has moved from the pose, measured in pixels of the reference image. See [SPEC § Image Alignment](SPEC.md#image-alignment).
 _Avoid_: misalignment
 
 **Drift tolerance**:
-The largest drift accepted, as a fraction of a track width. See [ADR 0013](docs/adr/0013-drift-is-measured-against-the-first-image.md).
+The largest drift accepted, as a fraction of a track width. See [ADR 0020](docs/adr/0020-only-the-live-view-measures-drift.md).
 
 ### Cars and labels
 

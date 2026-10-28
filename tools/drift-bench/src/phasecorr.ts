@@ -11,8 +11,8 @@ import { Scorer } from './harness.ts';
  * its own copy of the algorithm — which is what `src/prototype/` was, on the
  * throwaway `drift-prototype` branch — would grade a copy and pass while the
  * shipped path failed. Every number this reports comes out of
- * `createDriftCheck`, through the same published interface `rr-live-view` and
- * `rr-editor-view` call.
+ * `createDriftCheck`, through the same published interface `rr-live-view`
+ * calls.
  *
  * `GrayImage` and `GrayPlane` are the same shape by coincidence rather than by
  * dependency: the benchmark predates the package (#91 before #97) and keeps its

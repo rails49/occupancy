@@ -13,8 +13,8 @@
 // today's silent wrongness into a loud refusal, which is most of the safety
 // value for a fraction of the effort. It also decides no verdicts: the number
 // this returns becomes drift or not-drift against the UI's `MAX_DRIFT_TRACK_FRACTION`
-// in `ui/src/driftSession.ts`, because the live view refuses on it and the editor
-// only warns, and one module cannot hold two policies.
+// in `ui/src/driftSession.ts`, because refusing on it is the live view's policy,
+// not the measurement's.
 //
 // One entry point, unlike `classifier` and `detector`. Those split to keep a
 // platform's runtime out of the other platform's bundle; this package is

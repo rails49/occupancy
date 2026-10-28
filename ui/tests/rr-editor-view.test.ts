@@ -16,14 +16,12 @@ import type { SlCheckbox } from '@shoelace-style/shoelace';
 import type { Rect } from '../src/geometry.js';
 
 
-// The camera and the drift measurement are both mocked: one needs `getUserMedia`
-// and the other decodes blobs through `createImageBitmap` and reads pixels back
-// out of a canvas, and jsdom has none of the three. What the tests below prove is
-// that a drift verdict reaches the screen and blocks nothing — which image is
-// measured against which is `driftMeasurements.test.ts`'s, the measurement is
-// `lib/drift`'s to prove, and `tools/drift-bench` scores it.
+// The camera and the thumbnail are both mocked: one needs `getUserMedia` and the
+// other `createImageBitmap` and `OffscreenCanvas`, and jsdom has none of them.
+// `thumbnail.test.ts` covers the thumbnail itself.
 const captureFromCamera = vi.fn(async () => new Uint8Array([1, 2, 3]));
-const check = vi.fn(async (_reference: string, _image: string) => ({ displacementPx: 0 }));
+const THUMBNAIL = new Blob(['thumbnail'], { type: 'image/jpeg' });
+const makeThumbnail = vi.fn(async (_image: Blob) => THUMBNAIL);
 
 vi.mock('../src/capture.js', () => ({
   DEFAULT_CAMERA_CONSTRAINTS: { video: true, audio: false },
@@ -31,17 +29,9 @@ vi.mock('../src/capture.js', () => ({
   captureFromCamera: () => captureFromCamera(),
 }));
 
-// `driftVerdict` is the real implementation: it is pure arithmetic over
-// MAX_DRIFT_TRACK_FRACTION and a DPT, and it is what makes the tolerance
-// geometric rather than an absolute pixel count. Only the IO is stubbed.
-vi.mock('../src/driftSession.js', async importOriginal => {
-  const actual = await importOriginal<typeof import('../src/driftSession.js')>();
-  return {
-    driftVerdict: actual.driftVerdict,
-    measureAgainst: () => async (reference: string, image: string) =>
-      (await check(reference, image)).displacementPx,
-  };
-});
+vi.mock('../src/thumbnail.js', () => ({
+  makeThumbnail: (image: Blob) => makeThumbnail(image),
+}));
 
 // Mock ResizeObserver for RRViewer
 global.ResizeObserver = vi.fn().mockImplementation(() => ({
@@ -248,237 +238,13 @@ describe('rr-editor-view', () => {
     });
   });
 
-  describe('the camera-drift readout (#95, #118)', () => {
-    /**
-     * The tolerance is a fraction of a track width, so these tests need a DPT.
-     *
-     * 100 px over 10 model mm in N scale resolves DPT 89.6875, putting the
-     * tolerance at 22.42 px. The outer suite's archive is uncalibrated on purpose
-     * — the DPT readout tests up there depend on it — so this is added here.
-     */
-    const TOLERANCE_PX = 0.25 * 89.6875;
-
-    beforeEach(() => {
-      captureFromCamera.mockClear();
-      check.mockClear();
-      check.mockImplementation(async () => ({ displacementPx: 0 }));
-      const manifest = archive.getManifest();
-      manifest.layout.calibration = {
-        points: [
-          { px: { x: 0, y: 0 }, world: { x: 0, y: 0, z: 0 } },
-          { px: { x: 100, y: 0 }, world: { x: 10, y: 0, z: 0 } },
-        ],
-      };
-      // Three images, so there is a reference and two things measured against it.
-      manifest.images = [
-        { filename: 'img1.jpg', labeled_complete: false, labels: [] },
-        { filename: 'img2.jpg', labeled_complete: false, labels: [] },
-        { filename: 'img3.jpg', labeled_complete: false, labels: [] },
-      ];
-    });
-
-    /** What `rr-thumbnail-bar` emits when the user adds an image. */
-    function addImage(el: RREditorView, source: 'camera' | 'file') {
-      el.shadowRoot!.querySelector('rr-thumbnail-bar')!.dispatchEvent(
-        new CustomEvent('rr-image-add', { detail: { source }, bubbles: true, composed: true })
-      );
-    }
-
-    function select(el: RREditorView, index: number) {
-      el.shadowRoot!.querySelector('rr-thumbnail-bar')!.dispatchEvent(
-        new CustomEvent('rr-image-select', { detail: { index }, bubbles: true, composed: true })
-      );
-    }
-
-    function reorder(el: RREditorView, from: number, to: number) {
-      el.shadowRoot!.querySelector('rr-thumbnail-bar')!.dispatchEvent(
-        new CustomEvent('rr-image-reorder', { detail: { from, to }, bubbles: true, composed: true })
-      );
-    }
-
-    const bar = (el: RREditorView) => el.shadowRoot!.querySelector('.drift-warning');
-    /** Amber only: a finding, not the reference row and not a measured-fine row. */
-    const warning = (el: RREditorView) =>
-      el.shadowRoot!.querySelector('.drift-warning:not(.reference):not(.steady):not(.checking)');
-
-    /** Measuring is deliberately not awaited, so wait for its effect. */
-    async function waitFor(el: RREditorView, done: () => boolean) {
-      for (let i = 0; i < 200 && !done(); i++) {
-        await new Promise(resolve => setTimeout(resolve, 5));
-        await el.updateComplete;
-      }
-      await el.updateComplete;
-    }
-
-    async function mountMeasured() {
+  describe('drift (ADR 0020)', () => {
+    it('reads each image once, measuring no drift', async () => {
       const el = await render();
-      await waitFor(el, () => check.mock.calls.length >= 2);
-      return el;
-    }
-
-    it('calls the first image the reference, rather than measuring it', async () => {
-      // "Zero because it is the reference" and "measured and found steady" are
-      // different claims, and only the first is true at position 0. It also opens
-      // on this image, so it is the first thing a labeler reads.
-      const el = await mountMeasured();
-
-      const row = bar(el)!;
-      expect(row.classList.contains('reference')).to.be.true;
-      expect(row.textContent).to.match(/reference image/i);
-      expect(row.textContent).to.match(/zero drift by definition/i);
-      // And it says how to change it, because the reference is user-movable.
-      expect(row.textContent).to.match(/drag another thumbnail/i);
-    });
-
-    it('reports a measurement inside tolerance rather than staying silent', async () => {
-      // The property that keeps a user-movable reference honest (#118): if the
-      // row appeared only past the tolerance, a reorder could re-point the pose
-      // with nothing on screen moving.
-      check.mockImplementation(async () => ({ displacementPx: 6 }));
-      const el = await mountMeasured();
-
-      select(el, 1);
+      await flush();
       await el.updateComplete;
 
-      const row = bar(el)!;
-      expect(row.classList.contains('steady')).to.be.true;
-      expect(row.textContent).to.contain('6.0 px');
-      expect(row.textContent).to.contain(TOLERANCE_PX.toFixed(1));
-      // Not a finding: amber is reserved for a measurement past the tolerance.
-      expect(warning(el)).to.not.exist;
-    });
-
-    it('warns about an image past the tolerance', async () => {
-      check.mockImplementation(async () => ({ displacementPx: 40.4 }));
-      const el = await mountMeasured();
-
-      select(el, 1);
-      await el.updateComplete;
-
-      const row = warning(el)!;
-      expect(row).to.exist;
-      expect(row.textContent).to.contain('40.4 px');
-      // In track widths too, the unit the tolerance is set in.
-      expect(row.textContent).to.contain('0.45 track widths');
-      expect(row.textContent).to.contain(TOLERANCE_PX.toFixed(1));
-      // The corrected consequence: a car span is authored on this image's own
-      // pixels, so labeling it is fine. What is off is the per-layout overlay.
-      expect(row.textContent).to.match(/Labeling this image is unaffected/i);
-      expect(row.textContent).to.match(/nothing is blocked/i);
-    });
-
-    it('says an image is being measured while it is', async () => {
-      check.mockImplementation(() => new Promise(() => {}));
-      const el = await render();
-      select(el, 1);
-      await waitFor(el, () => bar(el)?.classList.contains('checking') ?? false);
-      expect(bar(el)!.textContent).to.match(/measuring this image/i);
-    });
-
-    it('blocks nothing — the image stays selectable and labelable', async () => {
-      check.mockImplementation(async () => ({ displacementPx: 60 }));
-      const el = await mountMeasured();
-      select(el, 1);
-      await el.updateComplete;
-
-      // The MIN_DPT precedent: a human is present and can judge, and blocking
-      // authoring on a heuristic would be worse than the disease.
-      expect(warning(el)).to.exist;
-      expect(el.shadowRoot!.querySelector('rr-viewer')).to.exist;
-    });
-
-    it('keeps each image its own verdict when the user browses away and back', async () => {
-      // Persistent, not a toast: it is a property of the image, and it matters at
-      // labeling time rather than at capture time.
-      check.mockImplementation(async () => ({ displacementPx: 40 }));
-      const el = await mountMeasured();
-
-      select(el, 1);
-      await el.updateComplete;
-      expect(warning(el)).to.exist;
-
-      select(el, 0);
-      await el.updateComplete;
-      expect(bar(el)!.classList.contains('reference')).to.be.true;
-
-      select(el, 1);
-      await el.updateComplete;
-      expect(warning(el)).to.exist;
-    });
-
-    it('checks an image picked off the filesystem too', async () => {
-      // #95 names the capture path, and a fresh capture is what it was written
-      // about — but a file picked from disk is as likely to come from a session
-      // where the tripod had moved, and two paths would mean one of them
-      // silently trusting what the other checked.
-      const el = await mountMeasured();
-      check.mockClear();
-      check.mockImplementation(async () => ({ displacementPx: 30.5 }));
-
-      const create = document.createElement.bind(document);
-      const spy = vi.spyOn(document, 'createElement').mockImplementation(((tag: string) => {
-        const node = create(tag as 'input');
-        if (tag === 'input') {
-          node.click = () =>
-            (node as any).onchange({
-              target: { files: [{ arrayBuffer: async () => new Uint8Array([9, 9]).buffer }] },
-            });
-        }
-        return node;
-      }) as typeof document.createElement);
-      addImage(el, 'file');
-      spy.mockRestore();
-
-      await waitFor(el, () => check.mock.calls.length > 0);
-      await waitFor(el, () => warning(el) !== null);
-      expect(warning(el)!.textContent).to.contain('30.5 px');
-    });
-
-    it('says nothing at all on an uncalibrated layout, which has no track width', async () => {
-      archive.getManifest().layout.calibration = { points: [] };
-
-      const el = await render();
-      await new Promise(resolve => setTimeout(resolve, 50));
-      await el.updateComplete;
-
-      // Not even the reference row: a fraction of a track width needs a track
-      // width, and the calibration gate already has the labeler's attention.
-      expect(bar(el)).to.not.exist;
-    });
-
-    it('measures again when an undo moves the reference image back (#167)', async () => {
-      // Drifted against img3, steady against img1.
-      check.mockImplementation(async reference => ({
-        displacementPx: reference === 'img3.jpg' ? 30 : 5,
-      }));
-      const el = await render();
-
-      reorder(el, 2, 0);
-      select(el, 1);
-      await waitFor(el, () => bar(el)?.textContent?.includes('30.0 px') ?? false);
-      expect(bar(el)!.textContent).to.contain('30.0 px');
-
-      await el.session!.undo();
-
-      select(el, 1);
-      await waitFor(el, () => bar(el)?.textContent?.includes('5.0 px') ?? false);
-      expect(archive.getManifest().images[0].filename).to.equal('img1.jpg');
-      expect(bar(el)!.textContent).to.contain('5.0 px');
-    });
-
-    it('measures every image once the second calibration point is placed (#167)', async () => {
-      archive.getManifest().layout.calibration = { points: [] };
-      check.mockImplementation(async () => ({ displacementPx: 6 }));
-      const el = await mount();
-
-      await clickAt(el, { x: 0, y: 0 });
-      await commit(el, { x: 0, y: 0, z: 0 });
-      await clickAt(el, { x: 100, y: 0 });
-      await commit(el, { x: 10, y: 0, z: 0 });
-
-      select(el, 2);
-      await waitFor(el, () => bar(el)?.classList.contains('steady') ?? false);
-      expect(bar(el)!.textContent).to.contain('6.0 px');
+      expect(archive.getImage).toHaveBeenCalledOnce();
     });
   });
 
@@ -1410,25 +1176,73 @@ describe('rr-editor-view', () => {
       expect(bar(el).selectedIndex).to.equal(0);
     });
 
-    it('makes a blob URL per image once, and revokes it when the image goes', async () => {
+    it('makes a full-size and a thumbnail URL per image once, and revokes both when the image goes', async () => {
       addSecondImage();
       const el = await mount();
       await flush();
       await el.updateComplete;
       const create = vi.mocked(URL.createObjectURL);
-      expect(create).toHaveBeenCalledTimes(2);
+      expect(create).toHaveBeenCalledTimes(4);
 
       el.session!.selectTool('car');
       await el.session!.setComplete(true);
       await el.session!.undo();
       await flush();
       await el.updateComplete;
-      expect(create).toHaveBeenCalledTimes(2);
+      expect(create).toHaveBeenCalledTimes(4);
 
       bar(el).dispatchEvent(new CustomEvent('rr-image-delete', { detail: { index: 0 } }));
       await flush();
       await el.updateComplete;
-      expect(URL.revokeObjectURL).toHaveBeenCalledOnce();
+      expect(URL.revokeObjectURL).toHaveBeenCalledTimes(2);
+    });
+
+    it('gives the strip thumbnails and the viewer the full-size image (#252)', async () => {
+      const urls = new Map<string, Blob>();
+      vi.mocked(URL.createObjectURL).mockImplementation(blob => {
+        const url = `blob:${urls.size}`;
+        urls.set(url, blob as Blob);
+        return url;
+      });
+      const el = await mount();
+      await flush();
+      await el.updateComplete;
+
+      const viewer = el.shadowRoot!.querySelector('rr-viewer')!;
+      expect(urls.get(bar(el).images[0])).to.equal(THUMBNAIL);
+      expect(urls.get(viewer.src!)).to.not.equal(THUMBNAIL);
+      expect(makeThumbnail).toHaveBeenCalledWith(urls.get(viewer.src!));
+    });
+
+    it('drops a thumbnail finished after its image was deleted and restored', async () => {
+      let finish: (thumb: Blob) => void = () => {};
+      makeThumbnail.mockImplementationOnce(() => new Promise(resolve => (finish = resolve)));
+      const el = await mount();
+      await flush();
+      const create = vi.mocked(URL.createObjectURL);
+      expect(create).toHaveBeenCalledOnce();
+
+      bar(el).dispatchEvent(new CustomEvent('rr-image-delete', { detail: { index: 0 } }));
+      await flush();
+      await el.session!.undo();
+      await flush();
+      await el.updateComplete;
+      // The restored image has its own full-size and thumbnail URLs.
+      expect(create).toHaveBeenCalledTimes(3);
+
+      finish(THUMBNAIL);
+      await flush();
+      expect(create).toHaveBeenCalledTimes(3);
+    });
+
+    it('shows the full-size image in the strip when it does not decode', async () => {
+      makeThumbnail.mockRejectedValueOnce(new Error('not an image'));
+      const el = await mount();
+      await flush();
+      await el.updateComplete;
+
+      expect(bar(el).images).to.have.length(1);
+      expect(bar(el).images[0]).to.equal('blob:mock-url');
     });
   });
 

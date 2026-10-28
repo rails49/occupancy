@@ -171,13 +171,13 @@ Remaining perspective error gets a warning in the editor and nothing else:
 
 #### Image Alignment
 
-Camera [drift](GLOSSARY.md#drift) is detected, and classification is refused past the [drift tolerance](GLOSSARY.md#drift) ([ADR 0013](docs/adr/0013-drift-is-measured-against-the-first-image.md); built under [map #89](https://github.com/rails49/occupancy/issues/89)).
+Camera [drift](GLOSSARY.md#drift) is detected, and classification is refused past the [drift tolerance](GLOSSARY.md#drift) ([ADR 0020](docs/adr/0020-only-the-live-view-measures-drift.md); built under [map #89](https://github.com/rails49/occupancy/issues/89)).
 
 * Nothing records the camera pose. The archive's images are the pose record, and the reference is derived from them at load time.
 * `@occupancy/drift` compares the structure of a frame against the [reference image](GLOSSARY.md#drift) by block-wise phase correlation, which ignores illumination, and reports a displacement in `camera.resolution` pixels.
 * The tolerance is `MAX_DRIFT_TRACK_FRACTION` in `ui/src/driftSession.ts`, a fraction of a track width. It is a tolerance, not a detection floor: the check resolves much smaller displacements.
 * Past the tolerance the live view reports every sensor as unknown with reason `drift`, with a visible override.
-* The editor shows every image's drift against the reference, so moving a thumbnail to the front re-measures all of them. Image order therefore carries meaning.
+* The editor does not measure drift ([ADR 0020](docs/adr/0020-only-the-live-view-measures-drift.md)). Moving a thumbnail to the front changes the reference image the live view measures against.
 * Correction is out of scope.
 
 Validation is synthetic: the fixtures were shot on a tripod, so `tools/drift-bench` warps them. That is why the override exists.
@@ -336,7 +336,7 @@ The first list is ruled out and will not be built here. The second is in scope b
 
 | | Why |
 | :--- | :--- |
-| Drift correction: homography estimation, re-alignment, fiducials | Out of scope by [ADR 0013](docs/adr/0013-drift-is-measured-against-the-first-image.md). Drift detection is built; see [Image Alignment](#image-alignment). |
+| Drift correction: homography estimation, re-alignment, fiducials | Out of scope by [ADR 0020](docs/adr/0020-only-the-live-view-measures-drift.md). Drift detection is built; see [Image Alignment](#image-alignment). |
 | Track geometry, and the spline authoring it implies | [ADR 0010](docs/adr/0010-track-is-not-stored.md). See [Track is not stored](#track-is-not-stored-and-that-is-a-deliberate-deferral) and the closed [issue #14](https://github.com/rails49/occupancy/issues/14). |
 | Populating car subtypes such as `stock.loco.steam` | The mechanism exists; no subtype is labeled here. Adding one is a vocabulary entry in a `@rails49/r49` release, a `detector.classes` entry and a retrain in rails49/detector, and a version bump of each package here, with no relabeling ([rails49/detector ADR 0009](https://github.com/rails49/detector/blob/main/docs/adr/0009-config-yaml-is-authored-and-classes-is-append-only.md)). |
 | Calibration provenance: authoring-image references, per-point names, content fingerprints | Settled in [issue #6](https://github.com/rails49/occupancy/issues/6). The general case is camera drift. |
