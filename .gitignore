@@ -10,6 +10,11 @@ node_modules
 # Build artifacts
 dist/
 
+# Python bytecode, written by the `bin/*.py` checks in `bin/test.sh`. Tracking
+# it would leave `git status` dirty after the gate, which is what
+# `bin/check-deploy-source.sh` refuses to deploy from.
+__pycache__/
+
 # IDE files
 *.code-workspace
 
