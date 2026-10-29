@@ -103,9 +103,11 @@ export class RRApp extends LitElement {
    * `warning` rather than `danger`: everything that reaches this event is the
    * editor **declining** to author something, which is the editor working. A
    * red alert for a refused click would read as a failure the user has to fix.
+   *
+   * It stays up until the user closes it (#265).
    */
   private _onNotify(e: CustomEvent<NotifyDetail>) {
-    this._notify(e.detail.message, 'warning', 'exclamation-triangle');
+    this._notify(e.detail.message, 'warning', 'exclamation-triangle', Infinity);
   }
 
   connectedCallback() {

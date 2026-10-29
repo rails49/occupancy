@@ -1515,6 +1515,36 @@ describe('rr-editor-view', () => {
         ]);
       });
 
+      it('names every refused file of a pick in one notice (#265)', async () => {
+        const el = await mount();
+        const notices = noticesOf(el);
+        imageSize
+          .mockResolvedValueOnce({ width: 60, height: 80 })
+          .mockResolvedValueOnce({ width: 5504, height: 4128 })
+          .mockResolvedValueOnce({ width: 70, height: 90 });
+
+        await pickFiles(el, three);
+
+        expect(filenames()).to.deep.equal(['img1.jpg']);
+        expect(notices).to.deep.equal([
+          [
+            portraitRefusal('IMG_2866.jpg', { width: 60, height: 80 }),
+            sizeRefusal('IMG_2867.jpg', { width: 5504, height: 4128 }, { width: 100, height: 100 }),
+            portraitRefusal('IMG_2868.jpg', { width: 70, height: 90 }),
+          ].join(' '),
+        ]);
+      });
+
+      it('sends no notice for a pick that refuses nothing', async () => {
+        const el = await mount();
+        const notices = noticesOf(el);
+
+        await pickFiles(el, three);
+
+        expect(filenames()).to.have.length(4);
+        expect(notices).to.deep.equal([]);
+      });
+
       it('stores each file\'s own prepared bytes', async () => {
         const added = vi.spyOn(archive, 'addImage');
         const el = await mount();

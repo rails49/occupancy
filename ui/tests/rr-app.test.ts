@@ -110,9 +110,10 @@ describe('rr-app', () => {
     delete (window as any).showSaveFilePicker;
   });
 
-  it('toasts a notice the editor sends up', async () => {
+  it('toasts a notice the editor sends up, kept until closed', async () => {
     // The editor states its refusals but owns no place to put them; toasts
     // live here. A refusal is a warning, never a danger — nothing failed.
+    // One pick's refusals can run to several sentences (#265).
     const el = await fixture<RRApp>(html`<rr-app></rr-app>`);
     (el as any)._open(archive);
     await el.updateComplete;
@@ -129,7 +130,8 @@ describe('rr-app', () => {
     expect(notify).toHaveBeenCalledWith(
       'That pixel is already inside a labeled car',
       'warning',
-      'exclamation-triangle'
+      'exclamation-triangle',
+      Infinity
     );
   });
 
