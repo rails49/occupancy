@@ -113,7 +113,6 @@ describe('rr-app', () => {
   it('toasts a notice the editor sends up, kept until closed', async () => {
     // The editor states its refusals but owns no place to put them; toasts
     // live here. A refusal is a warning, never a danger — nothing failed.
-    // One pick's refusals can run to several sentences (#265).
     const el = await fixture<RRApp>(html`<rr-app></rr-app>`);
     (el as any)._open(archive);
     await el.updateComplete;

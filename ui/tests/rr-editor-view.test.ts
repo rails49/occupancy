@@ -1515,7 +1515,7 @@ describe('rr-editor-view', () => {
         ]);
       });
 
-      it('names every refused file of a pick in one notice (#265)', async () => {
+      it('names every refused file of a pick in one notice', async () => {
         const el = await mount();
         const notices = noticesOf(el);
         imageSize

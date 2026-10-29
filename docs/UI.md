@@ -40,10 +40,10 @@ in the browser was rejected, and why an image of another size is not something t
 The picker takes **several files in one pick** (#262), and the pick — not the file — is the unit:
 `addPickedFiles` prepares and judges each file in filename order, hands what survives to
 `EditSession.addImages` as **one** history entry, and returns one notice naming everything it
-refused, so forty photographs with one 0.5x shot among them cost one Cmd+Z and one toast, which
-stays up until the user closes it (#265). The size the pick is held to is `requiredImageSize`, or,
-in an archive where nothing is positioned, the first file the pick accepts — which is the same
-answer, since that file is the one `addImages` takes `camera.resolution` from (#254). Each file keeps its own name because the corpus is indexed by those
+refused, so forty photographs with one 0.5x shot among them cost one Cmd+Z and one toast. The size
+the pick is held to is `requiredImageSize`, or, in an archive where nothing is positioned, the first
+file the pick accepts — which is the same answer, since that file is the one `addImages` takes
+`camera.resolution` from (#254). Each file keeps its own name because the corpus is indexed by those
 names outside this program; the collision fallback is the session's, beside the other rules about
 what the archive holds (#256).
 
