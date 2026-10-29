@@ -366,7 +366,9 @@ completeness by landing a few pixels off. See `SPEC.md` § Labeling completeness
 | `selectedIndex` | `number` | Currently selected image; `-1` for none |
 
 **Emits:** `rr-image-select` `{ index }`, `rr-image-delete` `{ index }`, `rr-image-add`
-`{ source: 'camera' | 'file' }`, `rr-image-reorder` `{ from, to }`.
+`{ source: 'camera' | 'file' }`, `rr-image-reorder` `{ from, to }`. The `'file'` button opens one
+picker for any number of files ([#262]); how many were chosen is `rr-editor-view`'s business, not
+this bar's.
 
 ---
 
@@ -853,8 +855,8 @@ undo, and blob URLs, and re-renders on every change the session reports.
 | `session` | `EditSession \| null` | The archive being edited, created by `rr-app` on New and Open |
 
 **Emits:** `rr-notify` (`{ message }`) when a click is refused, such as the **car tool** clicking
-inside a car already labelled ([#43]), or when an image add is refused ([#255], [#260]). `rr-app`
-owns the toast.
+inside a car already labelled ([#43]), or when an image add is refused ([#255], [#260]) — one event
+per pick, however many of its files were refused ([#262]). `rr-app` owns the toast.
 
 * Makes a blob URL for each image when it first appears in the image list and revokes it when the
   image goes. A new session revokes them all.
@@ -872,6 +874,15 @@ owns the toast.
   names the `capture_<id>.jpg` the archive would have held. An image that does not decode has no
   size to judge and is added as before. Undo and redo restore bytes the archive already accepted and
   are not checked.
+* **One pick adds several files** ([#262]). The picker is `multiple`, and `addPickedFiles` prepares
+  and judges each file in **filename order** — numerically and against a fixed locale, so
+  `shot9.jpg` precedes `shot10.jpg` and the order does not move with the browser's — then hands what
+  survives to `session.addImages`: one history entry, "add images", and the first new image on
+  screen. Each file keeps its own `file.name`, with the collision fallback the session's ([#256]).
+  A refused file is left out and the rest of the pick is added; the refusals are joined into **one**
+  `rr-notify`. The size the pick is held to is `session.requiredImageSize`, or the first file the
+  pick accepts while nothing is positioned, which is the image `addImages` takes the resolution from
+  ([#254]).
 * **Thumbnails are small copies** ([#252], `thumbnail.ts`): each image is decoded once into a JPEG
   `THUMBNAIL_WIDTH` (256) px wide, after every full-size URL exists, and the strip gets those URLs.
   An image that does not decode shows its full-size URL in the strip.

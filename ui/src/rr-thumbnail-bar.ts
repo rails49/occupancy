@@ -274,7 +274,7 @@ export class RRThumbnailBar extends LitElement {
         </div>
       </sl-tooltip>
 
-      <sl-tooltip content="Add Image from File">
+      <sl-tooltip content="Add Images from Files">
         <div class="add-btn" @click=${() => this._onAdd('file')}>
           <sl-icon name="folder-plus"></sl-icon>
         </div>
