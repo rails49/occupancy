@@ -54,6 +54,8 @@ The box tested keeps the detector's centre, orientation and length and takes the
 >
 > Projecting detections onto a track spline and testing overlap along it was rejected. Nearest-spline association is ambiguous where layouts are densest (parallel sidings ~60 px apart at DPT 20, turnouts, yard ladders), and a wrong association reports the wrong track occupied at a rate nothing bounds. It is also unbuildable, since v4 stores no track ([ADR 0010](docs/adr/0010-track-is-not-stored.md)).
 
+> ⚠️ A sensor on track the camera cannot see, such as inside a tunnel, reads clear whatever is there. Sensors go on visible track. Making such a sensor unknown would need a per-sensor field, a format change, and is not planned.
+
 ### The vocabulary
 
 L1 states are occupied, clear and unknown, as [`GLOSSARY.md`](GLOSSARY.md#occupancy) defines them. A detection above the confidence threshold counts when it covers the sensor, including a low-confidence one. Errors lean toward occupied, and a persistent phantom can deadlock a controller's schedule; both are accepted in [ADR 0005](docs/adr/0005-l1-is-geometry-over-l0-biased-toward-occupied.md). Camera drift as a reason for unknown comes from [issue #12](https://github.com/rails49/occupancy/issues/12).
@@ -240,6 +242,8 @@ A car-free image is no longer required. It is a useful all-background sample and
 #### Authoring cars, and the trains they form
 
 A car is two clicks on the visible car ends, with no snapping.
+
+A span covers the part of a car the camera sees, whatever hides the rest. A car half inside a tunnel is labeled from its visible end to the portal. A car with something across its middle, such as a road bridge, gets one span per visible piece. A car fully hidden is not labeled. There is no minimum length: every piece the labeler can identify as a car gets a span, and a piece left unlabeled on a `labeled_complete` image is taught as background. A shortened span carries no flag. [r49 FORMAT § Car label](https://github.com/rails49/r49/blob/main/FORMAT.md#car-label) owns the definition.
 
 A train is authored as a chain of clicks. The first click starts a car, and every click after it ends the current car and starts the next. Right-click ends the chain, and the next click starts a new train. Nothing about the train is stored; chaining makes the coincidence of ends exact.
 
