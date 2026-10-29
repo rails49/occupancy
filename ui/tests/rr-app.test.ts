@@ -1,10 +1,11 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from 'vitest';
 import { fixture, fixtureCleanup, html } from '@open-wc/testing';
 import '../src/rr-app.js';
 import { RRApp } from '../src/rr-app.js';
 import { R49Archive, getDPT } from '@rails49/r49';
 import type { NotifyDetail } from '../src/rr-editor-view.js';
 import type { EditHistory } from '../src/history.js';
+import type SlIcon from '@shoelace-style/shoelace/dist/components/icon/icon.js';
 
 // Mock global fetch
 global.fetch = vi.fn().mockResolvedValue({ ok: false });
@@ -130,6 +131,64 @@ describe('rr-app', () => {
       'warning',
       'exclamation-triangle'
     );
+  });
+
+  describe('toasts show their message as text (#264)', () => {
+    const MARKUP = '<img src=x onerror=alert(1)>';
+
+    /** The alerts the app built; `toast()` is stubbed so each stays where it was appended. */
+    async function mountWithToasts() {
+      const toast = vi
+        .spyOn(customElements.get('sl-alert')!.prototype, 'toast')
+        .mockResolvedValue(undefined);
+      onTestFinished(() => toast.mockRestore());
+      const el = await fixture<RRApp>(html`<rr-app></rr-app>`);
+      return { el, alerts: () => [...el.renderRoot.querySelectorAll('sl-alert')] };
+    }
+
+    it('shows an opened file name as literal text', async () => {
+      const { el, alerts } = await mountWithToasts();
+      const file = new File([], `${MARKUP}.r49`);
+      (window as any).showOpenFilePicker = vi.fn().mockResolvedValue([{ getFile: async () => file }]);
+      onTestFinished(() => {
+        delete (window as any).showOpenFilePicker;
+      });
+      const load = vi.spyOn(R49Archive, 'load').mockResolvedValue(archive);
+      onTestFinished(() => load.mockRestore());
+
+      await (el as any)._onFileOpen();
+
+      const [loading, loaded] = alerts();
+      expect(loading.textContent!.trim()).toBe(`Loading ${MARKUP}.r49…`);
+      expect(loading.querySelector('img')).toBeNull();
+      expect(loading.variant).toBe('primary');
+      expect(loading.closable).toBe(true);
+      expect(loading.duration).toBe(3000);
+      expect(loading.querySelector<SlIcon>('sl-icon[slot="icon"]')!.name).toBe('hourglass-split');
+      expect(loaded.querySelector('img')).toBeNull();
+    });
+
+    it('shows a notice from a child as literal text', async () => {
+      const { el, alerts } = await mountWithToasts();
+      (el as any)._open(archive);
+      await el.updateComplete;
+
+      el.renderRoot.querySelector('rr-editor-view')!.dispatchEvent(
+        new CustomEvent<NotifyDetail>('rr-notify', {
+          detail: { message: MARKUP },
+          bubbles: true,
+          composed: true,
+        })
+      );
+
+      const [alert] = alerts();
+      expect(alert.textContent!.trim()).toBe(MARKUP);
+      expect(alert.querySelector('img')).toBeNull();
+      expect(alert.variant).toBe('warning');
+      expect(alert.closable).toBe(true);
+      expect(alert.duration).toBe(3000);
+      expect(alert.querySelector<SlIcon>('sl-icon[slot="icon"]')!.name).toBe('exclamation-triangle');
+    });
   });
 
   describe('undo and redo', () => {

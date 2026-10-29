@@ -262,6 +262,7 @@ interface LiveGesture {
  * editor declined to author something.
  */
 export interface NotifyDetail {
+  /** Plain text. */
   readonly message: string;
 }
 

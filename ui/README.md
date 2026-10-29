@@ -201,9 +201,10 @@ Application shell. Owns the editing session and routes between the views.
 **Handles:** `look-view` and `look-press` from its own band and rail, `rr-layout-change`,
 `rr-camera-height-change`, `rr-notify`.
 
-`rr-notify` is a child's transient message, toasted here because this is where toasts live. It is
-raised at `warning`, never `danger`: everything that reaches it is the editor **declining** to
-author something, which is the editor working rather than failing.
+`rr-notify` is a child's transient message, toasted here because this is where toasts live. A toast
+shows its message as text, never as HTML. It is raised at `warning`, never `danger`: everything that
+reaches it is the editor **declining** to author something, which is the editor working rather than
+failing.
 
 **Keyboard:** Cmd/Ctrl+Z and Cmd+Shift+Z / Ctrl+Y, bound on `window`, **editor view only**. The
 handler bails when a field has focus, testing `event.composedPath()[0]` rather than `event.target` —
