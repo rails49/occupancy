@@ -440,6 +440,19 @@ export class EditSession {
     });
     this.selectImage(filename);
   }
+
+  /**
+   * The size an added image must be, or null while nothing is positioned and
+   * the next image sets `camera.resolution` instead (`SPEC.md` § Images).
+   *
+   * The rule is the session's and the wording is the editor's: the editor asks
+   * before it adds and states the refusal, because the message names the file
+   * the user picked, which the session never sees.
+   */
+  get requiredImageSize(): Size | null {
+    return this._nothingPositioned() ? null : this.archive.getManifest().camera.resolution;
+  }
+
   /** No image, calibration point or sensor: nothing is in `camera.resolution`'s pixels. */
   private _nothingPositioned(): boolean {
     const { images, layout } = this.archive.getManifest();
