@@ -26,11 +26,37 @@ import type { EditorTool } from './tools.js';
 import { rootClass } from './vocabulary.js';
 
 /**
- * Node ids for the snowflakes this session mints. Images use 2 and 3; sensor
- * and label ids are separate namespaces, so each gets its own node.
+ * Node ids for the snowflakes this session mints. Image filenames use 2 here
+ * and 3 for the editor's captures; sensor and label ids are separate
+ * namespaces, so each gets its own node.
  */
+const IMAGE_NODE_ID = 2;
 const SENSOR_NODE_ID = 4;
 const CAR_NODE_ID = 5;
+
+/**
+ * A generated image filename that keeps `name`'s extension (#256).
+ *
+ * The extension is kept because it is what says how the bytes decode — a PNG
+ * renamed `.jpg` is a file every reader of the archive has to sniff. A name
+ * with no extension at all takes `.jpg`, the one the editor's generated names
+ * carried before picked names were kept.
+ */
+function generatedFilename(name: string): string {
+  const dot = name.lastIndexOf('.');
+  const extension = dot > 0 ? name.slice(dot) : '.jpg';
+  return `img_${make_id(IMAGE_NODE_ID)}${extension}`;
+}
+
+/** An image on its way into the archive, prepared by whoever picked it. */
+export interface AddedImage {
+  /** The name it asks to be stored under — see `EditSession.addImages`. */
+  readonly filename: string;
+  /** The bytes the archive holds, exactly as a reader will get them back. */
+  readonly bytes: Uint8Array;
+  /** The size those bytes measure, or undefined when they did not decode. */
+  readonly size?: Size;
+}
 
 /** Why the car tool refused a click on a car's body or on one of its ends (#43). */
 export const ALREADY_LABELED =
@@ -432,13 +458,67 @@ export class EditSession {
    * to `size` while nothing is positioned in pixels (`SPEC.md` § Images).
    */
   async addImage(filename: string, bytes: Uint8Array, size?: Size) {
-    await this._record('add image', { kind: 'images' }, () => {
-      if (size && this._nothingPositioned()) {
-        this.archive.getManifest().camera.resolution = { width: size.width, height: size.height };
+    await this._addImages('add image', [{ filename, bytes, size }]);
+  }
+
+  /**
+   * Adds a whole pick at the end of the list, in the order given, as **one**
+   * history entry, and shows the first of them (#262).
+   *
+   * One entry because one pick is one gesture: a user who picks a session's
+   * worth of photographs and then thinks better of it presses Cmd+Z once.
+   * The entry targets the image list, so the bytes of every image it added are
+   * retained for redo without the caller arranging it (`docs/UI.md` § Every
+   * manifest mutation goes through `history.record`).
+   *
+   * The first image that decoded sets `camera.resolution` while nothing is
+   * positioned (#254) — asked once, before any of the pick lands, because
+   * after the first one the archive holds an image and nothing is unpositioned
+   * any more.
+   */
+  async addImages(images: readonly AddedImage[]) {
+    await this._addImages('add images', images);
+  }
+
+  /** {@link addImage} and {@link addImages}, which differ only in their label. */
+  private async _addImages(label: string, images: readonly AddedImage[]) {
+    if (images.length === 0) return;
+    const stored = this._storedFilenames(images);
+    await this._record(label, { kind: 'images' }, async () => {
+      const sizing = this._nothingPositioned() ? images.find(img => img.size)?.size : undefined;
+      if (sizing) {
+        this.archive.getManifest().camera.resolution = {
+          width: sizing.width,
+          height: sizing.height,
+        };
       }
-      return this.archive.addImage(filename, bytes);
+      for (const [i, image] of images.entries()) {
+        await this.archive.addImage(stored[i], image.bytes);
+      }
     });
-    this.selectImage(filename);
+    this.selectImage(stored[0]);
+  }
+
+  /**
+   * The filename each image is stored under: the one it came with, or a
+   * generated one when that name is already taken (#256).
+   *
+   * The picked names are kept because they are what the corpus is indexed by
+   * outside this program — `dataset/holdout.json` in rails49/detector names
+   * images the way the camera did. A collision cannot be left to the format:
+   * `R49Archive.addImage` on a name already present overwrites the bytes and
+   * leaves the manifest entry with its labels, so a second `IMG_0001.jpg` from
+   * another card would label one photograph with the other's cars. A name
+   * taken by an earlier image of the same pick counts as taken, since none of
+   * them is in the manifest yet.
+   */
+  private _storedFilenames(images: readonly AddedImage[]): string[] {
+    const taken = new Set(this.archive.getManifest().images.map(img => img.filename));
+    return images.map(({ filename }) => {
+      const stored = taken.has(filename) ? generatedFilename(filename) : filename;
+      taken.add(stored);
+      return stored;
+    });
   }
 
   /**
