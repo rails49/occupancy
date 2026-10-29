@@ -851,8 +851,8 @@ undo, and blob URLs, and re-renders on every change the session reports.
 | `session` | `EditSession \| null` | The archive being edited, created by `rr-app` on New and Open |
 
 **Emits:** `rr-notify` (`{ message }`) when a click is refused, such as the **car tool** clicking
-inside a car already labelled ([#43]), or when an image add is refused ([#255]). `rr-app` owns the
-toast.
+inside a car already labelled ([#43]), or when an image add is refused ([#255], [#260]). `rr-app`
+owns the toast.
 
 * Makes a blob URL for each image when it first appears in the image list and revokes it when the
   image goes. A new session revokes them all.
@@ -863,6 +863,13 @@ toast.
   comes from ([#254]). An image whose stored array is **portrait** is refused: nothing is recorded
   and `rr-notify` names the picked file. A square or landscape image is accepted, and one that does
   not decode is added as before. `../SPEC.md` § Images holds the rule and the reason.
+* **It is then the size the archive declares, or it is refused** ([#260]). `session.requiredImageSize`
+  is the rule — the declared `camera.resolution` once anything is positioned in those pixels, null
+  while nothing is — and `sizeRefusal(name, size, required)` is the wording: `rr-notify` names the
+  file and both sizes. The picker names the picked `file.name`; a capture has no picked name, so it
+  names the `capture_<id>.jpg` the archive would have held. An image that does not decode has no
+  size to judge and is added as before. Undo and redo restore bytes the archive already accepted and
+  are not checked.
 * **Thumbnails are small copies** ([#252], `thumbnail.ts`): each image is decoded once into a JPEG
   `THUMBNAIL_WIDTH` (256) px wide, after every full-size URL exists, and the strip gets those URLs.
   An image that does not decode shows its full-size URL in the strip.

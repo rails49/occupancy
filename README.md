@@ -70,6 +70,13 @@ carries an orientation tag. The editor sets the tag to 1 in the bytes it stores,
 and refuses an image whose stored array is portrait
 ([#255](https://github.com/rails49/occupancy/issues/255)).
 
+Stay on the 1x lens for the whole session. Every image in an archive is the size
+`camera.resolution` declares — the first one sets it, and the editor refuses one
+of another size, naming both
+([#260](https://github.com/rails49/occupancy/issues/260)). A 0.5x shot is
+another field of view at another pixel count, so a label authored on it lands in
+the wrong place.
+
 ## 🤝 Contributing
 
 See [SPEC.md](SPEC.md) for what the system is meant to do and why — the requirements,
