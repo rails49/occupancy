@@ -187,7 +187,7 @@ describe('rr-app', () => {
       expect(alert.querySelector('img')).toBeNull();
       expect(alert.variant).toBe('warning');
       expect(alert.closable).toBe(true);
-      expect(alert.duration).toBe(3000);
+      expect(alert.duration).toBe(Infinity);
       expect(alert.querySelector<SlIcon>('sl-icon[slot="icon"]')!.name).toBe('exclamation-triangle');
     });
   });
