@@ -262,6 +262,7 @@ interface LiveGesture {
  * editor declined to author something.
  */
 export interface NotifyDetail {
+  /** Plain text; `rr-app` shows it as text, never as HTML. */
   readonly message: string;
 }
 

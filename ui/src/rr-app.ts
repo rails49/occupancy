@@ -88,18 +88,13 @@ export class RRApp extends LitElement {
   ];
 
   /**
-   * Helper to show a toast notification using Shoelace sl-alert
+   * Shows `message` as a Shoelace `sl-alert` toast. The message is text, never
+   * markup: it can hold a file name or an error string (#264).
    */
   private _notify(message: string, variant: 'primary' | 'success' | 'danger' | 'warning' = 'primary', icon = 'info-circle', duration = 3000) {
-    const alert = Object.assign(document.createElement('sl-alert'), {
-      variant,
-      closable: true,
-      duration,
-      innerHTML: `
-        <sl-icon slot="icon" name="${icon}"></sl-icon>
-        ${message}
-      `
-    });
+    const alert = Object.assign(document.createElement('sl-alert'), { variant, closable: true, duration });
+    const iconEl = Object.assign(document.createElement('sl-icon'), { slot: 'icon', name: icon });
+    alert.append(iconEl, message);
     this.renderRoot.appendChild(alert);
     return alert.toast();
   }
