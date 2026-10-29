@@ -133,6 +133,7 @@ rr-app                          ← shell: owns the editing session and the view
 > [#252]: https://github.com/rails49/occupancy/issues/252
 > [#254]: https://github.com/rails49/occupancy/issues/254
 > [#255]: https://github.com/rails49/occupancy/issues/255
+> [#260]: https://github.com/rails49/occupancy/issues/260
 
 ## State and data flow
 
@@ -1012,6 +1013,7 @@ it gets the objects the entry changed.
 | `placeReferencePoint`, `editReferencePoint`, `nameSensor`, `delete`, `reclassifyCar`, `setComplete` | The answers to a dialog, a menu row or the checkbox |
 | `editLayout`, `setCameraHeight` | The settings dialog's edits, one `layout` entry each |
 | `addImage`, `deleteImage`, `reorderImages` | The image list. Deleting the image on screen shows its neighbour. `addImage` may set `camera.resolution` (`SPEC.md` § Images, [#254]) |
+| `requiredImageSize` | The size an added image must be, or null while nothing is positioned and the next image sets `camera.resolution` instead ([#254], [#260]). The editor asks before it adds, and words the refusal |
 | `undo`, `redo` | Select the image the entry is on, apply it, and report what changed |
 | `subscribe(listener)` | Returns a function that stops it |
 

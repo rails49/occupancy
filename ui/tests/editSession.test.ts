@@ -1370,6 +1370,32 @@ describe('EditSession', () => {
       });
     });
 
+    describe('requiredImageSize (#260)', () => {
+      it('is null while nothing is positioned, so the next image sets the size', () => {
+        expect(session({ images: [], calibrated: false }).requiredImageSize).toBeNull();
+      });
+
+      it('is the declared resolution once an image is in the archive', () => {
+        const s = session({ images: ['a.jpg'], calibrated: false });
+
+        expect(s.requiredImageSize).toEqual({ width: 2000, height: 2000 });
+      });
+
+      it('is the declared resolution while calibration points are positioned', () => {
+        expect(session({ images: [], calibrated: true }).requiredImageSize).toEqual({
+          width: 2000,
+          height: 2000,
+        });
+      });
+
+      it('is the declared resolution while sensors are positioned', () => {
+        const s = session({ images: [], calibrated: false });
+        s.archive.getManifest().layout.sensors = [{ id: 's1', x: 5, y: 5 }];
+
+        expect(s.requiredImageSize).toEqual({ width: 2000, height: 2000 });
+      });
+    });
+
     it('ends a live chain when an image is added', async () => {
       const s = await withBytes(['a.jpg']);
       s.selectTool('car');
