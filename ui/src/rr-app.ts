@@ -87,10 +87,7 @@ export class RRApp extends LitElement {
     `,
   ];
 
-  /**
-   * Shows `message` as a Shoelace `sl-alert` toast. The message is text, never
-   * markup: it can hold a file name or an error string (#264).
-   */
+  /** Shows `message`, as text, in a Shoelace `sl-alert` toast (#264). */
   private _notify(message: string, variant: 'primary' | 'success' | 'danger' | 'warning' = 'primary', icon = 'info-circle', duration = 3000) {
     const alert = Object.assign(document.createElement('sl-alert'), { variant, closable: true, duration });
     const iconEl = Object.assign(document.createElement('sl-icon'), { slot: 'icon', name: icon });
