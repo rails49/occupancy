@@ -39,6 +39,37 @@ The dev server serves HTTPS with a self-signed certificate, because `getUserMedi
 
 `bin/deploy.sh` reads Cloudflare credentials from the environment or from 1Password (`op://rails49/Cloudflare Pages/…`), and runs only from a clean `origin/main`.
 
+## 📷 Capture
+
+A 48 MP ceiling capture of the layout, from the iPhone into an archive with no
+hand conversion. The editor's "Capture from Camera" grabs one 1920×1080 video
+frame — about DPT 8 from the ceiling, far below the detector's `MIN_DPT` — and
+no iPhone browser takes a 48 MP or a RAW still, so the photographs that train
+the detector come from the Camera app and reach the archive as files.
+
+1. iPhone 16 Pro Max face down on the ceiling, about 1500 mm above the layout.
+   Camera app at ProRAW 48 MP, 1x lens. Shutter and preview from the Apple Watch
+   Camera Remote.
+2. iCloud Photos syncs the shots to the Mac. Photos set to "Download Originals
+   to this Mac", or wait until the originals have downloaded.
+3. In Photos, select the session's shots, File → Export → Export Unmodified
+   Original, into `<capture>/raw/`.
+4. `bin/dng-to-jpeg.py <capture>` writes `<capture>/jpg/`.
+5. In the editor, create an archive and import all of `<capture>/jpg/` in one
+   pick.
+
+`<capture>` is a folder of your own, outside this repository. The DNGs stay
+there, in `<capture>/raw/`, and only the JPEGs go into the archive, converted at
+quality 95 — the format
+[rails49/detector#25](https://github.com/rails49/detector/issues/25) trained on.
+No browser decodes DNG, which is why step 4 runs on the Mac rather than in the
+app.
+
+Face down, iOS cannot tell which way is up, so a shot decodes portrait or
+carries an orientation tag. The editor sets the tag to 1 in the bytes it stores,
+and refuses an image whose stored array is portrait
+([#255](https://github.com/rails49/occupancy/issues/255)).
+
 ## 🤝 Contributing
 
 See [SPEC.md](SPEC.md) for what the system is meant to do and why — the requirements,
