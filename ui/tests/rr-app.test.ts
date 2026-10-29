@@ -110,7 +110,7 @@ describe('rr-app', () => {
     delete (window as any).showSaveFilePicker;
   });
 
-  it('toasts a notice the editor sends up', async () => {
+  it('toasts a notice the editor sends up, kept until closed', async () => {
     // The editor states its refusals but owns no place to put them; toasts
     // live here. A refusal is a warning, never a danger — nothing failed.
     const el = await fixture<RRApp>(html`<rr-app></rr-app>`);
@@ -129,7 +129,8 @@ describe('rr-app', () => {
     expect(notify).toHaveBeenCalledWith(
       'That pixel is already inside a labeled car',
       'warning',
-      'exclamation-triangle'
+      'exclamation-triangle',
+      Infinity
     );
   });
 
@@ -186,7 +187,7 @@ describe('rr-app', () => {
       expect(alert.querySelector('img')).toBeNull();
       expect(alert.variant).toBe('warning');
       expect(alert.closable).toBe(true);
-      expect(alert.duration).toBe(3000);
+      expect(alert.duration).toBe(Infinity);
       expect(alert.querySelector<SlIcon>('sl-icon[slot="icon"]')!.name).toBe('exclamation-triangle');
     });
   });

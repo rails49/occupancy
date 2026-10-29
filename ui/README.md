@@ -136,6 +136,7 @@ rr-app                          ← shell: owns the editing session and the view
 > [#256]: https://github.com/rails49/occupancy/issues/256
 > [#260]: https://github.com/rails49/occupancy/issues/260
 > [#262]: https://github.com/rails49/occupancy/issues/262
+> [#265]: https://github.com/rails49/occupancy/issues/265
 
 ## State and data flow
 
@@ -204,7 +205,7 @@ Application shell. Owns the editing session and routes between the views.
 `rr-notify` is a child's transient message, toasted here because this is where toasts live. A toast
 shows its message as text, never as HTML. It is raised at `warning`, never `danger`: everything that
 reaches it is the editor **declining** to author something, which is the editor working rather than
-failing.
+failing. It stays up until the user closes it ([#265]).
 
 **Keyboard:** Cmd/Ctrl+Z and Cmd+Shift+Z / Ctrl+Y, bound on `window`, **editor view only**. The
 handler bails when a field has focus, testing `event.composedPath()[0]` rather than `event.target` —
