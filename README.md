@@ -14,12 +14,12 @@ The application is offered as a static webapp served at https://occupancy.rails4
 
 ## 🛠 Development
 
-Requires [pnpm](https://pnpm.io/) and Node at the version in `.nvmrc`. Run from the repository root unless noted.
+Requires [pnpm](https://pnpm.io/) and Node at the version in `.nvmrc`, and [uv](https://docs.astral.sh/uv/) for the checks on the Python scripts in `bin/`. Run from the repository root unless noted.
 
 | Task | Command |
 | :--- | :--- |
 | Install dependencies | `pnpm install` |
-| Full check (typecheck, UI lint, TS tests, look-check, UI build) | `bin/test.sh` |
+| Full check (typecheck, UI lint, TS tests, look-check, Python checks, UI build) | `bin/test.sh` |
 | Install the hooks: pre-commit refuses commits on `main`, pre-push runs `bin/test.sh` | `bin/install-hooks.sh` |
 | Typecheck all packages | `pnpm typecheck` |
 | Lint `ui/src` (`eslint.config.mjs`) | `pnpm lint` |
