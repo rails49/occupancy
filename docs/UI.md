@@ -24,13 +24,18 @@ chain is checked: a drag may still take an endpoint into another car, and an arc
 contains overlapping cars opens and edits unchanged — this gates authoring, and adds no validation
 at the format layer.
 
-A second refusal the editor states out loud is at the **image add** (#255). A picked or captured
-JPEG's EXIF orientation tag is set to 1 in the bytes the archive holds — the browser applies that
-tag and the detector's readers do not — and an image whose stored array is portrait is then refused
-rather than rotated, recording nothing and naming the file in a toast. The invariant is that the
-editor labels the array a downstream reader gets, so every add goes through `addPrepared` and
-the size `camera.resolution` takes is measured on the prepared bytes. `../SPEC.md` § Images states
-both rules and why rotating in the browser was rejected.
+Two more refusals the editor states out loud are at the **image add** (#255, #260). A picked or
+captured JPEG's EXIF orientation tag is set to 1 in the bytes the archive holds — the browser
+applies that tag and the detector's readers do not — and an image whose stored array is portrait is
+then refused rather than rotated, recording nothing and naming the file in a toast. An image whose
+stored array is not the size `camera.resolution` declares is refused the same way, naming both
+sizes, once anything in the archive is positioned in those pixels; while nothing is, the image sets
+the resolution instead. The invariant is that the editor labels the array a downstream reader gets,
+so every add goes through `addPrepared` and the size `camera.resolution` takes is measured on the
+prepared bytes. The size rule is the session's — `requiredImageSize` answers it, and `addPrepared`
+words it, because the message names the file the user picked. `../SPEC.md` § Images states all three
+rules, why rotating in the browser was rejected, and why an image of another size is not something
+the screen can show.
 
 ## State: props down, events up
 

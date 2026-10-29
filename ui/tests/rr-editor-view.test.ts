@@ -8,7 +8,7 @@ import { EditSession } from '../src/editSession.js';
 import { HIGHLIGHT_DURATION_MS } from '../src/highlight.js';
 import { classChoices, rootClass } from '../src/vocabulary.js';
 import '../src/rr-editor-view.js';
-import { RREditorView, portraitRefusal } from '../src/rr-editor-view.js';
+import { RREditorView, portraitRefusal, sizeRefusal } from '../src/rr-editor-view.js';
 import { readExifOrientation } from '../src/exifOrientation.js';
 import { jpeg, jpegWithOrientation } from './jpegFixture.ts';
 import type { RRCalibrationDialog } from '../src/rr-calibration-dialog.js';
@@ -32,7 +32,10 @@ vi.mock('../src/capture.js', () => ({
   captureFromCamera: () => captureFromCamera(),
 }));
 
-const imageSize = vi.fn(async (_bytes: Uint8Array) => ({ width: 8064, height: 6048 }));
+// The size `imageSize` reports is the resolution the test archive declares, so
+// an add is accepted; a test about an image of another size says so with
+// `mockResolvedValueOnce`, because that is what is refused (#260).
+const imageSize = vi.fn(async (_bytes: Uint8Array) => ({ width: 100, height: 100 }));
 vi.mock('../src/imageSize.js', () => ({
   imageSize: (bytes: Uint8Array) => imageSize(bytes),
 }));
@@ -1201,6 +1204,7 @@ describe('rr-editor-view', () => {
       archive.setManifest({ ...archive.getManifest(), images: [] });
       const el = await mount();
 
+      imageSize.mockResolvedValueOnce({ width: 8064, height: 6048 });
       bar(el).dispatchEvent(new CustomEvent('rr-image-add', { detail: { source: 'camera' } }));
       await flush();
       await el.updateComplete;
@@ -1231,6 +1235,8 @@ describe('rr-editor-view', () => {
         archive.setManifest({ ...archive.getManifest(), images: [] });
         const added = vi.spyOn(archive, 'addImage');
         const el = await mount();
+
+        imageSize.mockResolvedValueOnce({ width: 8064, height: 6048 });
 
         await pickFile(el, 'IMG_0042.jpg', jpegWithOrientation(6));
 
@@ -1265,6 +1271,9 @@ describe('rr-editor-view', () => {
       });
 
       it('accepts a square image', async () => {
+        // Square is not portrait. It is the archive's size too, so the only
+        // rule the add can fail here is the landscape one (#260).
+        archive.getManifest().camera.resolution = { width: 4000, height: 4000 };
         imageSize.mockResolvedValueOnce({ width: 4000, height: 4000 });
         const el = await mount();
         const notices = noticesOf(el);
@@ -1287,6 +1296,80 @@ describe('rr-editor-view', () => {
         expect(archive.getManifest().images).to.have.length(1);
         expect(notices).to.have.length(1);
         expect(notices[0]).to.contain('1080×1920');
+      });
+    });
+
+    describe('an added image is the size the archive declares (#260)', () => {
+      const HALF = { width: 5504, height: 4128 };
+      const DECLARED = { width: 100, height: 100 };
+
+      it('refuses a picked image of another size, records nothing, and names both sizes', async () => {
+        imageSize.mockResolvedValueOnce(HALF);
+        const added = vi.spyOn(archive, 'addImage');
+        const el = await mount();
+        const notices = noticesOf(el);
+
+        await pickFile(el, 'IMG_2871.jpg', jpeg());
+
+        expect(added).not.toHaveBeenCalled();
+        expect(archive.getManifest().images).to.have.length(1);
+        expect(el.session!.history.undoEntry).to.be.null;
+        expect(notices).to.deep.equal([sizeRefusal('IMG_2871.jpg', HALF, DECLARED)]);
+      });
+
+      it('accepts a picked image of the declared size', async () => {
+        const el = await mount();
+        const notices = noticesOf(el);
+
+        await pickFile(el, 'IMG_2871.jpg', jpeg());
+
+        expect(archive.getManifest().images).to.have.length(2);
+        expect(notices).to.deep.equal([]);
+      });
+
+      it('refuses a capture of another size, naming the capture it would have stored', async () => {
+        imageSize.mockResolvedValueOnce(HALF);
+        const el = await mount();
+        const notices = noticesOf(el);
+
+        bar(el).dispatchEvent(new CustomEvent('rr-image-add', { detail: { source: 'camera' } }));
+        await flush();
+        await el.updateComplete;
+
+        expect(archive.getManifest().images).to.have.length(1);
+        expect(notices).to.have.length(1);
+        expect(notices[0]).to.match(/^capture_/);
+        expect(notices[0]).to.contain('5504×4128');
+        expect(notices[0]).to.contain('100×100');
+      });
+
+      it('takes any size while nothing is positioned, and that image sets the resolution', async () => {
+        archive.setManifest({ ...archive.getManifest(), images: [] });
+        imageSize.mockResolvedValueOnce(HALF);
+        const el = await mount();
+        const notices = noticesOf(el);
+
+        await pickFile(el, 'IMG_2871.jpg', jpeg());
+
+        expect(archive.getManifest().images).to.have.length(1);
+        expect(archive.getManifest().camera.resolution).toEqual(HALF);
+        expect(notices).to.deep.equal([]);
+      });
+
+      it('refuses the next image of another size once the first one set the size', async () => {
+        archive.setManifest({ ...archive.getManifest(), images: [] });
+        imageSize.mockResolvedValueOnce(HALF);
+        const el = await mount();
+        const notices = noticesOf(el);
+        await pickFile(el, 'IMG_2871.jpg', jpeg());
+
+        imageSize.mockResolvedValueOnce({ width: 8064, height: 6048 });
+        await pickFile(el, 'IMG_2872.jpg', jpeg());
+
+        expect(archive.getManifest().images).to.have.length(1);
+        expect(notices).to.deep.equal([
+          sizeRefusal('IMG_2872.jpg', { width: 8064, height: 6048 }, HALF),
+        ]);
       });
     });
 

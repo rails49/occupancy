@@ -265,17 +265,37 @@ export function portraitRefusal(name: string, size: Size): string {
 }
 
 /**
+ * Why an image of another size is refused, naming both sizes (#260).
+ *
+ * It names the two numbers rather than saying "wrong size", because which
+ * half is wrong is the user's call: a shot taken at another zoom and an
+ * archive whose `camera.resolution` is wrong read identically otherwise.
+ */
+export function sizeRefusal(name: string, size: Size, required: Size): string {
+  const shape = `${size.width}×${size.height}`;
+  const declared = `${required.width}×${required.height}`;
+  return (
+    `${name} is ${shape}, the archive is ${declared} — ` +
+    `an added image must be the archive's size, so it was not added.`
+  );
+}
+
+/**
  * Adds a picked or captured image, or returns the notice that refuses it
  * (`SPEC.md` § Images).
  *
  * The orientation tag goes to 1 first, so the bytes the archive holds are the
  * bytes every reader agrees on (#255, `exifOrientation.ts`), and the stored
  * array is then what `imageSize` measures — the size a new archive takes as
- * `camera.resolution` (#254), and the shape the landscape rule is applied to.
+ * `camera.resolution` (#254), and the size the two rules are applied to.
  *
  * A portrait array is refused rather than rotated: rotating would re-encode
  * the photograph, and software that rotated it once can rotate it back. An
- * image that does not decode has no shape to judge and is added as before.
+ * image that is not the size the session requires is refused because the
+ * detector's export normalizes every label against `camera.resolution`, so a
+ * shot of another field of view puts its labels in the wrong places (#260) —
+ * drawn scaled to fit, which is why nothing on screen would say so. An image
+ * that does not decode has no size to judge and is added as before.
  */
 async function addPrepared(
   session: EditSession,
@@ -286,6 +306,10 @@ async function addPrepared(
   const bytes = clearExifOrientation(picked);
   const size = await imageSize(bytes);
   if (size && size.height > size.width) return portraitRefusal(name, size);
+  const required = session.requiredImageSize;
+  if (size && required && (size.width !== required.width || size.height !== required.height)) {
+    return sizeRefusal(name, size, required);
+  }
   await session.addImage(filename, bytes, size);
   return null;
 }
