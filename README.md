@@ -65,6 +65,12 @@ quality 95 — the format
 No browser decodes DNG, which is why step 4 runs on the Mac rather than in the
 app.
 
+The pick is one undo entry, and each image keeps the filename
+`bin/dng-to-jpeg.py` gave it, which is the DNG's stem — the name the shot had on
+the phone ([#262](https://github.com/rails49/occupancy/issues/262)). That is how
+the corpus is indexed outside this program. A shot the pick cannot store is left
+out and named, and the rest of the session still lands.
+
 Face down, iOS cannot tell which way is up, so a shot decodes portrait or
 carries an orientation tag. The editor sets the tag to 1 in the bytes it stores,
 and refuses an image whose stored array is portrait

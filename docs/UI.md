@@ -31,11 +31,21 @@ then refused rather than rotated, recording nothing and naming the file in a toa
 stored array is not the size `camera.resolution` declares is refused the same way, naming both
 sizes, once anything in the archive is positioned in those pixels; while nothing is, the image sets
 the resolution instead. The invariant is that the editor labels the array a downstream reader gets,
-so every add goes through `addPrepared` and the size `camera.resolution` takes is measured on the
-prepared bytes. The size rule is the session's — `requiredImageSize` answers it, and `addPrepared`
-words it, because the message names the file the user picked. `../SPEC.md` § Images states all three
-rules, why rotating in the browser was rejected, and why an image of another size is not something
-the screen can show.
+so every add — a capture through `addPrepared`, a pick through `addPickedFiles` — goes through
+`prepareImage` first, and the size `camera.resolution` takes is measured on the prepared bytes. The
+size rule is the session's — `requiredImageSize` answers it, and `addRefusal` words it, because the
+message names the file the user picked. `../SPEC.md` § Images states all three rules, why rotating
+in the browser was rejected, and why an image of another size is not something the screen can show.
+
+The picker takes **several files in one pick** (#262), and the pick — not the file — is the unit:
+`addPickedFiles` prepares and judges each file in filename order, hands what survives to
+`EditSession.addImages` as **one** history entry, and returns one notice naming everything it
+refused, so forty photographs with one 0.5x shot among them cost one Cmd+Z and one toast. The size
+the pick is held to is `requiredImageSize`, or, in an archive where nothing is positioned, the first
+file the pick accepts — which is the same answer, since that file is the one `addImages` takes
+`camera.resolution` from (#254). Each file keeps its own name because the corpus is indexed by those
+names outside this program; the collision fallback is the session's, beside the other rules about
+what the archive holds (#256).
 
 ## State: props down, events up
 

@@ -4,7 +4,14 @@ import { calibrationFit, getDPT, make_id } from '@rails49/r49';
 import type { Image, ManifestData, Point } from '@rails49/r49';
 import { MIN_DPT } from '@rails49/detector';
 import { captureFromCamera } from './capture.js';
-import type { ClickResult, Drag, EditSession, MenuSubject, Reveal } from './editSession.js';
+import type {
+  AddedImage,
+  ClickResult,
+  Drag,
+  EditSession,
+  MenuSubject,
+  Reveal,
+} from './editSession.js';
 import {
   boundsOfPoints,
   isClick,
@@ -281,21 +288,50 @@ export function sizeRefusal(name: string, size: Size, required: Size): string {
 }
 
 /**
- * Adds a picked or captured image, or returns the notice that refuses it
- * (`SPEC.md` § Images).
+ * The bytes a picked or captured image is stored as, and the size the two
+ * refusal rules are applied to (`SPEC.md` § Images).
  *
  * The orientation tag goes to 1 first, so the bytes the archive holds are the
  * bytes every reader agrees on (#255, `exifOrientation.ts`), and the stored
  * array is then what `imageSize` measures — the size a new archive takes as
- * `camera.resolution` (#254), and the size the two rules are applied to.
+ * `camera.resolution` (#254), and the size the rules are judged on.
+ */
+async function prepareImage(picked: Uint8Array): Promise<Omit<AddedImage, 'filename'>> {
+  const bytes = clearExifOrientation(picked);
+  return { bytes, size: await imageSize(bytes) };
+}
+
+/**
+ * Why a prepared image may not be stored, or null when it may
+ * (`SPEC.md` § Images).
  *
  * A portrait array is refused rather than rotated: rotating would re-encode
  * the photograph, and software that rotated it once can rotate it back. An
- * image that is not the size the session requires is refused because the
- * detector's export normalizes every label against `camera.resolution`, so a
- * shot of another field of view puts its labels in the wrong places (#260) —
- * drawn scaled to fit, which is why nothing on screen would say so. An image
- * that does not decode has no size to judge and is added as before.
+ * image that is not the size required is refused because the detector's export
+ * normalizes every label against `camera.resolution`, so a shot of another
+ * field of view puts its labels in the wrong places (#260) — drawn scaled to
+ * fit, which is why nothing on screen would say so. An image that does not
+ * decode has no size to judge and is added as before.
+ *
+ * `required` is the session's `requiredImageSize` for a single add. Inside a
+ * pick it is the size the pick has settled on, which is the same answer: the
+ * first file the pick accepts is the one `EditSession.addImages` takes
+ * `camera.resolution` from (#254).
+ */
+function addRefusal(name: string, size: Size | undefined, required: Size | null): string | null {
+  if (!size) return null;
+  if (size.height > size.width) return portraitRefusal(name, size);
+  if (required && (size.width !== required.width || size.height !== required.height)) {
+    return sizeRefusal(name, size, required);
+  }
+  return null;
+}
+
+/**
+ * Adds one captured image, or returns the notice that refuses it.
+ *
+ * The picker's path is {@link addPickedFiles}; both prepare and judge the same
+ * way, so a capture and a pick of one file are refused in the same words.
  */
 async function addPrepared(
   session: EditSession,
@@ -303,15 +339,58 @@ async function addPrepared(
   name: string,
   picked: Uint8Array
 ): Promise<string | null> {
-  const bytes = clearExifOrientation(picked);
-  const size = await imageSize(bytes);
-  if (size && size.height > size.width) return portraitRefusal(name, size);
-  const required = session.requiredImageSize;
-  if (size && required && (size.width !== required.width || size.height !== required.height)) {
-    return sizeRefusal(name, size, required);
-  }
+  const { bytes, size } = await prepareImage(picked);
+  const refusal = addRefusal(name, size, session.requiredImageSize);
+  if (refusal) return refusal;
   await session.addImage(filename, bytes, size);
   return null;
+}
+
+/**
+ * Adds a whole pick as one history entry, and returns the notice naming what
+ * it refused, or null when it refused nothing (#262).
+ *
+ * **Filename order**, not the order the picker handed the files over, which is
+ * the platform's and on Chromium is the order they were clicked: a camera
+ * names its files in the order it took them, so filename order is capture
+ * order and the archive's image list reads as the session did. The comparison
+ * is numeric, so `shot9.jpg` precedes `shot10.jpg`, and against a fixed
+ * locale, so the order does not move with the browser's.
+ *
+ * Each file keeps its own name — `EditSession.addImages` falls back to a
+ * generated one only for a collision (#256) — because the names are what the
+ * corpus is indexed by outside this program.
+ *
+ * A refused file is skipped and the rest of the pick is added: forty
+ * photographs with one 0.5x shot among them cost one Cmd+Z, and one toast
+ * naming the shot rather than forty-one toasts.
+ */
+async function addPickedFiles(
+  session: EditSession,
+  files: readonly File[]
+): Promise<string | null> {
+  const ordered = [...files].sort((a, b) =>
+    a.name.localeCompare(b.name, 'en', { numeric: true })
+  );
+  const adds: AddedImage[] = [];
+  const refusals: string[] = [];
+  let required = session.requiredImageSize;
+
+  for (const file of ordered) {
+    const { bytes, size } = await prepareImage(new Uint8Array(await file.arrayBuffer()));
+    const refusal = addRefusal(file.name, size, required);
+    if (refusal) {
+      refusals.push(refusal);
+      continue;
+    }
+    adds.push({ filename: file.name, bytes, size });
+    // In an archive where nothing is positioned, this file is the one that
+    // sets `camera.resolution`, so it is what the rest of the pick is held to.
+    if (!required && size) required = size;
+  }
+
+  await session.addImages(adds);
+  return refusals.length === 0 ? null : refusals.join(' ');
 }
 
 /** An image's blob URLs: full size for the viewer, a small copy for the strip. */
@@ -830,9 +909,13 @@ export class RREditorView extends LitElement {
   };
 
   /**
-   * An image is added, from the picker or from the camera. Both go through
-   * `addPrepared`, and a refusal it reports is toasted naming what the user
-   * chose: the picked file, or the capture that would have been stored.
+   * Images are added, from the picker or from the camera. Both prepare and
+   * judge the same way, and a refusal is toasted naming what the user chose:
+   * the picked files, or the capture that would have been stored.
+   *
+   * The picker takes **several files in one pick** (#262) — the photographs of
+   * one session are chosen once, not once per photograph — and the whole pick
+   * is one history entry and at most one toast.
    */
   private async _onImageAdd(e: CustomEvent) {
     const session = this.session;
@@ -843,15 +926,11 @@ export class RREditorView extends LitElement {
       const input = document.createElement('input');
       input.type = 'file';
       input.accept = 'image/jpeg,image/png';
+      input.multiple = true;
       input.onchange = async (event: Event) => {
-        const file = (event.target as HTMLInputElement).files?.[0];
-        if (!file) return;
-        const refusal = await addPrepared(
-          session,
-          `img_${make_id(2)}.jpg`,
-          file.name,
-          new Uint8Array(await file.arrayBuffer())
-        );
+        const files = Array.from((event.target as HTMLInputElement).files ?? []);
+        if (files.length === 0) return;
+        const refusal = await addPickedFiles(session, files);
         if (refusal) this._notify(refusal);
       };
       input.click();

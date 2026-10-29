@@ -1154,11 +1154,15 @@ describe('rr-editor-view', () => {
     const bar = (el: RREditorView) => el.shadowRoot!.querySelector('rr-thumbnail-bar')!;
 
     /**
-     * The file picker, driven. The editor makes an `<input type="file">` and
-     * clicks it, so the click is intercepted, the chosen file put on the
-     * input, and the editor's own change handler left to run.
+     * The file picker, driven with a whole pick. The editor makes an
+     * `<input type="file">` and clicks it, so the click is intercepted, the
+     * chosen files put on the input in the order given, and the editor's own
+     * change handler left to run.
      */
-    async function pickFile(el: RREditorView, name: string, bytes: Uint8Array) {
+    async function pickFiles(
+      el: RREditorView,
+      picked: readonly { readonly name: string; readonly bytes: Uint8Array }[]
+    ) {
       const inputs: HTMLInputElement[] = [];
       const click = vi
         .spyOn(HTMLInputElement.prototype, 'click')
@@ -1169,15 +1173,22 @@ describe('rr-editor-view', () => {
       click.mockRestore();
 
       // jsdom's `Blob` has no `arrayBuffer`, which is how the editor reads
-      // the picked file, so the one method it calls is stubbed on the file.
-      const file = new File([bytes as BlobPart], name, { type: 'image/jpeg' });
-      Object.defineProperty(file, 'arrayBuffer', { value: async () => bytes.slice().buffer });
+      // a picked file, so the one method it calls is stubbed on each file.
+      const files = picked.map(({ name, bytes }) => {
+        const file = new File([bytes as BlobPart], name, { type: 'image/jpeg' });
+        Object.defineProperty(file, 'arrayBuffer', { value: async () => bytes.slice().buffer });
+        return file;
+      });
       const input = inputs[0];
-      Object.defineProperty(input, 'files', { value: [file] });
+      Object.defineProperty(input, 'files', { value: files });
       input.dispatchEvent(new Event('change'));
       await flush();
       await el.updateComplete;
     }
+
+    /** One file through {@link pickFiles}, which is what most tests want. */
+    const pickFile = (el: RREditorView, name: string, bytes: Uint8Array) =>
+      pickFiles(el, [{ name, bytes }]);
 
     it('deletes an image from the thumbnail bar', async () => {
       const el = await mount();
@@ -1370,6 +1381,155 @@ describe('rr-editor-view', () => {
         expect(notices).to.deep.equal([
           sizeRefusal('IMG_2872.jpg', { width: 8064, height: 6048 }, HALF),
         ]);
+      });
+    });
+
+    describe('a pick adds several files (#262)', () => {
+      const filenames = () => archive.getManifest().images.map(image => image.filename);
+      /** Three files, handed to the picker out of filename order. */
+      const three = [
+        { name: 'IMG_2868.jpg', bytes: jpeg() },
+        { name: 'IMG_2866.jpg', bytes: jpeg() },
+        { name: 'IMG_2867.jpg', bytes: jpeg() },
+      ];
+
+      it('lets the picker take several files', async () => {
+        const el = await mount();
+        let picked: HTMLInputElement | null = null;
+        const click = vi
+          .spyOn(HTMLInputElement.prototype, 'click')
+          .mockImplementation(function (this: HTMLInputElement) {
+            picked = this;
+          });
+
+        bar(el).dispatchEvent(new CustomEvent('rr-image-add', { detail: { source: 'file' } }));
+        click.mockRestore();
+
+        expect(picked!.multiple).to.be.true;
+        expect(picked!.accept).to.equal('image/jpeg,image/png');
+      });
+
+      it('adds every file, in filename order, under its own name', async () => {
+        const el = await mount();
+
+        await pickFiles(el, three);
+
+        expect(filenames()).to.deep.equal([
+          'img1.jpg',
+          'IMG_2866.jpg',
+          'IMG_2867.jpg',
+          'IMG_2868.jpg',
+        ]);
+      });
+
+      it('orders numerically, so shot9 precedes shot10', async () => {
+        const el = await mount();
+
+        await pickFiles(el, [
+          { name: 'shot10.jpg', bytes: jpeg() },
+          { name: 'shot9.jpg', bytes: jpeg() },
+        ]);
+
+        expect(filenames()).to.deep.equal(['img1.jpg', 'shot9.jpg', 'shot10.jpg']);
+      });
+
+      it('falls back to a generated name for one the archive holds, keeping the extension', async () => {
+        const el = await mount();
+
+        await pickFiles(el, [
+          { name: 'img1.jpg', bytes: jpeg() },
+          { name: 'IMG_2866.png', bytes: jpeg() },
+        ]);
+
+        const stored = filenames();
+        expect(stored).to.have.length(3);
+        expect(stored).to.contain('IMG_2866.png');
+        // `img1.jpg` is taken, so it lands under a generated name — and the
+        // picked `.jpg` is what that name keeps, not the other file's `.png`.
+        expect(stored.find(name => name.startsWith('img_'))).to.match(/^img_\w{11}\.jpg$/);
+      });
+
+      it('costs one undo entry and shows the first new image', async () => {
+        const el = await mount();
+
+        await pickFiles(el, three);
+
+        expect(el.session!.history.undoEntry!.label).to.equal('add images');
+        expect(bar(el).selectedIndex).to.equal(1);
+        expect(el.session!.image!.filename).to.equal('IMG_2866.jpg');
+        await el.session!.undo();
+        expect(filenames()).to.deep.equal(['img1.jpg']);
+        expect(el.session!.history.canUndo).to.be.false;
+      });
+
+      it('adds nothing for a cancelled pick', async () => {
+        const el = await mount();
+
+        await pickFiles(el, []);
+
+        expect(filenames()).to.deep.equal(['img1.jpg']);
+        expect(el.session!.history.canUndo).to.be.false;
+      });
+
+      it('takes camera.resolution from the first file and holds the rest to it', async () => {
+        archive.setManifest({ ...archive.getManifest(), images: [] });
+        const el = await mount();
+        const notices = noticesOf(el);
+        imageSize
+          .mockResolvedValueOnce({ width: 8064, height: 6048 })
+          .mockResolvedValueOnce({ width: 8064, height: 6048 })
+          .mockResolvedValueOnce({ width: 5504, height: 4128 });
+
+        await pickFiles(el, three);
+
+        expect(archive.getManifest().camera.resolution).toEqual({ width: 8064, height: 6048 });
+        expect(filenames()).to.deep.equal(['IMG_2866.jpg', 'IMG_2867.jpg']);
+        expect(notices).to.deep.equal([
+          sizeRefusal(
+            'IMG_2868.jpg',
+            { width: 5504, height: 4128 },
+            { width: 8064, height: 6048 }
+          ),
+        ]);
+      });
+
+      it('adds the rest of the pick and names every refusal in one toast', async () => {
+        const el = await mount();
+        const notices = noticesOf(el);
+        // In filename order: 2866 lands, 2867 is portrait, 2868 is another size.
+        imageSize
+          .mockResolvedValueOnce({ width: 100, height: 100 })
+          .mockResolvedValueOnce({ width: 60, height: 80 })
+          .mockResolvedValueOnce({ width: 5504, height: 4128 });
+
+        await pickFiles(el, three);
+
+        expect(filenames()).to.deep.equal(['img1.jpg', 'IMG_2866.jpg']);
+        expect(notices).to.deep.equal([
+          `${portraitRefusal('IMG_2867.jpg', { width: 60, height: 80 })} ` +
+            sizeRefusal(
+              'IMG_2868.jpg',
+              { width: 5504, height: 4128 },
+              { width: 100, height: 100 }
+            ),
+        ]);
+      });
+
+      it('stores each file\'s own prepared bytes', async () => {
+        const added = vi.spyOn(archive, 'addImage');
+        const el = await mount();
+
+        await pickFiles(el, [
+          { name: 'IMG_2866.jpg', bytes: jpegWithOrientation(6) },
+          { name: 'IMG_2867.jpg', bytes: jpeg() },
+        ]);
+
+        expect(added.mock.calls.map(call => call[0])).to.deep.equal([
+          'IMG_2866.jpg',
+          'IMG_2867.jpg',
+        ]);
+        expect(readExifOrientation(added.mock.calls[0][1] as Uint8Array)).toBe(1);
+        expect(added.mock.calls[1][1]).toEqual(jpeg());
       });
     });
 
