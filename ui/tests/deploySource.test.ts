@@ -111,5 +111,8 @@ describe('the throwaway repositories', () => {
     );
     expect(run.status, run.stdout + run.stderr).toBe(0);
     expect(fs.readdirSync(path.join(outer, '.git', 'refs', 'heads'))).toEqual([]);
-  });
+    // A whole second vitest starts in the child, which is seconds on its own
+    // and more under the rest of the suite, so the default 5 s cannot hold it
+    // — the timeout `modelAssets.test.ts` gives its child build.
+  }, 120_000);
 });
