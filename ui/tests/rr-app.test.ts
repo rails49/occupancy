@@ -162,6 +162,7 @@ describe('rr-app', () => {
       expect(loading.textContent!.trim()).toBe(`Loading ${MARKUP}.r49…`);
       expect(loading.querySelector('img')).toBeNull();
       expect(loading.variant).toBe('primary');
+      expect(loading.closable).toBe(true);
       expect(loading.duration).toBe(3000);
       expect(loading.querySelector<SlIcon>('sl-icon[slot="icon"]')!.name).toBe('hourglass-split');
       expect(loaded.querySelector('img')).toBeNull();
@@ -185,6 +186,7 @@ describe('rr-app', () => {
       expect(alert.querySelector('img')).toBeNull();
       expect(alert.variant).toBe('warning');
       expect(alert.closable).toBe(true);
+      expect(alert.duration).toBe(3000);
       expect(alert.querySelector<SlIcon>('sl-icon[slot="icon"]')!.name).toBe('exclamation-triangle');
     });
   });
