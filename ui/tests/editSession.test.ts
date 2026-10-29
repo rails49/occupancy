@@ -1396,6 +1396,130 @@ describe('EditSession', () => {
       });
     });
 
+    describe('a pick lands as one entry (#262)', () => {
+      const SIZE = { width: 2000, height: 2000 };
+      const names = (s: EditSession) =>
+        s.archive.getManifest().images.map(image => image.filename);
+      const pick = (...filenames: readonly string[]) =>
+        filenames.map((filename, i) => ({
+          filename,
+          bytes: Uint8Array.from([i + 10]),
+          size: SIZE,
+        }));
+
+      it('adds the images in the order given and shows the first of them', async () => {
+        const s = await withBytes(['a.jpg']);
+
+        await s.addImages(pick('IMG_2866.jpg', 'IMG_2867.jpg'));
+
+        expect(names(s)).toEqual(['a.jpg', 'IMG_2866.jpg', 'IMG_2867.jpg']);
+        expect(s.image!.filename).toBe('IMG_2866.jpg');
+      });
+
+      it('costs one undo entry, labelled for the pick', async () => {
+        const s = await withBytes(['a.jpg']);
+
+        await s.addImages(pick('IMG_2866.jpg', 'IMG_2867.jpg', 'IMG_2868.jpg'));
+
+        expect(s.history.undoEntry!.label).toBe('add images');
+        expect(s.history.undoEntry!.target).toEqual({ kind: 'images' });
+        await s.undo();
+        expect(names(s)).toEqual(['a.jpg']);
+        expect(s.history.canUndo).toBe(false);
+      });
+
+      it('restores every image of the pick, bytes included, on redo', async () => {
+        const s = await withBytes(['a.jpg']);
+        await s.addImages(pick('IMG_2866.jpg', 'IMG_2867.jpg'));
+        await s.undo();
+
+        await s.redo();
+
+        expect(names(s)).toEqual(['a.jpg', 'IMG_2866.jpg', 'IMG_2867.jpg']);
+        expect(await s.archive.getImage('IMG_2866.jpg')).toEqual(Uint8Array.from([10]));
+        expect(await s.archive.getImage('IMG_2867.jpg')).toEqual(Uint8Array.from([11]));
+      });
+
+      it('records nothing for an empty pick', async () => {
+        const s = await withBytes(['a.jpg']);
+
+        await s.addImages([]);
+
+        expect(names(s)).toEqual(['a.jpg']);
+        expect(s.history.canUndo).toBe(false);
+      });
+
+      it('takes the size of the first image into an archive where nothing is positioned', async () => {
+        const s = session({ images: [], calibrated: false });
+
+        await s.addImages([
+          { filename: 'a.jpg', bytes: Uint8Array.from([1]), size: { width: 8064, height: 6048 } },
+          { filename: 'b.jpg', bytes: Uint8Array.from([2]), size: { width: 8064, height: 6048 } },
+        ]);
+
+        expect(s.archive.getManifest().camera.resolution).toEqual({ width: 8064, height: 6048 });
+      });
+
+      it('takes the size of the first image that decoded', async () => {
+        const s = session({ images: [], calibrated: false });
+
+        await s.addImages([
+          { filename: 'broken.jpg', bytes: Uint8Array.from([1]) },
+          { filename: 'b.jpg', bytes: Uint8Array.from([2]), size: { width: 8064, height: 6048 } },
+        ]);
+
+        expect(s.archive.getManifest().camera.resolution).toEqual({ width: 8064, height: 6048 });
+      });
+
+      describe('a taken filename falls back to a generated one (#256)', () => {
+        it('keeps a name the archive does not hold', async () => {
+          const s = await withBytes(['a.jpg']);
+
+          await s.addImages(pick('IMG_2866.jpg'));
+
+          expect(names(s)).toEqual(['a.jpg', 'IMG_2866.jpg']);
+        });
+
+        it('generates a name for one the archive already holds, keeping the extension', async () => {
+          const s = await withBytes(['IMG_2866.jpg']);
+
+          await s.addImages(pick('IMG_2866.jpg'));
+
+          const [kept, generated] = names(s);
+          expect(kept).toBe('IMG_2866.jpg');
+          expect(generated).toMatch(/^img_\w{11}\.jpg$/);
+          expect(s.image!.filename).toBe(generated);
+        });
+
+        it('keeps a PNG a PNG', async () => {
+          const s = await withBytes(['shot.png']);
+
+          await s.addImages(pick('shot.png'));
+
+          expect(names(s)[1]).toMatch(/^img_\w{11}\.png$/);
+        });
+
+        it('counts a name an earlier image of the same pick took', async () => {
+          const s = await withBytes(['a.jpg']);
+
+          await s.addImages(pick('IMG_2866.jpg', 'IMG_2866.jpg'));
+
+          const stored = names(s);
+          expect(stored).toHaveLength(3);
+          expect(stored[1]).toBe('IMG_2866.jpg');
+          expect(stored[2]).toMatch(/^img_\w{11}\.jpg$/);
+        });
+
+        it('falls back to .jpg for a name with no extension', async () => {
+          const s = await withBytes(['photo']);
+
+          await s.addImages(pick('photo'));
+
+          expect(names(s)[1]).toMatch(/^img_\w{11}\.jpg$/);
+        });
+      });
+    });
+
     it('ends a live chain when an image is added', async () => {
       const s = await withBytes(['a.jpg']);
       s.selectTool('car');
