@@ -1150,6 +1150,32 @@ describe('rr-editor-view', () => {
   describe('images', () => {
     const bar = (el: RREditorView) => el.shadowRoot!.querySelector('rr-thumbnail-bar')!;
 
+    /**
+     * The file picker, driven. The editor makes an `<input type="file">` and
+     * clicks it, so the click is intercepted, the chosen file put on the
+     * input, and the editor's own change handler left to run.
+     */
+    async function pickFile(el: RREditorView, name: string, bytes: Uint8Array) {
+      const inputs: HTMLInputElement[] = [];
+      const click = vi
+        .spyOn(HTMLInputElement.prototype, 'click')
+        .mockImplementation(function (this: HTMLInputElement) {
+          inputs.push(this);
+        });
+      bar(el).dispatchEvent(new CustomEvent('rr-image-add', { detail: { source: 'file' } }));
+      click.mockRestore();
+
+      // jsdom's `Blob` has no `arrayBuffer`, which is how the editor reads
+      // the picked file, so the one method it calls is stubbed on the file.
+      const file = new File([bytes as BlobPart], name, { type: 'image/jpeg' });
+      Object.defineProperty(file, 'arrayBuffer', { value: async () => bytes.slice().buffer });
+      const input = inputs[0];
+      Object.defineProperty(input, 'files', { value: [file] });
+      input.dispatchEvent(new Event('change'));
+      await flush();
+      await el.updateComplete;
+    }
+
     it('deletes an image from the thumbnail bar', async () => {
       const el = await mount();
 
@@ -1184,32 +1210,6 @@ describe('rr-editor-view', () => {
     });
 
     describe('the stored array is the one array (#255)', () => {
-      /**
-       * The file picker, driven. The editor makes an `<input type="file">` and
-       * clicks it, so the click is intercepted, the chosen file put on the
-       * input, and the editor's own change handler left to run.
-       */
-      async function pickFile(el: RREditorView, name: string, bytes: Uint8Array) {
-        const inputs: HTMLInputElement[] = [];
-        const click = vi
-          .spyOn(HTMLInputElement.prototype, 'click')
-          .mockImplementation(function (this: HTMLInputElement) {
-            inputs.push(this);
-          });
-        bar(el).dispatchEvent(new CustomEvent('rr-image-add', { detail: { source: 'file' } }));
-        click.mockRestore();
-
-        // jsdom's `Blob` has no `arrayBuffer`, which is how the editor reads
-        // the picked file, so the one method it calls is stubbed on the file.
-        const file = new File([bytes as BlobPart], name, { type: 'image/jpeg' });
-        Object.defineProperty(file, 'arrayBuffer', { value: async () => bytes.slice().buffer });
-        const input = inputs[0];
-        Object.defineProperty(input, 'files', { value: [file] });
-        input.dispatchEvent(new Event('change'));
-        await flush();
-        await el.updateComplete;
-      }
-
       /** The bytes handed to the archive by the one add in the test. */
       function storedBytes(added: MockInstance<R49Archive['addImage']>): Uint8Array {
         expect(added).toHaveBeenCalledOnce();
