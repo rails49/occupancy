@@ -97,6 +97,8 @@ The detector runs entirely in the browser via ONNX Runtime; the application is f
 
 An archive holds a list of images of the layout taken with an overhead camera. The UI adds and removes images. While nothing in the archive is positioned in pixels (no image, calibration point or sensor), adding an image sets `camera.resolution` to its size ([#254](https://github.com/rails49/occupancy/issues/254)).
 
+**Images are stored landscape, with no orientation applied, and a portrait image is refused** ([#255](https://github.com/rails49/occupancy/issues/255)). A browser applies a JPEG's EXIF orientation tag when it decodes; the readers that train and export the detector hand back the stored array and ignore it, so a tagged photograph would be labeled in one frame and detected in another. On every image add — the file picker and Capture from Camera both — the UI sets the tag to 1 in the stored bytes, rewriting that value alone and re-encoding nothing. It then refuses an image whose stored array is portrait, recording nothing and naming the file: a camera-native photograph is landscape whichever way the phone was held, so a portrait array is software having rotated the pixels, and rotating them back in the browser would re-encode the photograph.
+
 ### Calibration
 
 #### Establishes the relation (scale) to the prototype

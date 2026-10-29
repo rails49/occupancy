@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { MockInstance } from 'vitest';
 import { fixture, html } from '@open-wc/testing';
 import { R49Archive, getDPT } from '@rails49/r49';
 import { MIN_DPT } from '@rails49/detector';
@@ -7,7 +8,9 @@ import { EditSession } from '../src/editSession.js';
 import { HIGHLIGHT_DURATION_MS } from '../src/highlight.js';
 import { classChoices, rootClass } from '../src/vocabulary.js';
 import '../src/rr-editor-view.js';
-import { RREditorView } from '../src/rr-editor-view.js';
+import { RREditorView, portraitRefusal } from '../src/rr-editor-view.js';
+import { readExifOrientation } from '../src/exifOrientation.js';
+import { jpeg, jpegWithOrientation } from './jpegFixture.ts';
 import type { RRCalibrationDialog } from '../src/rr-calibration-dialog.js';
 import type { RRSensorDialog } from '../src/rr-sensor-dialog.js';
 import type { RRContextMenu } from '../src/rr-context-menu.js';
@@ -404,6 +407,15 @@ describe('rr-editor-view', () => {
 
   function cars(): CarLabel[] {
     return archive.getManifest().images[0].labels;
+  }
+
+  /** Every notice the editor sends up, in order. */
+  function noticesOf(el: RREditorView): string[] {
+    const notices: string[] = [];
+    el.addEventListener('rr-notify', e =>
+      notices.push((e as CustomEvent<NotifyDetail>).detail.message)
+    );
+    return notices;
   }
 
   /** The editor on a new session over `archive`, with both dialogs stubbed. */
@@ -911,15 +923,6 @@ describe('rr-editor-view', () => {
       return mountWithTool('car');
     }
 
-    /** Every notice the editor sends up, in order. */
-    function noticesOf(el: RREditorView): string[] {
-      const notices: string[] = [];
-      el.addEventListener('rr-notify', e =>
-        notices.push((e as CustomEvent<NotifyDetail>).detail.message)
-      );
-      return notices;
-    }
-
     it('writes a car from two clicks, and hands it and the DPT to the viewer', async () => {
       const el = await mountWithCarTool();
 
@@ -1178,6 +1181,113 @@ describe('rr-editor-view', () => {
 
       expect(imageSize).toHaveBeenCalledWith(new Uint8Array([1, 2, 3]));
       expect(archive.getManifest().camera.resolution).toEqual({ width: 8064, height: 6048 });
+    });
+
+    describe('the stored array is the one array (#255)', () => {
+      /**
+       * The file picker, driven. The editor makes an `<input type="file">` and
+       * clicks it, so the click is intercepted, the chosen file put on the
+       * input, and the editor's own change handler left to run.
+       */
+      async function pickFile(el: RREditorView, name: string, bytes: Uint8Array) {
+        const inputs: HTMLInputElement[] = [];
+        const click = vi
+          .spyOn(HTMLInputElement.prototype, 'click')
+          .mockImplementation(function (this: HTMLInputElement) {
+            inputs.push(this);
+          });
+        bar(el).dispatchEvent(new CustomEvent('rr-image-add', { detail: { source: 'file' } }));
+        click.mockRestore();
+
+        // jsdom's `Blob` has no `arrayBuffer`, which is how the editor reads
+        // the picked file, so the one method it calls is stubbed on the file.
+        const file = new File([bytes as BlobPart], name, { type: 'image/jpeg' });
+        Object.defineProperty(file, 'arrayBuffer', { value: async () => bytes.slice().buffer });
+        const input = inputs[0];
+        Object.defineProperty(input, 'files', { value: [file] });
+        input.dispatchEvent(new Event('change'));
+        await flush();
+        await el.updateComplete;
+      }
+
+      /** The bytes handed to the archive by the one add in the test. */
+      function storedBytes(added: MockInstance<R49Archive['addImage']>): Uint8Array {
+        expect(added).toHaveBeenCalledOnce();
+        return added.mock.calls[0][1] as Uint8Array;
+      }
+
+      it('stores a picked JPEG with its orientation tag set to 1', async () => {
+        const picked = jpegWithOrientation(6);
+        const added = vi.spyOn(archive, 'addImage');
+        const el = await mount();
+
+        await pickFile(el, 'IMG_0042.jpg', picked);
+
+        expect(readExifOrientation(storedBytes(added))).toBe(1);
+        expect(storedBytes(added)).toHaveLength(picked.length);
+      });
+
+      it('measures the stored array, so camera.resolution is its landscape size', async () => {
+        archive.setManifest({ ...archive.getManifest(), images: [] });
+        const added = vi.spyOn(archive, 'addImage');
+        const el = await mount();
+
+        await pickFile(el, 'IMG_0042.jpg', jpegWithOrientation(6));
+
+        expect(imageSize).toHaveBeenCalledWith(storedBytes(added));
+        expect(archive.getManifest().camera.resolution).toEqual({ width: 8064, height: 6048 });
+      });
+
+      it('stores a JPEG with no EXIF block byte for byte as picked', async () => {
+        const picked = jpeg();
+        const added = vi.spyOn(archive, 'addImage');
+        const el = await mount();
+
+        await pickFile(el, 'IMG_0042.jpg', picked);
+
+        expect(storedBytes(added)).toEqual(picked);
+      });
+
+      it('refuses a portrait image, records nothing, and names the file', async () => {
+        imageSize.mockResolvedValueOnce({ width: 6048, height: 8064 });
+        const added = vi.spyOn(archive, 'addImage');
+        const el = await mount();
+        const notices = noticesOf(el);
+
+        await pickFile(el, 'IMG_0042.jpg', jpeg());
+
+        expect(added).not.toHaveBeenCalled();
+        expect(archive.getManifest().images).to.have.length(1);
+        expect(el.session!.history.undoEntry).to.be.null;
+        expect(notices).to.deep.equal([
+          portraitRefusal('IMG_0042.jpg', { width: 6048, height: 8064 }),
+        ]);
+      });
+
+      it('accepts a square image', async () => {
+        imageSize.mockResolvedValueOnce({ width: 4000, height: 4000 });
+        const el = await mount();
+        const notices = noticesOf(el);
+
+        await pickFile(el, 'IMG_0042.jpg', jpeg());
+
+        expect(archive.getManifest().images).to.have.length(2);
+        expect(notices).to.deep.equal([]);
+      });
+
+      it('refuses a portrait capture the same way', async () => {
+        imageSize.mockResolvedValueOnce({ width: 1080, height: 1920 });
+        const el = await mount();
+        const notices = noticesOf(el);
+
+        bar(el).dispatchEvent(new CustomEvent('rr-image-add', { detail: { source: 'camera' } }));
+        await flush();
+        await el.updateComplete;
+
+        expect(archive.getManifest().images).to.have.length(1);
+        expect(notices).to.have.length(1);
+        expect(notices[0]).to.contain('1080×1920');
+      });
     });
 
     it('keeps the image on screen through a reorder', async () => {

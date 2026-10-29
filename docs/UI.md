@@ -24,6 +24,14 @@ chain is checked: a drag may still take an endpoint into another car, and an arc
 contains overlapping cars opens and edits unchanged — this gates authoring, and adds no validation
 at the format layer.
 
+A second refusal the editor states out loud is at the **image add** (#255). A picked or captured
+JPEG's EXIF orientation tag is set to 1 in the bytes the archive holds — the browser applies that
+tag and the detector's readers do not — and an image whose stored array is portrait is then refused
+rather than rotated, recording nothing and naming the file in a toast. The invariant is that the
+editor labels the array a downstream reader gets, so every add goes through `addPrepared` and
+the size `camera.resolution` takes is measured on the prepared bytes. `../SPEC.md` § Images states
+both rules and why rotating in the browser was rejected.
+
 ## State: props down, events up
 
 `rr-app` owns the view mode and one `EditSession` (`src/editSession.ts`) per archive, created on New

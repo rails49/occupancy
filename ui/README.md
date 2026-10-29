@@ -132,6 +132,7 @@ rr-app                          ← shell: owns the editing session and the view
 > [#217]: https://github.com/rails49/occupancy/issues/217
 > [#252]: https://github.com/rails49/occupancy/issues/252
 > [#254]: https://github.com/rails49/occupancy/issues/254
+> [#255]: https://github.com/rails49/occupancy/issues/255
 
 ## State and data flow
 
@@ -849,10 +850,18 @@ undo, and blob URLs, and re-renders on every change the session reports.
 | `session` | `EditSession \| null` | The archive being edited, created by `rr-app` on New and Open |
 
 **Emits:** `rr-notify` (`{ message }`) when a click is refused, such as the **car tool** clicking
-inside a car already labelled ([#43]). `rr-app` owns the toast.
+inside a car already labelled ([#43]), or when an image add is refused ([#255]). `rr-app` owns the
+toast.
 
 * Makes a blob URL for each image when it first appears in the image list and revokes it when the
   image goes. A new session revokes them all.
+* **An added image is prepared before it is stored** ([#255], `exifOrientation.ts`), the same way
+  for the file picker and for Capture from Camera. A JPEG's EXIF orientation tag is set to 1 in the
+  bytes the archive holds — that value alone, with no re-encode — so the browser and the detector's
+  readers see one array; `imageSize` then measures those bytes, which is where `camera.resolution`
+  comes from ([#254]). An image whose stored array is **portrait** is refused: nothing is recorded
+  and `rr-notify` names the picked file. A square or landscape image is accepted, and one that does
+  not decode is added as before. `../SPEC.md` § Images holds the rule and the reason.
 * **Thumbnails are small copies** ([#252], `thumbnail.ts`): each image is decoded once into a JPEG
   `THUMBNAIL_WIDTH` (256) px wide, after every full-size URL exists, and the strip gets those URLs.
   An image that does not decode shows its full-size URL in the strip.

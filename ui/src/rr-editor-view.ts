@@ -22,6 +22,7 @@ import type { ClassChoice } from './vocabulary.js';
 import { lookTheme, TURN_HEIGHT_PX } from '@rails49/look';
 import type { HistoryHighlight } from './history.js';
 import { HIGHLIGHT_DURATION_MS } from './highlight.js';
+import { clearExifOrientation } from './exifOrientation.js';
 import { imageSize } from './imageSize.js';
 import { makeThumbnail } from './thumbnail.js';
 import type {
@@ -257,9 +258,36 @@ export interface NotifyDetail {
   readonly message: string;
 }
 
-/** Adds an image with its decoded size, which a new archive takes (#254). */
-async function addMeasured(session: EditSession, filename: string, bytes: Uint8Array) {
-  await session.addImage(filename, bytes, await imageSize(bytes));
+/** Why a portrait image is refused, naming what the user picked (#255). */
+export function portraitRefusal(name: string, size: Size): string {
+  const shape = `${size.width}×${size.height}`;
+  return `${name} is portrait (${shape}) — an image must be landscape, so it was not added.`;
+}
+
+/**
+ * Adds a picked or captured image, or returns the notice that refuses it
+ * (`SPEC.md` § Images).
+ *
+ * The orientation tag goes to 1 first, so the bytes the archive holds are the
+ * bytes every reader agrees on (#255, `exifOrientation.ts`), and the stored
+ * array is then what `imageSize` measures — the size a new archive takes as
+ * `camera.resolution` (#254), and the shape the landscape rule is applied to.
+ *
+ * A portrait array is refused rather than rotated: rotating would re-encode
+ * the photograph, and software that rotated it once can rotate it back. An
+ * image that does not decode has no shape to judge and is added as before.
+ */
+async function addPrepared(
+  session: EditSession,
+  filename: string,
+  name: string,
+  picked: Uint8Array
+): Promise<string | null> {
+  const bytes = clearExifOrientation(picked);
+  const size = await imageSize(bytes);
+  if (size && size.height > size.width) return portraitRefusal(name, size);
+  await session.addImage(filename, bytes, size);
+  return null;
 }
 
 /** An image's blob URLs: full size for the viewer, a small copy for the strip. */
@@ -777,6 +805,11 @@ export class RREditorView extends LitElement {
     this._fitZoom();
   };
 
+  /**
+   * An image is added, from the picker or from the camera. Both go through
+   * `addPrepared`, and a refusal it reports is toasted naming what the user
+   * chose: the picked file, or the capture that would have been stored.
+   */
   private async _onImageAdd(e: CustomEvent) {
     const session = this.session;
     if (!session) return;
@@ -788,12 +821,21 @@ export class RREditorView extends LitElement {
       input.accept = 'image/jpeg,image/png';
       input.onchange = async (event: Event) => {
         const file = (event.target as HTMLInputElement).files?.[0];
-        if (file) await addMeasured(session, `img_${make_id(2)}.jpg`, new Uint8Array(await file.arrayBuffer()));
+        if (!file) return;
+        const refusal = await addPrepared(
+          session,
+          `img_${make_id(2)}.jpg`,
+          file.name,
+          new Uint8Array(await file.arrayBuffer())
+        );
+        if (refusal) this._notify(refusal);
       };
       input.click();
     } else if (source === 'camera') {
       try {
-        await addMeasured(session, `capture_${make_id(3)}.jpg`, await captureFromCamera());
+        const filename = `capture_${make_id(3)}.jpg`;
+        const refusal = await addPrepared(session, filename, filename, await captureFromCamera());
+        if (refusal) this._notify(refusal);
       } catch (err) {
         console.error('Failed to capture from camera', err);
       }
