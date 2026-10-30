@@ -532,7 +532,10 @@ checkout may have none. Without it the live view starts, shows the no-model bann
 answer belongs with the app that reports it, and ADR 0005's bias toward occupied is a rule about
 that report. What L1 builds on stays in the package: the `Detection` shape and `carWidthPx`, the
 width it substitutes for the predicted one. `covers`, the strict point-in-oriented-box test, sits
-beside `occupancy()` because nothing else calls it.
+beside `occupancy()` because nothing else calls it, and so does `MARGIN_G` — ADR 0023's two gauges,
+which `occupancy()` turns into pixels once per frame and `covers()` adds to the half-length. The
+margin is handed to `covers()` rather than derived inside it, so that function stays geometry with
+no calibration in it.
 
 It is pure and total — one state per sensor, always — so the live view hands `rr-viewer`'s sensor
 markers one answer and never builds an `unknown` itself.

@@ -157,7 +157,11 @@ export const AGREE_IOU = 0.7;
  * The rectangle a detection is **matched** by: its own centre, angle and
  * length, but the DPT-derived width.
  *
- * The same substitution `occupancy()` makes, for the same reason. Width is a
+ * The same substitution `occupancy()` makes, for the same reason — and only
+ * that one: the length is the detector's own, with none of ADR 0023's margin
+ * on it. The margin biases an occupancy answer toward occupied; adding it here
+ * would forgive the model 2 G of length error at each end of every box, which
+ * is the opposite of what a measurement is for. Width is a
  * fit to a constant, so scoring the raw one would charge the model for a
  * quantity it was never asked to vary — and worse, it would make IoU depend on
  * a number that has no ground truth to compare against, since a label's width
