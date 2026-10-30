@@ -138,6 +138,7 @@ rr-app                          ← shell: owns the editing session and the view
 > [#262]: https://github.com/rails49/occupancy/issues/262
 > [#265]: https://github.com/rails49/occupancy/issues/265
 > [#273]: https://github.com/rails49/occupancy/issues/273
+> [#274]: https://github.com/rails49/occupancy/issues/274
 > [#277]: https://github.com/rails49/occupancy/issues/277
 
 ## State and data flow
@@ -263,7 +264,8 @@ Feedback is a Shoelace `sl-alert` toast (`_notify`), not `alert()`.
 
 `rr-app` declares the chrome on [`@rails49/look`](https://github.com/rails49/look)'s elements, which
 draw it; the app styles none of it, and `look-check` in `bin/test.sh` holds it to that. `look-gear`
-opens `rr-settings-dialog`. There is no source link and no unsaved mark.
+opens `rr-settings-dialog`. The band carries no source link and no unsaved mark; the
+detector's source link is in the settings dialog.
 
 The rail's first group is the three views — Label, Live, Diagnostics — each one click away and the
 current one marked ([#87]). A `look-view` event switches. Live and Diagnostics show the views alone;
@@ -308,6 +310,12 @@ camera height, description, and contact. It is also the **required-metadata gate
 |---|---|---|
 | `layout` | `{ name?, scale, description?, contact?, calibration? }` | Current layout; defaults to scale `N`. `calibration` is read, never spread back |
 | `requiredMissing` | `readonly MissingRequirement[]` | What the layout still owes, from `requiredMetadata.ts`. Non-empty ⇒ the dialog opens itself and refuses to close |
+
+Below the tab group it carries the site's **pointer to the detector's source** ([#274]): a short
+line saying the detector's model and browser runtime are AGPL-3.0, linking to
+[rails49/detector](https://github.com/rails49/detector), which holds their source. It is an anchor,
+not a fetch, so [ADR 0006](../docs/adr/0006-the-onnx-runtime-ships-from-origin.md) is unaffected,
+and it sits outside the `requiredMissing` branch so the gate cannot hide it.
 
 **Methods:** `show()`, `hide()`.
 

@@ -107,7 +107,8 @@ opens a bump pull request here
   Diagnostics have the views alone.
 * The rail is `rr-app`'s and the tool state is the session's. The rail reads the tool, whether DPT
   resolves and the image on screen from the session, and a press calls `session.selectTool`.
-* Status text is a toast, `rr-app`'s own `sl-alert`. There is no unsaved mark and no source link.
+* Status text is a toast, `rr-app`'s own `sl-alert`. The band carries no unsaved mark and no
+  source link; the detector's source link is in the settings dialog (#274).
 * The settings, calibration and sensor dialogs are `look-dialog`s (`medium`, `small`, `small`),
   still opened with `show()`. The discard confirm stays `window.confirm`.
 * Every component puts `lookTheme` first in its `static styles`: a `::part()` rule reaches only the

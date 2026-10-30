@@ -45,6 +45,14 @@ type LayoutFields = Pick<Layout, 'name' | 'scale' | 'description' | 'contact'> &
  * because a single-plane calibration leaves the fit residual blind to it
  * (`SPEC.md` § Camera height).
  *
+ * It also carries the site's pointer to the detector's source (#274): the
+ * deployed site serves `@rails49/detector`'s weights and browser runtime,
+ * which are AGPL-3.0, and rails49/detector ADR 0015 records that the site
+ * meets that licence by linking there. The line is an anchor, never a fetch,
+ * so [ADR 0006](../../docs/adr/0006-the-onnx-runtime-ships-from-origin.md) is
+ * unaffected. It sits outside the tab group and outside the `requiredMissing`
+ * branch, so the gate cannot hide it.
+ *
  * @fires rr-layout-change - When a layout field (name, scale, description, contact) changes. Detail: { layout: Partial<Layout> }
  * @fires rr-camera-height-change - When the camera height changes. Detail: { camera_height_mm: number | undefined }
  */
@@ -149,6 +157,12 @@ export class RRSettingsDialog extends LitElement {
 
     .required li + li {
       margin-top: 0.35rem;
+    }
+
+    .source {
+      margin: 0;
+      font-size: var(--sl-font-size-small);
+      color: var(--sl-color-neutral-600);
     }
   `,
   ];
@@ -269,7 +283,17 @@ export class RRSettingsDialog extends LitElement {
             </div>
           </sl-tab-panel>
         </sl-tab-group>
-        
+
+        <p class="source">
+          The detector's model and browser runtime are AGPL-3.0. Their source is
+          <a
+            href="https://github.com/rails49/detector"
+            target="_blank"
+            rel="noreferrer"
+            >rails49/detector</a
+          >.
+        </p>
+
         <sl-button
           slot="footer"
           variant="primary"
