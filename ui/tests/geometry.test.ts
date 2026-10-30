@@ -29,8 +29,18 @@ import {
   zoomRectFromDrag,
   zoomTransform,
   MAX_ZOOM_SCREEN_PX_PER_FRAME_PX,
+  CAR_AREA_MARGIN_G,
+  NO_TRACK_G,
+  PATCH_ACROSS_G,
+  PATCH_ALONG_G,
+  inCarArea,
+  centerlineUnderPointer,
+  nearestCenterline,
+  patchCorners,
+  secondCenterlineReachPx,
+  sensorTrack,
 } from '../src/geometry.js';
-import type { HitScene, HitTolerance, Rect } from '../src/geometry.js';
+import type { Centerline, HitScene, HitTolerance, Rect } from '../src/geometry.js';
 
 function car(id: string, p0: { x: number; y: number }, p1: { x: number; y: number }): CarLabel {
   return { id, class: 'stock', p0, p1, provenance: 'human' };
@@ -44,7 +54,14 @@ function calibrationPoint(x: number, y: number): ReferencePoint {
   return { px: { x, y }, world: { x: 0, y: 0, z: 0 } };
 }
 
-const emptyScene: HitScene = { cars: [], sensors: [], calibrationPoints: [], dpt: null };
+const emptyScene: HitScene = {
+  cars: [],
+  sensors: [],
+  calibrationPoints: [],
+  centerlines: [],
+  selectedCenterline: null,
+  dpt: null,
+};
 
 /** 10 image pixels of grab radius: 5 screen px at 2 image px per screen px. */
 const tolerance: HitTolerance = { screenPx: 5, imagePxPerScreenPx: 2 };
@@ -317,6 +334,8 @@ describe('hitTest', () => {
       cars: [car('c1', { x: 100, y: 100 }, { x: 200, y: 100 })],
       sensors: [sensor('s1', 400, 400)],
       calibrationPoints: [calibrationPoint(0, 0), calibrationPoint(600, 600)],
+      centerlines: [],
+      selectedCenterline: null,
       // No DPT: sensors then grab at the pointer radius, like everything else.
       dpt: null,
     };
@@ -340,6 +359,8 @@ describe('hitTest', () => {
         cars: [car('c1', { x: 500, y: 500 }, { x: 600, y: 500 })],
         sensors: [sensor('s1', 506, 500)],
         calibrationPoints: [calibrationPoint(502, 500)],
+      centerlines: [],
+      selectedCenterline: null,
         // No DPT: sensors then grab at the pointer radius, like everything else.
         dpt: null,
       };
@@ -413,6 +434,8 @@ describe('hitTest', () => {
         ...emptyScene,
         sensors: [sensor('s1', 100, 100)],
         calibrationPoints: [calibrationPoint(140, 100)],
+      centerlines: [],
+      selectedCenterline: null,
         dpt: 120,
       };
       // Inside the sensor's reach, but the calibration point is nearer.
@@ -587,6 +610,8 @@ describe('dragHandles', () => {
     ],
     sensors: [sensor('s1', 400, 400)],
     calibrationPoints: [calibrationPoint(10, 20), calibrationPoint(600, 600)],
+      centerlines: [],
+      selectedCenterline: null,
     // No DPT: sensors then grab at the pointer radius, like everything else.
     dpt: null,
   };
@@ -663,6 +688,8 @@ describe('dragTo', () => {
         ],
         sensors: [],
         calibrationPoints: [],
+      centerlines: [],
+      selectedCenterline: null,
         dpt: null,
       }
     );
@@ -1289,5 +1316,358 @@ describe('zoom (#44)', () => {
       // the honest answer is the view that shows everything.
       expect(revealZoom(zoom, { x: 0, y: 0, width: 900, height: 20 }, frame)).to.be.null;
     });
+  });
+});
+
+/**
+ * Centerlines, patch outlines and the two sensor marks (#275).
+ *
+ * The arithmetic only. Where the points come from is `centerlineSnap.ts`'s, and
+ * storing them waits on rails49/r49#52 — which is why these tests build
+ * centerlines by hand rather than reading one out of a manifest.
+ */
+
+/** DPT 20: a gauge is 20 px, a car 41.8 px wide, a patch 60 × 100 px. */
+const CL_DPT = 20;
+
+function centerline(id: string, points: readonly { x: number; y: number }[]): Centerline {
+  return { id, points };
+}
+
+describe('nearestCenterline', () => {
+  const line = centerline('a', [
+    { x: 100, y: 100 },
+    { x: 200, y: 100 },
+    { x: 300, y: 200 },
+  ]);
+
+  it('has no answer with no centerlines', () => {
+    expect(nearestCenterline({ x: 0, y: 0 }, [])).to.be.null;
+  });
+
+  it('measures to the polyline, not to its points', () => {
+    // Midway along the first segment, 10 px off it. The nearer *point* is 50 px
+    // away; a sensor there is on the track, and must not read as 50 px off it.
+    const hit = nearestCenterline({ x: 150, y: 110 }, [line]);
+    expect(hit?.distancePx).to.be.closeTo(10, 1e-9);
+    expect(hit?.at).to.deep.equal({ x: 150, y: 100 });
+  });
+
+  it('reports the direction of the segment the closest point fell on', () => {
+    expect(nearestCenterline({ x: 150, y: 110 }, [line])?.direction).to.deep.equal({ x: 1, y: 0 });
+    const onSecond = nearestCenterline({ x: 260, y: 150 }, [line])?.direction;
+    expect(onSecond?.x).to.be.closeTo(Math.SQRT1_2, 1e-9);
+    expect(onSecond?.y).to.be.closeTo(Math.SQRT1_2, 1e-9);
+  });
+
+  it('clamps to the ends rather than running off down the segment line', () => {
+    const hit = nearestCenterline({ x: 50, y: 100 }, [line]);
+    expect(hit?.at).to.deep.equal({ x: 100, y: 100 });
+    expect(hit?.distancePx).to.be.closeTo(50, 1e-9);
+  });
+
+  it('picks the nearest of several', () => {
+    const far = centerline('b', [
+      { x: 100, y: 400 },
+      { x: 300, y: 400 },
+    ]);
+    expect(nearestCenterline({ x: 150, y: 110 }, [far, line])?.id).to.equal('a');
+    expect(nearestCenterline({ x: 150, y: 380 }, [far, line])?.id).to.equal('b');
+  });
+
+  it('answers a one-point run with no direction, so no patch can be turned to it', () => {
+    const stub = centerline('c', [{ x: 10, y: 10 }]);
+    const hit = nearestCenterline({ x: 13, y: 14 }, [stub]);
+    expect(hit?.distancePx).to.be.closeTo(5, 1e-9);
+    expect(hit?.direction).to.deep.equal({ x: 0, y: 0 });
+    expect(patchCorners(hit!.at, hit!.direction, CL_DPT)).to.be.null;
+  });
+
+  it('ignores a centerline with no points at all', () => {
+    expect(nearestCenterline({ x: 0, y: 0 }, [centerline('empty', [])])).to.be.null;
+  });
+});
+
+describe('patchCorners', () => {
+  it('is PATCH_ALONG_G by PATCH_ACROSS_G gauges, centred on the sensor', () => {
+    const corners = patchCorners({ x: 500, y: 300 }, { x: 1, y: 0 }, CL_DPT);
+    expect(corners).to.deep.equal([
+      { x: 500 - 50, y: 300 - 30 },
+      { x: 500 + 50, y: 300 - 30 },
+      { x: 500 + 50, y: 300 + 30 },
+      { x: 500 - 50, y: 300 + 30 },
+    ]);
+    expect(PATCH_ALONG_G * CL_DPT).to.equal(100);
+    expect(PATCH_ACROSS_G * CL_DPT).to.equal(60);
+  });
+
+  it('turns to the direction given and leaves the sensor where it is', () => {
+    const at = { x: 500, y: 300 };
+    const corners = patchCorners(at, { x: 0, y: 2 }, CL_DPT)!;
+    // The same rectangle a quarter turn on: long axis now vertical.
+    expect(corners[0]).to.deep.equal({ x: 500 + 30, y: 300 - 50 });
+    expect(corners[2]).to.deep.equal({ x: 500 - 30, y: 300 + 50 });
+    // Centroid is still the sensor: nothing moved onto the line.
+    const cx = corners.reduce((sum, c) => sum + c.x, 0) / 4;
+    const cy = corners.reduce((sum, c) => sum + c.y, 0) / 4;
+    expect(cx).to.be.closeTo(at.x, 1e-9);
+    expect(cy).to.be.closeTo(at.y, 1e-9);
+  });
+
+  it('draws nothing for a direction with no length', () => {
+    expect(patchCorners({ x: 1, y: 1 }, { x: 0, y: 0 }, CL_DPT)).to.be.null;
+  });
+
+  it('winds the same way carCorners does, so a patch and a car cannot disagree', () => {
+    const patch = patchCorners({ x: 0, y: 0 }, { x: 1, y: 0 }, CL_DPT)!;
+    const car = carCorners({ x: -50, y: 0 }, { x: 50, y: 0 }, CL_DPT);
+    // Both start on the p0 side and both put their first corner on the same
+    // side of the chord.
+    expect(Math.sign(patch[0].y)).to.equal(Math.sign(car[0].y));
+  });
+});
+
+describe('secondCenterlineReachPx', () => {
+  it('is half the patch width plus half a car width', () => {
+    expect(secondCenterlineReachPx(CL_DPT)).to.be.closeTo(
+      (PATCH_ACROSS_G * CL_DPT) / 2 + carWidthPx(CL_DPT) / 2,
+      1e-9
+    );
+  });
+
+  it('is 2.545 gauges with the placeholder patch, not the brief’s 2.7', () => {
+    // 3 G across and a 2.09 G car. The number is derived rather than written
+    // down, so it follows PATCH_ACROSS_G when rails49/classifier#4 sets it.
+    expect(secondCenterlineReachPx(CL_DPT) / CL_DPT).to.be.closeTo(2.545, 0.002);
+  });
+});
+
+describe('sensorTrack', () => {
+  const upper = centerline('upper', [
+    { x: 0, y: 100 },
+    { x: 600, y: 100 },
+  ]);
+
+  it('marks no track with no centerlines at all', () => {
+    const track = sensorTrack({ x: 10, y: 10 }, [], CL_DPT);
+    expect(track.nearest).to.be.null;
+    expect(track.noTrack).to.be.true;
+    expect(track.secondCenterline).to.be.false;
+  });
+
+  it('marks no track past half a gauge, and not at half a gauge', () => {
+    expect(NO_TRACK_G).to.equal(0.5);
+    const edge = NO_TRACK_G * CL_DPT;
+    expect(sensorTrack({ x: 300, y: 100 + edge }, [upper], CL_DPT).noTrack).to.be.false;
+    expect(sensorTrack({ x: 300, y: 100 + edge + 0.01 }, [upper], CL_DPT).noTrack).to.be.true;
+  });
+
+  it('still names what it measured against when it marks no track', () => {
+    const track = sensorTrack({ x: 300, y: 400 }, [upper], CL_DPT);
+    expect(track.noTrack).to.be.true;
+    expect(track.nearest?.id).to.equal('upper');
+  });
+
+  it('warns when a second centerline comes within the reach, and not beyond it', () => {
+    const reach = secondCenterlineReachPx(CL_DPT);
+    const at = { x: 300, y: 100 };
+    const inside = centerline('lower', [
+      { x: 0, y: 100 + reach },
+      { x: 600, y: 100 + reach },
+    ]);
+    const outside = centerline('lower', [
+      { x: 0, y: 100 + reach + 0.01 },
+      { x: 600, y: 100 + reach + 0.01 },
+    ]);
+    expect(sensorTrack(at, [upper, inside], CL_DPT).secondCenterline).to.be.true;
+    expect(sensorTrack(at, [upper, outside], CL_DPT).secondCenterline).to.be.false;
+  });
+
+  it('measures the reach as a radius, which under-warns along the patch', () => {
+    // The gap is a decision, not an oversight. A centerline crossing the
+    // patch's long axis 3 G out is past the radius, so no warning — yet a car
+    // on it is 2.09 G wide and still reaches inside the 2.5 G-long patch. #275
+    // decided the rule as a radius, and widening it to the rectangle would
+    // change which sensors get flagged.
+    const reach = secondCenterlineReachPx(CL_DPT);
+    const beyond = 3 * CL_DPT;
+    expect(beyond).to.be.greaterThan(reach);
+    // A car centred on that crossing line still reaches inside the patch.
+    expect(beyond - carWidthPx(CL_DPT) / 2).to.be.lessThan((PATCH_ALONG_G * CL_DPT) / 2);
+    const crossing = centerline('crossing', [
+      { x: 300 + beyond, y: 0 },
+      { x: 300 + beyond, y: 400 },
+    ]);
+    expect(sensorTrack({ x: 300, y: 100 }, [upper, crossing], CL_DPT).secondCenterline).to.be.false;
+  });
+
+  it('does not warn about the centerline the sensor is on', () => {
+    // One centerline is never its own second one, however close the sensor sits.
+    expect(sensorTrack({ x: 300, y: 100 }, [upper], CL_DPT).secondCenterline).to.be.false;
+  });
+
+  it('warns on the nearer of two parallel tracks a gauge and a half apart', () => {
+    // Parallel sidings at 1.5 G: both sensors are on a track and both patches
+    // can see the other one.
+    const lower = centerline('lower', [
+      { x: 0, y: 130 },
+      { x: 600, y: 130 },
+    ]);
+    expect(sensorTrack({ x: 300, y: 100 }, [upper, lower], CL_DPT)).to.include({
+      noTrack: false,
+      secondCenterline: true,
+    });
+    expect(sensorTrack({ x: 300, y: 130 }, [upper, lower], CL_DPT)).to.include({
+      noTrack: false,
+      secondCenterline: true,
+    });
+  });
+});
+
+describe('inCarArea', () => {
+  const labeled = car('c0', { x: 100, y: 200 }, { x: 300, y: 200 });
+
+  it('covers the span one car width across, boundary inside', () => {
+    const half = carWidthPx(CL_DPT) / 2;
+    expect(inCarArea(labeled, { x: 200, y: 200 + half }, CL_DPT)).to.be.true;
+    expect(inCarArea(labeled, { x: 200, y: 200 + half + 0.01 }, CL_DPT)).to.be.false;
+  });
+
+  it('reaches CAR_AREA_MARGIN_G past each end', () => {
+    expect(CAR_AREA_MARGIN_G).to.equal(0.5);
+    const margin = CAR_AREA_MARGIN_G * CL_DPT;
+    expect(inCarArea(labeled, { x: 100 - margin, y: 200 }, CL_DPT)).to.be.true;
+    expect(inCarArea(labeled, { x: 100 - margin - 0.01, y: 200 }, CL_DPT)).to.be.false;
+    expect(inCarArea(labeled, { x: 300 + margin, y: 200 }, CL_DPT)).to.be.true;
+    expect(inCarArea(labeled, { x: 300 + margin + 0.01, y: 200 }, CL_DPT)).to.be.false;
+  });
+
+  it('measures a diagonal car across its own axis', () => {
+    const diagonal = car('c1', { x: 0, y: 0 }, { x: 200, y: 200 });
+    const half = carWidthPx(CL_DPT) / 2;
+    // Across the axis at the midpoint: inside at the half width, outside past it.
+    const nx = Math.SQRT1_2;
+    expect(inCarArea(diagonal, { x: 100 + nx * half * 0.99, y: 100 - nx * half * 0.99 }, CL_DPT)).to
+      .be.true;
+    expect(inCarArea(diagonal, { x: 100 + nx * half * 1.2, y: 100 - nx * half * 1.2 }, CL_DPT)).to.be
+      .false;
+  });
+
+  it('falls back to a radius for a car with no axis', () => {
+    const point = car('c2', { x: 50, y: 50 }, { x: 50, y: 50 });
+    const half = carWidthPx(CL_DPT) / 2;
+    expect(inCarArea(point, { x: 50 + half * 0.99, y: 50 }, CL_DPT)).to.be.true;
+    expect(inCarArea(point, { x: 50 + half * 1.01, y: 50 }, CL_DPT)).to.be.false;
+  });
+});
+
+describe('centerline points in the hit-test (#275)', () => {
+  const line: Centerline = centerline('L1', [
+    { x: 100, y: 100 },
+    { x: 140, y: 100 },
+    { x: 180, y: 100 },
+  ]);
+  const scene: HitScene = {
+    ...emptyScene,
+    centerlines: [line],
+    selectedCenterline: 'L1',
+    dpt: CL_DPT,
+  };
+
+  it('offers nothing on a line that is not selected, because nothing is drawn', () => {
+    // What is drawn is what is grabbable: only the selected line carries
+    // handles, and a grab reaching the others would move a point nobody sees.
+    const unselected: HitScene = { ...scene, selectedCenterline: null };
+    expect(hitTest(unselected, { x: 140, y: 100 }, tolerance)).to.be.null;
+    expect(dragHandles({ kind: 'centerline-point', id: 'L1', index: 1 }, unselected)).to.deep.equal(
+      [{ ref: { kind: 'centerline-point', id: 'L1', index: 1 }, from: { x: 140, y: 100 } }]
+    );
+  });
+
+  it('hits a point by its line and its index', () => {
+    expect(hitTest(scene, { x: 141, y: 101 }, tolerance)).to.deep.equal({
+      kind: 'centerline-point',
+      id: 'L1',
+      index: 1,
+    });
+  });
+
+  it('misses past the tolerance', () => {
+    expect(hitTest(scene, { x: 160, y: 140 }, tolerance)).to.be.null;
+  });
+
+  it('loses an exact tie to a car end, a sensor and a calibration point', () => {
+    // A run carries a point every gauge along every track, so on a tie it is
+    // the thing most likely to be under something rather than aimed at.
+    const at = { x: 140, y: 100 };
+    for (const over of [
+      { cars: [car('c', at, { x: 300, y: 300 })] },
+      { sensors: [sensor('s', at.x, at.y)] },
+      { calibrationPoints: [calibrationPoint(at.x, at.y)] },
+    ]) {
+      const crowded: HitScene = { ...scene, ...over };
+      expect(hitTest(crowded, at, tolerance)!.kind).to.not.equal('centerline-point');
+    }
+  });
+
+  it('is excluded when a caller narrows the kinds looked for', () => {
+    expect(hitTest(scene, { x: 140, y: 100 }, tolerance, ['sensor'])).to.be.null;
+  });
+
+  it('gives a drag one handle, at the point', () => {
+    const hit = { kind: 'centerline-point', id: 'L1', index: 2 } as const;
+    expect(dragHandles(hit, scene)).to.deep.equal([
+      { ref: { kind: 'centerline-point', id: 'L1', index: 2 }, from: { x: 180, y: 100 } },
+    ]);
+  });
+
+  it('gives no handle for a point that is gone', () => {
+    expect(dragHandles({ kind: 'centerline-point', id: 'L1', index: 9 }, scene)).to.be.empty;
+    expect(dragHandles({ kind: 'centerline-point', id: 'nope', index: 0 }, scene)).to.be.empty;
+  });
+
+  it('does not round a centerline point, because it is a measurement', () => {
+    // Everything a person placed names a whole pixel; a snapped point is
+    // fractional, and rounding it would move every point a drag merely touched.
+    const handle = {
+      ref: { kind: 'centerline-point', id: 'L1', index: 0 },
+      from: { x: 100.3, y: 99.7 },
+    } as const;
+    expect(dragTo(handle, { x: 0, y: 0 })).to.deep.equal({ x: 100.3, y: 99.7 });
+    expect(dragTo(handle, { x: 1.25, y: 0 })).to.deep.equal({ x: 101.55, y: 99.7 });
+    // And a sensor still does, so a coupling stays testable by equality.
+    expect(
+      dragTo({ ref: { kind: 'sensor', id: 's' }, from: { x: 10.4, y: 10.6 } }, { x: 0, y: 0 })
+    ).to.deep.equal({ x: 10, y: 11 });
+  });
+});
+
+describe('centerlineUnderPointer', () => {
+  const upper: Centerline = centerline('upper', [
+    { x: 0, y: 100 },
+    { x: 600, y: 100 },
+  ]);
+  const lower: Centerline = centerline('lower', [
+    { x: 0, y: 300 },
+    { x: 600, y: 300 },
+  ]);
+  const scene: HitScene = { ...emptyScene, centerlines: [upper, lower], dpt: CL_DPT };
+
+  it('finds the line between two of its points, where the hit-test finds nothing', () => {
+    const at = { x: 301, y: 103 };
+    expect(hitTest(scene, at, tolerance)).to.be.null;
+    expect(centerlineUnderPointer(scene, at, tolerance)?.id).to.equal('upper');
+  });
+
+  it('finds nothing past a fingertip', () => {
+    expect(centerlineUnderPointer(scene, { x: 300, y: 200 }, tolerance)).to.be.null;
+  });
+
+  it('names the nearer of two parallel tracks', () => {
+    expect(centerlineUnderPointer(scene, { x: 300, y: 296 }, tolerance)?.id).to.equal('lower');
+  });
+
+  it('finds nothing with no centerlines', () => {
+    expect(centerlineUnderPointer(emptyScene, { x: 0, y: 0 }, tolerance)).to.be.null;
   });
 });

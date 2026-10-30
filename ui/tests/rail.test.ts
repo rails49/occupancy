@@ -6,7 +6,7 @@ import { press } from '@rails49/look/testing';
 import '../src/rr-app.js';
 import { RRApp } from '../src/rr-app.js';
 import type { EditHistory } from '../src/history.js';
-import { GATE_REASON } from '../src/tools.js';
+import { COMPLETE_REASON, GATE_REASON } from '../src/tools.js';
 
 /**
  * The rail, as `rr-app` declares it on look's elements: the views, then File,
@@ -256,7 +256,7 @@ describe('Tools', () => {
     it('disables the labeling tools while DPT is unresolved, and says why', async () => {
       const el = await mount();
 
-      for (const tool of ['sensor', 'car']) {
+      for (const tool of ['sensor', 'car', 'centerline']) {
         expect(command(el, `tool-${tool}`).disabled, tool).toBe(true);
         expect(command(el, `tool-${tool}`).reason, tool).toBe(GATE_REASON);
       }
@@ -279,6 +279,41 @@ describe('Tools', () => {
         expect(command(el, `tool-${tool}`).disabled, tool).toBe(false);
         expect(command(el, `tool-${tool}`).reason, tool).toBe('');
       }
+    });
+  });
+
+  describe('the completeness gate on the centerline tool (#275)', () => {
+    it('is a fourth tool on the rail', async () => {
+      const el = await mount();
+      expect(command(el, 'tool-centerline')).to.exist;
+    });
+
+    it('stays disabled on a calibrated archive while the image is not complete', async () => {
+      calibrate();
+      const el = await mount();
+      expect(command(el, 'tool-centerline').disabled).toBe(true);
+      expect(command(el, 'tool-centerline').reason).toBe(COMPLETE_REASON);
+    });
+
+    it('opens once the image on screen is marked complete', async () => {
+      calibrate();
+      archive.getManifest().images[0].labeled_complete = true;
+      const el = await mount();
+      expect(command(el, 'tool-centerline').disabled).toBe(false);
+      expect(command(el, 'tool-centerline').reason).toBe('');
+    });
+
+    it('names the flag rather than the tracing rule', () => {
+      expect(COMPLETE_REASON.toLowerCase()).toContain('labeled complete');
+    });
+
+    it('reads the session answer, not a second copy of the gate', async () => {
+      // One list drives the rail and the session (`tools.ts` § ToolSpec), so a
+      // tool cannot be rendered enabled and dispatched as disabled.
+      calibrate();
+      const el = await mount();
+      const session = el.renderRoot.querySelector('rr-editor-view')!.session!;
+      expect(command(el, 'tool-centerline').reason).toBe(session.toolReason('centerline'));
     });
   });
 });

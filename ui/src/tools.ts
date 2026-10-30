@@ -4,7 +4,7 @@
  * A closed union rather than a string, because the editor dispatches on it and
  * a fourth tool must be a case to add rather than a fall-through.
  */
-export type EditorTool = 'calibration' | 'sensor' | 'car';
+export type EditorTool = 'calibration' | 'sensor' | 'car' | 'centerline';
 
 /**
  * One tool's presentation, and whether calibration gates it.
@@ -32,12 +32,48 @@ export interface ToolSpec {
    * > flip if that is revisited.
    */
   readonly needsDpt: boolean;
+  /**
+   * Whether the tool needs the image on screen to be labeled complete.
+   *
+   * True for the centerline tool alone, and it is the one gate that depends on
+   * the **image** rather than on the archive: tracing stops before track under a
+   * car, and a car it does not know about is a car it would trace straight
+   * through. `labeled_complete` is the only claim that every car on an image is
+   * labeled (`SPEC.md` § Labeling completeness), so it is the only honest
+   * precondition.
+   *
+   * The asymmetry that follows is in `EditSession._settle`: a DPT-gated tool
+   * drops back to calibration, because nothing the user does to the *image* can
+   * recover it, while this gate is recovered by selecting another image — and
+   * dropping the tool here would end a run the moment it switched images, which
+   * is exactly what tracing a run across several images requires.
+   */
+  readonly needsLabeledComplete: boolean;
 }
 
 export const TOOLS: readonly ToolSpec[] = [
-  { tool: 'calibration', icon: 'crosshair', label: 'Calibration point', needsDpt: false },
-  { tool: 'sensor', icon: 'broadcast-pin', label: 'Sensor', needsDpt: true },
-  { tool: 'car', icon: 'train-front', label: 'Car', needsDpt: true },
+  {
+    tool: 'calibration',
+    icon: 'crosshair',
+    label: 'Calibration point',
+    needsDpt: false,
+    needsLabeledComplete: false,
+  },
+  {
+    tool: 'sensor',
+    icon: 'broadcast-pin',
+    label: 'Sensor',
+    needsDpt: true,
+    needsLabeledComplete: false,
+  },
+  { tool: 'car', icon: 'train-front', label: 'Car', needsDpt: true, needsLabeledComplete: false },
+  {
+    tool: 'centerline',
+    icon: 'bezier2',
+    label: 'Track centerline',
+    needsDpt: true,
+    needsLabeledComplete: true,
+  },
 ];
 
 /**
@@ -49,3 +85,13 @@ export const TOOLS: readonly ToolSpec[] = [
  * whose gating is a deliberate deviation.
  */
 export const GATE_REASON = 'Calibrate first — the labeling tools need DPT.';
+
+/**
+ * Why the centerline tool is off on an image that is not labeled complete.
+ *
+ * It names the flag rather than the tracing rule, because the flag is what the
+ * person can act on: the checkbox under the photograph is one click away, and
+ * "every car labeled" is what ticking it claims.
+ */
+export const COMPLETE_REASON =
+  'Mark this image labeled complete first — tracing must know where the cars are.';

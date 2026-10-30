@@ -323,6 +323,68 @@ that happens to need it first. Rules it encodes, each wrong somewhere if reimple
   one entry can cover several objects. `dragTo` applies the same delta to each handle's
   *pointer-down* position: measured from the press so the grab offset survives, identical across
   handles so coupled ends stay on one pixel.
+* **The patch size is one number, not two.** `PATCH_ACROSS_G` sizes the outline drawn at a sensor
+  *and* `secondCenterlineReachPx`, because the warning claims "a car on that track could reach into
+  this patch" — a claim about that rectangle. Both are placeholders until rails49/classifier#4, so
+  the reach is derived (half the patch width plus half a car's) rather than written down. One
+  `orientedRect` builds a car's rectangle and a patch, so the two cannot be wound differently.
+
+## The centerline tool, and the one field that is not here yet (#275)
+
+[ADR 0021](adr/0021-track-centerlines-are-stored.md) stores each archive's track centerlines as
+polylines in image pixels, and #275 builds the tool that traces them. All of it is here: the snap
+and the stepper (`centerlineSnap.ts`), the arithmetic (`geometry.ts` — the `Centerline` polyline,
+the nearest-centerline measurement, the patch rectangle, the two sensor marks, the car area a trace
+may not enter), the fourth `EditorTool` and its two gates (`tools.ts`, `editSession.ts`), the run
+and its undo entries, point drag and delete, centerline delete, and the layer that draws all of it
+(`centerlineMarker.ts`, `rr-viewer`). `ui/README.md` carries the exports and the per-rule reasoning.
+
+**What is *not* here is the format field, and nothing writes `layout.centerlines`.** Centerlines are
+an additive `.r49` field, so they arrive as a release of `@rails49/r49` (rails49/r49#52) and a bump
+in `pnpm-workspace.yaml` (org ADR-0022, and `../CLAUDE.md` § Traps). The pinned version refuses the
+key as `manifest/unknown-key`, so an archive the editor saved with one **would not reopen**. Until
+the bump the list lives on `EditSession` and `EditHistory` reaches it through a `CenterlineStore`
+(§ Every manifest mutation goes through `history.record`), which is what lets every rule above the
+field be the final one: one entry per finished run, per point drag, per point delete, per centerline
+delete, snapshotted and no-op-suppressed by the same machinery as everything else. **When the field
+lands, the store becomes a read and a write of `manifest.layout` and nothing else moves.**
+
+Three asymmetries in the tool are worth not re-deriving:
+
+* **No click resolves to a centerline point, under any tool.** The centerline tool's clicks are the
+  run's and skip the hit-test outright; everything else narrows it with `CLICK_HIT_KINDS`, which
+  leaves the kind out. A run carries a point every gauge, and the grab radius is a fingertip in
+  *screen* pixels — far wider than a gauge at a fit zoom on a 48 MP shot — so a click that found one
+  would stop the sensor and car tools placing anything over traced track. A point is reached by a
+  drag and by the menu; a right-click **selects** the line it names, which is how its handles appear.
+* **The hit-test offers a point only on the selected line**, which is why the selection is in
+  `HitScene`. Only that line is drawn with handles, and a grab reaching the others would move a point
+  nobody can see — "what is drawn is what is grabbable", the rule `sensorDiameterPx` already
+  encodes for a sensor.
+* **Its two gates are not symmetric.** `needsDpt` is the archive's and `_settle` drops a tool held
+  by it; `needsLabeledComplete` is the image's and does **not** drop the tool, because dropping it
+  would end a run on every image switch — and tracing one run across several images is how track
+  under a car gets traced at all.
+* **`dragTo` rounds every handle except a centerline point.** A car end, a sensor and a crosshair
+  name a pixel somebody clicked, and whole pixels are what make a coupling testable by equality. A
+  centerline point is a measurement, fractional to a sixteenth of a gauge; rounding it would move
+  every point a drag merely touched and would defeat the no-op suppression one layer up.
+
+Two decisions inside the snap are worth not re-deriving either:
+
+* **The score is read off a band**, the cross-section minus its middle quarter gauge. A lone rail is
+  perfectly symmetric about *itself*, so a full-section score snaps onto one rail with the other
+  hidden — half a gauge off, and confident. With the middle out, the band on that rail's far side is
+  plain ballast and there is nothing to match.
+* **The measure is a squared difference against the band's own spread, not a correlation.** Both are
+  blind to brightness and contrast, which a track in shadow needs; only this one also requires the
+  two halves to be the same *size*, and a correlation that accepts any positive multiple is how a
+  roadbed shoulder passes for a railhead.
+
+`MIN_SYMMETRY` is a **placeholder** and says so in the module. Tuning it means running the snap on
+the layout's own photographs and judging the marks it leaves — the part of #275 that was never an
+agent's, and the reason the five ceiling crops and their reference points are still pending the
+maintainer's check.
 
 ## Right-click is a state branch, and the menu knows nothing
 
@@ -358,7 +420,7 @@ that happens to need it first. Rules it encodes, each wrong somewhere if reimple
 ## Markers are modules, not elements
 
 Custom elements break the SVG namespace when nested in `<svg>`, so `calibrationMarker.ts`,
-`sensorMarker.ts` and `carMarker.ts` are plain-export modules whose exports
+`sensorMarker.ts`, `carMarker.ts` and `centerlineMarker.ts` are plain-export modules whose exports
 (renderer, defs where needed, styles) **must be used together** — the module boundary is the
 encapsulation. Each object type is unmistakable in both shape and colour, a requirement rather than
 taste (`SPEC.md` § Reference points: authored by different tools, meaning different things); README
@@ -470,7 +532,10 @@ checkout may have none. Without it the live view starts, shows the no-model bann
 answer belongs with the app that reports it, and ADR 0005's bias toward occupied is a rule about
 that report. What L1 builds on stays in the package: the `Detection` shape and `carWidthPx`, the
 width it substitutes for the predicted one. `covers`, the strict point-in-oriented-box test, sits
-beside `occupancy()` because nothing else calls it.
+beside `occupancy()` because nothing else calls it, and so does `MARGIN_G` — ADR 0023's two gauges,
+which `occupancy()` turns into pixels once per frame and `covers()` adds to the half-length. The
+margin is handed to `covers()` rather than derived inside it, so that function stays geometry with
+no calibration in it.
 
 It is pure and total — one state per sensor, always — so the live view hands `rr-viewer`'s sensor
 markers one answer and never builds an `unknown` itself.

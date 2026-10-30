@@ -41,7 +41,8 @@ you are touching:
 | the rail's tools, DPT | The calibration gate |
 | `rr-viewer`, zoom, what each view draws | `rr-viewer` is shared; Zoom; What the three views draw |
 | editor geometry, `geometry.ts` | `geometry.ts` holds the arithmetic |
-| `calibrationMarker.ts`, `sensorMarker.ts`, `carMarker.ts` | Markers are modules, not elements |
+| the centerline tool, the snap, patch outlines | The centerline tool |
+| `calibrationMarker.ts`, `sensorMarker.ts`, `carMarker.ts`, `centerlineMarker.ts` | Markers are modules, not elements |
 | `base` in `vite.config.ts`, `/ort/`, `/shoelace`, `modelAssets.ts` | Absolute asset paths |
 | `detectorSession.ts`, the model | Model loading lives in `detectorSession.ts` |
 | `occupancy.ts`, `SensorState` | L1 lives in `occupancy.ts` |
@@ -107,7 +108,8 @@ opens a bump pull request here
   Diagnostics have the views alone.
 * The rail is `rr-app`'s and the tool state is the session's. The rail reads the tool, whether DPT
   resolves and the image on screen from the session, and a press calls `session.selectTool`.
-* Status text is a toast, `rr-app`'s own `sl-alert`. There is no unsaved mark and no source link.
+* Status text is a toast, `rr-app`'s own `sl-alert`. The band carries no unsaved mark and no
+  source link; the detector's source link is in the settings dialog (#274).
 * The settings, calibration and sensor dialogs are `look-dialog`s (`medium`, `small`, `small`),
   still opened with `show()`. The discard confirm stays `window.confirm`.
 * Every component puts `lookTheme` first in its `static styles`: a `::part()` rule reaches only the
@@ -138,7 +140,7 @@ opens a bump pull request here
 
 Vitest in **jsdom**, `@open-wc/testing` fixtures, `tests/<module>.test.ts` mirroring `src/<module>.ts`.
 `tests/setup.ts` polyfills what jsdom lacks globally (`ResizeObserver`, `Element.animate`,
-`matchMedia`, `URL.createObjectURL`). `capture.ts` has no test file yet; touching it is a chance to add one.
+`matchMedia`, `URL.createObjectURL`).
 
 **jsdom is the whole automated story, and no browser runner is coming** (#109). `@web/test-runner`
 sat in `devDependencies` for months with no config file and no script, running nothing while

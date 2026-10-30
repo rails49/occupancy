@@ -170,4 +170,33 @@ describe('rr-settings-dialog', () => {
       expect(seen).toEqual([]);
     });
   });
+
+  describe("the detector's source link (#274)", () => {
+    // The site serves @rails49/detector's weights and browser runtime, which
+    // are AGPL-3.0; this line is the site's own pointer to their source
+    // (rails49/detector ADR 0015). It is an anchor, not a fetch, so ADR 0006
+    // is unaffected.
+    const sourceLink = (el: RRSettingsDialog) =>
+      el.shadowRoot!.querySelector<HTMLAnchorElement>('a[href="https://github.com/rails49/detector"]');
+
+    it('links to rails49/detector', async () => {
+      const el = await open([]);
+      expect(sourceLink(el)).not.toBeNull();
+    });
+
+    it('names the licence and what it covers', async () => {
+      const el = await open([]);
+      const line = sourceLink(el)!.closest('.source')!.textContent!;
+      expect(line).toContain('AGPL-3.0');
+      expect(line).toMatch(/model/i);
+      expect(line).toMatch(/runtime/i);
+    });
+
+    it('stands even while the gate is blocking', async () => {
+      // The gate refuses to close, so this is the only dialog a new archive
+      // sees; the pointer cannot be behind it.
+      const el = await open(NEEDS_HEIGHT);
+      expect(sourceLink(el)).not.toBeNull();
+    });
+  });
 });

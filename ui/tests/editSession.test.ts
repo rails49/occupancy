@@ -4,6 +4,7 @@ import type { ReferencePoint, CarLabel, ManifestData, Point, Sensor } from '@rai
 import { ALREADY_LABELED, EditSession } from '../src/editSession.js';
 import type { Reveal } from '../src/editSession.js';
 import { TOOLS } from '../src/tools.js';
+import type { EditorTool } from '../src/tools.js';
 import { classChoices, rootClass } from '../src/vocabulary.js';
 
 // No DOM: the session is a plain module, driven here the way the editor drives
@@ -45,7 +46,7 @@ function session({
 }: {
   images?: readonly string[];
   calibrated?: boolean;
-  tool?: 'calibration' | 'sensor' | 'car';
+  tool?: EditorTool;
 } = {}): EditSession {
   const archive = new R49Archive();
   archive.setManifest(manifest(images, calibrated));
@@ -1764,6 +1765,660 @@ describe('EditSession', () => {
       stop();
       s.selectTool('sensor');
       expect(listener).toHaveBeenCalledTimes(7);
+    });
+  });
+});
+
+/**
+ * The centerline tool (#275).
+ *
+ * The session's half: the gate, the run, what a click does, editing, and undo.
+ * The snap itself is `tests/centerlineSnap.test.ts`'s, and it is reached here
+ * through `setTracePixels` with a synthetic two-rail plane — the same shape the
+ * editor hands over after decoding the image on screen.
+ *
+ * **Nothing is in the manifest.** Centerlines are an additive `.r49` field
+ * arriving with rails49/r49#52, and the pinned `@rails49/r49` refuses
+ * `layout.centerlines`, so the list is the session's and these tests read it
+ * off `session.centerlines`. What *is* final is every rule above it, which is
+ * what this file pins.
+ */
+
+/** DPT 89.7 is the fixture's; a gauge is that many pixels. */
+function gauge(s: EditSession): number {
+  return getDPT(s.archive.getManifest())!;
+}
+
+/**
+ * A two-rail plane the snap can read: track running along `centreY`, rails half
+ * a gauge either side, roadbed shoulders at 1.3 G.
+ *
+ * The same profile `tests/centerlineSnap.test.ts` builds, kept separate on
+ * purpose — this file is about what the session does with a snap, not about
+ * what the snap answers.
+ */
+function trackPlane(dpt: number, centreY: number, width = 2000, height = 2000) {
+  const data = new Float32Array(width * height);
+  for (let y = 0; y < height; y++) {
+    const d = Math.abs((y - centreY) / dpt);
+    const value =
+      0.42 - 0.3 / (1 + Math.exp((1.3 - d) / 0.06)) + 0.5 * Math.exp(-(((d - 0.5) / 0.1) ** 2) / 2);
+    for (let x = 0; x < width; x++) data[y * width + x] = value;
+  }
+  return { width, height, data };
+}
+
+/** A calibrated session on one image marked labeled complete, with the tool selected. */
+function tracing({ pixels = true, centreY = 500 }: { pixels?: boolean; centreY?: number } = {}) {
+  const s = session();
+  s.archive.getManifest().images[0].labeled_complete = true;
+  s.selectTool('centerline');
+  if (pixels) s.setTracePixels('img1.jpg', trackPlane(gauge(s), centreY));
+  return s;
+}
+
+describe('the centerline tool (#275)', () => {
+  describe('availability', () => {
+    it('is in TOOLS as the fourth tool, gated on DPT and on completeness', () => {
+      const spec = TOOLS.find(entry => entry.tool === 'centerline');
+      expect(spec).to.exist;
+      expect(spec!.needsDpt).to.be.true;
+      expect(spec!.needsLabeledComplete).to.be.true;
+    });
+
+    it('is not available on an image that is not labeled complete', () => {
+      const s = session();
+      expect(s.image!.labeled_complete).to.be.false;
+      expect(s.toolReason('centerline')).to.contain('labeled complete');
+    });
+
+    it('becomes available once the image is marked complete', async () => {
+      const s = session();
+      await s.setComplete(true);
+      expect(s.toolReason('centerline')).to.be.null;
+    });
+
+    it('names DPT rather than completeness on an uncalibrated archive', () => {
+      // Both gates are shut; the one the person cannot lift by navigating is
+      // the one to send them at.
+      const s = session({ calibrated: false });
+      s.archive.getManifest().images[0].labeled_complete = true;
+      expect(s.toolReason('centerline')).to.contain('DPT');
+    });
+
+    it('refuses a click with a notice while the image is not complete', async () => {
+      const s = session();
+      s.selectTool('centerline');
+      const result = await s.click({ x: 100, y: 500 }, SCALE);
+      expect(result).to.deep.equal({
+        kind: 'notice',
+        message: s.toolReason('centerline'),
+      });
+      expect(s.run).to.be.null;
+    });
+
+    it('follows the image on screen, so another image can lift the gate', () => {
+      const s = session({ images: ['img1.jpg', 'img2.jpg'] });
+      s.archive.getManifest().images[1].labeled_complete = true;
+      expect(s.toolReason('centerline')).to.not.be.null;
+      s.selectImage('img2.jpg');
+      expect(s.toolReason('centerline')).to.be.null;
+    });
+
+    it('keeps the tool selected across an image that is not complete', () => {
+      // The gate is the image's and is lifted by navigating, so the tool must
+      // not drop — dropping it would end a run on every image switch, and
+      // tracing a run across images is the point (#275).
+      const s = tracing();
+      s.archive.getManifest().images.push({
+        filename: 'img2.jpg',
+        labeled_complete: false,
+        labels: [],
+      });
+      s.selectImage('img2.jpg');
+      expect(s.tool).to.equal('centerline');
+    });
+  });
+
+  describe('tracing a run', () => {
+    it('keeps the first click unsnapped: it has no direction yet', async () => {
+      const s = tracing();
+      await s.click({ x: 300, y: 500 + 0.4 * gauge(s) }, SCALE);
+      expect(s.run!.points).to.deep.equal([{ x: 300, y: Math.round(500 + 0.4 * gauge(s)) }]);
+    });
+
+    it('snaps both clicks on the second, and fills the stretch between them', async () => {
+      const s = tracing();
+      const g = gauge(s);
+      await clicks(s, { x: 300, y: 500 + 0.4 * g }, { x: 300 + 6 * g, y: 500 - 0.3 * g });
+
+      const run = s.run!;
+      // The opening click was snapped once the second gave it a direction.
+      expect(Math.abs(run.points[0].y - 500) / g).to.be.lessThan(0.25);
+      // Every point, including the fill, is on the middle of the track.
+      for (const point of run.points) {
+        expect(Math.abs(point.y - 500) / g).to.be.lessThan(0.25);
+      }
+      // About one point per gauge over six gauges, both clicks included.
+      expect(run.points.length).to.be.greaterThan(5);
+    });
+
+    it('writes nothing for a click on the point the run is already at', async () => {
+      const s = tracing();
+      await s.click({ x: 300, y: 500 }, SCALE);
+      const before = s.run!.points.length;
+      await s.click({ x: 300, y: 500 }, SCALE);
+      expect(s.run!.points.length).to.equal(before);
+    });
+
+    it('keeps a click the snap refuses, and marks the spot', async () => {
+      // The second half of the image is blank, so the snap finds no symmetric
+      // section there and the click is kept where it was made.
+      const s = tracing({ pixels: false });
+      const g = gauge(s);
+      const plane = trackPlane(g, 500);
+      for (let y = 0; y < plane.height; y++) {
+        for (let x = 1000; x < plane.width; x++) plane.data[y * plane.width + x] = 0.4;
+      }
+      s.setTracePixels('img1.jpg', plane);
+
+      await clicks(s, { x: 300, y: 500 }, { x: 1500, y: 500 + 0.4 * g });
+      const run = s.run!;
+      expect(run.points[run.points.length - 1]).to.deep.equal({
+        x: 1500,
+        y: Math.round(500 + 0.4 * g),
+      });
+      expect(run.stops.length).to.be.greaterThan(0);
+      expect(s.traceStops.length).to.be.greaterThan(0);
+    });
+
+    it('lays no fill and snaps nothing when the editor supplied no pixels', async () => {
+      // The honest outcome: a run traced against pixels nobody supplied would
+      // be a hand-drawn polyline wearing the snap's name.
+      const s = tracing({ pixels: false });
+      const g = gauge(s);
+      await clicks(s, { x: 300, y: 500 + 0.4 * g }, { x: 300 + 6 * g, y: 500 });
+      expect(s.run!.points).to.deep.equal([
+        { x: 300, y: Math.round(500 + 0.4 * g) },
+        { x: Math.round(300 + 6 * g), y: 500 },
+      ]);
+    });
+
+    it('refuses a click on track under a car, naming the remedy', async () => {
+      const s = tracing();
+      seedCar(s, { p0: { x: 400, y: 500 }, p1: { x: 800, y: 500 } });
+      const result = await s.click({ x: 600, y: 500 }, SCALE);
+      expect(result.kind).to.equal('notice');
+      expect(s.run).to.be.null;
+    });
+
+    it('stops the fill before a car and marks the spot', async () => {
+      const s = tracing();
+      const g = gauge(s);
+      seedCar(s, { p0: { x: 700, y: 500 }, p1: { x: 1100, y: 500 } });
+      await clicks(s, { x: 300, y: 500 }, { x: 650, y: 500 });
+      // Reaching past the car is refused, so the run is clicked up to it.
+      const run = s.run!;
+      for (const point of run.points) expect(point.x).to.be.lessThan(700 - 0.4 * g);
+    });
+
+    it('does not let the hit-test intercept a click near a stored point', async () => {
+      // A stored run carries a point every gauge, so a hit-test ahead of the
+      // run would make the tool unusable along the track it just traced.
+      const s = tracing();
+      const g = gauge(s);
+      await clicks(s, { x: 300, y: 500 }, { x: 300 + 6 * g, y: 500 });
+      await s.endRun();
+      expect(s.centerlines).to.have.lengthOf(1);
+
+      await s.click({ x: 300 + 2 * g, y: 500 }, SCALE);
+      expect(s.run, 'a click on the traced line starts a run').to.not.be.null;
+    });
+  });
+
+  describe('ending a run', () => {
+    it('stores it as one history entry', async () => {
+      const s = tracing();
+      const g = gauge(s);
+      const before = s.history.size;
+      await clicks(s, { x: 300, y: 500 }, { x: 300 + 6 * g, y: 500 });
+      expect(s.history.size, 'nothing is recorded while a run is in flight').to.equal(before);
+
+      await s.endRun();
+      expect(s.history.size).to.equal(before + 1);
+      expect(s.history.undoLabel).to.equal('trace centerline');
+      expect(s.centerlines).to.have.lengthOf(1);
+      expect(s.run).to.be.null;
+    });
+
+    it('does not store a run of fewer than two points', async () => {
+      const s = tracing();
+      const before = s.history.size;
+      await s.click({ x: 300, y: 500 }, SCALE);
+      await s.endRun();
+      expect(s.centerlines).to.be.empty;
+      expect(s.history.size).to.equal(before);
+    });
+
+    it('ends on a tool switch', async () => {
+      const s = tracing();
+      const g = gauge(s);
+      await clicks(s, { x: 300, y: 500 }, { x: 300 + 6 * g, y: 500 });
+      s.selectTool('sensor');
+      expect(s.run).to.be.null;
+      expect(s.centerlines).to.have.lengthOf(1);
+    });
+
+    it('ends on a right-click, like a chain, and opens no menu', async () => {
+      const s = tracing();
+      const g = gauge(s);
+      await clicks(s, { x: 300, y: 500 }, { x: 300 + 6 * g, y: 500 });
+      expect(s.rightClick({ x: 300, y: 500 }, SCALE)).to.be.null;
+      expect(s.run).to.be.null;
+      expect(s.centerlines).to.have.lengthOf(1);
+    });
+
+    it('drops a run on dropRun, storing nothing and marking nothing', async () => {
+      const s = tracing();
+      const g = gauge(s);
+      await clicks(s, { x: 300, y: 500 }, { x: 300 + 6 * g, y: 500 });
+      s.dropRun();
+      expect(s.run).to.be.null;
+      expect(s.centerlines).to.be.empty;
+      expect(s.traceStops).to.be.empty;
+    });
+
+    it('selects the line it stored, so its points show', async () => {
+      const s = tracing();
+      const g = gauge(s);
+      await clicks(s, { x: 300, y: 500 }, { x: 300 + 6 * g, y: 500 });
+      await s.endRun();
+      expect(s.selectedCenterline).to.equal(s.centerlines[0].id);
+    });
+
+    it('keeps the stops of a stored run for the rest of the session', async () => {
+      const s = tracing({ pixels: false });
+      const g = gauge(s);
+      const plane = trackPlane(g, 500);
+      for (let y = 0; y < plane.height; y++) {
+        for (let x = 1000; x < plane.width; x++) plane.data[y * plane.width + x] = 0.4;
+      }
+      s.setTracePixels('img1.jpg', plane);
+      await clicks(s, { x: 300, y: 500 }, { x: 1500, y: 500 });
+      await s.endRun();
+      expect(s.traceStops.length).to.be.greaterThan(0);
+    });
+  });
+
+  describe('extending an existing centerline', () => {
+    async function traced(s: EditSession, from: Point, to: Point) {
+      await clicks(s, from, to);
+      await s.endRun();
+    }
+
+    it('continues a line when the run starts within half a gauge of its end', async () => {
+      const s = tracing();
+      const g = gauge(s);
+      await traced(s, { x: 300, y: 500 }, { x: 300 + 6 * g, y: 500 });
+      const line = s.centerlines[0];
+      const end = line.points[line.points.length - 1];
+      const length = line.points.length;
+
+      await traced(
+        s,
+        { x: Math.round(end.x + 0.3 * g), y: Math.round(end.y) },
+        { x: Math.round(end.x + 6 * g), y: 500 }
+      );
+      expect(s.centerlines, 'no second line').to.have.lengthOf(1);
+      expect(s.centerlines[0].id).to.equal(line.id);
+      expect(s.centerlines[0].points.length).to.be.greaterThan(length);
+      // The join is the line's own end, so there is no half-gauge kink beside it.
+      expect(s.centerlines[0].points[length - 1]).to.deep.equal(end);
+    });
+
+    it('prepends, reversed, when the run starts at the line’s first point', async () => {
+      const s = tracing();
+      const g = gauge(s);
+      await traced(s, { x: 900, y: 500 }, { x: 900 + 6 * g, y: 500 });
+      const line = s.centerlines[0];
+      const start = line.points[0];
+
+      await traced(
+        s,
+        { x: Math.round(start.x), y: Math.round(start.y) },
+        { x: Math.round(start.x - 6 * g), y: 500 }
+      );
+      const joined = s.centerlines[0].points;
+      expect(s.centerlines).to.have.lengthOf(1);
+      // Still in order along the track: x increases from one end to the other.
+      for (let i = 1; i < joined.length; i++) {
+        expect(joined[i].x).to.be.greaterThan(joined[i - 1].x);
+      }
+    });
+
+    it('prepends even when the snap moves the opening click off the line’s end', async () => {
+      // The regression: the opening click is snapped once the second gives it a
+      // direction, so by the time the run is stored its first point is no
+      // longer the end it left from. Comparing the two spliced the stretch onto
+      // whichever end happened to match — the wrong one — and the polyline
+      // jumped across the layout. The end is the run's own record now.
+      const s = tracing({ centreY: 480 });
+      const g = gauge(s);
+      await traced(s, { x: 900, y: 480 }, { x: 900 + 6 * g, y: 480 });
+      const line = s.centerlines[0];
+      const start = line.points[0];
+      expect(Math.abs(start.y - 480)).to.be.lessThan(0.25 * g);
+
+      // The track has moved under the tracing: the snap now pulls toward 500,
+      // so the opening click will not stay on the line's first point.
+      s.setTracePixels('img1.jpg', trackPlane(g, 500));
+      await traced(
+        s,
+        { x: Math.round(start.x), y: Math.round(start.y) },
+        { x: Math.round(start.x - 6 * g), y: 500 }
+      );
+
+      const joined = s.centerlines[0].points;
+      expect(s.centerlines).to.have.lengthOf(1);
+      // Still one run in order along the track, not a line doubling back.
+      for (let i = 1; i < joined.length; i++) {
+        expect(joined[i].x, `point ${i}`).to.be.greaterThan(joined[i - 1].x);
+      }
+    });
+
+    it('starts a line of its own further off than half a gauge', async () => {
+      const s = tracing();
+      const g = gauge(s);
+      await traced(s, { x: 300, y: 500 }, { x: 300 + 6 * g, y: 500 });
+      const end = s.centerlines[0].points[s.centerlines[0].points.length - 1];
+
+      await traced(
+        s,
+        { x: Math.round(end.x + 0.8 * g), y: Math.round(end.y) },
+        { x: Math.round(end.x + 6 * g), y: 500 }
+      );
+      expect(s.centerlines).to.have.lengthOf(2);
+    });
+  });
+
+  describe('undo while a run is being traced', () => {
+    it('removes the last click and the stretch it asked for', async () => {
+      const s = tracing();
+      const g = gauge(s);
+      await clicks(s, { x: 300, y: 500 }, { x: 300 + 6 * g, y: 500 });
+      const after2 = s.run!.points.length;
+      await s.click({ x: 300 + 12 * g, y: 500 }, SCALE);
+      expect(s.run!.points.length).to.be.greaterThan(after2);
+
+      await s.undo();
+      expect(s.run!.points.length).to.equal(after2);
+    });
+
+    it('cannot reach past the run’s start', async () => {
+      // The chain's rule: at the start the run ends and nothing on the stack is
+      // touched. The run is not on the stack at all, so reaching past it would
+      // undo the edit *before* the trace began.
+      const s = tracing();
+      // One entry on the stack before the run opens, so "nothing was undone"
+      // is a claim with something behind it.
+      s.selectTool('sensor');
+      await s.click({ x: 50, y: 50 }, SCALE);
+      s.selectTool('centerline');
+      await s.click({ x: 300, y: 500 }, SCALE);
+      const size = s.history.size;
+      expect(size).to.equal(1);
+
+      await s.undo();
+      expect(s.run).to.be.null;
+      expect(s.history.size).to.equal(size);
+      expect(s.history.canUndo).to.be.true;
+    });
+
+    it('stores nothing for a run undone back to its start', async () => {
+      const s = tracing();
+      const g = gauge(s);
+      await clicks(s, { x: 300, y: 500 }, { x: 300 + 6 * g, y: 500 });
+      await s.undo();
+      await s.undo();
+      expect(s.run).to.be.null;
+      expect(s.centerlines).to.be.empty;
+    });
+
+    it('drops a run on redo rather than storing it', async () => {
+      const s = tracing();
+      const g = gauge(s);
+      await clicks(s, { x: 300, y: 500 }, { x: 300 + 6 * g, y: 500 });
+      await s.endRun();
+      await s.undo();
+      await clicks(s, { x: 300, y: 500 }, { x: 300 + 3 * g, y: 500 });
+      await s.redo();
+      expect(s.run).to.be.null;
+      expect(s.centerlines).to.have.lengthOf(1);
+    });
+  });
+
+  describe('undo of a finished edit', () => {
+    async function withLine(): Promise<EditSession> {
+      const s = tracing();
+      const g = gauge(s);
+      await clicks(s, { x: 300, y: 500 }, { x: 300 + 6 * g, y: 500 });
+      await s.endRun();
+      return s;
+    }
+
+    it('puts a traced run back, and redo brings it again', async () => {
+      const s = await withLine();
+      const id = s.centerlines[0].id;
+      await s.undo();
+      expect(s.centerlines).to.be.empty;
+      await s.redo();
+      expect(s.centerlines.map(line => line.id)).to.deep.equal([id]);
+    });
+
+    it('puts an extend back as one entry, with no half-extended state', async () => {
+      const s = await withLine();
+      const g = gauge(s);
+      const before = s.centerlines[0].points;
+      const end = before[before.length - 1];
+      await clicks(
+        s,
+        { x: Math.round(end.x), y: Math.round(end.y) },
+        { x: Math.round(end.x + 6 * g), y: 500 }
+      );
+      await s.endRun();
+      expect(s.centerlines[0].points.length).to.be.greaterThan(before.length);
+
+      await s.undo();
+      expect(s.centerlines).to.have.lengthOf(1);
+      expect(s.centerlines[0].points).to.deep.equal(before);
+    });
+
+    it('is one entry per point drag, and the point is not re-snapped', async () => {
+      const s = await withLine();
+      const g = gauge(s);
+      const line = s.centerlines[0];
+      s.selectCenterline(line.id);
+      const index = 2;
+      const from = line.points[index];
+      const size = s.history.size;
+
+      const moved = await drag(s, [
+        { x: from.x, y: from.y },
+        { x: from.x, y: from.y + 0.4 * g },
+      ]);
+      expect(moved, 'a centerline point is grabbable').to.be.true;
+      expect(s.history.size).to.equal(size + 1);
+      expect(s.history.undoLabel).to.equal('move centerline point');
+      // Where the drag left it, not where the snap would put it back — and
+      // unrounded, because a centerline point is a measurement.
+      expect(s.centerlines[0].points[index].x).to.be.closeTo(from.x, 1e-9);
+      expect(s.centerlines[0].points[index].y).to.be.closeTo(from.y + 0.4 * g, 1e-9);
+
+      await s.undo();
+      expect(s.centerlines[0].points[index]).to.deep.equal(from);
+    });
+
+    it('writes no entry for a point drag returned to its origin', async () => {
+      const s = await withLine();
+      s.selectCenterline(s.centerlines[0].id);
+      const from = s.centerlines[0].points[2];
+      const size = s.history.size;
+      await drag(s, [from, { x: from.x + 40, y: from.y }, from]);
+      expect(s.history.size).to.equal(size);
+      // And the point it merely touched is still the fraction the snap reported.
+      expect(s.centerlines[0].points[2]).to.deep.equal(from);
+    });
+
+    it('does not grab a point of a line that is not selected', async () => {
+      // Only the selected line is drawn with handles, so only it is grabbable —
+      // a pan over traced track must not move a point nobody can see.
+      const s = await withLine();
+      s.selectCenterline(null);
+      const from = s.centerlines[0].points[2];
+      const size = s.history.size;
+      expect(await drag(s, [from, { x: from.x, y: from.y + 20 }])).to.be.false;
+      expect(s.history.size).to.equal(size);
+      expect(s.centerlines[0].points[2]).to.deep.equal(from);
+    });
+
+    it('is one entry per point delete', async () => {
+      const s = await withLine();
+      const line = s.centerlines[0];
+      const length = line.points.length;
+      const gone = line.points[1];
+
+      await s.delete({ kind: 'centerline-point', id: line.id, index: 1 });
+      expect(s.history.undoLabel).to.equal('delete centerline point');
+      expect(s.centerlines[0].points).to.have.lengthOf(length - 1);
+      expect(s.centerlines[0].points).to.not.deep.include(gone);
+
+      await s.undo();
+      expect(s.centerlines[0].points).to.have.lengthOf(length);
+    });
+
+    it('takes the line with the last point, rather than leaving a stub', async () => {
+      const s = tracing();
+      s.setTracePixels('img1.jpg', null);
+      await clicks(s, { x: 300, y: 500 }, { x: 900, y: 500 });
+      await s.endRun();
+      expect(s.centerlines[0].points).to.have.lengthOf(2);
+
+      await s.delete({ kind: 'centerline-point', id: s.centerlines[0].id, index: 0 });
+      expect(s.centerlines).to.be.empty;
+    });
+
+    it('is one entry per centerline delete', async () => {
+      const s = await withLine();
+      const id = s.centerlines[0].id;
+      await s.delete({ kind: 'centerline', id });
+      expect(s.history.undoLabel).to.equal('delete centerline');
+      expect(s.centerlines).to.be.empty;
+
+      await s.undo();
+      expect(s.centerlines.map(line => line.id)).to.deep.equal([id]);
+    });
+
+    it('writes nothing for a delete of something already gone', async () => {
+      const s = await withLine();
+      const id = s.centerlines[0].id;
+      await s.delete({ kind: 'centerline', id });
+      const size = s.history.size;
+      await s.delete({ kind: 'centerline', id });
+      await s.delete({ kind: 'centerline-point', id, index: 0 });
+      expect(s.history.size).to.equal(size);
+    });
+  });
+
+  describe('selection and the menu', () => {
+    async function withLine(): Promise<EditSession> {
+      const s = tracing();
+      const g = gauge(s);
+      await clicks(s, { x: 300, y: 500 }, { x: 300 + 6 * g, y: 500 });
+      await s.endRun();
+      s.selectCenterline(null);
+      return s;
+    }
+
+    it('places a sensor on traced track rather than selecting the line', async () => {
+      // A click does not look for a centerline point. The grab radius is a
+      // fingertip in screen pixels, which at a fit zoom is far wider than the
+      // gauge the points sit a step apart on, so a click that resolved to one
+      // would stop the sensor and car tools working over any traced track.
+      const s = await withLine();
+      s.selectTool('sensor');
+      const point = s.centerlines[0].points[2];
+      await s.click(point, SCALE);
+      expect(s.selectedCenterline).to.be.null;
+      expect(sensors(s)).to.have.lengthOf(1);
+    });
+
+    it('selects the line a right-click names, which is how its points appear', async () => {
+      const s = await withLine();
+      s.selectTool('sensor');
+      const line = s.centerlines[0];
+      const a = line.points[2];
+      const b = line.points[3];
+      expect(s.rightClick({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, SCALE)).to.deep.equal({
+        kind: 'centerline',
+        id: line.id,
+      });
+      expect(s.selectedCenterline).to.equal(line.id);
+    });
+
+    it('names a point once its line is selected and the handles are drawn', async () => {
+      const s = await withLine();
+      s.selectTool('sensor');
+      s.selectCenterline(s.centerlines[0].id);
+      const point = s.centerlines[0].points[3];
+      expect(s.rightClick(point, SCALE)).to.deep.equal({
+        kind: 'centerline-point',
+        id: s.centerlines[0].id,
+        index: 3,
+      });
+    });
+
+    it('names no point on a line that is not selected', async () => {
+      const s = await withLine();
+      s.selectTool('sensor');
+      const point = s.centerlines[0].points[3];
+      expect(s.rightClick(point, SCALE)!.kind).to.equal('centerline');
+    });
+
+    it('names the whole line for a right-click between the selected line’s points', async () => {
+      const s = await withLine();
+      s.selectTool('sensor');
+      const line = s.centerlines[0];
+      s.selectCenterline(line.id);
+      // Midway between two points, off every handle but on the line.
+      const a = line.points[2];
+      const b = line.points[3];
+      expect(s.rightClick({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, SCALE)).to.deep.equal({
+        kind: 'centerline',
+        id: line.id,
+      });
+    });
+
+    it('names a car before the centerline running under it', async () => {
+      const s = await withLine();
+      s.selectTool('sensor');
+      const car = seedCar(s, { p0: { x: 400, y: 500 }, p1: { x: 800, y: 500 } });
+      expect(s.rightClick({ x: 600, y: 500 }, SCALE)).to.deep.equal({ kind: 'car', id: car.id });
+    });
+
+    it('drops a selection whose line an undo took away', async () => {
+      const s = tracing();
+      const g = gauge(s);
+      await clicks(s, { x: 300, y: 500 }, { x: 300 + 6 * g, y: 500 });
+      await s.endRun();
+      expect(s.selectedCenterline).to.not.be.null;
+      await s.undo();
+      expect(s.selectedCenterline).to.be.null;
+    });
+
+    it('selects nothing for an id that is not there', async () => {
+      const s = await withLine();
+      s.selectCenterline('nope');
+      expect(s.selectedCenterline).to.be.null;
     });
   });
 });

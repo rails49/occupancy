@@ -15,6 +15,27 @@ import type { Point, Sensor } from '@rails49/r49';
 export type UnknownReason = 'no-model' | 'no-calibration' | 'outside-frame' | 'drift';
 
 /**
+ * The [margin](../../GLOSSARY.md#occupancy), in track gauges: how far beyond a
+ * car's end, along the track, a sensor still reads occupied.
+ *
+ * [ADR 0023](../../docs/adr/0023-occupied-has-a-two-gauge-margin.md). A miss
+ * costs a collision, so a car *close to* a sensor counts; and one definition of
+ * "close" lets the detector and the classifier be combined by "either says
+ * occupied" and scored against the same ground truth.
+ *
+ * It is a count of gauges rather than of pixels because the quantity is a
+ * distance on the layout. 1 G is `dpt` pixels, so the box tested is
+ * `length + 4·dpt` long, and the same rule holds at DPT 8 and DPT 40.
+ *
+ * The margin also absorbs lean: seen from one camera a car's roof appears up to
+ * about 2 G farther from the image centre than its wheels, which lengthens an
+ * apparent span and never shortens it. No lean correction is made — car heights
+ * vary too much for a single one, and correcting would turn some of this false
+ * occupied into misses.
+ */
+export const MARGIN_G = 2;
+
+/**
  * One sensor's L1 state.
  *
  * `occupied` carries the covering detection rather than a bare confidence:
@@ -48,8 +69,19 @@ export type SensorState =
  * DPT 20 a car is ~42 px wide, so a centreline sensor sits ~21 px inside the
  * boundary, and an under-predicted 25 px width cuts that to ~12 px and can flip
  * a covered sensor to `clear`. Substituting the constant only ever widens an
- * under-predicted box, which is the safe direction. L0 still reports the raw
- * box — and the `Detection` returned on `occupied` is the raw one.
+ * under-predicted box, which is the safe direction.
+ *
+ * It is also **lengthened**, by {@link MARGIN_G} at each end along its long
+ * axis ([ADR 0023](../../docs/adr/0023-occupied-has-a-two-gauge-margin.md)): a
+ * sensor a car has not quite reached reads `occupied`, because a miss costs a
+ * collision. Only the length moves — across the axis the half-width is
+ * unchanged, so the margin never reaches a sensor on the next track. No
+ * detection is matched to a centerline; the lengthened box is tested the way
+ * the raw-length one was, and nothing here decides which track a detection is
+ * on.
+ *
+ * Both changes are L1's geometry. L0 still reports the raw box — and the
+ * `Detection` returned on `occupied` is the raw one, at its own length.
  *
  * @param input.detections L0 for this frame, or `null` when no model is loaded.
  * @param input.sensors    The layout's sensors, in `frame` coordinates.
@@ -101,6 +133,7 @@ export function occupancy(input: {
   }
 
   const widthPx = carWidthPx(dpt);
+  const marginPx = MARGIN_G * dpt;
 
   for (const sensor of sensors) {
     if (sensor.x < 0 || sensor.x > frame.width || sensor.y < 0 || sensor.y > frame.height) {
@@ -114,7 +147,7 @@ export function occupancy(input: {
     // and `unknown` is never a confidence outcome.
     let best: Detection | null = null;
     for (const detection of detections) {
-      if (!covers(detection, widthPx, sensor)) continue;
+      if (!covers(detection, widthPx, marginPx, sensor)) continue;
       if (best === null || detection.confidence > best.confidence) best = detection;
     }
 
@@ -129,22 +162,36 @@ function unknown(reason: UnknownReason): SensorState {
 }
 
 /**
- * Whether an oriented box of the given width **strictly contains** a point.
+ * Whether an oriented box of the given width, lengthened by `marginPx` at each
+ * end, **strictly contains** a point.
  *
  * Tested in the box's own axes rather than against its corners: a point is
  * inside when its along-axis and across-axis offsets from the centre are both
  * within the respective half-extents. Four corners and a winding rule would
- * answer the same question with more ways to be wrong.
+ * answer the same question with more ways to be wrong. The margin is therefore
+ * one addition to one half-extent, and lands along the **box's** axis at any
+ * angle, with nothing to keep in step.
  *
- * No tolerance epsilon, per SPEC. Any value would be unvalidatable, the lateral
- * direction already carries ~1.4 m prototype of slack from the derived width,
- * and at a coupler two boxes abut on a shared endpoint so a point between
- * coupled cars is already inside one of them. A real gap between uncoupled cars
- * should read `clear`, and an epsilon would manufacture a phantom there.
+ * The margin is handed in rather than derived here from DPT, so the two numbers
+ * that shape the box arrive the same way and this stays the geometry with no
+ * calibration in it. {@link occupancy} computes it once per frame as
+ * {@link MARGIN_G} × DPT, and is the only caller.
+ *
+ * Still **strict**, and still with no tolerance epsilon, per SPEC — the margin
+ * is not one. An epsilon would be an unvalidatable fudge at the boundary;
+ * {@link MARGIN_G} is a stated distance with a reason, and the boundary it
+ * moves to is as hard as the old one. At a coupler two boxes abut on a shared
+ * endpoint, so a point between coupled cars was already inside one of them
+ * before any margin existed.
  *
  * Exported for its tests only: `occupancy` is the only caller.
  */
-export function covers(detection: Detection, widthPx: number, point: Point): boolean {
+export function covers(
+  detection: Detection,
+  widthPx: number,
+  marginPx: number,
+  point: Point
+): boolean {
   const dx = point.x - detection.centre.x;
   const dy = point.y - detection.centre.y;
   const ux = Math.cos(detection.angle);
@@ -153,5 +200,5 @@ export function covers(detection: Detection, widthPx: number, point: Point): boo
   const along = dx * ux + dy * uy;
   const across = -dx * uy + dy * ux;
 
-  return Math.abs(along) < detection.length / 2 && Math.abs(across) < widthPx / 2;
+  return Math.abs(along) < detection.length / 2 + marginPx && Math.abs(across) < widthPx / 2;
 }

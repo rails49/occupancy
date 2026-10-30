@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { R49Archive, MANIFEST_VERSION, type CarLabel, type ManifestData, type Point } from '@rails49/r49';
-import { EditHistory } from '../src/history.js';
+import { EditHistory, revealTarget } from '../src/history.js';
+import type { Centerline } from '../src/geometry.js';
 
 // No DOM here at all: history.ts is a plain module, which is the point of
 // keeping it out of an element. jsdom's inability to lay out or paint costs
@@ -594,5 +595,105 @@ describe('EditHistory round-trip', () => {
     await history.undo();
     expect(snapshot(archive)).not.toBe(before);
     expect(archive.getManifest().images[0].labeled_complete).toBe(true);
+  });
+});
+
+/**
+ * The `centerlines` target (#275).
+ *
+ * The one target that is not in the manifest: centerlines are an additive
+ * `.r49` field arriving with rails49/r49#52, and until the bump the list is
+ * `EditSession`'s, reached through a `CenterlineStore`. These tests stand in
+ * for that session with a plain array, which is what makes the point — every
+ * property the other targets have comes from the same machinery and not from
+ * where the data happens to live.
+ */
+describe('EditHistory, the centerlines target', () => {
+  function withStore(archive: R49Archive) {
+    const box: { lines: readonly Centerline[] } = { lines: [] };
+    const history = new EditHistory();
+    history.attach(archive, {
+      read: () => box.lines,
+      write: lines => {
+        box.lines = lines;
+      },
+    });
+    return { history, box };
+  }
+
+  const line = (id: string, points: readonly Point[]): Centerline => ({ id, points });
+
+  it('snapshots the list and puts it back', async () => {
+    const { history, box } = withStore(await makeArchive());
+    const first = [line('a', [{ x: 0, y: 0 }, { x: 10, y: 0 }])];
+
+    await history.record('trace centerline', { kind: 'centerlines' }, () => {
+      box.lines = first;
+    });
+    expect(history.undoLabel).toBe('trace centerline');
+
+    await history.undo();
+    expect(box.lines).toEqual([]);
+    await history.redo();
+    expect(box.lines).toEqual(first);
+  });
+
+  it('suppresses a write that changed nothing', async () => {
+    const { history, box } = withStore(await makeArchive());
+    box.lines = [line('a', [{ x: 0, y: 0 }, { x: 10, y: 0 }])];
+    await history.record('move centerline point', { kind: 'centerlines' }, () => {
+      box.lines = [line('a', [{ x: 0, y: 0 }, { x: 10, y: 0 }])];
+    });
+    expect(history.canUndo).toBe(false);
+  });
+
+  it('puts an extend back whole, so there is no half-extended state', async () => {
+    const { history, box } = withStore(await makeArchive());
+    const before = [line('a', [{ x: 0, y: 0 }, { x: 10, y: 0 }])];
+    box.lines = before;
+    await history.record('trace centerline', { kind: 'centerlines' }, () => {
+      box.lines = [line('a', [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 20, y: 0 }])];
+    });
+    await history.undo();
+    expect(box.lines).toEqual(before);
+  });
+
+  it('highlights whole lines by id, never the point that moved', async () => {
+    const { history, box } = withStore(await makeArchive());
+    box.lines = [line('a', [{ x: 0, y: 0 }, { x: 10, y: 0 }]), line('b', [{ x: 0, y: 9 }])];
+    await history.record('move centerline point', { kind: 'centerlines' }, () => {
+      box.lines = [line('a', [{ x: 0, y: 3 }, { x: 10, y: 0 }]), line('b', [{ x: 0, y: 9 }])];
+    });
+    expect(history.undoEntry!.highlights).toEqual([{ kind: 'centerline', id: 'a' }]);
+  });
+
+  it('moves nobody: a centerlines entry reveals no image', async () => {
+    const { history, box } = withStore(await makeArchive());
+    await history.record('trace centerline', { kind: 'centerlines' }, () => {
+      box.lines = [line('a', [{ x: 0, y: 0 }, { x: 10, y: 0 }])];
+    });
+    expect(revealTarget(history.undoEntry)).toBeUndefined();
+  });
+
+  it('records inertly with no store rather than throwing', async () => {
+    // A caller that records none never needs one, which is what keeps every
+    // existing `EditSession` construction valid.
+    const archive = await makeArchive();
+    const history = attached(archive);
+    await history.record('trace centerline', { kind: 'centerlines' }, () => {});
+    expect(history.canUndo).toBe(false);
+  });
+
+  it('is one gesture for a drag, like every other target', async () => {
+    const { history, box } = withStore(await makeArchive());
+    box.lines = [line('a', [{ x: 0, y: 0 }, { x: 10, y: 0 }])];
+    const gesture = history.beginGesture('move centerline point', { kind: 'centerlines' });
+    for (const y of [1, 2, 3]) {
+      box.lines = [line('a', [{ x: 0, y }, { x: 10, y: 0 }])];
+    }
+    expect(await gesture.commit()).toBe(true);
+    expect(history.size).toBe(1);
+    await history.undo();
+    expect(box.lines).toEqual([line('a', [{ x: 0, y: 0 }, { x: 10, y: 0 }])]);
   });
 });

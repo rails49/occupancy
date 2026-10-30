@@ -11,7 +11,7 @@ import { openArchive, supportsFileSystemAccess, writeArchive, type FileBinding }
 // Shared with the diagnostics queue, which binds bare keys to `window` too —
 // see `keyboard.ts` for why the rule has one home.
 import { isTypingTarget } from './keyboard.js';
-import { GATE_REASON, TOOLS } from './tools.js';
+import { TOOLS } from './tools.js';
 import './rr-editor-view.js';
 import type { NotifyDetail } from './rr-editor-view.js';
 import './rr-live-view.js';
@@ -415,14 +415,17 @@ export class RRApp extends LitElement {
       ${session
         ? html`<look-group label="Tools">
             ${TOOLS.map(spec => {
-              const disabled = spec.needsDpt && !session.calibrated;
+              // The session's answer, not a second copy of the gate: one tool
+              // cannot be rendered enabled and dispatched as disabled
+              // (`tools.ts` § ToolSpec).
+              const reason = session.toolReason(spec.tool);
               return html`<look-command
                 id="tool-${spec.tool}"
                 icon=${spec.icon}
                 label=${spec.label}
                 ?pressed=${spec.tool === session.tool}
-                ?disabled=${disabled}
-                reason=${disabled ? GATE_REASON : ''}
+                ?disabled=${reason !== null}
+                reason=${reason ?? ''}
                 @look-press=${() => session.selectTool(spec.tool)}
               ></look-command>`;
             })}

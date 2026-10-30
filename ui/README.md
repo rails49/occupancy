@@ -137,6 +137,11 @@ rr-app                          ← shell: owns the editing session and the view
 > [#260]: https://github.com/rails49/occupancy/issues/260
 > [#262]: https://github.com/rails49/occupancy/issues/262
 > [#265]: https://github.com/rails49/occupancy/issues/265
+> [#273]: https://github.com/rails49/occupancy/issues/273
+> [#274]: https://github.com/rails49/occupancy/issues/274
+> [#275]: https://github.com/rails49/occupancy/issues/275
+> [#277]: https://github.com/rails49/occupancy/issues/277
+> [ADR 0021]: ../docs/adr/0021-track-centerlines-are-stored.md
 
 ## State and data flow
 
@@ -261,7 +266,8 @@ Feedback is a Shoelace `sl-alert` toast (`_notify`), not `alert()`.
 
 `rr-app` declares the chrome on [`@rails49/look`](https://github.com/rails49/look)'s elements, which
 draw it; the app styles none of it, and `look-check` in `bin/test.sh` holds it to that. `look-gear`
-opens `rr-settings-dialog`. There is no source link and no unsaved mark.
+opens `rr-settings-dialog`. The band carries no source link and no unsaved mark; the
+detector's source link is in the settings dialog.
 
 The rail's first group is the three views — Label, Live, Diagnostics — each one click away and the
 current one marked ([#87]). A `look-view` event switches. Live and Diagnostics show the views alone;
@@ -306,6 +312,12 @@ camera height, description, and contact. It is also the **required-metadata gate
 |---|---|---|
 | `layout` | `{ name?, scale, description?, contact?, calibration? }` | Current layout; defaults to scale `N`. `calibration` is read, never spread back |
 | `requiredMissing` | `readonly MissingRequirement[]` | What the layout still owes, from `requiredMetadata.ts`. Non-empty ⇒ the dialog opens itself and refuses to close |
+
+Below the tab group it carries the site's **pointer to the detector's source** ([#274]): a short
+line saying the detector's model and browser runtime are AGPL-3.0, linking to
+[rails49/detector](https://github.com/rails49/detector), which holds their source. It is an anchor,
+not a fetch, so [ADR 0006](../docs/adr/0006-the-onnx-runtime-ships-from-origin.md) is unaffected,
+and it sits outside the `requiredMissing` branch so the gate cannot hide it.
 
 **Methods:** `show()`, `hide()`.
 
@@ -389,7 +401,11 @@ image pixel coordinates.
 | `detections` | `readonly Detection[]` | L0 for this frame: dashed oriented boxes at the model's **own** predicted width. Empty in the editor |
 | `cars` | `readonly CarLabel[]` | Car spans to draw: a chord inside its width rectangle. Per **image**, so switching images swaps the whole list; empty in the live view |
 | `pendingCar` | `PendingCar \| null` | The **rubber band** — `{ anchor, to }` for the chain in flight. The one thing here that is not in the manifest; empty in the live view |
-| `highlight` | `ViewerHighlight \| null` | The objects a reveal is pointing at — `{ cars, sensors, calibration }`, ids for the first two and **indices** for the third. Already resolved by `rr-editor-view`; the viewer draws it and decides nothing. `null` in the live view |
+| `centerlines` | `readonly Centerline[]` | The archive's traced centerlines, drawn under every tool with no on/off control ([#275]). Per **archive**, like the sensors. **Empty is the live view** — and the patch outlines and the sensor marks follow from this one list, so passing none draws none of them either |
+| `selectedCenterline` | `string \| null` | Which line shows its point handles. Only the selected one does: a run carries a point every gauge, and every line's handles at once would bury the photograph — and it is the only line the editor's hit-test reaches, so what is drawn is what is grabbable |
+| `pendingRun` | `readonly Point[] \| null` | The run being traced, drawn dashed — tracing's `pendingCar`, and not in the manifest either |
+| `traceStops` | `readonly Point[]` | Spots where a trace stopped short: a turnout, a crossing, clutter, the frame edge, a car on the track. Session-lived and never stored |
+| `highlight` | `ViewerHighlight \| null` | The objects a reveal is pointing at — `{ cars, sensors, calibration, centerlines }`, ids for all but `calibration`, which is **indices**. Already resolved by `rr-editor-view`; the viewer draws it and decides nothing. `null` in the live view |
 | `zoom` | `Rect \| null` | The region of the **authored frame** on screen ([#44]). `null` is fit — the absence of a zoom, which is exactly what this element drew before the property existed. View state the editor owns; never in the manifest and never in the history. `null` in the live view |
 | `zoomPreview` | `Rect \| null` | The rect being dragged out — zoom's counterpart to `pendingCar`. Drawn in the overlay with a screen-constant stroke, never as an HTML box on the glass |
 | `dpt` | `number \| null` | The scale the **world-sized** symbols are drawn at. `null` falls them back to `symbolSize` |
@@ -535,14 +551,15 @@ covered today.
 | `carCovering(scene, at)` | The car whose rectangle covers a pixel, or `null` — a claim about the **image**, off the same scene, asked only by the car tool's first click ([#43]). Boundary is inside; no DPT means no rectangle, so nothing covers |
 | `carUnderPointer(scene, at, tolerance)` | The car a **gesture** aimed at a pixel means, or `null` — the same rectangle **floored at a fingertip**, which is what the context menu opens on ([#45]). First in scene order where several cover |
 | `hitTest(scene, at, tolerance, kinds?)` | The `HitTarget` under an image-pixel coordinate, or `null`. `kinds` narrows what is looked *for*, defaulting to all of them |
-| `HitScene` | `{ cars, sensors, calibrationPoints, dpt }` — everything grabbable for one image of one layout, plus the scale the world-sized ones are drawn at |
-| `HitTarget` | `car-endpoint` / `coupler` (both carrying `ends`), `sensor` (`id`), `calibration` (`index`) |
-| `HitKind` | `car-endpoint` / `sensor` / `calibration` — a kind that can be *found*; a coupler is derived, never searched for |
+| `HitScene` | `{ cars, sensors, calibrationPoints, centerlines, selectedCenterline, dpt }` — everything grabbable for one image of one layout, plus the scale the world-sized ones are drawn at |
+| `HitTarget` | `car-endpoint` / `coupler` (both carrying `ends`), `sensor` (`id`), `calibration` (`index`), `centerline-point` (`id`, `index`) |
+| `HitKind` | `car-endpoint` / `sensor` / `calibration` / `centerline-point` — a kind that can be *found*; a coupler is derived, never searched for |
 | `HitTolerance` | `{ screenPx, imagePxPerScreenPx }` |
 | `dragHandles(hit, scene)` | The points a grab moves — **a list**, one per object, and two or more for a coupler |
 | `DragHandle` | `{ ref, from }`: what it addresses, and where it sat at pointer-down |
-| `HandleRef` | `calibration` (`index`), `car-end` (`id`, `end`), `sensor` (`id`) — never an object reference |
-| `dragTo(handle, delta)` | Where that handle lands, in whole image pixels |
+| `HandleRef` | `calibration` (`index`), `car-end` (`id`, `end`), `sensor` (`id`), `centerline-point` (`id`, `index`) — never an object reference |
+| `dragTo(handle, delta)` | Where that handle lands. Rounded for everything a person placed; **not** for a centerline point, which is a measurement |
+| `centerlineUnderPointer(scene, at, tolerance)` | The centerline a gesture aimed at a pixel means, or `null` — measured to the polyline and floored at a fingertip. What the menu opens on between two points ([#275]) |
 | `samePoint(a, b)` | Whether two pixels are the same pixel — the **one** encoding of the coincidence rule, shared by the hit-test, the renderer and the staleness guards |
 | `couplerPoints(cars)` | Every pixel where two or more car ends meet, once each, in scene order — the couplings a renderer draws one shared handle per |
 | `isCoincident(at, points)` | Whether `at` is exactly one of them |
@@ -559,6 +576,30 @@ covered today.
 | `FrameSize` | `{ width, height }` — the image bounds, `rr-viewer`'s `resolution` |
 | `overlayFit(media, frame)` | `{ sx, sy, aspectMismatch }` — how the authored frame maps onto the media's own pixel grid, which is what the overlay's content group is scaled by. Uniform for a photograph of the frame's shape at any pixel count; the identity while nothing is loaded |
 | `OverlayFit` | `{ sx, sy, aspectMismatch }` |
+| `Centerline` | `{ id, points }` — one run of track as a polyline along the middle between its rails, in image pixels. The **editor's** shape until rails49/r49#52 lands the format field ([ADR 0021]) |
+| `nearestCenterline(at, centerlines)` | The `CenterlineHit` for the nearest centerline, or `null` with none. Measured to the **polyline**, not to its points |
+| `CenterlineHit` | `{ id, distancePx, at, direction }` — which run, how far off it, where on it, and the unit direction of the segment that answer fell on |
+| `sensorTrack(at, centerlines, dpt)` | `{ nearest, noTrack, secondCenterline }` — the centerline a sensor's patch is turned to, and the two marks the editor draws on it |
+| `SensorTrack` | `{ nearest, noTrack, secondCenterline }` |
+| `patchCorners(at, direction, dpt)` | The four corners of a sensor's patch, in `carCorners`' polygon order, or `null` for a direction with no length. Centred on the sensor and turned to the direction given — nothing moves onto the line |
+| `PATCH_ACROSS_G` / `PATCH_ALONG_G` | The patch's size in gauges, 3 × 5 — **a placeholder in one named place** until rails49/classifier#4 picks it |
+| `secondCenterlineReachPx(dpt)` | How close a second centerline may come before the patch is warned about: half the patch's width plus half a car's, 2.545 G with the placeholder. A **radius**, so it under-warns along the patch's long axis — a decision #275 made, pinned by a test |
+| `NO_TRACK_G` | How far from every centerline a sensor is marked as having no track: half a gauge |
+| `inCarArea(car, at, dpt)` | Whether a pixel falls in a car's area — the label's span, one car width across, lengthened `CAR_AREA_MARGIN_G` at each end. What the centerline trace may not enter |
+| `CAR_AREA_MARGIN_G` | How far that area reaches past each end of the span: half a gauge |
+
+**The patch size is one number, not two.** `PATCH_ACROSS_G` sizes the outline drawn at a sensor
+*and* `secondCenterlineReachPx`, because the second-centerline warning says "a car on that track
+could reach into this patch" — a claim about that rectangle, and wrong the moment it is measured
+against a different one. Both are placeholders until rails49/classifier#4 picks the size, so the
+reach is **derived** (half the patch width plus half a car width = 2.545 G) rather than written
+down: #275's brief called it "about 2.7 G", which 3 G across and a 2.09 G car do not give.
+
+**A `Centerline` here is not a `Centerline` in the format — yet.** [ADR 0021] makes centerlines an
+optional field of `.r49`, and that field arrives with rails49/r49#52; the pinned `@rails49/r49`
+refuses `layout.centerlines` as `manifest/unknown-key`, so nothing in `ui/` writes one into a
+manifest and nothing reads one out. The shape is the one the format will carry, so the arithmetic
+above survives the bump as a changed import. `centerlineSnap.ts` is where the points come from.
 
 **Both constants are `@rails49/detector`'s**, and `ui/` reaches them only through `@rails49/detector`'s `carWidthPx`, which this re-exports. The scale ratio cancels out of the width formula —
 a car is 2.09 track-widths wide in **every** scale — so no scale lookup belongs anywhere in `ui/`,
@@ -569,8 +610,15 @@ puts in every pointer event. A grab radius is a property of the mouse and the fi
 photograph: an 8-megapixel image and a 720p one must feel the same.
 
 **Nearest wins**, whatever its kind; an exact tie goes to the denser geometry (car ends, sensors,
-calibration points, in that order). Only handles are hit — the body of a car is not grabbable,
-because the only edits a span supports are to its two ends.
+calibration points, then centerline points, in that order). Only handles are hit — the body of a car
+is not grabbable, because the only edits a span supports are to its two ends.
+
+**A centerline point is offered only on the selected line** ([#275]), which is why the selection is
+in the *scene* rather than being a caller's business. Only the selected line is drawn with handles
+(`centerlineMarker.ts`), and a grab that reached the others would move a point nobody can see — the
+same "what is drawn is what is grabbable" rule `sensorDiameterPx` encodes one object along. It does
+not narrow `centerlineUnderPointer`: a right-click names the line it landed on whether or not it was
+selected, which is how a line gets selected in the first place.
 
 **Three questions, deliberately not one.** `hitTest` is *what can this gesture grab*.
 `carCovering` is *is this pixel already labelled* — a claim about the **image**, which only the car
@@ -613,6 +661,104 @@ is known, so `estimateLabelWidthPx` is character count × 0.6em, erring slightly
 safe direction for a flip test. It is not a box the glyphs are guaranteed to sit inside. The rule
 lives here rather than in a renderer because the sensor symbol carries a name in the same frame
 against the same edges: its geometry differs, this decision does not.
+
+---
+
+### `centerlineSnap.ts`
+
+Where the middle of the track is, from the image's own pixels ([#275]). A pure function of a
+`GrayPlane`, a point, a direction and the gauge in pixels — no canvas, no DOM, no manifest — so a
+jsdom test hands it a synthetic two-rail image and checks where it puts the point. `@occupancy/drift`'s
+plane is the parameter type for the reason that package chose it: it exists in Node as well as in a
+browser, so nothing here is locked to the platform that calls it first.
+
+| Export | Description |
+|---|---|
+| `snapToTrack(plane, at, direction, dpt)` | The `SnapResult` for the middle of the track nearest `at`, or `null` where the section is not symmetric enough to say. Offsets are searched outwards, so a tie keeps the smaller move |
+| `SnapResult` | `{ at, offsetPx, score }` — the snapped point (fractional: it is a measurement), how far across the track it moved, and the score there |
+| `symmetryScore(plane, at, direction, dpt)` | How nearly the cross-section equals its own reflection, `-1`…`1`; `null` off the frame or on a flat band. The measurement `MIN_SYMMETRY` is a threshold on |
+| `traceAlong(plane, from, to, dpt, options?)` | The `Trace` filling the stretch between two clicks: a `TRACE_STEP_G` step along the track, snapped, repeated until the closing click is within a step |
+| `Trace` | `{ points, stop, markAt }` — the points **between** the clicks (neither is included), why stepping ended, and the spot to mark when it stopped short |
+| `TraceStop` | `reached` / `unclear` (the snap refused, or no DPT resolved) / `blocked` (a car's area) / `astray` (the rails led away from the click) |
+| `TraceOptions` | `{ blocked? }` — a predicate, so the rule about cars (`geometry.ts`'s `inCarArea`) stays out of a module that reads pixels |
+| `CROSS_SECTION_G` | Width of the section the score is read from: 3 gauges |
+| `SCORE_INNER_G` | Radius around the candidate left out of the score: a quarter gauge |
+| `SNAP_RANGE_G` | How far the snap may move a point across the track: three quarters of a gauge |
+| `SNAP_PITCH_G` | Spacing of the samples and of the offsets searched: a sixteenth of a gauge |
+| `MIN_SYMMETRY` | The least score accepted as the middle of a track — **a placeholder**, see below |
+| `TRACE_STEP_G` | How far apart a traced run's points are: one gauge |
+
+**Mirror symmetry, not a rail detector** ([ADR 0021]). Rails, ties and roadbed are all symmetric
+about the centerline, so the middle of the track is the offset whose cross-section most nearly
+equals its own reflection. Nothing looks for a rail, measures one, or assumes a railhead is bright,
+which is what lets it work on ballast and in shadow — and what makes it refuse honestly where the
+symmetry is genuinely gone.
+
+**The score is read off a band, not the whole section.** A single rail is perfectly symmetric about
+*itself*, so a score taken across the full cross-section would snap a point onto one rail with the
+other hidden — half a gauge wrong, and confident. Leaving out the middle `SCORE_INNER_G` leaves the
+score reading the railheads and the roadbed shoulders, structure one rail cannot fake because the
+band on its far side is then plain ballast.
+
+**It sees every mirror symmetry, including the wrong ones.** A parallel pair of tracks is symmetric
+about the midline *between* them, and that symmetry scores as well as either track's own.
+`SNAP_RANGE_G` is what keeps it out of reach, and the bound is real: the midline is half the
+spacing away, so a pair would have to be closer than two `SNAP_RANGE_G` — a gauge and a half —
+centre to centre, and two cars 2.09 gauges wide cannot pass on a pair that close. Turnouts and
+crossings have no such bound, which is why they are not traced at all.
+
+**`MIN_SYMMETRY` is not tuned, and is a placeholder in the same sense the patch size is.** It is
+set so the synthetic cases in `tests/centerlineSnap.test.ts` come out right. Picking the real one
+means running the snap on the layout's own photographs and judging the marks it leaves, which is
+what kept [#275] from being an agent's ticket whole. It errs **strict**: too high a floor leaves
+the tool refusing visibly, too low a one stores points half a gauge off in silence.
+
+**`traceAlong` is predictor then corrector.** The step goes along the direction the run is already
+heading — on a curve, the chord of the last step — and the snap then puts the point back on the
+middle, which is what stops one step's error becoming the next one's. It stops rather than
+guessing, four ways, and every stop short names a spot to mark. `astray` is the turnout case the
+other way round: the sections stayed symmetric but led down the other route, and without it a trace
+could circle a loop forever.
+
+---
+
+### `centerlineMarker.ts`
+
+The centerline layer's SVG, as a module for the same reason `carMarker.ts` is one ([#275]). **The
+styles and the renderers must be used together** — styles in the host's `static styles`, a renderer
+per object.
+
+| Export | Type | Description |
+|---|---|---|
+| `renderCenterline(line, size, selected?, highlighted?)` | `(Centerline, CenterlineSymbolSize, boolean?, boolean?) => SVGTemplateResult` | The polyline, with a handle on every point **only while selected**. The group carries `data-centerline-id` and each handle `data-point-index`, plus `highlight.ts`'s class when a reveal points at the line |
+| `renderPendingRun(points, size)` | `(readonly Point[], CenterlineSymbolSize) => SVGTemplateResult` | The run in flight: dashed, with a handle on every point |
+| `renderPatch(corners)` | `(CarCorners) => SVGTemplateResult` | A sensor's patch outline |
+| `renderSensorMark(sensor, mark, size)` | `(Sensor, SensorMark, CenterlineSymbolSize) => SVGTemplateResult` | A cross for `no-track`, a ring for `second-centerline`. The group carries `data-mark` and `data-sensor-id` |
+| `renderTraceStop(at, size)` | `(Point, CenterlineSymbolSize) => SVGTemplateResult` | Where a trace stopped short |
+| `sensorPatch(sensor, centerlines, dpt)` | `(Sensor, readonly Centerline[], number \| null) => SensorPatch` | `{ patch, mark }` for one sensor — what the viewer derives rather than being passed, and **memoises**: each sensor is measured against every point of every line, and render runs on every pointer-move. The memo keys on reference identity of the sensors, the lines and the DPT, which is what `EditSession`'s replace-by-value writes give it |
+| `SensorMark` | `'no-track' \| 'second-centerline'` | |
+| `CenterlineSymbolSize` | `{ handlePx }` | Screen-constant, in image pixels |
+| `centerlineMarkerStyles` | `CSSResult` | The layer's inks and non-scaling strokes |
+
+**Everything here is an outline, never a fill.** A centerline lies on the track the photograph is
+of, and the whole reason to draw it is to check it against the rails underneath; ink that covered
+them would hide the only evidence the author has. The patch is the same argument one step out — it
+is drawn so a bad fit shows ([ADR 0021]), and a tinted rectangle would be the thing hiding it.
+
+**Green is a fourth marker ink.** A crosshair is cyan, a sensor amber, a car white-ish, and a
+centerline had to be none of them: `SPEC.md` § Reference points makes "unmistakable from the other
+tools' objects" a requirement, and a centerline runs *through* sensors and cars rather than beside
+them. The two marks reuse the warning and danger hues, as **strokes on the photograph** rather than
+filled bars in a pane, so they are judged the way a marker ink is (`ui/CLAUDE.md` § Shoelace).
+
+**Nothing is answered while no centerline is traced.** With an empty list every sensor is more than
+half a gauge from every centerline and would wear a no-track cross — a hundred crosses on a freshly
+opened archive, saying nothing. A mark is a claim that *this tracing* missed a sensor, and there is
+no tracing to have missed one. It is also exactly what keeps the live view unchanged: it passes no
+centerlines, so it draws no line, no patch and no mark, with no second property to remember.
+
+**`no-track` wins over `second-centerline`.** A sensor that is on no track has no second one to
+warn about, and two marks on one symbol would read as two problems.
 
 ---
 
@@ -911,11 +1057,28 @@ per pick, however many of its files were refused ([#262]). `rr-app` owns the toa
   * `rr-pointer-cancel` cancels the drag: everything goes back and nothing is recorded.
   * **Pointer capture** is `rr-viewer`'s (it takes it on `pointerdown`); what the editor owes it is
     not bailing on coordinates outside the image, so a drag that leaves the viewer still commits.
+* **The centerline tool** ([#275]). The rules are the session's; what the editor owns is four
+  things. **Enter** ends the run being traced and **Escape** drops it, both checked before Escape's
+  zoom-to-fit — a run in flight is what the keystroke is about, and the zoom stays reachable by
+  pressing it again. A **double-click** on the viewer ends the run too, as a native `dblclick` on
+  the host rather than a new `rr-pointer-*` event: the viewer's events exist to turn screen
+  coordinates into image pixels, and "end the run" needs no coordinate. The second click of the
+  pair has already added its point, so the run ends *at* it. And the **pixels**: the snap is a pure
+  function of a `GrayPlane`, which the session cannot produce — `createImageBitmap` and a canvas are
+  the platform's — so `_syncTracePixels` decodes the image on screen with `driftSession.ts`'s
+  `planeFromBytes` and hands it over with `session.setTracePixels`. **Only while the tool is
+  selected**: a plane is one float per pixel, ~195 MB on a 48 MP ceiling shot, and decoding one per
+  image shown would cost that for a tool nobody reached for. The claim on an image is staked
+  *before* the decode and kept whatever it returns, because this runs from `updated()` and a failure
+  that cleared it would spin. Enter and Escape are bare keys on a `window` listener, so they pass
+  through `keyboard.ts`'s `isTypingTarget`/`isInsideOpenDialog` first, like `rr-app`'s Cmd+Z:
+  without it, Enter typed into the settings dialog would silently store the run behind it.
 * **Right-click** ([#29]). `rr-pointer-contextmenu` goes to `session.rightClick`, which ends a live
   chain or names the object a menu acts on. The editor opens `rr-context-menu` at the cursor with
   that subject's rows — **delete** for a reference point, **name and delete** for a sensor,
-  **delete and reclassify** for a car — and a chosen row calls `delete`, `reclassifyCar` or opens the
-  name dialog. Empty image opens nothing.
+  **delete and reclassify** for a car, **delete point and delete centerline** on a centerline point
+  and **delete centerline** between two of them — and a chosen row calls `delete`, `reclassifyCar`
+  or opens the name dialog. Empty image opens nothing.
   * **Reclassify is a submenu generated from the vocabulary in `@rails49/r49`'s data file** ([#35]), through
     `vocabulary.ts`. A new car is the taxonomy's root and refinement is an occasional act, not a
     mode, which is what a submenu says and a persistent picker would not. The **root is never
@@ -1027,8 +1190,12 @@ it gets the objects the entry changed.
 |---|---|
 | `archive`, `history` | The archive and its undo stack |
 | `image`, `imageIndex`, `tool`, `calibrated`, `anchor` | What is on screen, the tool, whether DPT resolves, and where a live chain's next car starts |
-| `car(id)`, `sensor(id)` | The car on the image on screen, or the sensor, with this id; undefined once it is gone |
-| `selectTool`, `selectImage`, `endChain` | Changes to the editing state, none of them recorded |
+| `car(id)`, `sensor(id)`, `centerline(id)` | The car on the image on screen, or the sensor or centerline, with this id; undefined once it is gone |
+| `toolReason(tool)` | Why a tool cannot be used, or null — the **one** answer the rail disables on ([#275]) |
+| `centerlines`, `selectedCenterline`, `run`, `traceStops` | The archive's traced lines, which one shows its points, the run in flight (`{ points, stops }`) and every spot a trace stopped short at this session |
+| `selectCenterline(id)`, `endRun()`, `dropRun()` | The selection — also set by a right-click naming a line; ending a run **stores** it as one entry, dropping it stores nothing |
+| `setTracePixels(filename, plane)` | The pixels the snap reads, for one image. The editor decodes and pushes them in; with none the snap is simply not run |
+| `selectTool`, `selectImage`, `endChain` | Changes to the editing state, none of them recorded. `selectTool` **ends** a run; `selectImage` deliberately does not |
 | `click(point, scale)` | Writes, or returns what the editor must ask for: a reference point's world position, a sensor's name, or a notice |
 | `beginDrag(point, scale)` | A `Drag` (`move`, `end`, `cancel`) on what is under the point, or null |
 | `rightClick(point, scale)` | Ends a live chain, or returns the `MenuSubject` a menu acts on |
@@ -1056,6 +1223,48 @@ screen-pixel grab radius. The hit-test scene is the layout's reference points an
     to calibration and ends a live chain; placing a second point re-enables it. An
     archive **opens in calibration mode**, and a new archive's session starts on calibration rather
     than inheriting the last tool.
+* **The centerline tool** ([#275]). A fourth tool, gated on DPT *and* on the image being labeled
+  complete — tracing stops before track under a car, and a car it does not know about is a car it
+  would trace straight through.
+  * **Its clicks are the run's, and the hit-test does not see them first.** A stored run carries a
+    point every gauge along every track, so almost every click aimed at track would land on one and
+    the tool could not be used at all.
+  * **No click resolves to a centerline point, under any tool** — `CLICK_HIT_KINDS` leaves the kind
+    out. The grab radius is a fingertip in *screen* pixels, which at a fit-to-window zoom on a 48 MP
+    shot is far wider than the gauge the points sit a step apart on, so a click that found one would
+    stop the sensor and car tools placing anything over traced track. A point is reached by a
+    **drag**, which moves it, and by the **menu**, which deletes it. A right-click **selects** the
+    line it names, which is how its handles come on screen — and then a second press on one of them
+    names the point.
+  * The **first click is not snapped** — a cross-section needs a direction and there is none yet.
+    The second gives both of them one, then the fill steps a gauge at a time between them
+    (`centerlineSnap.ts`). A click the snap refuses is **kept where it was made**, so a run carries
+    on past a car or a gap, and the spot is marked. A click on track under a car is refused outright,
+    naming the remedy: another image has that track free.
+  * **Enter, a double-click, a tool switch or a right-click ends the run**, which stores it as
+    **one** entry targeting the whole centerline list; Escape drops it. A run of **fewer than two
+    points is not stored** — one point is not a run and carries no direction. A run that starts
+    within `EXTEND_G` (half a gauge) of an existing line's end **extends that line**, and starts at
+    the line's own end rather than at the click, so there is no half-gauge kink at the join.
+  * **Undo while a run is live removes its last click** and the stretch that click asked for, and
+    **cannot reach past the run's start** — the same rule as a chain of cars, and here it matters
+    more: the run is not on the stack at all until it ends, so reaching past its start would undo
+    the edit *before* the trace began.
+  * **A run records which end it is extending**, rather than comparing its first point with the
+    line's. The opening click is snapped once the second gives it a direction, so by the time the run
+    is stored its first point is no longer the end it left from — and a comparison would splice the
+    stretch onto whichever end happened to match.
+  * **A point drag is not re-snapped.** The drag *is* the person overriding the snap. It is also the
+    one handle `dragTo` does not round: a centerline point is a measurement, fractional to a
+    sixteenth of a gauge, and rounding would move every point a drag merely touched — and defeat the
+    no-op suppression, since the point would no longer compare equal to where it started.
+  * Deleting the last point of a line takes the **line** with it, rather than leaving a one-point
+    stub the tracing never made.
+  * Centerlines are **not in the manifest**, and that is the only part of #275 that waits: the field
+    arrives with rails49/r49#52 and a catalog bump, and the pinned `@rails49/r49` refuses
+    `layout.centerlines` as `manifest/unknown-key`, so an archive saved with one would not reopen.
+    The list is the session's and `EditHistory` reaches it through a `CenterlineStore`, so every
+    rule above it is already the final one.
 * **Reference points.** A click is hit-tested against the layout's points with
   `DEFAULT_GRAB_RADIUS_SCREEN_PX`. A hit asks the editor for a new world position for that point; a
   miss under the calibration tool asks for one for the clicked pixel, **rounded to a whole pixel** — a
@@ -1356,9 +1565,19 @@ The editor's tools, in one list that drives both the rail's buttons and the sess
 
 | Export | Description |
 |---|---|
-| `EditorTool` | `'calibration' \| 'sensor' \| 'car'` |
-| `TOOLS` | Each tool's icon, label and `needsDpt` |
+| `EditorTool` | `'calibration' \| 'sensor' \| 'car' \| 'centerline'` |
+| `TOOLS` | Each tool's icon, label, `needsDpt` and `needsLabeledComplete` |
 | `GATE_REASON` | The disabled tools' tooltip while DPT is unresolved |
+| `COMPLETE_REASON` | The centerline tool's tooltip while the image on screen is not labeled complete |
+
+**Two gates, and they are not symmetric** ([#275]). `needsDpt` is the **archive's**: nothing the
+person does to the image lifts it, so `EditSession._settle` drops a tool held by it back to
+calibration. `needsLabeledComplete` is the **image's**, true for the centerline tool alone, and it
+is lifted by selecting another image — so the tool is *not* dropped, because dropping it would end a
+run on every image switch, and tracing a run across several images is exactly how track under a car
+gets traced. `EditSession.toolReason(tool)` is the one answer the rail disables on and the session
+refuses on; DPT is reported first, because naming an image's completeness on an uncalibrated archive
+would send the person at the wrong problem.
 
 ---
 
@@ -1410,9 +1629,43 @@ Camera helpers, shared by both views.
 
 | Export | Description |
 |---|---|
-| `DEFAULT_CAMERA_CONSTRAINTS` | 1920×1080 ideal, rear-facing, no audio |
+| `DEFAULT_CAMERA_CONSTRAINTS` | 1920×1080 ideal, rear-facing, no audio — what the **live view** opens |
 | `getCameraStream(constraints?)` | `getUserMedia` wrapper; returns a `MediaStream` |
-| `captureFromCamera()` | Opens the camera, grabs one JPEG frame as a `Uint8Array`, and always stops the tracks — with a 5 s timeout |
+| `captureFromCamera()` | Opens the camera, raises the video track to the largest size it reports, grabs one JPEG frame at that size as a `Uint8Array`, and always stops the tracks — a 5 s wait for a playing stream, then up to 2 s more for the raised size |
+
+* **A capture is as large as the camera offers** ([#273]). `captureFromCamera` reads the video
+  track's `getCapabilities()` and asks for the largest `width.max` × `height.max` it reports, so a
+  4K-capable phone stores a 3840×2160 frame — about DPT 16 — where the 1920×1080 ideal gave about
+  DPT 8. That matters because a capture into an empty archive is what `camera.resolution` is taken
+  from ([#254]) and DPT is pixels per track width in that frame.
+* **Two attempts, exact then ideal, and the size is read back.** `width.max` and `height.max` are
+  independent ranges, so their pair can be a mode the track has not got — a camera with a 16:9 video
+  mode and a 4:3 one reports maxima from both. `exact` asks for the claim outright; where that is
+  refused, `ideal` asks the browser for its nearest supported mode. What the track then reports from
+  `getSettings()` is the size the capture waits for, because under `ideal` the browser chooses.
+* **The raise happens before the stream reaches the `<video>`**, so the element's first metadata is
+  already the raised size, and the capture additionally waits — up to 2 s — for the element to report
+  that size before it draws. The canvas is sized from `videoWidth`/`videoHeight`, which is what
+  `drawImage` actually draws, so a stale one would both store the pre-raise frame and declare the
+  archive from it. Past that wait it draws what the element does report: a photograph at the smaller
+  size beats no photograph.
+* **Two raises are not attempted at all.** One into a **portrait** frame — capabilities whose
+  `height.max` exceeds their `width.max` — because `../SPEC.md` § Images refuses a portrait array on
+  the way in, so it would cost a refusal and no photograph; and one **no larger** than the stream as
+  opened, which is a reconfigure for nothing.
+* **Where the raise cannot happen, the stream is captured as it opened.** A browser with no
+  `getCapabilities`, capabilities naming no size, and an `applyConstraints` that rejects both
+  attempts all take that path. The stream is still opened with `DEFAULT_CAMERA_CONSTRAINTS`, so that
+  fallback is 1080p rather than the browser's own default; an ideal does not cap the raise, which
+  replaces the track's constraints outright.
+* **The live view's resolution is unchanged** — it opens `DEFAULT_CAMERA_CONSTRAINTS` and raises
+  nothing ([#277] decides it, after the classifier measures 4K in Safari).
+* **A capture into an archive declared at another size is refused**, in the existing words
+  ([#260], `rr-editor-view`), and `captureFromCamera` takes no target size — so an archive whose
+  `camera.resolution` came from 1080p images will refuse every 4K capture, and an archive is one
+  frame or the other. That is the rule [#273] asked for: the refusal is what keeps labels and the
+  frame they were authored in together, and a raised capture is for the **new** archive the
+  classifier's video test set is built from.
 
 ---
 
@@ -1477,10 +1730,11 @@ exporter.
 
 | Export | Description |
 |---|---|
-| `EditHistory` | `attach`, `record`, `beginGesture`, `undo`, `redo`, `markSaved`; `canUndo`/`canRedo`/`undoEntry`/`redoEntry`/`undoLabel`/`redoLabel`/`isDirty`/`size`/`bytes` |
-| `HistoryTarget` | `{ kind: 'layout' }`, `{ kind: 'image', filename }`, or `{ kind: 'images' }` |
+| `EditHistory` | `attach(archive, centerlines?)`, `record`, `beginGesture`, `undo`, `redo`, `markSaved`; `canUndo`/`canRedo`/`undoEntry`/`redoEntry`/`undoLabel`/`redoLabel`/`isDirty`/`size`/`bytes` |
+| `HistoryTarget` | `{ kind: 'layout' }`, `{ kind: 'image', filename }`, `{ kind: 'images' }`, or `{ kind: 'centerlines' }` |
+| `CenterlineStore` | `{ read, write }` — the centerline list a `centerlines` entry snapshots ([#275]) |
 | `HistoryEntry` | What `undo`/`redo` return, so the caller can reveal what changed. Carries `highlights` |
-| `HistoryHighlight` | One object an entry changed: `{ kind: 'car' \| 'sensor', id }` or `{ kind: 'calibration', px }` |
+| `HistoryHighlight` | One object an entry changed: `{ kind: 'car' \| 'sensor' \| 'centerline', id }` or `{ kind: 'calibration', px }` |
 | `changedObjects(target, before, after)` | The diff behind `highlights`. Pure, and exported for its own tests |
 | `revealTarget(entry)` | The image an entry must bring into view before it lands, or `undefined`. `EditSession` reads it before an undo or redo. Takes `null` too, since it is asked of a *pending* entry |
 | `HistoryGesture` | An open gesture. One method, `commit()`, returning whether an entry was recorded |
@@ -1500,6 +1754,16 @@ for one gesture, and `attach` drops an open gesture with the archive it snapshot
 
 That **one entry can cover several objects** falls out of the target being a subtree: a coupler drag
 moves two cars inside one image record, and a single `{ kind: 'image' }` gesture already covers both.
+
+**`centerlines` is the one target that is not in the manifest** ([#275]). Centerlines are an
+additive `.r49` field arriving with rails49/r49#52, and the pinned `@rails49/r49` refuses
+`layout.centerlines`, so until the bump the list is `EditSession`'s and this reaches it through the
+`CenterlineStore` given to `attach`. Everything else is identical — snapshots, no-op suppression,
+gestures, the byte budget — which is the whole reason it is routed through here instead of tracing
+getting an undo stack of its own; when the field lands, the store becomes a read and a write of
+`manifest.layout` and nothing else changes. It snapshots the **whole list**, so undoing an *extend*
+cannot leave a line half extended, and its highlight is the **line**, by id: a point is one of
+hundreds a gauge apart, and glowing one of them would be a glow nobody could find.
 
 Two guards follow. **Undo and redo are refused while a gesture is open** — the drag has already
 mutated the manifest outside the stack, so applying an older snapshot over it would leave the commit
@@ -1567,4 +1831,7 @@ it('renders <img> when src is set', async () => {
 are absent, so `rr-viewer`'s tests stub `createSVGPoint`/`getScreenCTM` per test. Assert DOM
 structure, attributes, and emitted events — visual appearance cannot be verified here.
 
-`capture.ts` has no tests yet.
+`capture.ts`'s tests fake the whole device ([#273]): a camera object whose `getSettings()`,
+`getCapabilities()` and `applyConstraints()` are the track's, and a stub `<video>`/`<canvas>` pair
+standing in for the decode and the paint jsdom has neither of. They assert what size the capture
+asked the track for and what size it encoded, never what the frame contains.

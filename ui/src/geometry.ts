@@ -115,24 +115,7 @@ export type CarCorners = readonly [Point, Point, Point, Point];
  * picking an arbitrary one would draw a rectangle the user did not describe.
  */
 export function carCorners(p0: Point, p1: Point, dpt: number): CarCorners {
-  const dx = p1.x - p0.x;
-  const dy = p1.y - p0.y;
-  const length = Math.hypot(dx, dy);
-  if (length === 0) {
-    return [{ ...p0 }, { ...p0 }, { ...p0 }, { ...p0 }];
-  }
-
-  // Unit normal to the span, scaled to half a car width.
-  const half = carWidthPx(dpt) / 2;
-  const nx = (dy / length) * half;
-  const ny = (-dx / length) * half;
-
-  return [
-    { x: p0.x + nx, y: p0.y + ny },
-    { x: p1.x + nx, y: p1.y + ny },
-    { x: p1.x - nx, y: p1.y - ny },
-    { x: p0.x - nx, y: p0.y - ny },
-  ];
+  return orientedRect(p0, p1, carWidthPx(dpt) / 2);
 }
 
 /** The image the editor draws into, in image pixels — `rr-viewer`'s `resolution`. */
@@ -337,7 +320,17 @@ export type HitTarget =
    * A calibration point, keyed by position in `layout.calibration.points`.
    * Points carry no id because nothing references one individually.
    */
-  | { readonly kind: 'calibration'; readonly index: number };
+  | { readonly kind: 'calibration'; readonly index: number }
+  /**
+   * One point of a traced centerline, keyed by its run's id and its position
+   * along that run.
+   *
+   * An index, like a calibration point, because a centerline's points carry no
+   * ids of their own — they are a measurement of one line, not a set of objects
+   * that anything references individually. The run's id makes the pair a name:
+   * deleting a point renumbers only the points after it on that one line.
+   */
+  | { readonly kind: 'centerline-point'; readonly id: string; readonly index: number };
 
 /** Everything a pointer can land on, for one image of one layout. */
 export interface HitScene {
@@ -347,6 +340,30 @@ export interface HitScene {
   readonly sensors: readonly Sensor[];
   /** The layout's calibration points. */
   readonly calibrationPoints: readonly ReferencePoint[];
+  /**
+   * The archive's traced centerlines — per archive, so they show on every image
+   * exactly as sensors do.
+   *
+   * Required rather than optional for the reason `kinds` is not a filter on the
+   * scene: a caller that left them out would be asking a different question
+   * than the one the user is looking at, and `[]` says "none traced" out loud.
+   */
+  readonly centerlines: readonly Centerline[];
+  /**
+   * Which centerline shows its point handles, or `null`.
+   *
+   * It is in the **scene** rather than being a caller's business because
+   * {@link hitTest} offers a `centerline-point` only on this line: a run carries
+   * a point every gauge, only the selected line is drawn with handles
+   * (`centerlineMarker.ts`), and a grab that reached the others would move a
+   * point nobody can see — the same "what is drawn is what is grabbable" rule
+   * {@link sensorDiameterPx} encodes for a sensor, one object along.
+   *
+   * It does **not** narrow {@link centerlineUnderPointer}: a right-click names
+   * the line it landed on whether or not it was selected, which is how a line
+   * gets selected in the first place.
+   */
+  readonly selectedCenterline: string | null;
   /**
    * The layout's DPT, or `null` when calibration resolves none.
    *
@@ -426,10 +443,18 @@ function distanceSq(a: Point, b: Point): number {
  * Couplers are absent because they are never candidates: a coincidence is
  * recognised after the nearest car end has already won.
  */
-const KIND_RANK: Record<'car-endpoint' | 'sensor' | 'calibration', number> = {
+const KIND_RANK: Record<
+  'car-endpoint' | 'sensor' | 'calibration' | 'centerline-point',
+  number
+> = {
   'car-endpoint': 0,
   sensor: 1,
   calibration: 2,
+  // Last, and that is the decision rather than the leftover slot. A centerline
+  // carries a point every gauge along every run of track, so on a tie it is the
+  // thing most likely to be *under* something rather than the thing being
+  // aimed at; a car end or a sensor placed on the line must win.
+  'centerline-point': 3,
 };
 
 /** What can be *found* directly. A coupler is derived, never a candidate. */
@@ -442,7 +467,12 @@ type CandidateTarget = Extract<HitTarget, { kind: keyof typeof KIND_RANK }>;
 export type HitKind = CandidateTarget['kind'];
 
 /** Every kind, which is what a caller that says nothing means. */
-const ALL_HIT_KINDS: readonly HitKind[] = ['car-endpoint', 'sensor', 'calibration'];
+const ALL_HIT_KINDS: readonly HitKind[] = [
+  'car-endpoint',
+  'sensor',
+  'calibration',
+  'centerline-point',
+];
 
 interface Candidate {
   readonly target: CandidateTarget;
@@ -513,6 +543,14 @@ export function hitTest(
       push({ kind: 'calibration', index }, p.px, pointerReach);
     });
   }
+  if (kinds.includes('centerline-point')) {
+    // The selected line alone: it is the only one drawn with handles, and a
+    // grab must not reach a point nobody can see. See `HitScene`.
+    const selected = scene.centerlines.find(line => line.id === scene.selectedCenterline);
+    selected?.points.forEach((point, index) => {
+      push({ kind: 'centerline-point', id: selected.id, index }, point, pointerReach);
+    });
+  }
 
   let best: Candidate | null = null;
   for (const candidate of candidates) {
@@ -573,7 +611,7 @@ export function carCovering(scene: HitScene, at: Point): CarLabel | null {
   if (scene.dpt === null) return null;
   const half = carWidthPx(scene.dpt) / 2;
   for (const car of scene.cars) {
-    const inside = withinSpan(car, at, half);
+    const inside = withinSpan(car.p0, car.p1, at, half);
     // No axis, so no rectangle: it covers the one pixel it sits on.
     if (inside === null ? samePoint(at, car.p0) : inside) return car;
   }
@@ -620,7 +658,7 @@ export function carUnderPointer(
   const reach = tolerance.screenPx * tolerance.imagePxPerScreenPx;
   const half = Math.max(scene.dpt === null ? 0 : carWidthPx(scene.dpt) / 2, reach);
   for (const car of scene.cars) {
-    const inside = withinSpan(car, at, half);
+    const inside = withinSpan(car.p0, car.p1, at, half);
     // No axis and so no rectangle: what is left is the same half-width as a
     // radius, which is the one point the car is drawn as, reachable. The editor
     // refuses to author such a car, so it can only arrive from outside.
@@ -630,22 +668,27 @@ export function carUnderPointer(
 }
 
 /**
- * Whether `at` is inside the rectangle `half` either side of a car's chord, or
- * `null` when the span has no axis and there is no rectangle to be inside of.
+ * Whether `at` is inside the rectangle `half` either side of the chord `p0`–`p1`,
+ * or `null` when the span has no axis and there is no rectangle to be inside of.
  *
  * The **boundary is inside**, and the rectangle is capped at the two ends.
- * Shared by the two area questions so they can differ in their half-width and in
- * nothing else — the arithmetic that makes a diagonal car measure across its own
- * axis rather than across a bounding box half again too big is written once.
+ * Shared by every area question so they can differ in their half-width, in their
+ * span and in nothing else — the arithmetic that makes a diagonal car measure
+ * across its own axis rather than across a bounding box half again too big is
+ * written once.
+ *
+ * It takes a **span** rather than a `CarLabel` because a car's area for tracing
+ * is the label's span lengthened at both ends ({@link inCarArea}), which is not
+ * a `CarLabel` and must not be measured by a second copy of this.
  */
-function withinSpan(car: CarLabel, at: Point, half: number): boolean | null {
-  const dx = car.p1.x - car.p0.x;
-  const dy = car.p1.y - car.p0.y;
+function withinSpan(p0: Point, p1: Point, at: Point, half: number): boolean | null {
+  const dx = p1.x - p0.x;
+  const dy = p1.y - p0.y;
   const length = Math.hypot(dx, dy);
   if (length === 0) return null;
 
-  const ax = at.x - car.p0.x;
-  const ay = at.y - car.p0.y;
+  const ax = at.x - p0.x;
+  const ay = at.y - p0.y;
   // Both distances scaled by the span's length rather than divided by it:
   // a point exactly on the edge must read as exactly on the edge, and a
   // division introduces the rounding that would put it just outside.
@@ -665,7 +708,8 @@ function withinSpan(car: CarLabel, at: Point, half: number): boolean | null {
 export type HandleRef =
   | { readonly kind: 'calibration'; readonly index: number }
   | { readonly kind: 'car-end'; readonly id: string; readonly end: 'p0' | 'p1' }
-  | { readonly kind: 'sensor'; readonly id: string };
+  | { readonly kind: 'sensor'; readonly id: string }
+  | { readonly kind: 'centerline-point'; readonly id: string; readonly index: number };
 
 /** One point a drag moves, and where it sat when the gesture began. */
 export interface DragHandle {
@@ -698,6 +742,13 @@ export function dragHandles(hit: HitTarget, scene: HitScene): readonly DragHandl
       const found = scene.sensors.find((s) => s.id === hit.id);
       return found ? [{ ref: { kind: 'sensor', id: hit.id }, from: { x: found.x, y: found.y } }] : [];
     }
+    case 'centerline-point': {
+      const line = scene.centerlines.find((c) => c.id === hit.id);
+      const point = line?.points[hit.index];
+      return point
+        ? [{ ref: { kind: 'centerline-point', id: hit.id, index: hit.index }, from: point }]
+        : [];
+    }
     case 'car-endpoint':
     case 'coupler': {
       const handles: DragHandle[] = [];
@@ -711,14 +762,24 @@ export function dragHandles(hit: HitTarget, scene: HitScene): readonly DragHandl
 }
 
 /**
- * Where a handle lands for a given drag delta, in whole image pixels.
+ * Where a handle lands for a given drag delta.
  *
- * Rounded because a handle names a pixel, and applied to `from` so every handle
- * in one gesture takes the identical translation — which is what keeps a
- * coupler's two ends on the *same* pixel, and a coupling is exact coincidence.
+ * Applied to `from` so every handle in one gesture takes the identical
+ * translation — which is what keeps a coupler's two ends on the *same* pixel,
+ * and a coupling is exact coincidence.
+ *
+ * **Rounded for everything a person placed, and not for a centerline point.**
+ * A car end, a sensor and a crosshair each name a pixel somebody clicked, and
+ * whole pixels are what makes a coupling testable by equality. A centerline
+ * point is a *measurement* — the snap reports it fractional, to a sixteenth of
+ * a gauge — so rounding it would move every point a drag so much as touched,
+ * which is both a silent edit and a drag returned to its origin that no longer
+ * compares equal to it, defeating the no-op suppression one layer up.
  */
 export function dragTo(handle: DragHandle, delta: Point): Point {
-  return { x: Math.round(handle.from.x + delta.x), y: Math.round(handle.from.y + delta.y) };
+  const at = { x: handle.from.x + delta.x, y: handle.from.y + delta.y };
+  if (handle.ref.kind === 'centerline-point') return at;
+  return { x: Math.round(at.x), y: Math.round(at.y) };
 }
 
 /**
@@ -1099,4 +1160,347 @@ function rectContains(outer: Rect, inner: Rect): boolean {
     inner.x + inner.width <= outer.x + outer.width &&
     inner.y + inner.height <= outer.y + outer.height
   );
+}
+
+/**
+ * One run of track, as a polyline along the middle between its rails, in image
+ * pixels.
+ *
+ * Centerlines belong to the **archive**, not to an image: an archive's images
+ * share one pose, so one tracing serves all of them
+ * ([ADR 0021](../../docs/adr/0021-track-centerlines-are-stored.md)).
+ *
+ * **This is the editor's shape, and not yet the format's.** ADR 0021 makes
+ * centerlines an optional field of `.r49`, and that field arrives with
+ * rails49/r49#52; the pinned `@rails49/r49` refuses `layout.centerlines` as
+ * `manifest/unknown-key`, so nothing in `ui/` writes one into a manifest today
+ * and nothing here reads one out. The shape is deliberately the one the format
+ * will carry — an id and its points in order — so the arithmetic below survives
+ * the bump as a changed import.
+ *
+ * Only polylines. Splines were rejected because every reader of the format would
+ * have to implement the curve, and snapping takes away the tedium they were for
+ * (ADR 0021).
+ */
+export interface Centerline {
+  /** Stable across every save, like a sensor's or a car label's. */
+  readonly id: string;
+  /**
+   * In order along the run, every one a click or a 1 G step between two clicks.
+   * Fewer than two is not a run, and the editor stores none.
+   *
+   * Not thinned: the points are the measurement, and a thinning rule would be a
+   * second opinion about where the track is.
+   */
+  readonly points: readonly Point[];
+}
+
+/**
+ * The patch the classifier judges, across the track and along it, in **gauges**.
+ *
+ * **A placeholder in one named place**, until rails49/classifier#4 picks the
+ * size from what the model actually needs. It is one place rather than two
+ * because the same number sizes the outline drawn at a sensor *and* the reach
+ * that earns a second-centerline warning ({@link secondCenterlineReachPx}) —
+ * the warning says "a car on that track could reach into this patch", which is
+ * a claim about this rectangle and is wrong the moment it is measured against a
+ * different one.
+ *
+ * Gauges rather than pixels for the same reason a car is 2.09 track widths: the
+ * patch is a piece of track, so its size in pixels is a DPT multiply away and
+ * no scale lookup is involved.
+ */
+export const PATCH_ACROSS_G = 3;
+/** @see PATCH_ACROSS_G */
+export const PATCH_ALONG_G = 5;
+
+/**
+ * How far from every centerline a sensor is marked as having no track, in
+ * gauges.
+ *
+ * Half a gauge: a sensor further off than the rail it would sit on is not on
+ * that track, and a sensor with no centerline under it reads **unknown**
+ * (`GLOSSARY.md` § Occupancy), which is what the mark warns the author about
+ * before the live view says it.
+ */
+export const NO_TRACK_G = 0.5;
+
+/**
+ * How far a car's area reaches past the ends of its label's span, in gauges.
+ *
+ * Half a gauge at each end, because a label is the *visible* car and a coupler,
+ * a step and a shadow are not labeled. Track inside this is not traced: the
+ * rails under a car are not visible, so the snap would read the car's own
+ * symmetry and place a point on it.
+ */
+export const CAR_AREA_MARGIN_G = 0.5;
+
+/** Where a point sits against one centerline. */
+export interface CenterlineHit {
+  /** The centerline this measures against. */
+  readonly id: string;
+  /** Distance from the point to the polyline, in image pixels. */
+  readonly distancePx: number;
+  /** The closest point on the polyline. */
+  readonly at: Point;
+  /**
+   * Unit direction of the segment the closest point fell on, pointing the way
+   * the run was traced. Zero for a centerline of one point, which has no
+   * direction and so cannot turn a patch.
+   */
+  readonly direction: Point;
+}
+
+/**
+ * The nearest centerline to `at`, or `null` when the archive has none.
+ *
+ * Nearest by distance to the **polyline**, not to its points: the points are 1 G
+ * apart and a sensor between two of them is on the track, not half a gauge off
+ * it.
+ *
+ * It answers however far away the nearest one is. The *verdict* — that a sensor
+ * is too far from all of them to be on track — is {@link sensorTrack}'s, which
+ * needs the distance this reports in order to reach it.
+ */
+export function nearestCenterline(
+  at: Point,
+  centerlines: readonly Centerline[]
+): CenterlineHit | null {
+  let best: CenterlineHit | null = null;
+  for (const hit of centerlineHits(at, centerlines)) {
+    if (!best || hit.distancePx < best.distancePx) best = hit;
+  }
+  return best;
+}
+
+/**
+ * What the centerlines say about one sensor: which one its patch is turned to,
+ * and the two marks the editor draws on it.
+ *
+ * Both marks are **markers on the photograph**, not toasts: they are a standing
+ * property of where the sensor is, and a toast is for something that just
+ * happened.
+ *
+ * Neither mark moves the sensor and neither moves its patch onto the line.
+ * Snapping sensors onto centerlines is out of scope: a sensor is where the
+ * author wants an answer, and the editor does not get to disagree about where
+ * that is.
+ */
+export interface SensorTrack {
+  /**
+   * The centerline the patch is turned to, or `null` with no centerlines at all.
+   * Still reported when `noTrack` is set, so the editor can say what it measured
+   * against.
+   */
+  readonly nearest: CenterlineHit | null;
+  /** Further than {@link NO_TRACK_G} from every centerline: the no-track mark. */
+  readonly noTrack: boolean;
+  /**
+   * A centerline other than the nearest comes within
+   * {@link secondCenterlineReachPx}: the warning mark. A car on that track could
+   * reach into this sensor's patch, so the classifier would be judging two
+   * tracks at once.
+   */
+  readonly secondCenterline: boolean;
+}
+
+/**
+ * {@link SensorTrack} for a point, which is what a sensor is.
+ *
+ * Takes the point rather than the `Sensor` so the same question can be asked of
+ * a pixel the author is only hovering over.
+ */
+export function sensorTrack(
+  at: Point,
+  centerlines: readonly Centerline[],
+  dpt: number
+): SensorTrack {
+  const hits = centerlineHits(at, centerlines);
+  let nearest: CenterlineHit | null = null;
+  for (const hit of hits) {
+    if (!nearest || hit.distancePx < nearest.distancePx) nearest = hit;
+  }
+  const reach = secondCenterlineReachPx(dpt);
+  return {
+    nearest,
+    noTrack: nearest === null || nearest.distancePx > NO_TRACK_G * dpt,
+    secondCenterline: hits.some(hit => hit !== nearest && hit.distancePx <= reach),
+  };
+}
+
+/**
+ * How close a second centerline may come to a sensor before its patch is
+ * warned about, in image pixels.
+ *
+ * Half the patch's width plus half a car's: the question is whether a car
+ * standing on that other track could put pixels inside this patch, and a car is
+ * centred on its own centerline. With the placeholder patch that is
+ * `1.5 + 1.045 = 2.545` gauges.
+ *
+ * It is a **radius**, so it is measured the same way in every direction and
+ * {@link PATCH_ALONG_G} does not enter. That under-warns along the patch: a
+ * centerline crossing the patch's long axis between this radius and
+ * `PATCH_ALONG_G/2 + carWidthPx/2` — 2.545 to 3.545 gauges out with the
+ * placeholder — earns no warning, yet a car on it is 2.09 gauges wide and so
+ * still reaches inside the 2.5-gauge-long patch. The rule as a radius is what
+ * [#275](https://github.com/rails49/occupancy/issues/275) decided, and widening
+ * it to the patch rectangle would change which sensors get flagged — a policy
+ * call, not arithmetic, and one to make when rails49/classifier#4 sets the real
+ * patch. `tests/geometry.test.ts` pins the gap so it stays a decision.
+ *
+ * > The brief on #275 called it "about 2.7 G". The rule it states is the one
+ * > implemented here, and 3 G across with a 2.09 G car gives 2.545 — so the
+ * > number is derived rather than written down, which is also what keeps it
+ * > right when rails49/classifier#4 replaces {@link PATCH_ACROSS_G}.
+ */
+export function secondCenterlineReachPx(dpt: number): number {
+  return (PATCH_ACROSS_G * dpt) / 2 + carWidthPx(dpt) / 2;
+}
+
+/**
+ * The four corners of a sensor's patch, in polygon order, or `null` when
+ * `direction` has no length.
+ *
+ * Centred on the sensor and **turned** to the direction of the nearest
+ * centerline — the sensor is not moved onto the line, and neither is the patch.
+ * Drawing it along the track is what makes a bad tracing show: a patch square to
+ * the frame on diagonal track is the one picture that cannot be mistaken for
+ * working.
+ */
+export function patchCorners(at: Point, direction: Point, dpt: number): CarCorners | null {
+  const along = unitVector(direction);
+  if (!along) return null;
+  const half = (PATCH_ALONG_G * dpt) / 2;
+  return orientedRect(
+    { x: at.x - along.x * half, y: at.y - along.y * half },
+    { x: at.x + along.x * half, y: at.y + along.y * half },
+    (PATCH_ACROSS_G * dpt) / 2
+  );
+}
+
+/**
+ * Whether `at` falls in a car's area: its label's span, one car width across and
+ * lengthened {@link CAR_AREA_MARGIN_G} at each end.
+ *
+ * Boundary inside, as every area question here has it. A car with no axis has no
+ * direction to lengthen along, so what is left is its half-width as a radius —
+ * the same fallback `carUnderPointer` makes, for the same reason.
+ */
+export function inCarArea(car: CarLabel, at: Point, dpt: number): boolean {
+  const margin = CAR_AREA_MARGIN_G * dpt;
+  const along = unitVector({ x: car.p1.x - car.p0.x, y: car.p1.y - car.p0.y });
+  const half = carWidthPx(dpt) / 2;
+  if (!along) return distanceSq(at, car.p0) <= half * half;
+  return (
+    withinSpan(
+      { x: car.p0.x - along.x * margin, y: car.p0.y - along.y * margin },
+      { x: car.p1.x + along.x * margin, y: car.p1.y + along.y * margin },
+      at,
+      half
+    ) === true
+  );
+}
+
+/**
+ * The centerline a **gesture aimed at `at`** means, or `null` when it means
+ * none.
+ *
+ * `carUnderPointer`'s counterpart for a line rather than a rectangle, and here
+ * for the same reason: the context menu has to be able to name a whole
+ * centerline, and {@link hitTest} only finds its *points*. Right-clicking
+ * between two points is right-clicking the line, and a menu that found nothing
+ * there would be a line the user can see and cannot delete.
+ *
+ * Measured to the polyline and floored at a fingertip, with no world-size term:
+ * a centerline is drawn as a stroke, not a footprint, so there is nothing wider
+ * than the pointer to be generous about. Nearest wins, so parallel tracks name
+ * the one actually pointed at.
+ */
+export function centerlineUnderPointer(
+  scene: HitScene,
+  at: Point,
+  tolerance: HitTolerance
+): Centerline | null {
+  const reach = tolerance.screenPx * tolerance.imagePxPerScreenPx;
+  const hit = nearestCenterline(at, scene.centerlines);
+  if (!hit || hit.distancePx > reach) return null;
+  return scene.centerlines.find(line => line.id === hit.id) ?? null;
+}
+
+/** One hit per centerline, in the order given. */
+function centerlineHits(at: Point, centerlines: readonly Centerline[]): CenterlineHit[] {
+  const hits: CenterlineHit[] = [];
+  for (const line of centerlines) {
+    const hit = closestOnCenterline(at, line);
+    if (hit) hits.push(hit);
+  }
+  return hits;
+}
+
+/** Where `at` is closest to one polyline, or `null` when it carries no points. */
+function closestOnCenterline(at: Point, line: Centerline): CenterlineHit | null {
+  const { points } = line;
+  const first = points[0];
+  if (!first) return null;
+  if (points.length === 1) {
+    return {
+      id: line.id,
+      distancePx: Math.hypot(at.x - first.x, at.y - first.y),
+      at: { ...first },
+      direction: { x: 0, y: 0 },
+    };
+  }
+
+  let best: CenterlineHit | null = null;
+  for (let i = 1; i < points.length; i++) {
+    const p0 = points[i - 1];
+    const p1 = points[i];
+    const closest = closestOnSegment(p0, p1, at);
+    const distancePx = Math.hypot(at.x - closest.x, at.y - closest.y);
+    if (best && distancePx >= best.distancePx) continue;
+    best = {
+      id: line.id,
+      distancePx,
+      at: closest,
+      direction: unitVector({ x: p1.x - p0.x, y: p1.y - p0.y }) ?? { x: 0, y: 0 },
+    };
+  }
+  return best;
+}
+
+/** The point of the segment `p0`–`p1` closest to `at`, ends included. */
+function closestOnSegment(p0: Point, p1: Point, at: Point): Point {
+  const dx = p1.x - p0.x;
+  const dy = p1.y - p0.y;
+  const lengthSq = dx * dx + dy * dy;
+  if (lengthSq === 0) return { ...p0 };
+  const t = Math.min(1, Math.max(0, ((at.x - p0.x) * dx + (at.y - p0.y) * dy) / lengthSq));
+  return { x: p0.x + dx * t, y: p0.y + dy * t };
+}
+
+/**
+ * The oriented rectangle `half` either side of the chord `p0`–`p1`, in polygon
+ * order from the `p0` side.
+ *
+ * The one construction behind {@link carCorners} and {@link patchCorners}: a
+ * chord plus a half-width normal, wound the same way, so a patch and a car
+ * cannot be drawn by two rules that disagree about which side is which.
+ */
+function orientedRect(p0: Point, p1: Point, half: number): CarCorners {
+  const along = unitVector({ x: p1.x - p0.x, y: p1.y - p0.y });
+  if (!along) return [{ ...p0 }, { ...p0 }, { ...p0 }, { ...p0 }];
+  const nx = along.y * half;
+  const ny = -along.x * half;
+  return [
+    { x: p0.x + nx, y: p0.y + ny },
+    { x: p1.x + nx, y: p1.y + ny },
+    { x: p1.x - nx, y: p1.y - ny },
+    { x: p0.x - nx, y: p0.y - ny },
+  ];
+}
+
+/** `v` scaled to unit length, or `null` when it has none. */
+function unitVector(v: Point): Point | null {
+  const length = Math.hypot(v.x, v.y);
+  return length === 0 ? null : { x: v.x / length, y: v.y / length };
 }

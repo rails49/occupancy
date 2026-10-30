@@ -12,7 +12,7 @@ The package carries the `.ort` model, so one version pins the runtime and the we
 
 `rails49/r49` owns the `.r49` format. This repository and `rails49/detector` each depend on `@rails49/r49` pinned to a version, so a format change is a release there followed by a version bump in each. Readers and writers keep rejecting unknown keys, so a reader on an older version refuses a newer archive until it upgrades. [ADR 0002](0002-the-repository-stays-public.md) is retired: r49's CI no longer checks out this repository.
 
-`rails49/detector` is AGPL-3.0 because the weights derive from an AGPL checkpoint ([ADR 0003](0003-agpl-because-the-detector-is-fine-tuned-from-agpl-weights.md)). This repository stays AGPL-3.0 because its deploy serves those weights.
+`rails49/detector` is AGPL-3.0 because the weights derive from an AGPL checkpoint ([rails49/detector ADR 0015](https://github.com/rails49/detector/tree/main/docs/adr)). This repository is MIT; its deploy serves those weights, and the site points to rails49/detector as their source.
 
 ## Considered options
 
