@@ -652,6 +652,64 @@ against the same edges: its geometry differs, this decision does not.
 
 ---
 
+### `centerlineSnap.ts`
+
+Where the middle of the track is, from the image's own pixels ([#275]). A pure function of a
+`GrayPlane`, a point, a direction and the gauge in pixels — no canvas, no DOM, no manifest — so a
+jsdom test hands it a synthetic two-rail image and checks where it puts the point. `@occupancy/drift`'s
+plane is the parameter type for the reason that package chose it: it exists in Node as well as in a
+browser, so nothing here is locked to the platform that calls it first.
+
+| Export | Description |
+|---|---|
+| `snapToTrack(plane, at, direction, dpt)` | The `SnapResult` for the middle of the track nearest `at`, or `null` where the section is not symmetric enough to say. Offsets are searched outwards, so a tie keeps the smaller move |
+| `SnapResult` | `{ at, offsetPx, score }` — the snapped point (fractional: it is a measurement), how far across the track it moved, and the score there |
+| `symmetryScore(plane, at, direction, dpt)` | How nearly the cross-section equals its own reflection, `-1`…`1`; `null` off the frame or on a flat band. The measurement `MIN_SYMMETRY` is a threshold on |
+| `traceAlong(plane, from, to, dpt, options?)` | The `Trace` filling the stretch between two clicks: a `TRACE_STEP_G` step along the track, snapped, repeated until the closing click is within a step |
+| `Trace` | `{ points, stop, markAt }` — the points **between** the clicks (neither is included), why stepping ended, and the spot to mark when it stopped short |
+| `TraceStop` | `reached` / `unclear` (the snap refused) / `blocked` (a car's area) / `astray` (the rails led away from the click) |
+| `TraceOptions` | `{ blocked? }` — a predicate, so the rule about cars (`geometry.ts`'s `inCarArea`) stays out of a module that reads pixels |
+| `CROSS_SECTION_G` | Width of the section the score is read from: 3 gauges |
+| `SCORE_INNER_G` | Radius around the candidate left out of the score: a quarter gauge |
+| `SNAP_RANGE_G` | How far the snap may move a point across the track: three quarters of a gauge |
+| `SNAP_PITCH_G` | Spacing of the samples and of the offsets searched: a sixteenth of a gauge |
+| `MIN_SYMMETRY` | The least score accepted as the middle of a track — **a placeholder**, see below |
+| `TRACE_STEP_G` | How far apart a traced run's points are: one gauge |
+
+**Mirror symmetry, not a rail detector** ([ADR 0021]). Rails, ties and roadbed are all symmetric
+about the centerline, so the middle of the track is the offset whose cross-section most nearly
+equals its own reflection. Nothing looks for a rail, measures one, or assumes a railhead is bright,
+which is what lets it work on ballast and in shadow — and what makes it refuse honestly where the
+symmetry is genuinely gone.
+
+**The score is read off a band, not the whole section.** A single rail is perfectly symmetric about
+*itself*, so a score taken across the full cross-section would snap a point onto one rail with the
+other hidden — half a gauge wrong, and confident. Leaving out the middle `SCORE_INNER_G` leaves the
+score reading the railheads and the roadbed shoulders, structure one rail cannot fake because the
+band on its far side is then plain ballast.
+
+**It sees every mirror symmetry, including the wrong ones.** A parallel pair of tracks is symmetric
+about the midline *between* them, and that symmetry scores as well as either track's own.
+`SNAP_RANGE_G` is what keeps it out of reach, and the bound is real: the midline is half the
+spacing away, so a pair would have to be closer than two `SNAP_RANGE_G` — a gauge and a half —
+centre to centre, and two cars 2.09 gauges wide cannot pass on a pair that close. Turnouts and
+crossings have no such bound, which is why they are not traced at all.
+
+**`MIN_SYMMETRY` is not tuned, and is a placeholder in the same sense the patch size is.** It is
+set so the synthetic cases in `tests/centerlineSnap.test.ts` come out right. Picking the real one
+means running the snap on the layout's own photographs and judging the marks it leaves, which is
+what kept [#275] from being an agent's ticket whole. It errs **strict**: too high a floor leaves
+the tool refusing visibly, too low a one stores points half a gauge off in silence.
+
+**`traceAlong` is predictor then corrector.** The step goes along the direction the run is already
+heading — on a curve, the chord of the last step — and the snap then puts the point back on the
+middle, which is what stops one step's error becoming the next one's. It stops rather than
+guessing, four ways, and every stop short names a spot to mark. `astray` is the turnout case the
+other way round: the sections stayed symmetric but led down the other route, and without it a trace
+could circle a loop forever.
+
+---
+
 ### `calibrationMarker.ts`
 
 The calibration point's own SVG, as a module for the same reason `carMarker.ts` is one. **Both exports
