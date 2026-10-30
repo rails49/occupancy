@@ -52,7 +52,7 @@ The box tested keeps the detector's centre, orientation and length and takes the
 >
 > All figures above assume `standard_width = 3000`.
 >
-> Projecting detections onto a track spline and testing overlap along it was rejected. Nearest-spline association is ambiguous where layouts are densest (parallel sidings ~60 px apart at DPT 20, turnouts, yard ladders), and a wrong association reports the wrong track occupied at a rate nothing bounds. It is also unbuildable, since v4 stores no track ([ADR 0010](docs/adr/0010-track-is-not-stored.md)).
+> Projecting detections onto a track spline and testing overlap along it was rejected. Nearest-spline association is ambiguous where layouts are densest (parallel sidings ~60 px apart at DPT 20, turnouts, yard ladders), and a wrong association reports the wrong track occupied at a rate nothing bounds. Storing [centerlines](#track-centerlines-are-stored) ([ADR 0021](docs/adr/0021-track-centerlines-are-stored.md)) makes it buildable and does not revive it: [ADR 0023](docs/adr/0023-occupied-has-a-two-gauge-margin.md) leaves a detection unmatched to any centerline for exactly the ambiguity above. The classifier's training labels do match cars to centerlines, because those come from hand-made spans a person can check.
 
 > ⚠️ Known limitation: a sensor on track the camera cannot see, such as inside a tunnel, reads clear whatever is there. Sensors go on visible track. Making such a sensor unknown would need a per-sensor field, which is a format change. It is not planned.
 
@@ -192,26 +192,40 @@ Validation is synthetic: the fixtures were shot on a tripod, so `tools/drift-ben
 
 > Measured: within an archive the camera is static. `lighting.r49` has a track marker at (202, 591) in image-0 and (202, 592) in image-1. The three `cars *` archives carry byte-identical calibration, which may be a data-entry error. [Issue #6](https://github.com/rails49/occupancy/issues/6) closed this as not worth provisioning against, so v4 records no calibration provenance. A stale calibration failing silently is camera drift, [issue #12](https://github.com/rails49/occupancy/issues/12).
 
-### Location Data: Cars and Sensors
+### Location Data: Cars, Sensors and Centerlines
 
-The format and the editor store two kinds of geometry, in pixel coordinates:
+The format and the editor store three kinds of geometry, in pixel coordinates:
 
 | | Geometry | Scope | Trained on? | Provenance? |
 |---|---|---|---|---|
 | Cars | A [span](GLOSSARY.md#cars-and-labels): two points along the car's centerline | Per image | Yes, the detector's only class | Yes |
 | Sensors | A single point | Per layout | No, an output specification | No |
+| [Centerlines](GLOSSARY.md#cars-and-labels) | A polyline along the middle of one run of track | Per archive | No, the classifier's input geometry | No |
 
 1. Cars. Width is not stored; every car is drawn at the [car width](GLOSSARY.md#cars-and-labels) (rails49/detector's [SPEC § Car width](https://github.com/rails49/detector/blob/main/SPEC.md#car-width-is-derived-from-dpt-never-stored)). [Trains and couplings](GLOSSARY.md#cars-and-labels) are derived from coincident ends and never labeled. Each car carries [provenance](#provenance-is-required-not-optional).
 
 2. [Sensors](GLOSSARY.md#occupancy) are where the deployed system must answer, and they never enter a loss. What they answer with is [Occupancy Output](#occupancy-output). They stay points, not spans: L0 carries full car pose, so block semantics can be derived later, and authoring intervals is UI for a consumer that does not exist yet. Sensors carry no provenance, since no model proposes where a person wants an answer.
 
-#### Track is not stored, and that is a deliberate deferral
+#### Track centerlines are stored
 
-v4 stores no track geometry ([ADR 0010](docs/adr/0010-track-is-not-stored.md), [issue #13](https://github.com/rails49/occupancy/issues/13)). Cars are authored as two clicks on the visible car ends, with no snapping.
+Each archive stores its track [centerlines](GLOSSARY.md#cars-and-labels): polylines along the middle of each run of track, in the same image pixels every other coordinate uses ([ADR 0021](docs/adr/0021-track-centerlines-are-stored.md), superseding [ADR 0010](docs/adr/0010-track-is-not-stored.md); decided in [#272](https://github.com/rails49/occupancy/issues/272), built under [#275](https://github.com/rails49/occupancy/issues/275)).
 
-The cost: the empty-track training crops described in [issue #4](https://github.com/rails49/occupancy/issues/4) cannot be derived. That is owed back only if the ResNet returns.
+They are the [classifier](GLOSSARY.md#occupancy)'s input geometry and nothing else's. A [patch](GLOSSARY.md#occupancy) is centred on a sensor and turned to the direction of the centerline under it, and the classifier's training labels come from where cars stand along that centerline — a car belongs to the one nearest its span midpoint, which keeps a car on the next track from reading as occupied. The **detector**'s output is not matched to a centerline; see [The occupancy test](#the-occupancy-test).
 
-Track authoring returns as a new effort. The closed [issue #14](https://github.com/rails49/occupancy/issues/14) records the open questions: spline creation, control-point editing, Catmull-Rom against Bezier, turnouts, and whether track carries topology.
+* **Per archive, not per image.** An archive's images share one pose, the same assumption [Image Alignment](#image-alignment) rests on, so one tracing serves all of them. Each stretch is traced on whichever image has that track free, and the person may switch images part-way through a run. Between them, an archive's images must show every piece of track with no car on it.
+* **Polylines only.** No splines and no branching: every outside reader of the format would have to implement the curve, and snapping to the rails takes away the tedium splines were for. Points sit one gauge apart and are not thinned — they are the measurement, and a thinning rule would be a second opinion about where the track is.
+* **Traced by snapping, not by drawing.** Rough clicks along a visible run; the editor moves each click to the middle of the track and fills the stretch between two clicks a gauge at a time. The snap is **mirror symmetry**: the middle of the track is the offset, within three quarters of a gauge of the click, whose cross-section about three gauges wide most nearly equals its own reflection. Rails, ties and roadbed are all symmetric about the centerline, so no rail detector is involved. The first click has no direction and stays unsnapped until the second gives it one.
+* **The snap refuses rather than guesses**, and what it refuses is marked on the photograph for the rest of the edit session, not stored. It refuses at a turnout, a crossing, clutter, an occluded rail and the frame edge. A click there is kept unsnapped, so the person can carry on past it.
+* **Turnouts and crossings are not traced.** Their rails confuse the snap, and a sensor with no centerline under it reads [unknown](GLOSSARY.md#occupancy). That is an accepted limitation, not a deferral.
+* **Track under a car is not traced.** A car's area is its label's span, one car width across and half a gauge longer at each end. A click there is refused and stepping stops before it: the rails under a car are not visible, so the snap would read the car's own symmetry. The person traces that stretch on another image.
+* **A run of fewer than two points is not stored.** One point is not a run and carries no direction, so no patch can be turned to it.
+* **Each sensor carries two marks against the centerlines**, drawn in the editor and never as toasts: *no track* when it is more than half a gauge from every centerline, and a *warning* when a second centerline comes within half the patch width plus half a car width — a car on that track could reach into the patch, so the classifier would be judging two tracks at once. Neither mark moves the sensor and neither moves its patch onto the line.
+
+The patch size is a placeholder, 3 gauges across by 5 along, in one named place until [rails49/classifier#4](https://github.com/rails49/classifier/issues/4) picks it from what the model needs.
+
+> The gap today: the snap, the tracing and the geometry are built (`ui/src/centerlineSnap.ts` and `ui/src/geometry.ts`, [#275](https://github.com/rails49/occupancy/issues/275)); the **field** is not. Centerlines are an additive `.r49` field and so arrive with a release of `@rails49/r49` ([rails49/r49#52](https://github.com/rails49/r49/issues/52)) and a bump here — the pinned version refuses `layout.centerlines` as `manifest/unknown-key`, so an archive saved with one would not reopen. The editor's centerline tool, its undo entries and the outlines drawn on the photograph wait on that bump. The symmetry threshold waits on a person trying it against the layout's own photographs.
+
+> The empty-track training crops described in [issue #4](https://github.com/rails49/occupancy/issues/4) become derivable again with centerlines stored, which is most of why [ADR 0021](docs/adr/0021-track-centerlines-are-stored.md) reversed [ADR 0010](docs/adr/0010-track-is-not-stored.md). The spline questions recorded on the closed [issue #14](https://github.com/rails49/occupancy/issues/14) — Catmull-Rom against Bezier, control-point editing, whether track carries topology — are answered by not having splines.
 
 #### Labeling completeness
 
@@ -230,10 +244,13 @@ The editor guides an order:
 
 1. Calibrate: two points minimum.
 2. Label all cars, per image.
+3. Trace the [centerlines](#track-centerlines-are-stored), on images already labeled complete.
 
 Sensors can be placed at any time.
 
-> The workflow had three stages until [issue #13](https://github.com/rails49/occupancy/issues/13) removed track from v4. The removed stage was labeling track.
+> The workflow had three stages until [issue #13](https://github.com/rails49/occupancy/issues/13) removed track from v4, and has three again now that [ADR 0021](docs/adr/0021-track-centerlines-are-stored.md) stores centerlines — but the returning stage is the last rather than the first, and it is tracing rather than labeling.
+
+Tracing comes after labeling rather than before it, which is the one place the order is a gate on *completion* rather than on existence: the trace needs every car on the image it is tracing to be labeled, since a car's labeled span is how it knows which track it may not read. So the centerline tool is offered only on an image marked `labeled_complete`, and only once DPT resolves, since the snap is measured in gauges.
 
 Stages are gated on existence, never on completion. Calibration gates car labeling, because car width is derived from DPT and the width rectangle is the only feedback that a label covers its car. Every stage can be re-entered. Nothing can verify that all cars are labeled, so the only claim of completeness is the person's, recorded as `labeled_complete`.
 
@@ -347,7 +364,8 @@ The first list is ruled out and will not be built here. The second is in scope b
 | | Why |
 | :--- | :--- |
 | Drift correction: homography estimation, re-alignment, fiducials | Out of scope by [ADR 0020](docs/adr/0020-only-the-live-view-measures-drift.md). Drift detection is built; see [Image Alignment](#image-alignment). |
-| Track geometry, and the spline authoring it implies | [ADR 0010](docs/adr/0010-track-is-not-stored.md). See [Track is not stored](#track-is-not-stored-and-that-is-a-deliberate-deferral) and the closed [issue #14](https://github.com/rails49/occupancy/issues/14). |
+| Track splines, branching polylines, and track topology | [ADR 0021](docs/adr/0021-track-centerlines-are-stored.md) stores track as plain polylines per archive, one run at a time. See [Track centerlines are stored](#track-centerlines-are-stored) and the closed [issue #14](https://github.com/rails49/occupancy/issues/14), whose spline questions that answers by not having splines. |
+| Tracing track through a turnout or a crossing, and snapping a sensor onto a centerline | [ADR 0021](docs/adr/0021-track-centerlines-are-stored.md). A sensor there reads [unknown](GLOSSARY.md#occupancy), and a sensor is where its author wants an answer. |
 | Populating car subtypes such as `stock.loco.steam` | The mechanism exists; no subtype is labeled here. Adding one is a vocabulary entry in a `@rails49/r49` release, a `detector.classes` entry and a retrain in rails49/detector, and a version bump of each package here, with no relabeling ([rails49/detector ADR 0009](https://github.com/rails49/detector/blob/main/docs/adr/0009-config-yaml-is-authored-and-classes-is-append-only.md)). |
 | Calibration provenance: authoring-image references, per-point names, content fingerprints | Settled in [issue #6](https://github.com/rails49/occupancy/issues/6). The general case is camera drift. |
 | Coupling as a class or a field | Derivable from L0 as two box endpoints coinciding. A 96 px crop cannot see the relation between two cars that defines a coupler, which is why hand-placed coupling markers never worked. |

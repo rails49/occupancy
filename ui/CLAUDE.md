@@ -41,6 +41,7 @@ you are touching:
 | the rail's tools, DPT | The calibration gate |
 | `rr-viewer`, zoom, what each view draws | `rr-viewer` is shared; Zoom; What the three views draw |
 | editor geometry, `geometry.ts` | `geometry.ts` holds the arithmetic |
+| centerlines, the snap, patch outlines, `centerlineSnap.ts` | The snap is mirror symmetry |
 | `calibrationMarker.ts`, `sensorMarker.ts`, `carMarker.ts` | Markers are modules, not elements |
 | `base` in `vite.config.ts`, `/ort/`, `/shoelace`, `modelAssets.ts` | Absolute asset paths |
 | `detectorSession.ts`, the model | Model loading lives in `detectorSession.ts` |

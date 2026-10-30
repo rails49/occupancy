@@ -323,6 +323,43 @@ that happens to need it first. Rules it encodes, each wrong somewhere if reimple
   one entry can cover several objects. `dragTo` applies the same delta to each handle's
   *pointer-down* position: measured from the press so the grab offset survives, identical across
   handles so coupled ends stay on one pixel.
+* **The patch size is one number, not two.** `PATCH_ACROSS_G` sizes the outline drawn at a sensor
+  *and* `secondCenterlineReachPx`, because the warning claims "a car on that track could reach into
+  this patch" — a claim about that rectangle. Both are placeholders until rails49/classifier#4, so
+  the reach is derived (half the patch width plus half a car's) rather than written down. One
+  `orientedRect` builds a car's rectangle and a patch, so the two cannot be wound differently.
+
+## The snap is mirror symmetry, and the field it feeds is not here yet (#275)
+
+[ADR 0021](adr/0021-track-centerlines-are-stored.md) stores each archive's track centerlines as
+polylines in image pixels, and #275 builds the tool that traces them. What is built is the half that
+reads no manifest: `centerlineSnap.ts` — the snap, the cross-section score and the stepper that fills
+between two clicks — and the arithmetic in `geometry.ts`: the `Centerline` polyline, the nearest-
+centerline measurement, the patch rectangle turned to it, the two sensor marks, and the car area a
+trace may not enter. `ui/README.md` carries the exports and the reasoning.
+
+**Nothing writes `layout.centerlines`, and that is not an oversight.** Centerlines are an additive
+`.r49` field, so they arrive as a release of `@rails49/r49` (rails49/r49#52) and a bump in
+`pnpm-workspace.yaml` (org ADR-0022, and `../CLAUDE.md` § Traps). The pinned version refuses the key
+as `manifest/unknown-key`, so an archive the editor saved with one **would not reopen** — which is
+why the tool, its undo entries and the outlines on the photograph wait for the bump rather than
+shipping against a session-only list that could not be undone or saved either.
+
+Two decisions inside the snap are worth not re-deriving:
+
+* **The score is read off a band**, the cross-section minus its middle quarter gauge. A lone rail is
+  perfectly symmetric about *itself*, so a full-section score snaps onto one rail with the other
+  hidden — half a gauge off, and confident. With the middle out, the band on that rail's far side is
+  plain ballast and there is nothing to match.
+* **The measure is a squared difference against the band's own spread, not a correlation.** Both are
+  blind to brightness and contrast, which a track in shadow needs; only this one also requires the
+  two halves to be the same *size*, and a correlation that accepts any positive multiple is how a
+  roadbed shoulder passes for a railhead.
+
+`MIN_SYMMETRY` is a **placeholder** and says so in the module. Tuning it means running the snap on
+the layout's own photographs and judging the marks it leaves — the part of #275 that was never an
+agent's, and the reason the five ceiling crops and their reference points are still pending the
+maintainer's check.
 
 ## Right-click is a state branch, and the menu knows nothing
 
