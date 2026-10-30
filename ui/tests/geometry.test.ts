@@ -1465,6 +1465,24 @@ describe('sensorTrack', () => {
     expect(sensorTrack(at, [upper, outside], CL_DPT).secondCenterline).to.be.false;
   });
 
+  it('measures the reach as a radius, which under-warns along the patch', () => {
+    // The gap is a decision, not an oversight. A centerline crossing the
+    // patch's long axis 3 G out is past the radius, so no warning — yet a car
+    // on it is 2.09 G wide and still reaches inside the 2.5 G-long patch. #275
+    // decided the rule as a radius, and widening it to the rectangle would
+    // change which sensors get flagged.
+    const reach = secondCenterlineReachPx(CL_DPT);
+    const beyond = 3 * CL_DPT;
+    expect(beyond).to.be.greaterThan(reach);
+    // A car centred on that crossing line still reaches inside the patch.
+    expect(beyond - carWidthPx(CL_DPT) / 2).to.be.lessThan((PATCH_ALONG_G * CL_DPT) / 2);
+    const crossing = centerline('crossing', [
+      { x: 300 + beyond, y: 0 },
+      { x: 300 + beyond, y: 400 },
+    ]);
+    expect(sensorTrack({ x: 300, y: 100 }, [upper, crossing], CL_DPT).secondCenterline).to.be.false;
+  });
+
   it('does not warn about the centerline the sensor is on', () => {
     // One centerline is never its own second one, however close the sensor sits.
     expect(sensorTrack({ x: 300, y: 100 }, [upper], CL_DPT).secondCenterline).to.be.false;

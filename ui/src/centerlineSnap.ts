@@ -240,6 +240,12 @@ export interface TraceOptions {
  * sections stayed symmetric but led down the other route, so the run is no
  * longer going where the click asked. Without it a trace could circle a loop
  * forever.
+ *
+ * Two clicks on one pixel is `reached` with no points — the stretch between
+ * them is genuinely empty. A DPT that does not resolve is `unclear`, because
+ * nothing was measured; calling that `reached` would let a caller store a
+ * straight line between two distant clicks as though the rails had been
+ * followed.
  */
 export function traceAlong(
   plane: GrayPlane,
@@ -249,8 +255,14 @@ export function traceAlong(
   options: TraceOptions = {}
 ): Trace {
   const points: Point[] = [];
+  // Two clicks on one pixel: the stretch between them is genuinely empty, and
+  // there is nothing to mark.
   let direction = unitVector({ x: to.x - from.x, y: to.y - from.y });
-  if (!direction || !(dpt > 0)) return { points, stop: 'reached', markAt: null };
+  if (!direction) return { points: [], stop: 'reached', markAt: null };
+  // No gauge, no cross-section, so nothing was measured. Not `reached`: that
+  // would read as a complete stretch and let a caller store a straight line
+  // between two distant clicks as if the rails had been followed.
+  if (!(dpt > 0)) return { points: [], stop: 'unclear', markAt: { ...from } };
 
   const step = TRACE_STEP_G * dpt;
   let previous = from;

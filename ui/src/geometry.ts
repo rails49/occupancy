@@ -1264,11 +1264,21 @@ export function sensorTrack(
  * centred on its own centerline. With the placeholder patch that is
  * `1.5 + 1.045 = 2.545` gauges.
  *
- * > The brief on [#275](https://github.com/rails49/occupancy/issues/275) called
- * > it "about 2.7 G". The rule it states is the one implemented here, and
- * > 3 G across with a 2.09 G car gives 2.545 — so the number is derived rather
- * > than written down, which is also what keeps it right when
- * > rails49/classifier#4 replaces {@link PATCH_ACROSS_G}.
+ * It is a **radius**, so it is measured the same way in every direction and
+ * {@link PATCH_ALONG_G} does not enter. That under-warns along the patch: a
+ * centerline crossing the patch's long axis between this radius and
+ * `PATCH_ALONG_G/2 + carWidthPx/2` — 2.545 to 3.545 gauges out with the
+ * placeholder — earns no warning, yet a car on it is 2.09 gauges wide and so
+ * still reaches inside the 2.5-gauge-long patch. The rule as a radius is what
+ * [#275](https://github.com/rails49/occupancy/issues/275) decided, and widening
+ * it to the patch rectangle would change which sensors get flagged — a policy
+ * call, not arithmetic, and one to make when rails49/classifier#4 sets the real
+ * patch. `tests/geometry.test.ts` pins the gap so it stays a decision.
+ *
+ * > The brief on #275 called it "about 2.7 G". The rule it states is the one
+ * > implemented here, and 3 G across with a 2.09 G car gives 2.545 — so the
+ * > number is derived rather than written down, which is also what keeps it
+ * > right when rails49/classifier#4 replaces {@link PATCH_ACROSS_G}.
  */
 export function secondCenterlineReachPx(dpt: number): number {
   return (PATCH_ACROSS_G * dpt) / 2 + carWidthPx(dpt) / 2;

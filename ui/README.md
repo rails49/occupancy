@@ -578,7 +578,7 @@ covered today.
 | `SensorTrack` | `{ nearest, noTrack, secondCenterline }` |
 | `patchCorners(at, direction, dpt)` | The four corners of a sensor's patch, in `carCorners`' polygon order, or `null` for a direction with no length. Centred on the sensor and turned to the direction given — nothing moves onto the line |
 | `PATCH_ACROSS_G` / `PATCH_ALONG_G` | The patch's size in gauges, 3 × 5 — **a placeholder in one named place** until rails49/classifier#4 picks it |
-| `secondCenterlineReachPx(dpt)` | How close a second centerline may come before the patch is warned about: half the patch's width plus half a car's, 2.545 G with the placeholder |
+| `secondCenterlineReachPx(dpt)` | How close a second centerline may come before the patch is warned about: half the patch's width plus half a car's, 2.545 G with the placeholder. A **radius**, so it under-warns along the patch's long axis — a decision #275 made, pinned by a test |
 | `NO_TRACK_G` | How far from every centerline a sensor is marked as having no track: half a gauge |
 | `inCarArea(car, at, dpt)` | Whether a pixel falls in a car's area — the label's span, one car width across, lengthened `CAR_AREA_MARGIN_G` at each end. What the centerline trace may not enter |
 | `CAR_AREA_MARGIN_G` | How far that area reaches past each end of the span: half a gauge |
@@ -667,7 +667,7 @@ browser, so nothing here is locked to the platform that calls it first.
 | `symmetryScore(plane, at, direction, dpt)` | How nearly the cross-section equals its own reflection, `-1`…`1`; `null` off the frame or on a flat band. The measurement `MIN_SYMMETRY` is a threshold on |
 | `traceAlong(plane, from, to, dpt, options?)` | The `Trace` filling the stretch between two clicks: a `TRACE_STEP_G` step along the track, snapped, repeated until the closing click is within a step |
 | `Trace` | `{ points, stop, markAt }` — the points **between** the clicks (neither is included), why stepping ended, and the spot to mark when it stopped short |
-| `TraceStop` | `reached` / `unclear` (the snap refused) / `blocked` (a car's area) / `astray` (the rails led away from the click) |
+| `TraceStop` | `reached` / `unclear` (the snap refused, or no DPT resolved) / `blocked` (a car's area) / `astray` (the rails led away from the click) |
 | `TraceOptions` | `{ blocked? }` — a predicate, so the rule about cars (`geometry.ts`'s `inCarArea`) stays out of a module that reads pixels |
 | `CROSS_SECTION_G` | Width of the section the score is read from: 3 gauges |
 | `SCORE_INNER_G` | Radius around the candidate left out of the score: a quarter gauge |

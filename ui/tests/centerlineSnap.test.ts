@@ -345,9 +345,12 @@ describe('traceAlong', () => {
     expect(trace.markAt).to.not.be.null;
   });
 
-  it('refuses a DPT of zero rather than stepping nowhere forever', () => {
+  it('calls a DPT that does not resolve unclear, not reached', () => {
+    // No gauge, no cross-section, so nothing was measured. `reached` would read
+    // as a complete stretch and let the caller keep a straight line between two
+    // distant clicks as though the rails had been followed.
     const trace = traceAlong(straightTrack(), { x: 40, y: 120 }, { x: 300, y: 120 }, 0);
-    expect(trace).to.deep.equal({ points: [], stop: 'reached', markAt: null });
+    expect(trace).to.deep.equal({ points: [], stop: 'unclear', markAt: { x: 40, y: 120 } });
   });
 
   it('holds the trace to the threshold the snap is held to', () => {
