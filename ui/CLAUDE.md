@@ -138,7 +138,7 @@ opens a bump pull request here
 
 Vitest in **jsdom**, `@open-wc/testing` fixtures, `tests/<module>.test.ts` mirroring `src/<module>.ts`.
 `tests/setup.ts` polyfills what jsdom lacks globally (`ResizeObserver`, `Element.animate`,
-`matchMedia`, `URL.createObjectURL`). `capture.ts` has no test file yet; touching it is a chance to add one.
+`matchMedia`, `URL.createObjectURL`).
 
 **jsdom is the whole automated story, and no browser runner is coming** (#109). `@web/test-runner`
 sat in `devDependencies` for months with no config file and no script, running nothing while

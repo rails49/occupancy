@@ -137,6 +137,8 @@ rr-app                          ← shell: owns the editing session and the view
 > [#260]: https://github.com/rails49/occupancy/issues/260
 > [#262]: https://github.com/rails49/occupancy/issues/262
 > [#265]: https://github.com/rails49/occupancy/issues/265
+> [#273]: https://github.com/rails49/occupancy/issues/273
+> [#277]: https://github.com/rails49/occupancy/issues/277
 
 ## State and data flow
 
@@ -1410,9 +1412,43 @@ Camera helpers, shared by both views.
 
 | Export | Description |
 |---|---|
-| `DEFAULT_CAMERA_CONSTRAINTS` | 1920×1080 ideal, rear-facing, no audio |
+| `DEFAULT_CAMERA_CONSTRAINTS` | 1920×1080 ideal, rear-facing, no audio — what the **live view** opens |
 | `getCameraStream(constraints?)` | `getUserMedia` wrapper; returns a `MediaStream` |
-| `captureFromCamera()` | Opens the camera, grabs one JPEG frame as a `Uint8Array`, and always stops the tracks — with a 5 s timeout |
+| `captureFromCamera()` | Opens the camera, raises the video track to the largest size it reports, grabs one JPEG frame at that size as a `Uint8Array`, and always stops the tracks — a 5 s wait for a playing stream, then up to 2 s more for the raised size |
+
+* **A capture is as large as the camera offers** ([#273]). `captureFromCamera` reads the video
+  track's `getCapabilities()` and asks for the largest `width.max` × `height.max` it reports, so a
+  4K-capable phone stores a 3840×2160 frame — about DPT 16 — where the 1920×1080 ideal gave about
+  DPT 8. That matters because a capture into an empty archive is what `camera.resolution` is taken
+  from ([#254]) and DPT is pixels per track width in that frame.
+* **Two attempts, exact then ideal, and the size is read back.** `width.max` and `height.max` are
+  independent ranges, so their pair can be a mode the track has not got — a camera with a 16:9 video
+  mode and a 4:3 one reports maxima from both. `exact` asks for the claim outright; where that is
+  refused, `ideal` asks the browser for its nearest supported mode. What the track then reports from
+  `getSettings()` is the size the capture waits for, because under `ideal` the browser chooses.
+* **The raise happens before the stream reaches the `<video>`**, so the element's first metadata is
+  already the raised size, and the capture additionally waits — up to 2 s — for the element to report
+  that size before it draws. The canvas is sized from `videoWidth`/`videoHeight`, which is what
+  `drawImage` actually draws, so a stale one would both store the pre-raise frame and declare the
+  archive from it. Past that wait it draws what the element does report: a photograph at the smaller
+  size beats no photograph.
+* **Two raises are not attempted at all.** One into a **portrait** frame — capabilities whose
+  `height.max` exceeds their `width.max` — because `../SPEC.md` § Images refuses a portrait array on
+  the way in, so it would cost a refusal and no photograph; and one **no larger** than the stream as
+  opened, which is a reconfigure for nothing.
+* **Where the raise cannot happen, the stream is captured as it opened.** A browser with no
+  `getCapabilities`, capabilities naming no size, and an `applyConstraints` that rejects both
+  attempts all take that path. The stream is still opened with `DEFAULT_CAMERA_CONSTRAINTS`, so that
+  fallback is 1080p rather than the browser's own default; an ideal does not cap the raise, which
+  replaces the track's constraints outright.
+* **The live view's resolution is unchanged** — it opens `DEFAULT_CAMERA_CONSTRAINTS` and raises
+  nothing ([#277] decides it, after the classifier measures 4K in Safari).
+* **A capture into an archive declared at another size is refused**, in the existing words
+  ([#260], `rr-editor-view`), and `captureFromCamera` takes no target size — so an archive whose
+  `camera.resolution` came from 1080p images will refuse every 4K capture, and an archive is one
+  frame or the other. That is the rule [#273] asked for: the refusal is what keeps labels and the
+  frame they were authored in together, and a raised capture is for the **new** archive the
+  classifier's video test set is built from.
 
 ---
 
@@ -1567,4 +1603,7 @@ it('renders <img> when src is set', async () => {
 are absent, so `rr-viewer`'s tests stub `createSVGPoint`/`getScreenCTM` per test. Assert DOM
 structure, attributes, and emitted events — visual appearance cannot be verified here.
 
-`capture.ts` has no tests yet.
+`capture.ts`'s tests fake the whole device ([#273]): a camera object whose `getSettings()`,
+`getCapabilities()` and `applyConstraints()` are the track's, and a stub `<video>`/`<canvas>` pair
+standing in for the decode and the paint jsdom has neither of. They assert what size the capture
+asked the track for and what size it encoded, never what the frame contains.
