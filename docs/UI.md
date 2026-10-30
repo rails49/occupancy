@@ -329,23 +329,42 @@ that happens to need it first. Rules it encodes, each wrong somewhere if reimple
   the reach is derived (half the patch width plus half a car's) rather than written down. One
   `orientedRect` builds a car's rectangle and a patch, so the two cannot be wound differently.
 
-## The snap is mirror symmetry, and the field it feeds is not here yet (#275)
+## The centerline tool, and the one field that is not here yet (#275)
 
 [ADR 0021](adr/0021-track-centerlines-are-stored.md) stores each archive's track centerlines as
-polylines in image pixels, and #275 builds the tool that traces them. What is built is the half that
-reads no manifest: `centerlineSnap.ts` — the snap, the cross-section score and the stepper that fills
-between two clicks — and the arithmetic in `geometry.ts`: the `Centerline` polyline, the nearest-
-centerline measurement, the patch rectangle turned to it, the two sensor marks, and the car area a
-trace may not enter. `ui/README.md` carries the exports and the reasoning.
+polylines in image pixels, and #275 builds the tool that traces them. All of it is here: the snap
+and the stepper (`centerlineSnap.ts`), the arithmetic (`geometry.ts` — the `Centerline` polyline,
+the nearest-centerline measurement, the patch rectangle, the two sensor marks, the car area a trace
+may not enter), the fourth `EditorTool` and its two gates (`tools.ts`, `editSession.ts`), the run
+and its undo entries, point drag and delete, centerline delete, and the layer that draws all of it
+(`centerlineMarker.ts`, `rr-viewer`). `ui/README.md` carries the exports and the per-rule reasoning.
 
-**Nothing writes `layout.centerlines`, and that is not an oversight.** Centerlines are an additive
-`.r49` field, so they arrive as a release of `@rails49/r49` (rails49/r49#52) and a bump in
-`pnpm-workspace.yaml` (org ADR-0022, and `../CLAUDE.md` § Traps). The pinned version refuses the key
-as `manifest/unknown-key`, so an archive the editor saved with one **would not reopen** — which is
-why the tool, its undo entries and the outlines on the photograph wait for the bump rather than
-shipping against a session-only list that could not be undone or saved either.
+**What is *not* here is the format field, and nothing writes `layout.centerlines`.** Centerlines are
+an additive `.r49` field, so they arrive as a release of `@rails49/r49` (rails49/r49#52) and a bump
+in `pnpm-workspace.yaml` (org ADR-0022, and `../CLAUDE.md` § Traps). The pinned version refuses the
+key as `manifest/unknown-key`, so an archive the editor saved with one **would not reopen**. Until
+the bump the list lives on `EditSession` and `EditHistory` reaches it through a `CenterlineStore`
+(§ Every manifest mutation goes through `history.record`), which is what lets every rule above the
+field be the final one: one entry per finished run, per point drag, per point delete, per centerline
+delete, snapshotted and no-op-suppressed by the same machinery as everything else. **When the field
+lands, the store becomes a read and a write of `manifest.layout` and nothing else moves.**
 
-Two decisions inside the snap are worth not re-deriving:
+Three asymmetries in the tool are worth not re-deriving:
+
+* **The centerline tool's clicks are the run's, and the hit-test does not see them first.** A stored
+  run carries a point every gauge along every track, so almost every click aimed at track would land
+  on one and the tool would be unusable. Selecting a line is the *other three* tools' click; drags
+  and the menu are hit-tested under every tool as before.
+* **Its two gates are not symmetric.** `needsDpt` is the archive's and `_settle` drops a tool held
+  by it; `needsLabeledComplete` is the image's and does **not** drop the tool, because dropping it
+  would end a run on every image switch — and tracing one run across several images is how track
+  under a car gets traced at all.
+* **`dragTo` rounds every handle except a centerline point.** A car end, a sensor and a crosshair
+  name a pixel somebody clicked, and whole pixels are what make a coupling testable by equality. A
+  centerline point is a measurement, fractional to a sixteenth of a gauge; rounding it would move
+  every point a drag merely touched and would defeat the no-op suppression one layer up.
+
+Two decisions inside the snap are worth not re-deriving either:
 
 * **The score is read off a band**, the cross-section minus its middle quarter gauge. A lone rail is
   perfectly symmetric about *itself*, so a full-section score snaps onto one rail with the other
@@ -395,7 +414,7 @@ maintainer's check.
 ## Markers are modules, not elements
 
 Custom elements break the SVG namespace when nested in `<svg>`, so `calibrationMarker.ts`,
-`sensorMarker.ts` and `carMarker.ts` are plain-export modules whose exports
+`sensorMarker.ts`, `carMarker.ts` and `centerlineMarker.ts` are plain-export modules whose exports
 (renderer, defs where needed, styles) **must be used together** — the module boundary is the
 encapsulation. Each object type is unmistakable in both shape and colour, a requirement rather than
 taste (`SPEC.md` § Reference points: authored by different tools, meaning different things); README

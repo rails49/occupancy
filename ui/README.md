@@ -401,7 +401,11 @@ image pixel coordinates.
 | `detections` | `readonly Detection[]` | L0 for this frame: dashed oriented boxes at the model's **own** predicted width. Empty in the editor |
 | `cars` | `readonly CarLabel[]` | Car spans to draw: a chord inside its width rectangle. Per **image**, so switching images swaps the whole list; empty in the live view |
 | `pendingCar` | `PendingCar \| null` | The **rubber band** — `{ anchor, to }` for the chain in flight. The one thing here that is not in the manifest; empty in the live view |
-| `highlight` | `ViewerHighlight \| null` | The objects a reveal is pointing at — `{ cars, sensors, calibration }`, ids for the first two and **indices** for the third. Already resolved by `rr-editor-view`; the viewer draws it and decides nothing. `null` in the live view |
+| `centerlines` | `readonly Centerline[]` | The archive's traced centerlines, drawn under every tool with no on/off control ([#275]). Per **archive**, like the sensors. **Empty is the live view** — and the patch outlines and the sensor marks follow from this one list, so passing none draws none of them either |
+| `selectedCenterline` | `string \| null` | Which line shows its point handles. Only the selected one does: a run carries a point every gauge, and every line's handles at once would bury the photograph |
+| `pendingRun` | `readonly Point[] \| null` | The run being traced, drawn dashed — tracing's `pendingCar`, and not in the manifest either |
+| `traceStops` | `readonly Point[]` | Spots where a trace stopped short: a turnout, a crossing, clutter, the frame edge, a car on the track. Session-lived and never stored |
+| `highlight` | `ViewerHighlight \| null` | The objects a reveal is pointing at — `{ cars, sensors, calibration, centerlines }`, ids for all but `calibration`, which is **indices**. Already resolved by `rr-editor-view`; the viewer draws it and decides nothing. `null` in the live view |
 | `zoom` | `Rect \| null` | The region of the **authored frame** on screen ([#44]). `null` is fit — the absence of a zoom, which is exactly what this element drew before the property existed. View state the editor owns; never in the manifest and never in the history. `null` in the live view |
 | `zoomPreview` | `Rect \| null` | The rect being dragged out — zoom's counterpart to `pendingCar`. Drawn in the overlay with a screen-constant stroke, never as an HTML box on the glass |
 | `dpt` | `number \| null` | The scale the **world-sized** symbols are drawn at. `null` falls them back to `symbolSize` |
@@ -710,6 +714,46 @@ could circle a loop forever.
 
 ---
 
+### `centerlineMarker.ts`
+
+The centerline layer's SVG, as a module for the same reason `carMarker.ts` is one ([#275]). **The
+styles and the renderers must be used together** — styles in the host's `static styles`, a renderer
+per object.
+
+| Export | Type | Description |
+|---|---|---|
+| `renderCenterline(line, size, selected?, highlighted?)` | `(Centerline, CenterlineSymbolSize, boolean?, boolean?) => SVGTemplateResult` | The polyline, with a handle on every point **only while selected**. The group carries `data-centerline-id` and each handle `data-point-index`, plus `highlight.ts`'s class when a reveal points at the line |
+| `renderPendingRun(points, size)` | `(readonly Point[], CenterlineSymbolSize) => SVGTemplateResult` | The run in flight: dashed, with a handle on every point |
+| `renderPatch(corners)` | `(CarCorners) => SVGTemplateResult` | A sensor's patch outline |
+| `renderSensorMark(sensor, mark, size)` | `(Sensor, SensorMark, CenterlineSymbolSize) => SVGTemplateResult` | A cross for `no-track`, a ring for `second-centerline`. The group carries `data-mark` and `data-sensor-id` |
+| `renderTraceStop(at, size)` | `(Point, CenterlineSymbolSize) => SVGTemplateResult` | Where a trace stopped short |
+| `sensorPatch(sensor, centerlines, dpt)` | `(Sensor, readonly Centerline[], number \| null) => SensorPatch` | `{ patch, mark }` for one sensor — what the viewer derives rather than being passed |
+| `SensorMark` | `'no-track' \| 'second-centerline'` | |
+| `CenterlineSymbolSize` | `{ handlePx }` | Screen-constant, in image pixels |
+| `centerlineMarkerStyles` | `CSSResult` | The layer's inks and non-scaling strokes |
+
+**Everything here is an outline, never a fill.** A centerline lies on the track the photograph is
+of, and the whole reason to draw it is to check it against the rails underneath; ink that covered
+them would hide the only evidence the author has. The patch is the same argument one step out — it
+is drawn so a bad fit shows ([ADR 0021]), and a tinted rectangle would be the thing hiding it.
+
+**Green is a fourth marker ink.** A crosshair is cyan, a sensor amber, a car white-ish, and a
+centerline had to be none of them: `SPEC.md` § Reference points makes "unmistakable from the other
+tools' objects" a requirement, and a centerline runs *through* sensors and cars rather than beside
+them. The two marks reuse the warning and danger hues, as **strokes on the photograph** rather than
+filled bars in a pane, so they are judged the way a marker ink is (`ui/CLAUDE.md` § Shoelace).
+
+**Nothing is answered while no centerline is traced.** With an empty list every sensor is more than
+half a gauge from every centerline and would wear a no-track cross — a hundred crosses on a freshly
+opened archive, saying nothing. A mark is a claim that *this tracing* missed a sensor, and there is
+no tracing to have missed one. It is also exactly what keeps the live view unchanged: it passes no
+centerlines, so it draws no line, no patch and no mark, with no second property to remember.
+
+**`no-track` wins over `second-centerline`.** A sensor that is on no track has no second one to
+warn about, and two marks on one symbol would read as two problems.
+
+---
+
 ### `calibrationMarker.ts`
 
 The calibration point's own SVG, as a module for the same reason `carMarker.ts` is one. **Both exports
@@ -1005,11 +1049,26 @@ per pick, however many of its files were refused ([#262]). `rr-app` owns the toa
   * `rr-pointer-cancel` cancels the drag: everything goes back and nothing is recorded.
   * **Pointer capture** is `rr-viewer`'s (it takes it on `pointerdown`); what the editor owes it is
     not bailing on coordinates outside the image, so a drag that leaves the viewer still commits.
+* **The centerline tool** ([#275]). The rules are the session's; what the editor owns is four
+  things. **Enter** ends the run being traced and **Escape** drops it, both checked before Escape's
+  zoom-to-fit — a run in flight is what the keystroke is about, and the zoom stays reachable by
+  pressing it again. A **double-click** on the viewer ends the run too, as a native `dblclick` on
+  the host rather than a new `rr-pointer-*` event: the viewer's events exist to turn screen
+  coordinates into image pixels, and "end the run" needs no coordinate. The second click of the
+  pair has already added its point, so the run ends *at* it. And the **pixels**: the snap is a pure
+  function of a `GrayPlane`, which the session cannot produce — `createImageBitmap` and a canvas are
+  the platform's — so `_syncTracePixels` decodes the image on screen with `driftSession.ts`'s
+  `planeFromBytes` and hands it over with `session.setTracePixels`. **Only while the tool is
+  selected**: a plane is one float per pixel, ~195 MB on a 48 MP ceiling shot, and decoding one per
+  image shown would cost that for a tool nobody reached for. The claim on an image is staked
+  *before* the decode and kept whatever it returns, because this runs from `updated()` and a failure
+  that cleared it would spin.
 * **Right-click** ([#29]). `rr-pointer-contextmenu` goes to `session.rightClick`, which ends a live
   chain or names the object a menu acts on. The editor opens `rr-context-menu` at the cursor with
   that subject's rows — **delete** for a reference point, **name and delete** for a sensor,
-  **delete and reclassify** for a car — and a chosen row calls `delete`, `reclassifyCar` or opens the
-  name dialog. Empty image opens nothing.
+  **delete and reclassify** for a car, **delete point and delete centerline** on a centerline point
+  and **delete centerline** between two of them — and a chosen row calls `delete`, `reclassifyCar`
+  or opens the name dialog. Empty image opens nothing.
   * **Reclassify is a submenu generated from the vocabulary in `@rails49/r49`'s data file** ([#35]), through
     `vocabulary.ts`. A new car is the taxonomy's root and refinement is an occasional act, not a
     mode, which is what a submenu says and a persistent picker would not. The **root is never
@@ -1121,8 +1180,12 @@ it gets the objects the entry changed.
 |---|---|
 | `archive`, `history` | The archive and its undo stack |
 | `image`, `imageIndex`, `tool`, `calibrated`, `anchor` | What is on screen, the tool, whether DPT resolves, and where a live chain's next car starts |
-| `car(id)`, `sensor(id)` | The car on the image on screen, or the sensor, with this id; undefined once it is gone |
-| `selectTool`, `selectImage`, `endChain` | Changes to the editing state, none of them recorded |
+| `car(id)`, `sensor(id)`, `centerline(id)` | The car on the image on screen, or the sensor or centerline, with this id; undefined once it is gone |
+| `toolReason(tool)` | Why a tool cannot be used, or null — the **one** answer the rail disables on ([#275]) |
+| `centerlines`, `selectedCenterline`, `run`, `traceStops` | The archive's traced lines, which one shows its points, the run in flight (`{ points, stops }`) and every spot a trace stopped short at this session |
+| `selectCenterline(id)`, `endRun()`, `dropRun()` | The selection; ending a run **stores** it as one entry, dropping it stores nothing |
+| `setTracePixels(filename, plane)` | The pixels the snap reads, for one image. The editor decodes and pushes them in; with none the snap is simply not run |
+| `selectTool`, `selectImage`, `endChain` | Changes to the editing state, none of them recorded. `selectTool` **ends** a run; `selectImage` deliberately does not |
 | `click(point, scale)` | Writes, or returns what the editor must ask for: a reference point's world position, a sensor's name, or a notice |
 | `beginDrag(point, scale)` | A `Drag` (`move`, `end`, `cancel`) on what is under the point, or null |
 | `rightClick(point, scale)` | Ends a live chain, or returns the `MenuSubject` a menu acts on |
@@ -1150,6 +1213,38 @@ screen-pixel grab radius. The hit-test scene is the layout's reference points an
     to calibration and ends a live chain; placing a second point re-enables it. An
     archive **opens in calibration mode**, and a new archive's session starts on calibration rather
     than inheriting the last tool.
+* **The centerline tool** ([#275]). A fourth tool, gated on DPT *and* on the image being labeled
+  complete — tracing stops before track under a car, and a car it does not know about is a car it
+  would trace straight through.
+  * **Its clicks are the run's, and the hit-test does not see them first.** A stored run carries a
+    point every gauge along every track, so almost every click aimed at track would land on one and
+    the tool could not be used at all. Selecting a line is therefore the *other three* tools' click;
+    dragging and the menu are hit-tested under every tool as before.
+  * The **first click is not snapped** — a cross-section needs a direction and there is none yet.
+    The second gives both of them one, then the fill steps a gauge at a time between them
+    (`centerlineSnap.ts`). A click the snap refuses is **kept where it was made**, so a run carries
+    on past a car or a gap, and the spot is marked. A click on track under a car is refused outright,
+    naming the remedy: another image has that track free.
+  * **Enter, a double-click, a tool switch or a right-click ends the run**, which stores it as
+    **one** entry targeting the whole centerline list; Escape drops it. A run of **fewer than two
+    points is not stored** — one point is not a run and carries no direction. A run that starts
+    within `EXTEND_G` (half a gauge) of an existing line's end **extends that line**, and starts at
+    the line's own end rather than at the click, so there is no half-gauge kink at the join.
+  * **Undo while a run is live removes its last click** and the stretch that click asked for, and
+    **cannot reach past the run's start** — the same rule as a chain of cars, and here it matters
+    more: the run is not on the stack at all until it ends, so reaching past its start would undo
+    the edit *before* the trace began.
+  * **A point drag is not re-snapped.** The drag *is* the person overriding the snap. It is also the
+    one handle `dragTo` does not round: a centerline point is a measurement, fractional to a
+    sixteenth of a gauge, and rounding would move every point a drag merely touched — and defeat the
+    no-op suppression, since the point would no longer compare equal to where it started.
+  * Deleting the last point of a line takes the **line** with it, rather than leaving a one-point
+    stub the tracing never made.
+  * Centerlines are **not in the manifest**, and that is the only part of #275 that waits: the field
+    arrives with rails49/r49#52 and a catalog bump, and the pinned `@rails49/r49` refuses
+    `layout.centerlines` as `manifest/unknown-key`, so an archive saved with one would not reopen.
+    The list is the session's and `EditHistory` reaches it through a `CenterlineStore`, so every
+    rule above it is already the final one.
 * **Reference points.** A click is hit-tested against the layout's points with
   `DEFAULT_GRAB_RADIUS_SCREEN_PX`. A hit asks the editor for a new world position for that point; a
   miss under the calibration tool asks for one for the clicked pixel, **rounded to a whole pixel** — a
@@ -1450,9 +1545,19 @@ The editor's tools, in one list that drives both the rail's buttons and the sess
 
 | Export | Description |
 |---|---|
-| `EditorTool` | `'calibration' \| 'sensor' \| 'car'` |
-| `TOOLS` | Each tool's icon, label and `needsDpt` |
+| `EditorTool` | `'calibration' \| 'sensor' \| 'car' \| 'centerline'` |
+| `TOOLS` | Each tool's icon, label, `needsDpt` and `needsLabeledComplete` |
 | `GATE_REASON` | The disabled tools' tooltip while DPT is unresolved |
+| `COMPLETE_REASON` | The centerline tool's tooltip while the image on screen is not labeled complete |
+
+**Two gates, and they are not symmetric** ([#275]). `needsDpt` is the **archive's**: nothing the
+person does to the image lifts it, so `EditSession._settle` drops a tool held by it back to
+calibration. `needsLabeledComplete` is the **image's**, true for the centerline tool alone, and it
+is lifted by selecting another image — so the tool is *not* dropped, because dropping it would end a
+run on every image switch, and tracing a run across several images is exactly how track under a car
+gets traced. `EditSession.toolReason(tool)` is the one answer the rail disables on and the session
+refuses on; DPT is reported first, because naming an image's completeness on an uncalibrated archive
+would send the person at the wrong problem.
 
 ---
 
@@ -1605,10 +1710,11 @@ exporter.
 
 | Export | Description |
 |---|---|
-| `EditHistory` | `attach`, `record`, `beginGesture`, `undo`, `redo`, `markSaved`; `canUndo`/`canRedo`/`undoEntry`/`redoEntry`/`undoLabel`/`redoLabel`/`isDirty`/`size`/`bytes` |
-| `HistoryTarget` | `{ kind: 'layout' }`, `{ kind: 'image', filename }`, or `{ kind: 'images' }` |
+| `EditHistory` | `attach(archive, centerlines?)`, `record`, `beginGesture`, `undo`, `redo`, `markSaved`; `canUndo`/`canRedo`/`undoEntry`/`redoEntry`/`undoLabel`/`redoLabel`/`isDirty`/`size`/`bytes` |
+| `HistoryTarget` | `{ kind: 'layout' }`, `{ kind: 'image', filename }`, `{ kind: 'images' }`, or `{ kind: 'centerlines' }` |
+| `CenterlineStore` | `{ read, write }` — the centerline list a `centerlines` entry snapshots ([#275]) |
 | `HistoryEntry` | What `undo`/`redo` return, so the caller can reveal what changed. Carries `highlights` |
-| `HistoryHighlight` | One object an entry changed: `{ kind: 'car' \| 'sensor', id }` or `{ kind: 'calibration', px }` |
+| `HistoryHighlight` | One object an entry changed: `{ kind: 'car' \| 'sensor' \| 'centerline', id }` or `{ kind: 'calibration', px }` |
 | `changedObjects(target, before, after)` | The diff behind `highlights`. Pure, and exported for its own tests |
 | `revealTarget(entry)` | The image an entry must bring into view before it lands, or `undefined`. `EditSession` reads it before an undo or redo. Takes `null` too, since it is asked of a *pending* entry |
 | `HistoryGesture` | An open gesture. One method, `commit()`, returning whether an entry was recorded |
@@ -1628,6 +1734,16 @@ for one gesture, and `attach` drops an open gesture with the archive it snapshot
 
 That **one entry can cover several objects** falls out of the target being a subtree: a coupler drag
 moves two cars inside one image record, and a single `{ kind: 'image' }` gesture already covers both.
+
+**`centerlines` is the one target that is not in the manifest** ([#275]). Centerlines are an
+additive `.r49` field arriving with rails49/r49#52, and the pinned `@rails49/r49` refuses
+`layout.centerlines`, so until the bump the list is `EditSession`'s and this reaches it through the
+`CenterlineStore` given to `attach`. Everything else is identical — snapshots, no-op suppression,
+gestures, the byte budget — which is the whole reason it is routed through here instead of tracing
+getting an undo stack of its own; when the field lands, the store becomes a read and a write of
+`manifest.layout` and nothing else changes. It snapshots the **whole list**, so undoing an *extend*
+cannot leave a line half extended, and its highlight is the **line**, by id: a point is one of
+hundreds a gauge apart, and glowing one of them would be a glow nobody could find.
 
 Two guards follow. **Undo and redo are refused while a gesture is open** — the drag has already
 mutated the manifest outside the stack, so applying an older snapshot over it would leave the commit
