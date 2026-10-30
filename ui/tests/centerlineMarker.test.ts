@@ -155,6 +155,28 @@ describe('the centerline layer', () => {
   });
 });
 
+describe('the patch memo', () => {
+  it('recomputes only when the sensors, the lines or the DPT change', async () => {
+    // Every sensor is measured against every *point* of every centerline, and a
+    // run carries one per gauge; render runs on every pointer-move, so this is
+    // a frame budget rather than a one-off.
+    const el = await viewer({ centerlines: [line], sensors: [sensor('s1', 140, 100)] });
+    const first = svg(el).querySelector('polygon.patch')!.getAttribute('points');
+
+    // A render with none of the three changed: same answer, from the memo.
+    el.pendingRun = [{ x: 1, y: 1 }];
+    await el.updateComplete;
+    expect(svg(el).querySelector('polygon.patch')!.getAttribute('points')).to.equal(first);
+
+    // A new list by value — which is how `EditSession` writes every change —
+    // misses the memo and the patch follows.
+    el.centerlines = [{ id: 'L1', points: line.points.map(p => ({ x: p.x, y: p.y + 60 })) }];
+    await el.updateComplete;
+    expect(svg(el).querySelector('polygon.patch')).to.be.null;
+    expect(svg(el).querySelector('.sensor-mark')!.getAttribute('data-mark')).to.equal('no-track');
+  });
+});
+
 describe('sensorPatch', () => {
   it('answers nothing while no centerline is traced', () => {
     // With an empty list every sensor is more than half a gauge from every

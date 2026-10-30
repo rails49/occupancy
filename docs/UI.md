@@ -351,10 +351,16 @@ lands, the store becomes a read and a write of `manifest.layout` and nothing els
 
 Three asymmetries in the tool are worth not re-deriving:
 
-* **The centerline tool's clicks are the run's, and the hit-test does not see them first.** A stored
-  run carries a point every gauge along every track, so almost every click aimed at track would land
-  on one and the tool would be unusable. Selecting a line is the *other three* tools' click; drags
-  and the menu are hit-tested under every tool as before.
+* **No click resolves to a centerline point, under any tool.** The centerline tool's clicks are the
+  run's and skip the hit-test outright; everything else narrows it with `CLICK_HIT_KINDS`, which
+  leaves the kind out. A run carries a point every gauge, and the grab radius is a fingertip in
+  *screen* pixels — far wider than a gauge at a fit zoom on a 48 MP shot — so a click that found one
+  would stop the sensor and car tools placing anything over traced track. A point is reached by a
+  drag and by the menu; a right-click **selects** the line it names, which is how its handles appear.
+* **The hit-test offers a point only on the selected line**, which is why the selection is in
+  `HitScene`. Only that line is drawn with handles, and a grab reaching the others would move a point
+  nobody can see — "what is drawn is what is grabbable", the rule `sensorDiameterPx` already
+  encodes for a sensor.
 * **Its two gates are not symmetric.** `needsDpt` is the archive's and `_settle` drops a tool held
   by it; `needsLabeledComplete` is the image's and does **not** drop the tool, because dropping it
   would end a run on every image switch — and tracing one run across several images is how track

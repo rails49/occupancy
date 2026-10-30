@@ -2255,6 +2255,50 @@ describe('rr-editor-view', () => {
       expect(el.shadowRoot!.querySelector('rr-viewer')!.zoom).to.be.null;
     });
 
+    it('leaves Enter and Escape to a field being typed into', async () => {
+      // A bare key on a `window` listener sees every keystroke on the page
+      // (`keyboard.ts`). Without the guard, Enter typed into the settings
+      // dialog would silently store the run behind it.
+      const el = await mountTracing();
+      await clickAt(el, { x: 100, y: 100 });
+      await clickAt(el, { x: 400, y: 100 });
+
+      const field = document.createElement('input');
+      document.body.append(field);
+      try {
+        for (const key of ['Enter', 'Escape']) {
+          field.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, composed: true }));
+          await flush();
+          expect(el.session!.run, key).to.not.be.null;
+        }
+      } finally {
+        field.remove();
+      }
+      expect(el.session!.centerlines).to.be.empty;
+    });
+
+    it('leaves Enter and Escape to an open dialog', async () => {
+      const el = await mountTracing();
+      await clickAt(el, { x: 100, y: 100 });
+      await clickAt(el, { x: 400, y: 100 });
+
+      const dialog = document.createElement('sl-dialog');
+      dialog.setAttribute('open', '');
+      document.body.append(dialog);
+      try {
+        for (const key of ['Enter', 'Escape']) {
+          dialog.dispatchEvent(
+            new KeyboardEvent('keydown', { key, bubbles: true, composed: true })
+          );
+          await flush();
+          expect(el.session!.run, key).to.not.be.null;
+        }
+      } finally {
+        dialog.remove();
+      }
+      expect(el.session!.centerlines).to.be.empty;
+    });
+
     it('ends the run on a double-click', async () => {
       const el = await mountTracing();
       await clickAt(el, { x: 100, y: 100 });

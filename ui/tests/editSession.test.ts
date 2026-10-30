@@ -2096,6 +2096,36 @@ describe('the centerline tool (#275)', () => {
       }
     });
 
+    it('prepends even when the snap moves the opening click off the line’s end', async () => {
+      // The regression: the opening click is snapped once the second gives it a
+      // direction, so by the time the run is stored its first point is no
+      // longer the end it left from. Comparing the two spliced the stretch onto
+      // whichever end happened to match — the wrong one — and the polyline
+      // jumped across the layout. The end is the run's own record now.
+      const s = tracing({ centreY: 480 });
+      const g = gauge(s);
+      await traced(s, { x: 900, y: 480 }, { x: 900 + 6 * g, y: 480 });
+      const line = s.centerlines[0];
+      const start = line.points[0];
+      expect(Math.abs(start.y - 480)).to.be.lessThan(0.25 * g);
+
+      // The track has moved under the tracing: the snap now pulls toward 500,
+      // so the opening click will not stay on the line's first point.
+      s.setTracePixels('img1.jpg', trackPlane(g, 500));
+      await traced(
+        s,
+        { x: Math.round(start.x), y: Math.round(start.y) },
+        { x: Math.round(start.x - 6 * g), y: 500 }
+      );
+
+      const joined = s.centerlines[0].points;
+      expect(s.centerlines).to.have.lengthOf(1);
+      // Still one run in order along the track, not a line doubling back.
+      for (let i = 1; i < joined.length; i++) {
+        expect(joined[i].x, `point ${i}`).to.be.greaterThan(joined[i - 1].x);
+      }
+    });
+
     it('starts a line of its own further off than half a gauge', async () => {
       const s = tracing();
       const g = gauge(s);
@@ -2207,6 +2237,7 @@ describe('the centerline tool (#275)', () => {
       const s = await withLine();
       const g = gauge(s);
       const line = s.centerlines[0];
+      s.selectCenterline(line.id);
       const index = 2;
       const from = line.points[index];
       const size = s.history.size;
@@ -2229,11 +2260,24 @@ describe('the centerline tool (#275)', () => {
 
     it('writes no entry for a point drag returned to its origin', async () => {
       const s = await withLine();
+      s.selectCenterline(s.centerlines[0].id);
       const from = s.centerlines[0].points[2];
       const size = s.history.size;
       await drag(s, [from, { x: from.x + 40, y: from.y }, from]);
       expect(s.history.size).to.equal(size);
       // And the point it merely touched is still the fraction the snap reported.
+      expect(s.centerlines[0].points[2]).to.deep.equal(from);
+    });
+
+    it('does not grab a point of a line that is not selected', async () => {
+      // Only the selected line is drawn with handles, so only it is grabbable —
+      // a pan over traced track must not move a point nobody can see.
+      const s = await withLine();
+      s.selectCenterline(null);
+      const from = s.centerlines[0].points[2];
+      const size = s.history.size;
+      expect(await drag(s, [from, { x: from.x, y: from.y + 20 }])).to.be.false;
+      expect(s.history.size).to.equal(size);
       expect(s.centerlines[0].points[2]).to.deep.equal(from);
     });
 
@@ -2295,17 +2339,36 @@ describe('the centerline tool (#275)', () => {
       return s;
     }
 
-    it('selects a centerline from a click on one of its points, under another tool', async () => {
+    it('places a sensor on traced track rather than selecting the line', async () => {
+      // A click does not look for a centerline point. The grab radius is a
+      // fingertip in screen pixels, which at a fit zoom is far wider than the
+      // gauge the points sit a step apart on, so a click that resolved to one
+      // would stop the sensor and car tools working over any traced track.
       const s = await withLine();
       s.selectTool('sensor');
       const point = s.centerlines[0].points[2];
       await s.click(point, SCALE);
-      expect(s.selectedCenterline).to.equal(s.centerlines[0].id);
+      expect(s.selectedCenterline).to.be.null;
+      expect(sensors(s)).to.have.lengthOf(1);
     });
 
-    it('names the point a right-click landed on', async () => {
+    it('selects the line a right-click names, which is how its points appear', async () => {
       const s = await withLine();
       s.selectTool('sensor');
+      const line = s.centerlines[0];
+      const a = line.points[2];
+      const b = line.points[3];
+      expect(s.rightClick({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, SCALE)).to.deep.equal({
+        kind: 'centerline',
+        id: line.id,
+      });
+      expect(s.selectedCenterline).to.equal(line.id);
+    });
+
+    it('names a point once its line is selected and the handles are drawn', async () => {
+      const s = await withLine();
+      s.selectTool('sensor');
+      s.selectCenterline(s.centerlines[0].id);
       const point = s.centerlines[0].points[3];
       expect(s.rightClick(point, SCALE)).to.deep.equal({
         kind: 'centerline-point',
@@ -2314,10 +2377,18 @@ describe('the centerline tool (#275)', () => {
       });
     });
 
-    it('names the whole line for a right-click between its points', async () => {
+    it('names no point on a line that is not selected', async () => {
+      const s = await withLine();
+      s.selectTool('sensor');
+      const point = s.centerlines[0].points[3];
+      expect(s.rightClick(point, SCALE)!.kind).to.equal('centerline');
+    });
+
+    it('names the whole line for a right-click between the selected line’s points', async () => {
       const s = await withLine();
       s.selectTool('sensor');
       const line = s.centerlines[0];
+      s.selectCenterline(line.id);
       // Midway between two points, off every handle but on the line.
       const a = line.points[2];
       const b = line.points[3];

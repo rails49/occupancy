@@ -134,6 +134,20 @@ export type MenuSubject =
  */
 const MENU_HIT_KINDS: readonly HitKind[] = ['sensor', 'calibration', 'centerline-point'];
 
+/**
+ * What a **click** looks for: everything a click can edit, which is everything
+ * except a centerline point (#275).
+ *
+ * A centerline point is left out rather than given a no-op case. The grab
+ * radius is a fingertip in *screen* pixels — at a fit-to-window zoom on a 48 MP
+ * ceiling shot that is far wider than the gauge the points sit a step apart on
+ * — so every click aimed anywhere near traced track would resolve to a point,
+ * and the sensor and car tools would stop placing anything over any track that
+ * had been traced. A point is reached by a **drag** (which moves it) and by the
+ * **menu** (which deletes it); neither is a placement, and neither is lost.
+ */
+const CLICK_HIT_KINDS: readonly HitKind[] = ['car-endpoint', 'sensor', 'calibration'];
+
 /** A drag in progress. One entry is written at `end`, or none. */
 export interface Drag {
   /** Moves what was grabbed by the pointer's travel from where the drag began. */
@@ -185,10 +199,18 @@ interface RunStep {
 interface Run {
   readonly steps: readonly RunStep[];
   /**
-   * The centerline this run continues, or `null` for a new one. Set once, at
-   * the first click, from {@link EXTEND_G}.
+   * The centerline this run continues and which of its two ends it left from,
+   * or `null` for a new one. Set once, at the first click, from
+   * {@link EXTEND_G}.
+   *
+   * The **end is carried, not re-derived**. The opening click is snapped once
+   * the second gives it a direction, so by the time the run is stored its first
+   * point is no longer the line's end it started from — and comparing the two
+   * would splice the stretch onto whichever end happened to match, which on a
+   * line whose ends are both near the click is the wrong one and a polyline
+   * jumping across the layout.
    */
-  readonly extending: string | null;
+  readonly extending: { readonly id: string; readonly end: 'start' | 'end' } | null;
 }
 
 /** What a run looks like to a renderer: its points so far, and where it stopped. */
@@ -440,7 +462,7 @@ export class EditSession {
     // dragging and the menu are hit-tested under every tool as before.
     if (this._tool === 'centerline') return this._traceClick(px);
 
-    const hit = hitTest(this._scene(), at, grab(scale));
+    const hit = hitTest(this._scene(), at, grab(scale), CLICK_HIT_KINDS);
     if (hit) return this._clickOn(hit);
 
     switch (this._tool) {
@@ -477,9 +499,10 @@ export class EditSession {
         return { kind: 'name-sensor', id: sensor.id, name: sensor.name ?? null };
       }
       case 'centerline-point':
-        // Selecting shows the line's points, which is what a drag or a delete
-        // of one needs in order to be aimed at (#275).
-        this.selectCenterline(hit.id);
+        // Unreachable: a click does not look for one (see `CLICK_HIT_KINDS`).
+        // Here because the union is exhaustive and the day a click does look
+        // for one, this is the decision to make rather than the case to find
+        // missing.
         return NONE;
       case 'car-endpoint':
       case 'coupler':
@@ -556,7 +579,13 @@ export class EditSession {
     const car = carUnderPointer(scene, at, grab(scale));
     if (car) return { kind: 'car', id: car.id };
     const line = centerlineUnderPointer(scene, at, grab(scale));
-    return line ? { kind: 'centerline', id: line.id } : null;
+    if (!line) return null;
+    // Naming a line **selects** it, which is how its points come on screen —
+    // and the only way, since a click does not look for one. So a right-click
+    // offers the line's own verb and leaves the point verbs one press away, on
+    // handles that are now drawn.
+    this.selectCenterline(line.id);
+    return { kind: 'centerline', id: line.id };
   }
 
   /** Writes a new reference point. */
@@ -927,10 +956,10 @@ export class EditSession {
    * needs one — so it is the second click that gives both of them one.
    */
   private _startRun(px: Point, dpt: number) {
-    const end = this._endWithin(px, EXTEND_G * dpt);
+    const found = this._endWithin(px, EXTEND_G * dpt);
     this._run = {
-      steps: [{ click: end?.at ?? px, filled: [], stoppedAt: null }],
-      extending: end?.id ?? null,
+      steps: [{ click: found?.at ?? px, filled: [], stoppedAt: null }],
+      extending: found && { id: found.id, end: found.end },
     };
     this._changed();
   }
@@ -1003,19 +1032,21 @@ export class EditSession {
     // pushed afterwards would not be on screen until something else changed.
     this._stops.push(...runStops(run));
     await this._record('trace centerline', { kind: 'centerlines' }, () => {
-      const extending = run.extending && this.centerline(run.extending);
-      if (!extending) {
+      const extending = run.extending && this.centerline(run.extending.id);
+      if (!run.extending || !extending) {
         const line = { id: make_id(CENTERLINE_NODE_ID), points };
         this._writeCenterlines([...this._centerlines, line]);
         this._selectedCenterline = line.id;
         return;
       }
-      // The run started at one of the line's two ends, so it continues from
-      // there: appended at the last point, prepended reversed at the first.
-      const atStart = samePoint(points[0], extending.points[0]);
-      const joined = atStart
-        ? [...points.slice(1).reverse(), ...extending.points]
-        : [...extending.points, ...points.slice(1)];
+      // The run left one of the line's two ends, so it continues from there:
+      // appended at the last point, prepended reversed at the first. Which end
+      // is the run's own record (see `Run.extending`), not a comparison — the
+      // opening click has been snapped since.
+      const joined =
+        run.extending.end === 'start'
+          ? [...points.slice(1).reverse(), ...extending.points]
+          : [...extending.points, ...points.slice(1)];
       this._writeCenterlines(
         this._centerlines.map(line =>
           line.id === extending.id ? { ...line, points: joined } : line
@@ -1040,17 +1071,31 @@ export class EditSession {
    * it, which is what a crossing or a parallel siding looks like, and attaching
    * there would fold two runs into one polyline that doubles back.
    */
-  private _endWithin(px: Point, reach: number): { readonly id: string; readonly at: Point } | null {
-    let best: { readonly id: string; readonly at: Point; readonly distance: number } | null = null;
+  private _endWithin(
+    px: Point,
+    reach: number
+  ): { readonly id: string; readonly end: 'start' | 'end'; readonly at: Point } | null {
+    let best: {
+      readonly id: string;
+      readonly end: 'start' | 'end';
+      readonly at: Point;
+      readonly distance: number;
+    } | null = null;
     for (const line of this._centerlines) {
-      for (const at of [line.points[0], line.points[line.points.length - 1]]) {
+      const ends = [
+        { end: 'start' as const, at: line.points[0] },
+        { end: 'end' as const, at: line.points[line.points.length - 1] },
+      ];
+      for (const { end, at } of ends) {
         if (!at) continue;
         const distance = Math.hypot(px.x - at.x, px.y - at.y);
         if (distance > reach) continue;
-        if (!best || distance < best.distance) best = { id: line.id, at: { ...at }, distance };
+        if (!best || distance < best.distance) {
+          best = { id: line.id, end, at: { ...at }, distance };
+        }
       }
     }
-    return best && { id: best.id, at: best.at };
+    return best && { id: best.id, end: best.end, at: best.at };
   }
 
   /** The pixels of the image on screen, or null when the editor has supplied none. */
@@ -1246,6 +1291,7 @@ export class EditSession {
       sensors: manifest.layout.sensors,
       calibrationPoints: manifest.layout.calibration.points,
       centerlines: this._centerlines,
+      selectedCenterline: this._selectedCenterline,
       dpt: getDPT(manifest),
     };
   }

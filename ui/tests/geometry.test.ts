@@ -59,6 +59,7 @@ const emptyScene: HitScene = {
   sensors: [],
   calibrationPoints: [],
   centerlines: [],
+  selectedCenterline: null,
   dpt: null,
 };
 
@@ -334,6 +335,7 @@ describe('hitTest', () => {
       sensors: [sensor('s1', 400, 400)],
       calibrationPoints: [calibrationPoint(0, 0), calibrationPoint(600, 600)],
       centerlines: [],
+      selectedCenterline: null,
       // No DPT: sensors then grab at the pointer radius, like everything else.
       dpt: null,
     };
@@ -358,6 +360,7 @@ describe('hitTest', () => {
         sensors: [sensor('s1', 506, 500)],
         calibrationPoints: [calibrationPoint(502, 500)],
       centerlines: [],
+      selectedCenterline: null,
         // No DPT: sensors then grab at the pointer radius, like everything else.
         dpt: null,
       };
@@ -432,6 +435,7 @@ describe('hitTest', () => {
         sensors: [sensor('s1', 100, 100)],
         calibrationPoints: [calibrationPoint(140, 100)],
       centerlines: [],
+      selectedCenterline: null,
         dpt: 120,
       };
       // Inside the sensor's reach, but the calibration point is nearer.
@@ -607,6 +611,7 @@ describe('dragHandles', () => {
     sensors: [sensor('s1', 400, 400)],
     calibrationPoints: [calibrationPoint(10, 20), calibrationPoint(600, 600)],
       centerlines: [],
+      selectedCenterline: null,
     // No DPT: sensors then grab at the pointer radius, like everything else.
     dpt: null,
   };
@@ -684,6 +689,7 @@ describe('dragTo', () => {
         sensors: [],
         calibrationPoints: [],
       centerlines: [],
+      selectedCenterline: null,
         dpt: null,
       }
     );
@@ -1561,7 +1567,22 @@ describe('centerline points in the hit-test (#275)', () => {
     { x: 140, y: 100 },
     { x: 180, y: 100 },
   ]);
-  const scene: HitScene = { ...emptyScene, centerlines: [line], dpt: CL_DPT };
+  const scene: HitScene = {
+    ...emptyScene,
+    centerlines: [line],
+    selectedCenterline: 'L1',
+    dpt: CL_DPT,
+  };
+
+  it('offers nothing on a line that is not selected, because nothing is drawn', () => {
+    // What is drawn is what is grabbable: only the selected line carries
+    // handles, and a grab reaching the others would move a point nobody sees.
+    const unselected: HitScene = { ...scene, selectedCenterline: null };
+    expect(hitTest(unselected, { x: 140, y: 100 }, tolerance)).to.be.null;
+    expect(dragHandles({ kind: 'centerline-point', id: 'L1', index: 1 }, unselected)).to.deep.equal(
+      [{ ref: { kind: 'centerline-point', id: 'L1', index: 1 }, from: { x: 140, y: 100 } }]
+    );
+  });
 
   it('hits a point by its line and its index', () => {
     expect(hitTest(scene, { x: 141, y: 101 }, tolerance)).to.deep.equal({

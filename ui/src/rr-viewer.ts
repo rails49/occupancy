@@ -13,7 +13,7 @@ import {
   renderTraceStop,
   sensorPatch,
 } from './centerlineMarker.js';
-import type { CenterlineSymbolSize } from './centerlineMarker.js';
+import type { CenterlineSymbolSize, SensorMark } from './centerlineMarker.js';
 import type { SensorSymbolSize } from './sensorMarker.js';
 import {
   renderCar,
@@ -31,7 +31,7 @@ import {
   zoomTransform,
   SYMBOL_SIZE_SCREEN_PX,
 } from './geometry.js';
-import type { Centerline, FrameSize, Rect, Size } from './geometry.js';
+import type { CarCorners, Centerline, FrameSize, Rect, Size } from './geometry.js';
 import { highlightStyles } from './highlight.js';
 import { matteTokens } from './matte.js';
 import { isKnownClass } from './vocabulary.js';
@@ -444,6 +444,43 @@ export class RrViewer extends LitElement {
    */
   @property({ attribute: false }) pendingCar: PendingCar | null = null;
   /**
+   * The archive's traced centerlines, drawn under every tool with no on/off
+   * control (#275).
+   *
+   * Per archive, so they show on every image exactly as sensors do. **Empty is
+   * the live view**, which passes none: a centerline is authoring feedback, and
+   * nothing new is drawn where occupancy is reported. The patch outlines and the
+   * sensor marks follow from this list, so passing none draws none of them
+   * either — the one property, not three.
+   */
+  @property({ attribute: false }) centerlines: readonly Centerline[] = [];
+  /**
+   * The centerline whose points are shown, or `null`.
+   *
+   * Only the selected line draws handles: a run carries a point every gauge, so
+   * every line's handles at once would bury the photograph. Selecting is what
+   * "shows its points" means (#275).
+   *
+   * It is also the only line the editor's hit-test reaches, so what is drawn is
+   * what is grabbable — see `geometry.ts` § `HitScene`.
+   */
+  @property({ attribute: false }) selectedCenterline: string | null = null;
+  /**
+   * The run being traced — its points so far — or `null` when none is.
+   *
+   * Transient view state like `pendingCar`, and drawn dashed for the same
+   * reason: it is not stored yet.
+   */
+  @property({ attribute: false }) pendingRun: readonly Point[] | null = null;
+  /**
+   * Spots where a trace stopped short: a turnout, a crossing, clutter, the frame
+   * edge, a car on the track.
+   *
+   * Session-lived and never stored (#275) — a mark says the snap could not read
+   * the track there, which is a fact about the photograph rather than an edit.
+   */
+  @property({ attribute: false }) traceStops: readonly Point[] = [];
+  /**
    * The layout's DPT, or `null` when calibration does not resolve one.
    *
    * The one property here that is neither media nor a thing to draw: it is the
@@ -488,40 +525,6 @@ export class RrViewer extends LitElement {
    * `null` in the live view, which sets no zoom: the capability is free there
    * because it is a property here, but nothing wires a control to it (#44).
    */
-  /**
-   * The archive's traced centerlines, drawn under every tool with no on/off
-   * control (#275).
-   *
-   * Per archive, so they show on every image exactly as sensors do. **Empty is
-   * the live view**, which passes none: a centerline is authoring feedback, and
-   * nothing new is drawn where occupancy is reported. The patch outlines and the
-   * sensor marks follow from this list, so passing none draws none of them
-   * either — the one property, not three.
-   */
-  @property({ attribute: false }) centerlines: readonly Centerline[] = [];
-  /**
-   * The centerline whose points are shown, or `null`.
-   *
-   * Only the selected line draws handles: a run carries a point every gauge, so
-   * every line's handles at once would bury the photograph. Selecting is what
-   * "shows its points" means (#275).
-   */
-  @property({ attribute: false }) selectedCenterline: string | null = null;
-  /**
-   * The run being traced — its points so far — or `null` when none is.
-   *
-   * Transient view state like `pendingCar`, and drawn dashed for the same
-   * reason: it is not stored yet.
-   */
-  @property({ attribute: false }) pendingRun: readonly Point[] | null = null;
-  /**
-   * Spots where a trace stopped short: a turnout, a crossing, clutter, the frame
-   * edge, a car on the track.
-   *
-   * Session-lived and never stored (#275) — a mark says the snap could not read
-   * the track there, which is a fact about the photograph rather than an edit.
-   */
-  @property({ attribute: false }) traceStops: readonly Point[] = [];
   @property({ attribute: false }) zoom: Rect | null = null;
   /**
    * The zoom rect being dragged out, or `null` when none is.
@@ -544,6 +547,18 @@ export class RrViewer extends LitElement {
    * sized the symbol.
    */
   @state() private imagePxPerScreenPx = 1;
+
+  /** {@link sensorPatches}' memo. Not reactive: it is derived, never a cause. */
+  private patchCache: {
+    readonly sensors: readonly Sensor[];
+    readonly centerlines: readonly Centerline[];
+    readonly dpt: number | null;
+    readonly patches: readonly {
+      readonly sensor: Sensor;
+      readonly patch: CarCorners | null;
+      readonly mark: SensorMark | null;
+    }[];
+  } | null = null;
 
   /**
    * The loaded media's own pixel size, or `null` until it reports one.
@@ -865,17 +880,61 @@ export class RrViewer extends LitElement {
    * The label shares `LABEL_SIZE_RATIO` with the sensor's name and the
    * crosshair's coordinate: they are the same kind of annotation.
    */
-  /** The screen-constant handle a centerline point and a mark are drawn at. */
-  private centerlineSize(): CenterlineSymbolSize {
-    return { handlePx: this.symbolSize * CENTERLINE_HANDLE_SIZE_RATIO };
-  }
-
   private carSize(): CarSymbolSize {
     return {
       dpt: this.dpt,
       handlePx: this.symbolSize * CAR_HANDLE_SIZE_RATIO,
       labelPx: this.symbolSize * LABEL_SIZE_RATIO,
     };
+  }
+
+  /** The screen-constant handle a centerline point and a sensor mark are drawn at. */
+  private centerlineSize(): CenterlineSymbolSize {
+    return { handlePx: this.symbolSize * CENTERLINE_HANDLE_SIZE_RATIO };
+  }
+
+  /**
+   * Every sensor's patch and mark, recomputed only when one of the three things
+   * it depends on changes.
+   *
+   * Memoised, unlike the couplings beside it, because this one is not cheap:
+   * each sensor is measured against every **point** of every centerline, and a
+   * run carries one per gauge, so a layout's worth of tracing against a dozen
+   * sensors is tens of thousands of distances. Render runs on every
+   * pointer-move — the zoom band and the rubber band are properties — and that
+   * is a frame budget, not a one-off.
+   *
+   * The key is **reference identity** of the three inputs, which is exactly what
+   * `EditSession` gives it: every write replaces the centerline list by value,
+   * and the sensors come off a manifest subtree an entry replaces wholesale. A
+   * mutation in place would miss, which is the same contract `history.ts`
+   * already holds every writer to.
+   */
+  private sensorPatches(): readonly {
+    readonly sensor: Sensor;
+    readonly patch: CarCorners | null;
+    readonly mark: SensorMark | null;
+  }[] {
+    const cache = this.patchCache;
+    if (
+      cache &&
+      cache.sensors === this.sensors &&
+      cache.centerlines === this.centerlines &&
+      cache.dpt === this.dpt
+    ) {
+      return cache.patches;
+    }
+    const patches = this.sensors.map(sensor => ({
+      sensor,
+      ...sensorPatch(sensor, this.centerlines, this.dpt),
+    }));
+    this.patchCache = {
+      sensors: this.sensors,
+      centerlines: this.centerlines,
+      dpt: this.dpt,
+      patches,
+    };
+    return patches;
   }
 
   /**
@@ -1029,13 +1088,12 @@ export class RrViewer extends LitElement {
                  DPT the way a coupling is derived from the cars: the inputs are
                  all here, and a parent computing it would be a second place for
                  the patch's size and the marks' thresholds to live. -->
-            ${this.sensors.map(s => {
-              const { patch, mark } = sensorPatch(s, this.centerlines, this.dpt);
-              return svg`
+            ${this.sensorPatches().map(({ sensor, patch, mark }) =>
+              svg`
                 ${patch ? renderPatch(patch) : ''}
-                ${mark ? renderSensorMark(s, mark, centerlineSize) : ''}
-              `;
-            })}
+                ${mark ? renderSensorMark(sensor, mark, centerlineSize) : ''}
+              `
+            )}
 
             <!-- Where a trace stopped short, and the run in flight, last of the
                  centerline layer: both are what the person is working on. -->

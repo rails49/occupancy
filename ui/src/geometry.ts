@@ -350,6 +350,21 @@ export interface HitScene {
    */
   readonly centerlines: readonly Centerline[];
   /**
+   * Which centerline shows its point handles, or `null`.
+   *
+   * It is in the **scene** rather than being a caller's business because
+   * {@link hitTest} offers a `centerline-point` only on this line: a run carries
+   * a point every gauge, only the selected line is drawn with handles
+   * (`centerlineMarker.ts`), and a grab that reached the others would move a
+   * point nobody can see — the same "what is drawn is what is grabbable" rule
+   * {@link sensorDiameterPx} encodes for a sensor, one object along.
+   *
+   * It does **not** narrow {@link centerlineUnderPointer}: a right-click names
+   * the line it landed on whether or not it was selected, which is how a line
+   * gets selected in the first place.
+   */
+  readonly selectedCenterline: string | null;
+  /**
    * The layout's DPT, or `null` when calibration resolves none.
    *
    * Not an object to hit: it is the **scale the world-sized objects are drawn
@@ -529,11 +544,12 @@ export function hitTest(
     });
   }
   if (kinds.includes('centerline-point')) {
-    for (const line of scene.centerlines) {
-      line.points.forEach((point, index) => {
-        push({ kind: 'centerline-point', id: line.id, index }, point, pointerReach);
-      });
-    }
+    // The selected line alone: it is the only one drawn with handles, and a
+    // grab must not reach a point nobody can see. See `HitScene`.
+    const selected = scene.centerlines.find(line => line.id === scene.selectedCenterline);
+    selected?.points.forEach((point, index) => {
+      push({ kind: 'centerline-point', id: selected.id, index }, point, pointerReach);
+    });
   }
 
   let best: Candidate | null = null;

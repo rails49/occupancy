@@ -33,6 +33,7 @@ import { clearExifOrientation } from './exifOrientation.js';
 import { imageSize } from './imageSize.js';
 import { makeThumbnail } from './thumbnail.js';
 import { planeFromBytes } from './driftSession.js';
+import { isInsideOpenDialog, isTypingTarget } from './keyboard.js';
 import type {
   ViewerContextMenuDetail,
   ViewerHighlight,
@@ -987,6 +988,12 @@ export class RREditorView extends LitElement {
    */
   private readonly _onKeyDown = (event: KeyboardEvent) => {
     const session = this.session;
+    // Enter and Escape are bare keys on a `window` listener, so they owe the
+    // same judgement `rr-app`'s Cmd+Z and the diagnostics queue's shortcuts
+    // owe: a keystroke being typed into a field, or aimed at an open dialog,
+    // belongs to it. Without this, Enter typed into the settings dialog would
+    // silently store the run behind it (`keyboard.ts`).
+    if (isTypingTarget(event) || isInsideOpenDialog(event)) return;
     // Enter ends the run being traced, which stores it; Escape drops it (#275).
     // Both are checked before the zoom, because a run in flight is what the
     // keystroke is most immediately about — and Escape's zoom-to-fit stays

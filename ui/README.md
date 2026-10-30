@@ -402,7 +402,7 @@ image pixel coordinates.
 | `cars` | `readonly CarLabel[]` | Car spans to draw: a chord inside its width rectangle. Per **image**, so switching images swaps the whole list; empty in the live view |
 | `pendingCar` | `PendingCar \| null` | The **rubber band** — `{ anchor, to }` for the chain in flight. The one thing here that is not in the manifest; empty in the live view |
 | `centerlines` | `readonly Centerline[]` | The archive's traced centerlines, drawn under every tool with no on/off control ([#275]). Per **archive**, like the sensors. **Empty is the live view** — and the patch outlines and the sensor marks follow from this one list, so passing none draws none of them either |
-| `selectedCenterline` | `string \| null` | Which line shows its point handles. Only the selected one does: a run carries a point every gauge, and every line's handles at once would bury the photograph |
+| `selectedCenterline` | `string \| null` | Which line shows its point handles. Only the selected one does: a run carries a point every gauge, and every line's handles at once would bury the photograph — and it is the only line the editor's hit-test reaches, so what is drawn is what is grabbable |
 | `pendingRun` | `readonly Point[] \| null` | The run being traced, drawn dashed — tracing's `pendingCar`, and not in the manifest either |
 | `traceStops` | `readonly Point[]` | Spots where a trace stopped short: a turnout, a crossing, clutter, the frame edge, a car on the track. Session-lived and never stored |
 | `highlight` | `ViewerHighlight \| null` | The objects a reveal is pointing at — `{ cars, sensors, calibration, centerlines }`, ids for all but `calibration`, which is **indices**. Already resolved by `rr-editor-view`; the viewer draws it and decides nothing. `null` in the live view |
@@ -551,14 +551,15 @@ covered today.
 | `carCovering(scene, at)` | The car whose rectangle covers a pixel, or `null` — a claim about the **image**, off the same scene, asked only by the car tool's first click ([#43]). Boundary is inside; no DPT means no rectangle, so nothing covers |
 | `carUnderPointer(scene, at, tolerance)` | The car a **gesture** aimed at a pixel means, or `null` — the same rectangle **floored at a fingertip**, which is what the context menu opens on ([#45]). First in scene order where several cover |
 | `hitTest(scene, at, tolerance, kinds?)` | The `HitTarget` under an image-pixel coordinate, or `null`. `kinds` narrows what is looked *for*, defaulting to all of them |
-| `HitScene` | `{ cars, sensors, calibrationPoints, dpt }` — everything grabbable for one image of one layout, plus the scale the world-sized ones are drawn at |
-| `HitTarget` | `car-endpoint` / `coupler` (both carrying `ends`), `sensor` (`id`), `calibration` (`index`) |
-| `HitKind` | `car-endpoint` / `sensor` / `calibration` — a kind that can be *found*; a coupler is derived, never searched for |
+| `HitScene` | `{ cars, sensors, calibrationPoints, centerlines, selectedCenterline, dpt }` — everything grabbable for one image of one layout, plus the scale the world-sized ones are drawn at |
+| `HitTarget` | `car-endpoint` / `coupler` (both carrying `ends`), `sensor` (`id`), `calibration` (`index`), `centerline-point` (`id`, `index`) |
+| `HitKind` | `car-endpoint` / `sensor` / `calibration` / `centerline-point` — a kind that can be *found*; a coupler is derived, never searched for |
 | `HitTolerance` | `{ screenPx, imagePxPerScreenPx }` |
 | `dragHandles(hit, scene)` | The points a grab moves — **a list**, one per object, and two or more for a coupler |
 | `DragHandle` | `{ ref, from }`: what it addresses, and where it sat at pointer-down |
-| `HandleRef` | `calibration` (`index`), `car-end` (`id`, `end`), `sensor` (`id`) — never an object reference |
-| `dragTo(handle, delta)` | Where that handle lands, in whole image pixels |
+| `HandleRef` | `calibration` (`index`), `car-end` (`id`, `end`), `sensor` (`id`), `centerline-point` (`id`, `index`) — never an object reference |
+| `dragTo(handle, delta)` | Where that handle lands. Rounded for everything a person placed; **not** for a centerline point, which is a measurement |
+| `centerlineUnderPointer(scene, at, tolerance)` | The centerline a gesture aimed at a pixel means, or `null` — measured to the polyline and floored at a fingertip. What the menu opens on between two points ([#275]) |
 | `samePoint(a, b)` | Whether two pixels are the same pixel — the **one** encoding of the coincidence rule, shared by the hit-test, the renderer and the staleness guards |
 | `couplerPoints(cars)` | Every pixel where two or more car ends meet, once each, in scene order — the couplings a renderer draws one shared handle per |
 | `isCoincident(at, points)` | Whether `at` is exactly one of them |
@@ -609,8 +610,15 @@ puts in every pointer event. A grab radius is a property of the mouse and the fi
 photograph: an 8-megapixel image and a 720p one must feel the same.
 
 **Nearest wins**, whatever its kind; an exact tie goes to the denser geometry (car ends, sensors,
-calibration points, in that order). Only handles are hit — the body of a car is not grabbable,
-because the only edits a span supports are to its two ends.
+calibration points, then centerline points, in that order). Only handles are hit — the body of a car
+is not grabbable, because the only edits a span supports are to its two ends.
+
+**A centerline point is offered only on the selected line** ([#275]), which is why the selection is
+in the *scene* rather than being a caller's business. Only the selected line is drawn with handles
+(`centerlineMarker.ts`), and a grab that reached the others would move a point nobody can see — the
+same "what is drawn is what is grabbable" rule `sensorDiameterPx` encodes one object along. It does
+not narrow `centerlineUnderPointer`: a right-click names the line it landed on whether or not it was
+selected, which is how a line gets selected in the first place.
 
 **Three questions, deliberately not one.** `hitTest` is *what can this gesture grab*.
 `carCovering` is *is this pixel already labelled* — a claim about the **image**, which only the car
@@ -727,7 +735,7 @@ per object.
 | `renderPatch(corners)` | `(CarCorners) => SVGTemplateResult` | A sensor's patch outline |
 | `renderSensorMark(sensor, mark, size)` | `(Sensor, SensorMark, CenterlineSymbolSize) => SVGTemplateResult` | A cross for `no-track`, a ring for `second-centerline`. The group carries `data-mark` and `data-sensor-id` |
 | `renderTraceStop(at, size)` | `(Point, CenterlineSymbolSize) => SVGTemplateResult` | Where a trace stopped short |
-| `sensorPatch(sensor, centerlines, dpt)` | `(Sensor, readonly Centerline[], number \| null) => SensorPatch` | `{ patch, mark }` for one sensor — what the viewer derives rather than being passed |
+| `sensorPatch(sensor, centerlines, dpt)` | `(Sensor, readonly Centerline[], number \| null) => SensorPatch` | `{ patch, mark }` for one sensor — what the viewer derives rather than being passed, and **memoises**: each sensor is measured against every point of every line, and render runs on every pointer-move. The memo keys on reference identity of the sensors, the lines and the DPT, which is what `EditSession`'s replace-by-value writes give it |
 | `SensorMark` | `'no-track' \| 'second-centerline'` | |
 | `CenterlineSymbolSize` | `{ handlePx }` | Screen-constant, in image pixels |
 | `centerlineMarkerStyles` | `CSSResult` | The layer's inks and non-scaling strokes |
@@ -1062,7 +1070,9 @@ per pick, however many of its files were refused ([#262]). `rr-app` owns the toa
   selected**: a plane is one float per pixel, ~195 MB on a 48 MP ceiling shot, and decoding one per
   image shown would cost that for a tool nobody reached for. The claim on an image is staked
   *before* the decode and kept whatever it returns, because this runs from `updated()` and a failure
-  that cleared it would spin.
+  that cleared it would spin. Enter and Escape are bare keys on a `window` listener, so they pass
+  through `keyboard.ts`'s `isTypingTarget`/`isInsideOpenDialog` first, like `rr-app`'s Cmd+Z:
+  without it, Enter typed into the settings dialog would silently store the run behind it.
 * **Right-click** ([#29]). `rr-pointer-contextmenu` goes to `session.rightClick`, which ends a live
   chain or names the object a menu acts on. The editor opens `rr-context-menu` at the cursor with
   that subject's rows — **delete** for a reference point, **name and delete** for a sensor,
@@ -1183,7 +1193,7 @@ it gets the objects the entry changed.
 | `car(id)`, `sensor(id)`, `centerline(id)` | The car on the image on screen, or the sensor or centerline, with this id; undefined once it is gone |
 | `toolReason(tool)` | Why a tool cannot be used, or null — the **one** answer the rail disables on ([#275]) |
 | `centerlines`, `selectedCenterline`, `run`, `traceStops` | The archive's traced lines, which one shows its points, the run in flight (`{ points, stops }`) and every spot a trace stopped short at this session |
-| `selectCenterline(id)`, `endRun()`, `dropRun()` | The selection; ending a run **stores** it as one entry, dropping it stores nothing |
+| `selectCenterline(id)`, `endRun()`, `dropRun()` | The selection — also set by a right-click naming a line; ending a run **stores** it as one entry, dropping it stores nothing |
 | `setTracePixels(filename, plane)` | The pixels the snap reads, for one image. The editor decodes and pushes them in; with none the snap is simply not run |
 | `selectTool`, `selectImage`, `endChain` | Changes to the editing state, none of them recorded. `selectTool` **ends** a run; `selectImage` deliberately does not |
 | `click(point, scale)` | Writes, or returns what the editor must ask for: a reference point's world position, a sensor's name, or a notice |
@@ -1218,8 +1228,14 @@ screen-pixel grab radius. The hit-test scene is the layout's reference points an
   would trace straight through.
   * **Its clicks are the run's, and the hit-test does not see them first.** A stored run carries a
     point every gauge along every track, so almost every click aimed at track would land on one and
-    the tool could not be used at all. Selecting a line is therefore the *other three* tools' click;
-    dragging and the menu are hit-tested under every tool as before.
+    the tool could not be used at all.
+  * **No click resolves to a centerline point, under any tool** — `CLICK_HIT_KINDS` leaves the kind
+    out. The grab radius is a fingertip in *screen* pixels, which at a fit-to-window zoom on a 48 MP
+    shot is far wider than the gauge the points sit a step apart on, so a click that found one would
+    stop the sensor and car tools placing anything over traced track. A point is reached by a
+    **drag**, which moves it, and by the **menu**, which deletes it. A right-click **selects** the
+    line it names, which is how its handles come on screen — and then a second press on one of them
+    names the point.
   * The **first click is not snapped** — a cross-section needs a direction and there is none yet.
     The second gives both of them one, then the fill steps a gauge at a time between them
     (`centerlineSnap.ts`). A click the snap refuses is **kept where it was made**, so a run carries
@@ -1234,6 +1250,10 @@ screen-pixel grab radius. The hit-test scene is the layout's reference points an
     **cannot reach past the run's start** — the same rule as a chain of cars, and here it matters
     more: the run is not on the stack at all until it ends, so reaching past its start would undo
     the edit *before* the trace began.
+  * **A run records which end it is extending**, rather than comparing its first point with the
+    line's. The opening click is snapped once the second gives it a direction, so by the time the run
+    is stored its first point is no longer the end it left from — and a comparison would splice the
+    stretch onto whichever end happened to match.
   * **A point drag is not re-snapped.** The drag *is* the person overriding the snap. It is also the
     one handle `dragTo` does not round: a centerline point is a measurement, fractional to a
     sixteenth of a gauge, and rounding would move every point a drag merely touched — and defeat the
