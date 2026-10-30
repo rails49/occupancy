@@ -32,6 +32,7 @@ import { HIGHLIGHT_DURATION_MS } from './highlight.js';
 import { clearExifOrientation } from './exifOrientation.js';
 import { imageSize } from './imageSize.js';
 import { makeThumbnail } from './thumbnail.js';
+import { planeFromBytes } from './driftSession.js';
 import type {
   ViewerContextMenuDetail,
   ViewerHighlight,
@@ -475,6 +476,9 @@ export class RREditorView extends LitElement {
   private _pendingSensorName: { readonly id: string } | null = null;
   /** The press in flight, or null between gestures. At most one at a time. */
   private _gesture: LiveGesture | null = null;
+
+  /** The image whose pixels the session currently holds. See {@link _syncTracePixels}. */
+  private _tracePixelsFor: string | null = null;
   /** What the context menu is open on, or null when it is closed. */
   private _menuSubject: MenuSubject | null = null;
   /**
@@ -645,6 +649,53 @@ export class RREditorView extends LitElement {
 
   updated() {
     void this._syncImageUrls();
+    void this._syncTracePixels();
+  }
+
+  /**
+   * Keeps the session supplied with the pixels of the image on screen, for the
+   * snap to read (#275).
+   *
+   * Decoded here and not in the session because `createImageBitmap` and a
+   * canvas are the platform's, and `driftSession.ts` is where this repository
+   * keeps that work — `planeFromBytes` is the same helper the drift check
+   * decodes an archive image with.
+   *
+   * **Only while the centerline tool is selected.** A full-size plane is one
+   * float per pixel, which on a 48 MP ceiling shot is ~195 MB; decoding one per
+   * image the moment it is shown would cost that on every thumbnail press for a
+   * tool nobody had reached for. It is dropped again when the tool changes, so
+   * the memory lives as long as the tracing does.
+   */
+  private async _syncTracePixels() {
+    const session = this.session;
+    const filename = session?.image?.filename;
+    if (!session || !filename || session.tool !== 'centerline') {
+      if (this._tracePixelsFor === null) return;
+      this._tracePixelsFor = null;
+      session?.setTracePixels('', null);
+      return;
+    }
+    // The claim is staked **before** the decode and kept whatever it returns.
+    // An image that does not decode must not be retried on the next render:
+    // this runs from `updated()`, so a failure that cleared the claim and asked
+    // for a re-render would spin for as long as the tool stayed selected.
+    if (this._tracePixelsFor === filename) return;
+    this._tracePixelsFor = filename;
+
+    const bytes = await session.archive.getImage(filename);
+    // Everything may have moved while the decode ran: another image, another
+    // tool, another archive.
+    if (!bytes || this.session !== session || this._tracePixelsFor !== filename) return;
+    try {
+      session.setTracePixels(filename, await planeFromBytes(bytes));
+      this.requestUpdate();
+    } catch {
+      // The snap is then left with no pixels, which is the same state as no
+      // tool having asked for them: clicks are kept where they were made and no
+      // stretch is filled. Silent, because the thumbnail strip already shows an
+      // image that did not decode.
+    }
   }
 
   connectedCallback() {
@@ -736,11 +787,11 @@ export class RREditorView extends LitElement {
    * a stale glow beside it would name the wrong edit.
    */
   private _showHighlight(highlights: readonly HistoryHighlight[]) {
-    const { cars, sensors, calibration } = this._resolveHighlight(highlights);
+    const { cars, sensors, calibration, centerlines } = this._resolveHighlight(highlights);
     this._revealZoom(highlights);
 
     this._clearHighlight();
-    if (cars.length + sensors.length + calibration.length === 0) return;
+    if (cars.length + sensors.length + calibration.length + centerlines.length === 0) return;
 
     this._highlight = highlights;
     this._highlightTimer = setTimeout(() => this._clearHighlight(), HIGHLIGHT_DURATION_MS);
@@ -767,6 +818,7 @@ export class RREditorView extends LitElement {
     const cars: string[] = [];
     const sensors: string[] = [];
     const calibration: number[] = [];
+    const centerlines: string[] = [];
     const points = this.session?.archive.getManifest().layout.calibration.points ?? [];
 
     for (const highlight of highlights) {
@@ -782,10 +834,13 @@ export class RREditorView extends LitElement {
           if (index >= 0) calibration.push(index);
           break;
         }
+        case 'centerline':
+          if (this.session?.centerline(highlight.id)) centerlines.push(highlight.id);
+          break;
       }
     }
 
-    return { cars, sensors, calibration };
+    return { cars, sensors, calibration, centerlines };
   }
 
   /**
@@ -841,6 +896,14 @@ export class RREditorView extends LitElement {
           if (calibrationPoints.some(point => samePoint(point.px, highlight.px))) {
             points.push(highlight.px);
           }
+          break;
+        }
+        case 'centerline': {
+          // Every point of the line, so a reveal zooms to the whole run rather
+          // than to the one point an edit moved — the line is the object, and a
+          // zoom onto a single point of it shows no track.
+          const line = this.session?.centerline(highlight.id);
+          if (line) points.push(...line.points);
           break;
         }
       }
@@ -923,8 +986,37 @@ export class RREditorView extends LitElement {
    * no menu consumed.
    */
   private readonly _onKeyDown = (event: KeyboardEvent) => {
+    const session = this.session;
+    // Enter ends the run being traced, which stores it; Escape drops it (#275).
+    // Both are checked before the zoom, because a run in flight is what the
+    // keystroke is most immediately about — and Escape's zoom-to-fit stays
+    // reachable by pressing it again, with nothing left to drop.
+    if (session?.run) {
+      if (event.key === 'Enter') {
+        void session.endRun();
+        return;
+      }
+      if (event.key === 'Escape') {
+        session.dropRun();
+        return;
+      }
+    }
     if (event.key !== 'Escape' || this._zoom === null) return;
     this._fitZoom();
+  };
+
+  /**
+   * A double-click ends the run being traced (#275).
+   *
+   * The native event on the host rather than a new `rr-pointer-*`: the viewer's
+   * events exist to convert screen coordinates into image pixels, and "end the
+   * run" needs no coordinate at all. The second click of the pair has already
+   * added its point through the normal path, which is the usual
+   * double-click-to-finish idiom — the run ends *at* that point rather than one
+   * short of it.
+   */
+  private readonly _onDoubleClick = () => {
+    if (this.session?.run) void this.session.endRun();
   };
 
   /**
@@ -1388,6 +1480,10 @@ export class RREditorView extends LitElement {
                 .sensors=${manifest.layout.sensors}
                 .cars=${currentImage?.labels ?? []}
                 .pendingCar=${this._pendingCar()}
+                .centerlines=${this.session.centerlines}
+                .selectedCenterline=${this.session.selectedCenterline}
+                .pendingRun=${this.session.run?.points ?? null}
+                .traceStops=${this.session.traceStops}
                 .highlight=${this._highlight && this._resolveHighlight(this._highlight)}
                 .zoom=${this._zoom}
                 .zoomPreview=${this._zoomPreview}
@@ -1399,6 +1495,7 @@ export class RREditorView extends LitElement {
                 @rr-pointer-contextmenu=${this._onViewerContextMenu}
                 @rr-media-frame=${this._onMediaFrame}
                 @rr-viewport=${this._onViewport}
+                @dblclick=${this._onDoubleClick}
               ></rr-viewer>
               ${this._renderFitControl()}
             </div>

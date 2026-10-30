@@ -441,7 +441,7 @@ describe('rr-editor-view', () => {
   }
 
   /** A calibrated editor with `tool` live, as the rail would choose it. */
-  async function mountWithTool(tool: 'sensor' | 'car') {
+  async function mountWithTool(tool: 'sensor' | 'car' | 'centerline') {
     calibrate();
     const el = await mount();
     el.session!.selectTool(tool);
@@ -1686,6 +1686,7 @@ describe('rr-editor-view', () => {
         cars: ['car-a', 'car-b'],
         sensors: [],
         calibration: [],
+        centerlines: [],
       });
     });
 
@@ -2154,6 +2155,179 @@ describe('rr-editor-view', () => {
       expect(labels[0].p0).to.deep.equal({ x: 100, y: 100 });
       expect(labels[0].p1).to.deep.equal({ x: 300, y: 100 });
       expect(zoomOf(el)).to.deep.equal({ x: 50, y: 50, width: 300, height: 300 });
+    });
+  });
+
+  /**
+   * The centerline tool's wiring (#275).
+   *
+   * The rules are `editSession.test.ts`'s. These check that the editor's own
+   * half reaches them: the keystrokes, the double-click, the pixels the snap
+   * needs, the menu rows, and what the viewer is handed.
+   */
+  describe('the centerline tool (#275)', () => {
+    const viewer = (el: RREditorView) => el.shadowRoot!.querySelector('rr-viewer')!;
+
+    /** A calibrated editor on a complete image, with the tool live. */
+    async function mountTracing() {
+      archive.getManifest().images[0].labeled_complete = true;
+      const el = await mountWithTool('centerline');
+      // The snap reads pixels the editor decodes; jsdom decodes nothing, so the
+      // session is handed none and clicks are kept where they were made. What
+      // is under test here is the wiring, not the snap.
+      el.session!.setTracePixels('img1.jpg', null);
+      return el;
+    }
+
+    async function keyDown(el: RREditorView, key: string) {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key }));
+      await flush();
+      await el.updateComplete;
+    }
+
+    /**
+     * Zooms by drawing a band, which is the only way the editor zooms. The
+     * `client` pair is what the view gesture reads, so it is carried through.
+     */
+    async function zoomByDrag(el: RREditorView, rect: Rect) {
+      const path = [
+        { x: rect.x, y: rect.y },
+        { x: rect.x + rect.width, y: rect.y + rect.height },
+      ];
+      const options = (point: Point) => ({ shiftKey: true, client: { x: point.x, y: point.y } });
+      gesture(el, 'rr-pointer-down', path[0], 1, options(path[0]));
+      gesture(el, 'rr-pointer-move', path[1], 1, options(path[1]));
+      gesture(el, 'rr-pointer-up', path[1], 1, options(path[1]));
+      await flush();
+      await el.updateComplete;
+    }
+
+    it('hands the viewer the archive\'s centerlines, the selection and the stops', async () => {
+      const el = await mountTracing();
+      await clickAt(el, { x: 100, y: 100 });
+      await clickAt(el, { x: 400, y: 100 });
+      await el.session!.endRun();
+      await el.updateComplete;
+
+      expect(viewer(el).centerlines).to.deep.equal(el.session!.centerlines);
+      expect(viewer(el).selectedCenterline).to.equal(el.session!.selectedCenterline);
+      expect(viewer(el).traceStops).to.deep.equal(el.session!.traceStops);
+    });
+
+    it('draws the run in flight as the viewer\'s pendingRun', async () => {
+      const el = await mountTracing();
+      expect(viewer(el).pendingRun).to.be.null;
+      await clickAt(el, { x: 100, y: 100 });
+      expect(viewer(el).pendingRun).to.deep.equal([{ x: 100, y: 100 }]);
+    });
+
+    it('ends the run on Enter, which stores it', async () => {
+      const el = await mountTracing();
+      await clickAt(el, { x: 100, y: 100 });
+      await clickAt(el, { x: 400, y: 100 });
+      await keyDown(el, 'Enter');
+      expect(el.session!.run).to.be.null;
+      expect(el.session!.centerlines).to.have.lengthOf(1);
+    });
+
+    it('drops the run on Escape, storing nothing', async () => {
+      const el = await mountTracing();
+      await clickAt(el, { x: 100, y: 100 });
+      await clickAt(el, { x: 400, y: 100 });
+      await keyDown(el, 'Escape');
+      expect(el.session!.run).to.be.null;
+      expect(el.session!.centerlines).to.be.empty;
+    });
+
+    it('leaves Escape\'s zoom-to-fit reachable once no run is live', async () => {
+      // A frame big enough for a band to be drawn in, as the zoom tests use.
+      archive.getManifest().camera.resolution = { width: 1000, height: 1000 };
+      const el = await mountTracing();
+      await zoomByDrag(el, { x: 50, y: 50, width: 300, height: 300 });
+      expect(el.shadowRoot!.querySelector('rr-viewer')!.zoom).to.not.be.null;
+
+      await clickAt(el, { x: 100, y: 100 });
+      await keyDown(el, 'Escape');
+      expect(el.session!.run, 'the run took the first Escape').to.be.null;
+      expect(el.shadowRoot!.querySelector('rr-viewer')!.zoom).to.not.be.null;
+
+      await keyDown(el, 'Escape');
+      expect(el.shadowRoot!.querySelector('rr-viewer')!.zoom).to.be.null;
+    });
+
+    it('ends the run on a double-click', async () => {
+      const el = await mountTracing();
+      await clickAt(el, { x: 100, y: 100 });
+      await clickAt(el, { x: 400, y: 100 });
+      viewer(el).dispatchEvent(new MouseEvent('dblclick', { bubbles: true, composed: true }));
+      await flush();
+      expect(el.session!.run).to.be.null;
+      expect(el.session!.centerlines).to.have.lengthOf(1);
+    });
+
+    it('toasts the refusal on an image that is not labeled complete', async () => {
+      calibrate();
+      const el = await mount();
+      const notices = noticesOf(el);
+      el.session!.selectTool('centerline');
+      await clickAt(el, { x: 100, y: 100 });
+      expect(notices).to.have.lengthOf(1);
+      expect(notices[0].toLowerCase()).to.contain('labeled complete');
+    });
+
+    it('offers the point and the line on a right-click on a point', async () => {
+      const el = await mountTracing();
+      await clickAt(el, { x: 100, y: 100 });
+      await clickAt(el, { x: 400, y: 100 });
+      await el.session!.endRun();
+      await rightClickAt(el, { x: 100, y: 100 });
+      expect(menuItems(el)).to.deep.equal(['delete-point', 'delete']);
+    });
+
+    it('deletes the point the menu was opened on', async () => {
+      const el = await mountTracing();
+      await clickAt(el, { x: 100, y: 100 });
+      await clickAt(el, { x: 400, y: 100 });
+      await clickAt(el, { x: 700, y: 100 });
+      await el.session!.endRun();
+      const before = el.session!.centerlines[0].points.length;
+
+      await rightClickAt(el, { x: 400, y: 100 });
+      await choose(el, 'delete-point');
+      expect(el.session!.centerlines[0].points).to.have.lengthOf(before - 1);
+    });
+
+    it('deletes the whole line from the same menu', async () => {
+      const el = await mountTracing();
+      await clickAt(el, { x: 100, y: 100 });
+      await clickAt(el, { x: 400, y: 100 });
+      await el.session!.endRun();
+
+      await rightClickAt(el, { x: 100, y: 100 });
+      await choose(el, 'delete');
+      expect(el.session!.centerlines).to.be.empty;
+    });
+
+    it('offers only the line for a right-click between its points', async () => {
+      const el = await mountTracing();
+      await clickAt(el, { x: 100, y: 100 });
+      await clickAt(el, { x: 400, y: 100 });
+      await el.session!.endRun();
+      await rightClickAt(el, { x: 250, y: 100 });
+      expect(menuItems(el)).to.deep.equal(['delete']);
+    });
+
+    it('lights the whole line after an undo, not the point that moved', async () => {
+      const el = await mountTracing();
+      await clickAt(el, { x: 100, y: 100 });
+      await clickAt(el, { x: 400, y: 100 });
+      await el.session!.endRun();
+      const id = el.session!.centerlines[0].id;
+
+      await el.session!.undo();
+      await el.session!.redo();
+      await el.updateComplete;
+      expect(viewer(el).highlight!.centerlines).to.deep.equal([id]);
     });
   });
 });
