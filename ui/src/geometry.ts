@@ -320,7 +320,17 @@ export type HitTarget =
    * A calibration point, keyed by position in `layout.calibration.points`.
    * Points carry no id because nothing references one individually.
    */
-  | { readonly kind: 'calibration'; readonly index: number };
+  | { readonly kind: 'calibration'; readonly index: number }
+  /**
+   * One point of a traced centerline, keyed by its run's id and its position
+   * along that run.
+   *
+   * An index, like a calibration point, because a centerline's points carry no
+   * ids of their own — they are a measurement of one line, not a set of objects
+   * that anything references individually. The run's id makes the pair a name:
+   * deleting a point renumbers only the points after it on that one line.
+   */
+  | { readonly kind: 'centerline-point'; readonly id: string; readonly index: number };
 
 /** Everything a pointer can land on, for one image of one layout. */
 export interface HitScene {
@@ -330,6 +340,15 @@ export interface HitScene {
   readonly sensors: readonly Sensor[];
   /** The layout's calibration points. */
   readonly calibrationPoints: readonly ReferencePoint[];
+  /**
+   * The archive's traced centerlines — per archive, so they show on every image
+   * exactly as sensors do.
+   *
+   * Required rather than optional for the reason `kinds` is not a filter on the
+   * scene: a caller that left them out would be asking a different question
+   * than the one the user is looking at, and `[]` says "none traced" out loud.
+   */
+  readonly centerlines: readonly Centerline[];
   /**
    * The layout's DPT, or `null` when calibration resolves none.
    *
@@ -409,10 +428,18 @@ function distanceSq(a: Point, b: Point): number {
  * Couplers are absent because they are never candidates: a coincidence is
  * recognised after the nearest car end has already won.
  */
-const KIND_RANK: Record<'car-endpoint' | 'sensor' | 'calibration', number> = {
+const KIND_RANK: Record<
+  'car-endpoint' | 'sensor' | 'calibration' | 'centerline-point',
+  number
+> = {
   'car-endpoint': 0,
   sensor: 1,
   calibration: 2,
+  // Last, and that is the decision rather than the leftover slot. A centerline
+  // carries a point every gauge along every run of track, so on a tie it is the
+  // thing most likely to be *under* something rather than the thing being
+  // aimed at; a car end or a sensor placed on the line must win.
+  'centerline-point': 3,
 };
 
 /** What can be *found* directly. A coupler is derived, never a candidate. */
@@ -425,7 +452,12 @@ type CandidateTarget = Extract<HitTarget, { kind: keyof typeof KIND_RANK }>;
 export type HitKind = CandidateTarget['kind'];
 
 /** Every kind, which is what a caller that says nothing means. */
-const ALL_HIT_KINDS: readonly HitKind[] = ['car-endpoint', 'sensor', 'calibration'];
+const ALL_HIT_KINDS: readonly HitKind[] = [
+  'car-endpoint',
+  'sensor',
+  'calibration',
+  'centerline-point',
+];
 
 interface Candidate {
   readonly target: CandidateTarget;
@@ -495,6 +527,13 @@ export function hitTest(
     scene.calibrationPoints.forEach((p, index) => {
       push({ kind: 'calibration', index }, p.px, pointerReach);
     });
+  }
+  if (kinds.includes('centerline-point')) {
+    for (const line of scene.centerlines) {
+      line.points.forEach((point, index) => {
+        push({ kind: 'centerline-point', id: line.id, index }, point, pointerReach);
+      });
+    }
   }
 
   let best: Candidate | null = null;
@@ -653,7 +692,8 @@ function withinSpan(p0: Point, p1: Point, at: Point, half: number): boolean | nu
 export type HandleRef =
   | { readonly kind: 'calibration'; readonly index: number }
   | { readonly kind: 'car-end'; readonly id: string; readonly end: 'p0' | 'p1' }
-  | { readonly kind: 'sensor'; readonly id: string };
+  | { readonly kind: 'sensor'; readonly id: string }
+  | { readonly kind: 'centerline-point'; readonly id: string; readonly index: number };
 
 /** One point a drag moves, and where it sat when the gesture began. */
 export interface DragHandle {
@@ -686,6 +726,13 @@ export function dragHandles(hit: HitTarget, scene: HitScene): readonly DragHandl
       const found = scene.sensors.find((s) => s.id === hit.id);
       return found ? [{ ref: { kind: 'sensor', id: hit.id }, from: { x: found.x, y: found.y } }] : [];
     }
+    case 'centerline-point': {
+      const line = scene.centerlines.find((c) => c.id === hit.id);
+      const point = line?.points[hit.index];
+      return point
+        ? [{ ref: { kind: 'centerline-point', id: hit.id, index: hit.index }, from: point }]
+        : [];
+    }
     case 'car-endpoint':
     case 'coupler': {
       const handles: DragHandle[] = [];
@@ -699,14 +746,24 @@ export function dragHandles(hit: HitTarget, scene: HitScene): readonly DragHandl
 }
 
 /**
- * Where a handle lands for a given drag delta, in whole image pixels.
+ * Where a handle lands for a given drag delta.
  *
- * Rounded because a handle names a pixel, and applied to `from` so every handle
- * in one gesture takes the identical translation — which is what keeps a
- * coupler's two ends on the *same* pixel, and a coupling is exact coincidence.
+ * Applied to `from` so every handle in one gesture takes the identical
+ * translation — which is what keeps a coupler's two ends on the *same* pixel,
+ * and a coupling is exact coincidence.
+ *
+ * **Rounded for everything a person placed, and not for a centerline point.**
+ * A car end, a sensor and a crosshair each name a pixel somebody clicked, and
+ * whole pixels are what makes a coupling testable by equality. A centerline
+ * point is a *measurement* — the snap reports it fractional, to a sixteenth of
+ * a gauge — so rounding it would move every point a drag so much as touched,
+ * which is both a silent edit and a drag returned to its origin that no longer
+ * compares equal to it, defeating the no-op suppression one layer up.
  */
 export function dragTo(handle: DragHandle, delta: Point): Point {
-  return { x: Math.round(handle.from.x + delta.x), y: Math.round(handle.from.y + delta.y) };
+  const at = { x: handle.from.x + delta.x, y: handle.from.y + delta.y };
+  if (handle.ref.kind === 'centerline-point') return at;
+  return { x: Math.round(at.x), y: Math.round(at.y) };
 }
 
 /**
@@ -1326,6 +1383,32 @@ export function inCarArea(car: CarLabel, at: Point, dpt: number): boolean {
       half
     ) === true
   );
+}
+
+/**
+ * The centerline a **gesture aimed at `at`** means, or `null` when it means
+ * none.
+ *
+ * `carUnderPointer`'s counterpart for a line rather than a rectangle, and here
+ * for the same reason: the context menu has to be able to name a whole
+ * centerline, and {@link hitTest} only finds its *points*. Right-clicking
+ * between two points is right-clicking the line, and a menu that found nothing
+ * there would be a line the user can see and cannot delete.
+ *
+ * Measured to the polyline and floored at a fingertip, with no world-size term:
+ * a centerline is drawn as a stroke, not a footprint, so there is nothing wider
+ * than the pointer to be generous about. Nearest wins, so parallel tracks name
+ * the one actually pointed at.
+ */
+export function centerlineUnderPointer(
+  scene: HitScene,
+  at: Point,
+  tolerance: HitTolerance
+): Centerline | null {
+  const reach = tolerance.screenPx * tolerance.imagePxPerScreenPx;
+  const hit = nearestCenterline(at, scene.centerlines);
+  if (!hit || hit.distancePx > reach) return null;
+  return scene.centerlines.find(line => line.id === hit.id) ?? null;
 }
 
 /** One hit per centerline, in the order given. */

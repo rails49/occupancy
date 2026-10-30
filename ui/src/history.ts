@@ -1,4 +1,5 @@
 import type { Camera, R49Archive, ReferencePoint, Image, Layout, Point } from '@rails49/r49';
+import type { Centerline } from './geometry.js';
 
 /**
  * Undo/redo for the editor, as scoped snapshots of the manifest.
@@ -38,7 +39,39 @@ export type HistoryTarget =
    * The images array — add, remove, reorder — and `camera.resolution`, the
    * frame they share, which adding the first image sets (#254).
    */
-  | { kind: 'images' };
+  | { kind: 'images' }
+  /**
+   * The archive's centerline list, whole: one finished run, one point drag, one
+   * point delete, one centerline delete (#275).
+   *
+   * The list is small — a polyline of a few hundred points is kilobytes — so
+   * scoping finer would buy nothing and would cost the property that makes
+   * every other target safe: an entry restores a list, not a line, so undoing
+   * an *extend* cannot leave a line half extended.
+   *
+   * It is the one target that does **not** live in the manifest. Centerlines
+   * are an additive `.r49` field that arrives with rails49/r49#52, and the
+   * pinned `@rails49/r49` refuses `layout.centerlines` as
+   * `manifest/unknown-key`; until the bump the list is the session's, reached
+   * through the {@link CenterlineStore} given to {@link EditHistory.attach}.
+   * Everything else here — snapshots, no-op suppression, gestures, the byte
+   * budget — is identical, which is the whole point of routing it through the
+   * same machinery rather than giving tracing an undo stack of its own.
+   */
+  | { kind: 'centerlines' };
+
+/**
+ * The centerline list a `centerlines` entry snapshots.
+ *
+ * A seam rather than a field because the list is not in the archive yet (see
+ * {@link HistoryTarget}). `EditSession` owns the array and hands this over at
+ * {@link EditHistory.attach}; when the format field lands, the store becomes a
+ * read and a write of `manifest.layout`, and nothing else here changes.
+ */
+export interface CenterlineStore {
+  read(): readonly Centerline[];
+  write(centerlines: readonly Centerline[]): void;
+}
 
 /** What an `images` entry snapshots. */
 interface ImagesSnapshot {
@@ -62,7 +95,17 @@ interface ImagesSnapshot {
 export type HistoryHighlight =
   | { readonly kind: 'car'; readonly id: string }
   | { readonly kind: 'sensor'; readonly id: string }
-  | { readonly kind: 'calibration'; readonly px: Point };
+  | { readonly kind: 'calibration'; readonly px: Point }
+  /**
+   * A whole centerline, by id — not the point that moved.
+   *
+   * The line is the object a person recognises: a point is one of hundreds a
+   * gauge apart, and glowing one of them would be a glow nobody could find. A
+   * point delete and a point drag therefore light the same line the delete of
+   * the whole run would, which is also what keeps the reveal honest when an
+   * undone *add* leaves no point to point at.
+   */
+  | { readonly kind: 'centerline'; readonly id: string };
 
 /**
  * One undoable edit. Returned by {@link EditHistory.undo} and
@@ -141,6 +184,12 @@ export function changedObjects(
     case 'image': {
       const labels = (json: string) => (JSON.parse(json) as Image | null)?.labels ?? [];
       return changedIds(labels(before), labels(after)).map(id => ({ kind: 'car', id }) as const);
+    }
+    case 'centerlines': {
+      const lines = (json: string) => (JSON.parse(json) as Centerline[] | null) ?? [];
+      return changedIds(lines(before), lines(after)).map(
+        id => ({ kind: 'centerline', id }) as const
+      );
     }
     case 'layout': {
       const layout = (json: string) => JSON.parse(json) as Layout | null;
@@ -258,6 +307,7 @@ const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
 export class EditHistory {
   private _archive: R49Archive | null = null;
+  private _centerlines: CenterlineStore | null = null;
   private _entries: MutableEntry[] = [];
   /** Number of entries currently applied; the boundary between undo and redo. */
   private _index = 0;
@@ -279,9 +329,14 @@ export class EditHistory {
    * snapshot in it — so clearing is not a policy choice here, it is the only
    * correct behaviour. Attaching also resets the save marker, so a
    * freshly-opened archive is not dirty.
+   *
+   * `centerlines` is the session's list, which is not in the archive yet (see
+   * {@link HistoryTarget}). Omitting it leaves `centerlines` entries inert
+   * rather than throwing: a caller that records none never needs the store.
    */
-  attach(archive: R49Archive | null): void {
+  attach(archive: R49Archive | null, centerlines: CenterlineStore | null = null): void {
     this._archive = archive;
+    this._centerlines = centerlines;
     this._entries = [];
     this._index = 0;
     this._savedIndex = 0;
@@ -563,7 +618,10 @@ export class EditHistory {
   }
 
   /** Reads the target subtree out of the live manifest. */
-  private _read(target: HistoryTarget): Layout | Image | ImagesSnapshot | null {
+  private _read(
+    target: HistoryTarget
+  ): Layout | Image | ImagesSnapshot | readonly Centerline[] | null {
+    if (target.kind === 'centerlines') return this._centerlines?.read() ?? [];
     const manifest = this._archive!.getManifest();
     switch (target.kind) {
       case 'layout':
@@ -578,8 +636,15 @@ export class EditHistory {
   private async _apply(entry: MutableEntry, snapshot: string): Promise<void> {
     const archive = this._archive;
     if (!archive) return;
-    const manifest = archive.getManifest();
     const data = JSON.parse(snapshot);
+
+    // Before the manifest is read, because this is the one target that is not
+    // in it.
+    if (entry.target.kind === 'centerlines') {
+      this._centerlines?.write(data as Centerline[]);
+      return;
+    }
+    const manifest = archive.getManifest();
 
     switch (entry.target.kind) {
       case 'layout':

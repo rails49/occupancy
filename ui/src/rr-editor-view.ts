@@ -172,6 +172,20 @@ function carItems(): ContextMenuItem[] {
   return items;
 }
 
+/**
+ * A centerline's verbs. The point row comes first on a point, because the
+ * pointer is on one and the finer edit is the one being aimed at; the line row
+ * is on both subjects, since a right-click between two points still has to be
+ * able to remove the line (#275).
+ */
+const CENTERLINE_POINT_ITEMS: readonly ContextMenuItem[] = [
+  { id: 'delete-point', label: 'Delete point' },
+  { id: 'delete', label: 'Delete centerline' },
+];
+const CENTERLINE_ITEMS: readonly ContextMenuItem[] = [
+  { id: 'delete', label: 'Delete centerline' },
+];
+
 /** The rows a menu offers for its subject. */
 function itemsFor(subject: MenuSubject): readonly ContextMenuItem[] {
   switch (subject.kind) {
@@ -181,6 +195,10 @@ function itemsFor(subject: MenuSubject): readonly ContextMenuItem[] {
       return SENSOR_ITEMS;
     case 'car':
       return carItems();
+    case 'centerline-point':
+      return CENTERLINE_POINT_ITEMS;
+    case 'centerline':
+      return CENTERLINE_ITEMS;
   }
 }
 
@@ -1179,7 +1197,14 @@ export class RREditorView extends LitElement {
 
     switch (e.detail.id) {
       case 'delete':
-        await this.session.delete(subject);
+        // A `centerline-point` subject's "Delete centerline" row: the subject
+        // names the point, and the row names the line it is on.
+        await this.session.delete(
+          subject.kind === 'centerline-point' ? { kind: 'centerline', id: subject.id } : subject
+        );
+        return;
+      case 'delete-point':
+        if (subject.kind === 'centerline-point') await this.session.delete(subject);
         return;
       case 'name':
         if (subject.kind === 'sensor') await this._openSensorName(subject.id);

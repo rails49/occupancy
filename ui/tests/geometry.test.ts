@@ -34,6 +34,7 @@ import {
   PATCH_ACROSS_G,
   PATCH_ALONG_G,
   inCarArea,
+  centerlineUnderPointer,
   nearestCenterline,
   patchCorners,
   secondCenterlineReachPx,
@@ -53,7 +54,13 @@ function calibrationPoint(x: number, y: number): ReferencePoint {
   return { px: { x, y }, world: { x: 0, y: 0, z: 0 } };
 }
 
-const emptyScene: HitScene = { cars: [], sensors: [], calibrationPoints: [], dpt: null };
+const emptyScene: HitScene = {
+  cars: [],
+  sensors: [],
+  calibrationPoints: [],
+  centerlines: [],
+  dpt: null,
+};
 
 /** 10 image pixels of grab radius: 5 screen px at 2 image px per screen px. */
 const tolerance: HitTolerance = { screenPx: 5, imagePxPerScreenPx: 2 };
@@ -326,6 +333,7 @@ describe('hitTest', () => {
       cars: [car('c1', { x: 100, y: 100 }, { x: 200, y: 100 })],
       sensors: [sensor('s1', 400, 400)],
       calibrationPoints: [calibrationPoint(0, 0), calibrationPoint(600, 600)],
+      centerlines: [],
       // No DPT: sensors then grab at the pointer radius, like everything else.
       dpt: null,
     };
@@ -349,6 +357,7 @@ describe('hitTest', () => {
         cars: [car('c1', { x: 500, y: 500 }, { x: 600, y: 500 })],
         sensors: [sensor('s1', 506, 500)],
         calibrationPoints: [calibrationPoint(502, 500)],
+      centerlines: [],
         // No DPT: sensors then grab at the pointer radius, like everything else.
         dpt: null,
       };
@@ -422,6 +431,7 @@ describe('hitTest', () => {
         ...emptyScene,
         sensors: [sensor('s1', 100, 100)],
         calibrationPoints: [calibrationPoint(140, 100)],
+      centerlines: [],
         dpt: 120,
       };
       // Inside the sensor's reach, but the calibration point is nearer.
@@ -596,6 +606,7 @@ describe('dragHandles', () => {
     ],
     sensors: [sensor('s1', 400, 400)],
     calibrationPoints: [calibrationPoint(10, 20), calibrationPoint(600, 600)],
+      centerlines: [],
     // No DPT: sensors then grab at the pointer radius, like everything else.
     dpt: null,
   };
@@ -672,6 +683,7 @@ describe('dragTo', () => {
         ],
         sensors: [],
         calibrationPoints: [],
+      centerlines: [],
         dpt: null,
       }
     );
@@ -1540,5 +1552,101 @@ describe('inCarArea', () => {
     const half = carWidthPx(CL_DPT) / 2;
     expect(inCarArea(point, { x: 50 + half * 0.99, y: 50 }, CL_DPT)).to.be.true;
     expect(inCarArea(point, { x: 50 + half * 1.01, y: 50 }, CL_DPT)).to.be.false;
+  });
+});
+
+describe('centerline points in the hit-test (#275)', () => {
+  const line: Centerline = centerline('L1', [
+    { x: 100, y: 100 },
+    { x: 140, y: 100 },
+    { x: 180, y: 100 },
+  ]);
+  const scene: HitScene = { ...emptyScene, centerlines: [line], dpt: CL_DPT };
+
+  it('hits a point by its line and its index', () => {
+    expect(hitTest(scene, { x: 141, y: 101 }, tolerance)).to.deep.equal({
+      kind: 'centerline-point',
+      id: 'L1',
+      index: 1,
+    });
+  });
+
+  it('misses past the tolerance', () => {
+    expect(hitTest(scene, { x: 160, y: 140 }, tolerance)).to.be.null;
+  });
+
+  it('loses an exact tie to a car end, a sensor and a calibration point', () => {
+    // A run carries a point every gauge along every track, so on a tie it is
+    // the thing most likely to be under something rather than aimed at.
+    const at = { x: 140, y: 100 };
+    for (const over of [
+      { cars: [car('c', at, { x: 300, y: 300 })] },
+      { sensors: [sensor('s', at.x, at.y)] },
+      { calibrationPoints: [calibrationPoint(at.x, at.y)] },
+    ]) {
+      const crowded: HitScene = { ...scene, ...over };
+      expect(hitTest(crowded, at, tolerance)!.kind).to.not.equal('centerline-point');
+    }
+  });
+
+  it('is excluded when a caller narrows the kinds looked for', () => {
+    expect(hitTest(scene, { x: 140, y: 100 }, tolerance, ['sensor'])).to.be.null;
+  });
+
+  it('gives a drag one handle, at the point', () => {
+    const hit = { kind: 'centerline-point', id: 'L1', index: 2 } as const;
+    expect(dragHandles(hit, scene)).to.deep.equal([
+      { ref: { kind: 'centerline-point', id: 'L1', index: 2 }, from: { x: 180, y: 100 } },
+    ]);
+  });
+
+  it('gives no handle for a point that is gone', () => {
+    expect(dragHandles({ kind: 'centerline-point', id: 'L1', index: 9 }, scene)).to.be.empty;
+    expect(dragHandles({ kind: 'centerline-point', id: 'nope', index: 0 }, scene)).to.be.empty;
+  });
+
+  it('does not round a centerline point, because it is a measurement', () => {
+    // Everything a person placed names a whole pixel; a snapped point is
+    // fractional, and rounding it would move every point a drag merely touched.
+    const handle = {
+      ref: { kind: 'centerline-point', id: 'L1', index: 0 },
+      from: { x: 100.3, y: 99.7 },
+    } as const;
+    expect(dragTo(handle, { x: 0, y: 0 })).to.deep.equal({ x: 100.3, y: 99.7 });
+    expect(dragTo(handle, { x: 1.25, y: 0 })).to.deep.equal({ x: 101.55, y: 99.7 });
+    // And a sensor still does, so a coupling stays testable by equality.
+    expect(
+      dragTo({ ref: { kind: 'sensor', id: 's' }, from: { x: 10.4, y: 10.6 } }, { x: 0, y: 0 })
+    ).to.deep.equal({ x: 10, y: 11 });
+  });
+});
+
+describe('centerlineUnderPointer', () => {
+  const upper: Centerline = centerline('upper', [
+    { x: 0, y: 100 },
+    { x: 600, y: 100 },
+  ]);
+  const lower: Centerline = centerline('lower', [
+    { x: 0, y: 300 },
+    { x: 600, y: 300 },
+  ]);
+  const scene: HitScene = { ...emptyScene, centerlines: [upper, lower], dpt: CL_DPT };
+
+  it('finds the line between two of its points, where the hit-test finds nothing', () => {
+    const at = { x: 301, y: 103 };
+    expect(hitTest(scene, at, tolerance)).to.be.null;
+    expect(centerlineUnderPointer(scene, at, tolerance)?.id).to.equal('upper');
+  });
+
+  it('finds nothing past a fingertip', () => {
+    expect(centerlineUnderPointer(scene, { x: 300, y: 200 }, tolerance)).to.be.null;
+  });
+
+  it('names the nearer of two parallel tracks', () => {
+    expect(centerlineUnderPointer(scene, { x: 300, y: 296 }, tolerance)?.id).to.equal('lower');
+  });
+
+  it('finds nothing with no centerlines', () => {
+    expect(centerlineUnderPointer(emptyScene, { x: 0, y: 0 }, tolerance)).to.be.null;
   });
 });
