@@ -95,21 +95,21 @@ TypeScript libraries follow. The detector, its training and the training data
 are in [rails49/detector](https://github.com/rails49/detector).
 
 Pull requests are welcome. By contributing you agree that your contributions
-are licensed under the [GNU Affero General Public License v3.0](LICENSE), the
-same terms that cover the rest of the project. There is no CLA.
+are licensed under the [MIT License](LICENSE), the same terms that cover the
+rest of the project. There is no CLA.
 
 ## 📄 License
 
-Copyright (C) 2026 Bernhard Boser
+Copyright (c) 2026 Bernhard Boser
 
-This program is free software: you can redistribute it and/or modify it under
-the terms of the GNU Affero General Public License as published by the Free
-Software Foundation, either version 3 of the License, or (at your option) any
-later version. See [LICENSE](LICENSE) for the full text.
+The code in this repository is [MIT](LICENSE) licensed. Anything released from
+it before the relicence stays under the licence it shipped with.
 
-The project is AGPL-3.0 because it ships a detector derived from
-[Ultralytics YOLO](https://github.com/ultralytics/ultralytics), which is
-AGPL-3.0 licensed; trained weights inherit those terms. If you deploy a
-modified version, the licence requires you to make your source available to
-its users.
-
+The deployed site also serves [`@rails49/detector`](https://github.com/rails49/detector)
+— the detector's model weights and its browser runtime — which is AGPL-3.0,
+because the weights are fine-tuned from an AGPL-3.0 licensed
+[Ultralytics YOLO](https://github.com/ultralytics/ultralytics) checkpoint and
+trained weights inherit those terms.
+[rails49/detector](https://github.com/rails49/detector) is the source of those
+parts, and the site's settings dialog links to it
+([rails49/detector ADR 0015](https://github.com/rails49/detector/tree/main/docs/adr)).
