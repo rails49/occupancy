@@ -119,8 +119,11 @@ The largest drift accepted, as a fraction of a track width. See [ADR 0020](docs/
 A car label suggested by the detector for a person to accept, correct or reject. See [SPEC § Assisted Labeling](SPEC.md#assisted-labeling).
 
 **Track**:
-The rails cars run on. Nothing stores it. See [ADR 0010](docs/adr/0010-track-is-not-stored.md).
+The rails cars run on.
 _Avoid_: using it for a sensor or a block
+
+**Centerline**:
+The line along the middle of a track, drawn once per archive and shared by all its images.
 
 ### Occupancy
 
@@ -131,7 +134,12 @@ _Avoid_: using it for a sensor or a block
 `detector`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/detector/blob/main/GLOSSARY.md).
 
 **Classifier**:
-`detector`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/detector/blob/main/GLOSSARY.md).
+The model that judges whether a car covers a sensor, from the patch at that sensor.
+_Avoid_: point detector
+
+**Patch**:
+The rectangle of image the classifier judges: centered on a sensor and turned to the direction of the track under it.
+_Avoid_: crop
 
 **Detection**:
 `detector`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/detector/blob/main/GLOSSARY.md).
@@ -140,16 +148,19 @@ _Avoid_: using it for a sensor or a block
 `detector`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/detector/blob/main/GLOSSARY.md).
 
 **L1**:
-Each sensor's state, computed from L0 alone. See [ADR 0005](docs/adr/0005-l1-is-geometry-over-l0-biased-toward-occupied.md).
+Each sensor's state, from the detector's L0, the classifier, or both. With both, a sensor is occupied if either says so. See [ADR 0005](docs/adr/0005-l1-is-geometry-over-l0-biased-toward-occupied.md).
 
 **Occupied**:
-An L1 state: some detection's box contains the sensor. See [SPEC § The occupancy test](SPEC.md#the-occupancy-test).
+An L1 state: a car on the sensor's track comes within the margin of the sensor, as a detection or the classifier reports it. See [SPEC § The occupancy test](SPEC.md#the-occupancy-test).
 
 **Clear**:
-An L1 state: no detection's box contains the sensor. See [SPEC § Confidence](SPEC.md#confidence).
+An L1 state: no car on the sensor's track comes within the margin of the sensor. See [SPEC § Confidence](SPEC.md#confidence).
+
+**Margin**:
+How far beyond a car's end, along the track, a sensor still reads occupied: two gauges.
 
 **Unknown**:
-An L1 state: the system could not look, because no model is loaded, DPT is unresolved, the sensor is outside the frame, or the camera has drifted. Not a confidence outcome. See [SPEC § The vocabulary](SPEC.md#the-vocabulary).
+An L1 state: the system could not look, because no model is loaded, DPT is unresolved, the sensor is outside the frame, the classifier finds no centerline under the sensor, or the camera has drifted. Not a confidence outcome. See [SPEC § The vocabulary](SPEC.md#the-vocabulary).
 
 **Phantom**:
 `detector`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/detector/blob/main/GLOSSARY.md).
