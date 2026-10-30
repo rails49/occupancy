@@ -139,7 +139,9 @@ rr-app                          ← shell: owns the editing session and the view
 > [#265]: https://github.com/rails49/occupancy/issues/265
 > [#273]: https://github.com/rails49/occupancy/issues/273
 > [#274]: https://github.com/rails49/occupancy/issues/274
+> [#275]: https://github.com/rails49/occupancy/issues/275
 > [#277]: https://github.com/rails49/occupancy/issues/277
+> [ADR 0021]: ../docs/adr/0021-track-centerlines-are-stored.md
 
 ## State and data flow
 
@@ -569,6 +571,30 @@ covered today.
 | `FrameSize` | `{ width, height }` — the image bounds, `rr-viewer`'s `resolution` |
 | `overlayFit(media, frame)` | `{ sx, sy, aspectMismatch }` — how the authored frame maps onto the media's own pixel grid, which is what the overlay's content group is scaled by. Uniform for a photograph of the frame's shape at any pixel count; the identity while nothing is loaded |
 | `OverlayFit` | `{ sx, sy, aspectMismatch }` |
+| `Centerline` | `{ id, points }` — one run of track as a polyline along the middle between its rails, in image pixels. The **editor's** shape until rails49/r49#52 lands the format field ([ADR 0021]) |
+| `nearestCenterline(at, centerlines)` | The `CenterlineHit` for the nearest centerline, or `null` with none. Measured to the **polyline**, not to its points |
+| `CenterlineHit` | `{ id, distancePx, at, direction }` — which run, how far off it, where on it, and the unit direction of the segment that answer fell on |
+| `sensorTrack(at, centerlines, dpt)` | `{ nearest, noTrack, secondCenterline }` — the centerline a sensor's patch is turned to, and the two marks the editor draws on it |
+| `SensorTrack` | `{ nearest, noTrack, secondCenterline }` |
+| `patchCorners(at, direction, dpt)` | The four corners of a sensor's patch, in `carCorners`' polygon order, or `null` for a direction with no length. Centred on the sensor and turned to the direction given — nothing moves onto the line |
+| `PATCH_ACROSS_G` / `PATCH_ALONG_G` | The patch's size in gauges, 3 × 5 — **a placeholder in one named place** until rails49/classifier#4 picks it |
+| `secondCenterlineReachPx(dpt)` | How close a second centerline may come before the patch is warned about: half the patch's width plus half a car's, 2.545 G with the placeholder |
+| `NO_TRACK_G` | How far from every centerline a sensor is marked as having no track: half a gauge |
+| `inCarArea(car, at, dpt)` | Whether a pixel falls in a car's area — the label's span, one car width across, lengthened `CAR_AREA_MARGIN_G` at each end. What the centerline trace may not enter |
+| `CAR_AREA_MARGIN_G` | How far that area reaches past each end of the span: half a gauge |
+
+**The patch size is one number, not two.** `PATCH_ACROSS_G` sizes the outline drawn at a sensor
+*and* `secondCenterlineReachPx`, because the second-centerline warning says "a car on that track
+could reach into this patch" — a claim about that rectangle, and wrong the moment it is measured
+against a different one. Both are placeholders until rails49/classifier#4 picks the size, so the
+reach is **derived** (half the patch width plus half a car width = 2.545 G) rather than written
+down: #275's brief called it "about 2.7 G", which 3 G across and a 2.09 G car do not give.
+
+**A `Centerline` here is not a `Centerline` in the format — yet.** [ADR 0021] makes centerlines an
+optional field of `.r49`, and that field arrives with rails49/r49#52; the pinned `@rails49/r49`
+refuses `layout.centerlines` as `manifest/unknown-key`, so nothing in `ui/` writes one into a
+manifest and nothing reads one out. The shape is the one the format will carry, so the arithmetic
+above survives the bump as a changed import. `centerlineSnap.ts` is where the points come from.
 
 **Both constants are `@rails49/detector`'s**, and `ui/` reaches them only through `@rails49/detector`'s `carWidthPx`, which this re-exports. The scale ratio cancels out of the width formula —
 a car is 2.09 track-widths wide in **every** scale — so no scale lookup belongs anywhere in `ui/`,
