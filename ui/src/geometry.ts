@@ -573,7 +573,7 @@ export function carCovering(scene: HitScene, at: Point): CarLabel | null {
   if (scene.dpt === null) return null;
   const half = carWidthPx(scene.dpt) / 2;
   for (const car of scene.cars) {
-    const inside = withinSpan(car, at, half);
+    const inside = withinSpan(car.p0, car.p1, at, half);
     // No axis, so no rectangle: it covers the one pixel it sits on.
     if (inside === null ? samePoint(at, car.p0) : inside) return car;
   }
@@ -620,7 +620,7 @@ export function carUnderPointer(
   const reach = tolerance.screenPx * tolerance.imagePxPerScreenPx;
   const half = Math.max(scene.dpt === null ? 0 : carWidthPx(scene.dpt) / 2, reach);
   for (const car of scene.cars) {
-    const inside = withinSpan(car, at, half);
+    const inside = withinSpan(car.p0, car.p1, at, half);
     // No axis and so no rectangle: what is left is the same half-width as a
     // radius, which is the one point the car is drawn as, reachable. The editor
     // refuses to author such a car, so it can only arrive from outside.
@@ -630,22 +630,23 @@ export function carUnderPointer(
 }
 
 /**
- * Whether `at` is inside the rectangle `half` either side of a car's chord, or
- * `null` when the span has no axis and there is no rectangle to be inside of.
+ * Whether `at` is inside the rectangle `half` either side of the chord `p0`–`p1`,
+ * or `null` when the span has no axis and there is no rectangle to be inside of.
  *
  * The **boundary is inside**, and the rectangle is capped at the two ends.
- * Shared by the two area questions so they can differ in their half-width and in
- * nothing else — the arithmetic that makes a diagonal car measure across its own
- * axis rather than across a bounding box half again too big is written once.
+ * Shared by every area question so they can differ in their half-width, in their
+ * span and in nothing else — the arithmetic that makes a diagonal car measure
+ * across its own axis rather than across a bounding box half again too big is
+ * written once.
  */
-function withinSpan(car: CarLabel, at: Point, half: number): boolean | null {
-  const dx = car.p1.x - car.p0.x;
-  const dy = car.p1.y - car.p0.y;
+function withinSpan(p0: Point, p1: Point, at: Point, half: number): boolean | null {
+  const dx = p1.x - p0.x;
+  const dy = p1.y - p0.y;
   const length = Math.hypot(dx, dy);
   if (length === 0) return null;
 
-  const ax = at.x - car.p0.x;
-  const ay = at.y - car.p0.y;
+  const ax = at.x - p0.x;
+  const ay = at.y - p0.y;
   // Both distances scaled by the span's length rather than divided by it:
   // a point exactly on the edge must read as exactly on the edge, and a
   // division introduces the rounding that would put it just outside.
