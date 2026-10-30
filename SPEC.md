@@ -328,7 +328,7 @@ Change detection is used where a wrong answer costs a warning or a wasted frame:
 2. Re-classification gating. In the live view, skip inference on frames where nothing changed. A false negative costs a stale frame, never a wrong occupancy report. Relevant to [Testing and Demo](#testing-and-demo) item 3. Not scheduled; raise it as its own request. "Has the frame changed" and "has the camera moved" are different questions, so item 1 does not answer it.
 3. Change proposes, a model decides. Change detection nominates regions and the CNN or detector decides each one. That is option 2 or 3 with a cheap front end, so it still needs DPT above the detector's [minimum](https://github.com/rails49/detector/blob/main/SPEC.md#minimum-dpt). A possible future optimisation, not specified here.
 
-> Licensing, should EX-SensorCAM code ever be reused: EX-SensorCAM is GPL-3.0, not AGPL-3.0. GPLv3 §13 permits combining it with an AGPLv3 work, but it is a distinct licence and must be recorded as one.
+> Licensing, should EX-SensorCAM code ever be reused: EX-SensorCAM is GPL-3.0, and reusing its code here would make the combined work GPL-3.0 rather than MIT. That is a deliberate choice, and must be recorded as one.
 
 ### Description
 
