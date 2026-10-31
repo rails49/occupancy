@@ -9,20 +9,18 @@ catalogs:
     '@rails49/detector':
       specifier: 0.0.1
       version: 0.0.1
-    '@rails49/r49':
-      specifier: 0.1.0
-      version: 0.1.0
 
 overrides:
   lit: ^3.3.2
+  '@rails49/r49': file:../r49/packages/r49
 
 importers:
 
   .:
     devDependencies:
       '@rails49/r49':
-        specifier: 'catalog:'
-        version: 0.1.0
+        specifier: file:../r49/packages/r49
+        version: file:../r49/packages/r49
       eslint:
         specifier: ^9.39.5
         version: 9.39.5
@@ -48,8 +46,8 @@ importers:
         specifier: workspace:*
         version: link:../../lib/drift
       '@rails49/r49':
-        specifier: 'catalog:'
-        version: 0.1.0
+        specifier: file:../../../r49/packages/r49
+        version: file:../r49/packages/r49
       sharp:
         specifier: ^0.33.4
         version: 0.33.5
@@ -82,8 +80,8 @@ importers:
         specifier: github:rails49/look#v0.10.0
         version: https://codeload.github.com/rails49/look/tar.gz/0fd4ce47e1f8dd23d905761ba79dc95ba234759b(@shoelace-style/shoelace@2.20.1(@floating-ui/utils@0.2.11)(@types/react@19.2.14))(lit@3.3.2)
       '@rails49/r49':
-        specifier: 'catalog:'
-        version: 0.1.0
+        specifier: file:../../r49/packages/r49
+        version: file:../r49/packages/r49
       '@shoelace-style/shoelace':
         specifier: ^2.20.1
         version: 2.20.1(@floating-ui/utils@0.2.11)(@types/react@19.2.14)
@@ -886,8 +884,8 @@ packages:
       '@shoelace-style/shoelace': ^2.20.1
       lit: ^3.3.2
 
-  '@rails49/r49@0.1.0':
-    resolution: {integrity: sha512-2TMEgBy2h/jCPQHdv+BsV1cbO9VSYzV2QvVpL9jTboRdY7VhTQyzUry1ZQstUsT84dNobpSLAB6ZuiJ7qKXQvw==}
+  '@rails49/r49@file:../r49/packages/r49':
+    resolution: {directory: ../r49/packages/r49, type: directory}
 
   '@rollup/rollup-android-arm-eabi@4.60.3':
     resolution: {integrity: sha512-x35CNW/ANXG3hE/EZpRU8MXX1JDN86hBb2wMGAtltkz7pc6cxgjpy1OMMfDosOQ+2hWqIkag/fGok1Yady9nGw==}
@@ -3381,7 +3379,7 @@ snapshots:
 
   '@rails49/detector@0.0.1(onnxruntime-web@1.26.0)':
     dependencies:
-      '@rails49/r49': 0.1.0
+      '@rails49/r49': file:../r49/packages/r49
       onnxruntime-common: 1.26.0
       onnxruntime-web: 1.26.0
 
@@ -3390,7 +3388,7 @@ snapshots:
       '@shoelace-style/shoelace': 2.20.1(@floating-ui/utils@0.2.11)(@types/react@19.2.14)
       lit: 3.3.2
 
-  '@rails49/r49@0.1.0':
+  '@rails49/r49@file:../r49/packages/r49':
     dependencies:
       jszip: 3.10.1
       zod: 3.25.76

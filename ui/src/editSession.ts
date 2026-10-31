@@ -2,6 +2,7 @@ import { getDPT, make_id } from '@rails49/r49';
 import type {
   ReferencePoint,
   CarLabel,
+  Centerline,
   Image,
   Layout,
   Point,
@@ -141,6 +142,13 @@ export interface Trace {
   readonly nodes: readonly TrackNode[];
 }
 
+/** What the session holds of a live trace: its start, and which centerline it writes. */
+interface Tracing {
+  readonly start: Point;
+  /** The line's index in `layout.centerlines`, or null before the second click writes it. */
+  readonly index: number | null;
+}
+
 /**
  * The editing rules for one archive: every write the editor makes, the tool,
  * the chain, drags, and the image on screen. Pointer input arrives in image
@@ -157,12 +165,8 @@ export class EditSession {
   private _index = 0;
   private _tool: EditorTool = 'calibration';
   private _chain: Chain | null = null;
-  /**
-   * Traced centerlines and the one being traced (#284). Held here and nowhere
-   * else: they are not saved and have no undo once ended.
-   */
-  private _tracks: readonly Track[] = [];
-  private _trace: Trace | null = null;
+  /** The centerline being traced (#284). Its nodes are in the manifest. */
+  private _trace: Tracing | null = null;
   private _drag: Drag | null = null;
   private readonly _listeners = new Set<SessionListener>();
 
@@ -207,19 +211,22 @@ export class EditSession {
     return this._chain?.anchor ?? null;
   }
 
-  /** The centerlines traced and ended in this session. */
+  /** The layout's centerlines, the one being traced included. */
   get tracks(): readonly Track[] {
-    return this._tracks;
+    return this._centerlines();
   }
 
   /** The centerline being traced, or null when none is. */
   get trace(): Trace | null {
-    return this._trace;
+    const trace = this._trace;
+    if (!trace) return null;
+    const line = trace.index === null ? undefined : this._centerlines()[trace.index];
+    return { start: trace.start, nodes: line?.nodes ?? [] };
   }
 
   /** The last point a live trace placed, or null when no trace is live. */
   get traceEnd(): Point | null {
-    const trace = this._trace;
+    const trace = this.trace;
     if (!trace) return null;
     const last = trace.nodes[trace.nodes.length - 1];
     return last ? { x: last.x, y: last.y } : trace.start;
@@ -230,7 +237,7 @@ export class EditSession {
    * click within the grab radius of the last point placed adds nothing.
    */
   previewTrace(at: Point, scale: number): TraceStep | null {
-    const trace = this._trace;
+    const trace = this.trace;
     return (
       trace &&
       traceTo(
@@ -243,19 +250,11 @@ export class EditSession {
     );
   }
 
-  /** Ends a live trace. A line of two nodes or more is kept; a lone start is dropped. */
+  /** Ends a live trace. Its nodes are already written; a lone start writes nothing. */
   endTrace() {
-    if (!this._closeTrace()) return;
-    this._changed();
-  }
-
-  /** Ends a live trace without telling the listeners. Returns whether one was live. */
-  private _closeTrace(): boolean {
-    const trace = this._trace;
-    if (!trace) return false;
-    if (trace.nodes.length >= 2) this._tracks = [...this._tracks, { nodes: trace.nodes }];
+    if (!this._trace) return;
     this._trace = null;
-    return true;
+    this._changed();
   }
 
   /** The car with this id on the image on screen, or undefined once it is gone. */
@@ -273,7 +272,7 @@ export class EditSession {
     if (tool === this._tool) return;
     this._tool = tool;
     this._chain = null;
-    this._closeTrace();
+    this._trace = null;
     this._changed();
   }
 
@@ -307,7 +306,7 @@ export class EditSession {
   async click(at: Point, scale: number): Promise<ClickResult> {
     const px = { x: Math.round(at.x), y: Math.round(at.y) };
 
-    if (this._trace) return this._extendTrace(px, scale);
+    if (this._trace) return this._extendTrace(this._trace, px, scale);
 
     if (this._chain) {
       await this._completeCar(this._chain, px);
@@ -316,7 +315,7 @@ export class EditSession {
 
     if (this._tool === 'track') {
       if (this._gated('track')) return NONE;
-      this._trace = { start: px, nodes: [] };
+      this._trace = { start: px, index: null };
       this._changed();
       return NONE;
     }
@@ -646,17 +645,15 @@ export class EditSession {
    * listeners what changed (`SPEC.md` § Undo and redo). A live chain takes
    * every undo: at its start the chain ends and nothing is undone; further
    * along the anchor steps back if the undo removed the chain's last car.
-   * A live trace takes every undo too: it loses its last node, or back to
-   * its start from the first segment, whose heading the second click set; a
-   * trace at its start ends. Refused while a drag is open.
+   * A live trace takes every undo too: at its start the trace ends and
+   * nothing is undone; further along the undo removes its last node, or the
+   * whole first segment, whose heading the second click set, and the trace
+   * goes back to its start. Refused while a drag is open.
    */
   async undo() {
     if (this._drag) return;
-    const trace = this._trace;
-    if (trace) {
-      const nodes = trace.nodes.length > 2 ? trace.nodes.slice(0, -1) : [];
-      this._trace = trace.nodes.length === 0 ? null : { start: trace.start, nodes };
-      this._changed();
+    if (this._trace?.index === null) {
+      this.endTrace();
       return;
     }
     const chain = this._chain;
@@ -720,14 +717,22 @@ export class EditSession {
     });
   }
 
-  /** Adds the node a click at `px` makes, or says why the click was refused. */
-  private _extendTrace(px: Point, scale: number): ClickResult {
+  /**
+   * Writes the node a click at `px` makes, one entry per click, or says why the
+   * click was refused. The second click writes a new centerline; each later
+   * one replaces its nodes.
+   */
+  private async _extendTrace(trace: Tracing, px: Point, scale: number): Promise<ClickResult> {
     const step = this.previewTrace(px, scale);
-    if (!this._trace || step?.kind !== 'node') {
+    if (step?.kind !== 'node') {
       return step?.kind === 'too-sharp' ? { kind: 'notice', message: TURN_TOO_SHARP } : NONE;
     }
-    this._trace = { start: this._trace.start, nodes: step.nodes };
-    this._changed();
+    const lines = [...this._centerlines()];
+    const index = trace.index ?? lines.length;
+    lines[index] = { nodes: [...step.nodes] };
+    this._trace = { start: trace.start, index };
+    const label = trace.index === null ? 'trace centerline' : 'extend centerline';
+    await this._record(label, { kind: 'layout' }, () => this._writeLayout({ centerlines: lines }));
     return NONE;
   }
 
@@ -815,6 +820,7 @@ export class EditSession {
   private _writeLayout(changes: {
     calibrationPoints?: readonly ReferencePoint[];
     sensors?: readonly Sensor[];
+    centerlines?: readonly Centerline[];
   }) {
     const manifest = this.archive.getManifest();
     manifest.layout = {
@@ -823,6 +829,7 @@ export class EditSession {
         ? { calibration: { ...manifest.layout.calibration, points: [...changes.calibrationPoints] } }
         : {}),
       ...(changes.sensors ? { sensors: [...changes.sensors] } : {}),
+      ...(changes.centerlines ? { centerlines: [...changes.centerlines] } : {}),
     };
   }
 
@@ -845,13 +852,18 @@ export class EditSession {
    * Brings the session's own state in step with the manifest: a gated tool
    * drops back to calibration and ends the chain or trace, and an image that
    * is gone is replaced by its neighbour, which ends the chain too. A trace
-   * outlives an image change: track belongs to the layout.
+   * outlives an image change: track belongs to the layout. A trace whose
+   * centerline an undo removed goes back to its start.
    */
   private _settle() {
     if (this._gated(this._tool)) {
       this._tool = 'calibration';
       this._chain = null;
-      this._closeTrace();
+      this._trace = null;
+    }
+    const trace = this._trace;
+    if (trace?.index != null && !this._centerlines()[trace.index]) {
+      this._trace = { start: trace.start, index: null };
     }
     const image = this.image;
     if (image?.filename !== this._filename) {
@@ -888,6 +900,10 @@ export class EditSession {
 
   private _sensors(): readonly Sensor[] {
     return this.archive.getManifest().layout.sensors;
+  }
+
+  private _centerlines(): readonly Centerline[] {
+    return this.archive.getManifest().layout.centerlines ?? [];
   }
 
   /** Whether the point at `index` is still at `px`: points have no id. */

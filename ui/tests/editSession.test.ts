@@ -1799,23 +1799,62 @@ describe('EditSession track tool (#284)', () => {
     expect(s.trace).not.toBeNull();
   });
 
-  it('keeps a line when it ends, and writes nothing to the manifest', async () => {
+  it('writes the line to layout.centerlines, one layout entry per click', async () => {
     const s = session({ tool: 'track' });
-    const before = JSON.stringify(s.archive.getManifest());
-    await clicks(s, { x: 100, y: 100 }, { x: 300, y: 100 });
+    await clicks(s, { x: 100, y: 100 });
+    expect(s.history.canUndo).toBe(false);
+    await clicks(s, { x: 300, y: 100 }, { x: 500, y: 200 });
+    const lines = s.archive.getManifest().layout.centerlines!;
+    expect(lines).toHaveLength(1);
+    expect(lines[0].nodes.map(n => [n.x, n.y])).toEqual([
+      [100, 100],
+      [300, 100],
+      [500, 200],
+    ]);
+    expect(s.tracks).toEqual(lines);
+    expect(s.history.undoLabel).toBe('extend centerline');
     s.endTrace();
     expect(s.trace).toBeNull();
     expect(s.tracks).toHaveLength(1);
-    expect(s.tracks[0].nodes).toHaveLength(2);
-    expect(JSON.stringify(s.archive.getManifest())).toBe(before);
-    expect(s.history.canUndo).toBe(false);
   });
 
-  it('drops a trace that never got past its start', async () => {
+  it('writes a second line beside the first', async () => {
+    const s = session({ tool: 'track' });
+    await clicks(s, { x: 100, y: 100 }, { x: 300, y: 100 });
+    s.endTrace();
+    await clicks(s, { x: 100, y: 500 }, { x: 300, y: 500 });
+    expect(s.tracks.map(t => t.nodes[0].y)).toEqual([100, 500]);
+  });
+
+  it('writes nothing for a trace that never got past its start', async () => {
     const s = session({ tool: 'track' });
     await clicks(s, { x: 100, y: 100 });
     s.endTrace();
     expect(s.tracks).toHaveLength(0);
+    expect('centerlines' in s.archive.getManifest().layout).toBe(false);
+  });
+
+  it('undoes an ended line node by node, through the history', async () => {
+    const s = session({ tool: 'track' });
+    await clicks(s, { x: 100, y: 100 }, { x: 300, y: 100 }, { x: 500, y: 200 });
+    s.endTrace();
+    await s.undo();
+    expect(s.tracks[0].nodes).toHaveLength(2);
+    await s.undo();
+    expect(s.tracks).toHaveLength(0);
+    await s.redo();
+    await s.redo();
+    expect(s.tracks[0].nodes).toHaveLength(3);
+  });
+
+  it('round-trips through a save and reopen', async () => {
+    const s = session({ tool: 'track' });
+    await clicks(s, { x: 100, y: 100 }, { x: 300, y: 100 }, { x: 500, y: 200 });
+    s.endTrace();
+
+    const reopened = new EditSession(await R49Archive.load(await s.archive.export()));
+
+    expect(reopened.tracks).toEqual(s.tracks);
   });
 
   it('ends a trace on right-click, opening no menu', async () => {
@@ -1848,9 +1887,22 @@ describe('EditSession track tool (#284)', () => {
     expect(s.trace!.nodes).toHaveLength(2);
     await s.undo();
     expect(s.trace).toEqual({ start: { x: 100, y: 100 }, nodes: [] });
+    expect(s.tracks).toHaveLength(0);
     await s.undo();
     expect(s.trace).toBeNull();
-    expect(s.tracks).toHaveLength(0);
+    expect(s.history.canUndo).toBe(false);
+  });
+
+  it('starts the line again after undoing back to the start', async () => {
+    const s = session({ tool: 'track' });
+    await clicks(s, { x: 100, y: 100 }, { x: 300, y: 100 });
+    await s.undo();
+    await clicks(s, { x: 100, y: 300 });
+    expect(s.tracks).toHaveLength(1);
+    expect(s.tracks[0].nodes.map(n => [n.x, n.y])).toEqual([
+      [100, 100],
+      [100, 300],
+    ]);
   });
 
   it('refuses a click that would turn too sharply, and says why', async () => {

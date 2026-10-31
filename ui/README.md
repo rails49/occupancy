@@ -391,7 +391,7 @@ image pixel coordinates.
 | `detections` | `readonly Detection[]` | L0 for this frame: dashed oriented boxes at the model's **own** predicted width. Empty in the editor |
 | `cars` | `readonly CarLabel[]` | Car spans to draw: a chord inside its width rectangle. Per **image**, so switching images swaps the whole list; empty in the live view |
 | `pendingCar` | `PendingCar \| null` | The **rubber band** — `{ anchor, to }` for the chain in flight. The one thing here that is not in the manifest; empty in the live view |
-| `tracks` | `readonly Track[]` | Traced centerlines ([#284]), drawn under everything else. Held by the session, not the manifest; empty in the live view |
+| `tracks` | `readonly Track[]` | The layout's centerlines ([#284]), drawn under everything else. Per layout, so the same on every image; empty in the live view |
 | `pendingTrack` | `PendingTrack \| null` | The trace in flight, with the node a click at the pointer would add |
 | `highlight` | `ViewerHighlight \| null` | The objects a reveal is pointing at — `{ cars, sensors, calibration }`, ids for the first two and **indices** for the third. Already resolved by `rr-editor-view`; the viewer draws it and decides nothing. `null` in the live view |
 | `zoom` | `Rect \| null` | The region of the **authored frame** on screen ([#44]). `null` is fit — the absence of a zoom, which is exactly what this element drew before the property existed. View state the editor owns; never in the manifest and never in the history. `null` in the live view |
@@ -1061,7 +1061,7 @@ it gets the objects the entry changed.
 | `image`, `imageIndex`, `tool`, `calibrated`, `anchor` | What is on screen, the tool, whether DPT resolves, and where a live chain's next car starts |
 | `car(id)`, `sensor(id)` | The car on the image on screen, or the sensor, with this id; undefined once it is gone |
 | `selectTool`, `selectImage`, `endChain` | Changes to the editing state, none of them recorded |
-| `tracks`, `trace`, `traceEnd`, `previewTrace(point, scale)`, `endTrace` | Traced centerlines and the trace in progress ([#284]). Held in the session only: not saved, not in the history |
+| `tracks`, `trace`, `traceEnd`, `previewTrace(point, scale)`, `endTrace` | The layout's centerlines and the trace in progress ([#284]). Each click of a trace writes one `layout` entry |
 | `click(point, scale)` | Writes, or returns what the editor must ask for: a reference point's world position, a sensor's name, or a notice |
 | `beginDrag(point, scale)` | A `Drag` (`move`, `end`, `cancel`) on what is under the point, or null |
 | `rightClick(point, scale)` | Ends a live chain or trace, or returns the `MenuSubject` a menu acts on |
