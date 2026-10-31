@@ -13,6 +13,9 @@ import {
   carMarkerStyles,
 } from './carMarker.js';
 import type { CarSymbolSize, CarWarning, PendingCar } from './carMarker.js';
+import { renderTrack, renderPendingTrack, trackMarkerStyles } from './trackMarker.js';
+import type { PendingTrack, TrackSymbolSize } from './trackMarker.js';
+import type { Track } from './track.js';
 import {
   coupledEnds,
   couplerPoints,
@@ -155,6 +158,9 @@ const CAR_HANDLE_SIZE_RATIO = 0.3;
  * from it, so the whole band scales as one thing.
  */
 const ZOOM_BAND_STROKE_RATIO = 0.06;
+
+/** Stroke width of a track's lines, as a fraction of the screen-constant symbol size. */
+const TRACK_STROKE_RATIO = 0.04;
 
 /**
  * A pointer gesture, in **image pixel coordinates**.
@@ -331,8 +337,10 @@ export class RrViewer extends LitElement {
     calibrationMarkerStyles,
     sensorMarkerStyles,
     carMarkerStyles,
-    // Last, and shared by all three above: the glow is an annotation on
-    // whichever symbol a reveal points at, not a symbol of its own.
+    trackMarkerStyles,
+    // Last, and shared by the calibration, sensor and car markers: the glow is
+    // an annotation on whichever symbol a reveal points at, not a symbol of its
+    // own.
     highlightStyles,
   ];
 
@@ -421,6 +429,13 @@ export class RrViewer extends LitElement {
    * Empty in the live view, which places no cars.
    */
   @property({ attribute: false }) pendingCar: PendingCar | null = null;
+  /**
+   * Traced centerlines (#284). Per layout, so the same on every image. Empty in
+   * the live view.
+   */
+  @property({ attribute: false }) tracks: readonly Track[] = [];
+  /** The trace in flight, or `null`. View state, like `pendingCar`. */
+  @property({ attribute: false }) pendingTrack: PendingTrack | null = null;
   /**
    * The layout's DPT, or `null` when calibration does not resolve one.
    *
@@ -818,6 +833,18 @@ export class RrViewer extends LitElement {
   }
 
   /**
+   * The sizes a track is drawn at: the DPT its rails are spaced by, and
+   * screen-constant strokes and node dots.
+   */
+  private trackSize(): TrackSymbolSize {
+    return {
+      dpt: this.dpt,
+      strokePx: this.symbolSize * TRACK_STROKE_RATIO,
+      nodePx: this.symbolSize * CAR_HANDLE_SIZE_RATIO,
+    };
+  }
+
+  /**
    * The warning a car's class earns, or `null` when the vocabulary names it.
    *
    * Derived here rather than passed in, for the same reason a coupling is: it
@@ -858,6 +885,7 @@ export class RrViewer extends LitElement {
     // underneath leave their own handles off — see `carMarker.ts`.
     const couplers = couplerPoints(this.cars);
     const carSize = this.carSize();
+    const trackSize = this.trackSize();
     // The viewBox is the **media's** pixel grid, so the overlay letterboxes
     // into the box `object-fit: contain` puts the photograph in; the group
     // inside it carries the authored frame onto that grid. Before anything
@@ -894,6 +922,10 @@ export class RrViewer extends LitElement {
           @contextmenu=${this.onContextMenu}
         >
           <g class="frame" transform="scale(${fit.sx}, ${fit.sy})">
+            <!-- Track under everything: cars stand on it. -->
+            ${this.tracks.map(t => renderTrack(t, trackSize))}
+            ${this.pendingTrack ? renderPendingTrack(this.pendingTrack, trackSize) : ''}
+
             <!-- Cars first: their width rectangles are the only area fills here,
                  so drawing them underneath keeps a crosshair or a sensor placed
                  on a car visible instead of tinted over. -->

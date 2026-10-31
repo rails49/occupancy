@@ -626,6 +626,57 @@ describe('rr-viewer', () => {
       });
     });
 
+    describe('track (#284)', () => {
+      const tracks = [
+        {
+          nodes: [
+            { x: 100, y: 100, heading: 0 },
+            { x: 400, y: 100, heading: 0 },
+          ],
+        },
+      ];
+
+      it('draws the centerline and both rails, under the cars', async () => {
+        const el = await fixture<RrViewer>(html`
+          <rr-viewer .tracks=${tracks} .cars=${cars} .dpt=${90} .resolution=${resolution}></rr-viewer>
+        `);
+        const track = el.shadowRoot!.querySelector('.track')!;
+        expect(track.querySelector('.centerline')!.getAttribute('d')).to.equal(
+          'M 100 100 C 200 100 300 100 400 100'
+        );
+        expect(track.querySelectorAll('.rail')).to.have.length(2);
+        expect(track.querySelectorAll('.node')).to.have.length(2);
+        const car = el.shadowRoot!.querySelector('.car')!;
+        expect(track.compareDocumentPosition(car) & Node.DOCUMENT_POSITION_FOLLOWING).to.not.equal(0);
+      });
+
+      it('draws no rails without a DPT', async () => {
+        const el = await fixture<RrViewer>(html`
+          <rr-viewer .tracks=${tracks} .dpt=${null} .resolution=${resolution}></rr-viewer>
+        `);
+        expect(el.shadowRoot!.querySelector('.track .centerline')).to.exist;
+        expect(el.shadowRoot!.querySelector('.track .rail')).to.not.exist;
+      });
+
+      it('draws a refused click as a line from the last node to the pointer', async () => {
+        const el = await fixture<RrViewer>(html`
+          <rr-viewer
+            .pendingTrack=${{
+              start: { x: 100, y: 100 },
+              nodes: tracks[0].nodes,
+              cursor: { x: 400, y: 400 },
+              refused: true,
+            }}
+            .dpt=${90}
+            .resolution=${resolution}
+          ></rr-viewer>
+        `);
+        const line = el.shadowRoot!.querySelector('.track-pending .refused')!;
+        expect(line.getAttribute('x1')).to.equal('400');
+        expect(line.getAttribute('y2')).to.equal('400');
+      });
+    });
+
     describe('the rubber band', () => {
       it('draws nothing while no chain is live', async () => {
         const el = await fixture<RrViewer>(html`

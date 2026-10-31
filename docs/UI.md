@@ -37,6 +37,15 @@ size rule is the session's — `requiredImageSize` answers it, and `addRefusal` 
 message names the file the user picked. `../SPEC.md` § Images states all three rules, why rotating
 in the browser was rejected, and why an image of another size is not something the screen can show.
 
+The **track tool** (#284) traces centerlines as G1 curves: nodes with a heading, a cubic Bézier
+between each pair (`track.ts`). It is a first step and deliberately partial. Each click after the
+second ends a circular arc tangent to the line so far, a click near the tangent line snaps to a
+straight, a turn over 90° in one segment is refused, and a click within the grab radius of the last
+node adds nothing. Right-click or Escape ends a line; undo while tracing removes the last node, and
+redo is refused. Traced lines live in the session alone: they are not saved, have no undo once
+ended, and cannot be edited. A click under the track tool always traces, even on a sensor, and a
+live trace grabs nothing, because sensors sit on the track being traced.
+
 The picker takes **several files in one pick** (#262), and the pick — not the file — is the unit:
 `addPickedFiles` prepares and judges each file in filename order, hands what survives to
 `EditSession.addImages` as **one** history entry, and returns one notice naming everything it

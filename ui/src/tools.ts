@@ -4,7 +4,7 @@
  * A closed union rather than a string, because the editor dispatches on it and
  * a fourth tool must be a case to add rather than a fall-through.
  */
-export type EditorTool = 'calibration' | 'sensor' | 'car';
+export type EditorTool = 'calibration' | 'sensor' | 'car' | 'track';
 
 /**
  * One tool's presentation, and whether calibration gates it.
@@ -38,6 +38,7 @@ export const TOOLS: readonly ToolSpec[] = [
   { tool: 'calibration', icon: 'crosshair', label: 'Calibration point', needsDpt: false },
   { tool: 'sensor', icon: 'broadcast-pin', label: 'Sensor', needsDpt: true },
   { tool: 'car', icon: 'train-front', label: 'Car', needsDpt: true },
+  { tool: 'track', icon: 'bezier2', label: 'Track', needsDpt: true },
 ];
 
 /**

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { MockInstance } from 'vitest';
-import { fixture, html } from '@open-wc/testing';
+import { fixture, fixtureCleanup, html } from '@open-wc/testing';
 import { R49Archive, getDPT } from '@rails49/r49';
 import { MIN_DPT } from '@rails49/detector';
 import type { ReferencePoint, CarLabel, Point, Sensor, WorldPoint } from '@rails49/r49';
@@ -441,7 +441,7 @@ describe('rr-editor-view', () => {
   }
 
   /** A calibrated editor with `tool` live, as the rail would choose it. */
-  async function mountWithTool(tool: 'sensor' | 'car') {
+  async function mountWithTool(tool: 'sensor' | 'car' | 'track') {
     calibrate();
     const el = await mount();
     el.session!.selectTool(tool);
@@ -905,6 +905,78 @@ describe('rr-editor-view', () => {
       await choose(el, 'delete');
 
       expect(sensors()).to.deep.equal([]);
+    });
+  });
+
+  describe('track (#284)', () => {
+    // An earlier test in this file leaves a context menu open, and an open menu
+    // swallows Escape.
+    beforeEach(fixtureCleanup);
+
+    function pending(el: RREditorView) {
+      return el.shadowRoot!.querySelector('rr-viewer')!.pendingTrack;
+    }
+
+    async function moveTo(el: RREditorView, point: Point) {
+      gesture(el, 'rr-pointer-move', point, 1);
+      await el.updateComplete;
+    }
+
+    async function pressEscape(el: RREditorView) {
+      document.body.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true })
+      );
+      await el.updateComplete;
+    }
+
+    async function traced(el: RREditorView) {
+      await clickAt(el, { x: 100, y: 100 });
+      await clickAt(el, { x: 300, y: 100 });
+    }
+
+    it('previews the arc a click at the pointer would add', async () => {
+      const el = await mountWithTool('track');
+      await traced(el);
+      await moveTo(el, { x: 500, y: 200 });
+
+      const p = pending(el)!;
+      expect(p.nodes.map(n => [n.x, n.y])).to.deep.equal([
+        [100, 100],
+        [300, 100],
+        [500, 200],
+      ]);
+      expect(p.refused).to.equal(false);
+      expect(el.session!.trace!.nodes).to.have.length(2);
+    });
+
+    it('marks a pointer the next click would be refused at', async () => {
+      const el = await mountWithTool('track');
+      await traced(el);
+      await moveTo(el, { x: 300, y: 400 });
+
+      expect(pending(el)!.refused).to.equal(true);
+      expect(pending(el)!.nodes).to.have.length(2);
+    });
+
+    it('ends the trace on Escape and hands the line to the viewer', async () => {
+      const el = await mountWithTool('track');
+      await traced(el);
+
+      await pressEscape(el);
+
+      expect(pending(el)).to.equal(null);
+      expect(el.shadowRoot!.querySelector('rr-viewer')!.tracks).to.have.length(1);
+    });
+
+    it('ends the trace on right-click, opening no menu', async () => {
+      const el = await mountWithTool('track');
+      await traced(el);
+
+      await rightClickAt(el, { x: 300, y: 100 });
+
+      expect(pending(el)).to.equal(null);
+      expect(menuItems(el)).to.deep.equal([]);
+      expect(el.session!.tracks).to.have.length(1);
     });
   });
 

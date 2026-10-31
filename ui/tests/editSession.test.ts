@@ -1,9 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 import { R49Archive, MANIFEST_VERSION, getDPT } from '@rails49/r49';
 import type { ReferencePoint, CarLabel, ManifestData, Point, Sensor } from '@rails49/r49';
-import { ALREADY_LABELED, EditSession } from '../src/editSession.js';
+import { ALREADY_LABELED, EditSession, TURN_TOO_SHARP } from '../src/editSession.js';
 import type { Reveal } from '../src/editSession.js';
 import { TOOLS } from '../src/tools.js';
+import type { EditorTool } from '../src/tools.js';
 import { classChoices, rootClass } from '../src/vocabulary.js';
 
 // No DOM: the session is a plain module, driven here the way the editor drives
@@ -45,7 +46,7 @@ function session({
 }: {
   images?: readonly string[];
   calibrated?: boolean;
-  tool?: 'calibration' | 'sensor' | 'car';
+  tool?: EditorTool;
 } = {}): EditSession {
   const archive = new R49Archive();
   archive.setManifest(manifest(images, calibrated));
@@ -1765,5 +1766,150 @@ describe('EditSession', () => {
       s.selectTool('sensor');
       expect(listener).toHaveBeenCalledTimes(7);
     });
+  });
+});
+
+describe('EditSession track tool (#284)', () => {
+  it('is gated on DPT', async () => {
+    const s = session({ calibrated: false });
+    s.selectTool('track');
+    expect(s.tool).toBe('calibration');
+    await clicks(s, { x: 10, y: 10 });
+    expect(s.trace).toBeNull();
+  });
+
+  it('starts a trace at the first click, and places nodes after it', async () => {
+    const s = session({ tool: 'track' });
+    await clicks(s, { x: 100, y: 100 });
+    expect(s.trace).toEqual({ start: { x: 100, y: 100 }, nodes: [] });
+    expect(s.traceEnd).toEqual({ x: 100, y: 100 });
+    await clicks(s, { x: 300, y: 100 }, { x: 500, y: 200 });
+    expect(s.trace!.nodes.map(n => [n.x, n.y])).toEqual([
+      [100, 100],
+      [300, 100],
+      [500, 200],
+    ]);
+    expect(s.traceEnd).toEqual({ x: 500, y: 200 });
+  });
+
+  it('starts a trace on a sensor rather than opening its name', async () => {
+    const s = session({ tool: 'track' });
+    sensors(s).push({ id: 'S1abcdefghi', x: 100, y: 100 });
+    expect(await s.click({ x: 100, y: 100 }, SCALE)).toEqual({ kind: 'none' });
+    expect(s.trace).not.toBeNull();
+  });
+
+  it('keeps a line when it ends, and writes nothing to the manifest', async () => {
+    const s = session({ tool: 'track' });
+    const before = JSON.stringify(s.archive.getManifest());
+    await clicks(s, { x: 100, y: 100 }, { x: 300, y: 100 });
+    s.endTrace();
+    expect(s.trace).toBeNull();
+    expect(s.tracks).toHaveLength(1);
+    expect(s.tracks[0].nodes).toHaveLength(2);
+    expect(JSON.stringify(s.archive.getManifest())).toBe(before);
+    expect(s.history.canUndo).toBe(false);
+  });
+
+  it('drops a trace that never got past its start', async () => {
+    const s = session({ tool: 'track' });
+    await clicks(s, { x: 100, y: 100 });
+    s.endTrace();
+    expect(s.tracks).toHaveLength(0);
+  });
+
+  it('ends a trace on right-click, opening no menu', async () => {
+    const s = session({ tool: 'track' });
+    await clicks(s, { x: 100, y: 100 }, { x: 300, y: 100 });
+    expect(s.rightClick({ x: 300, y: 100 }, SCALE)).toBeNull();
+    expect(s.trace).toBeNull();
+    expect(s.tracks).toHaveLength(1);
+  });
+
+  it('ends a trace on a tool change, keeping the line', async () => {
+    const s = session({ tool: 'track' });
+    await clicks(s, { x: 100, y: 100 }, { x: 300, y: 100 });
+    s.selectTool('car');
+    expect(s.trace).toBeNull();
+    expect(s.tracks).toHaveLength(1);
+  });
+
+  it('keeps a trace across an image change', async () => {
+    const s = session({ images: ['a.jpg', 'b.jpg'], tool: 'track' });
+    await clicks(s, { x: 100, y: 100 }, { x: 300, y: 100 });
+    s.selectImage('b.jpg');
+    expect(s.trace?.nodes).toHaveLength(2);
+  });
+
+  it('takes undo node by node while tracing, then ends at the start', async () => {
+    const s = session({ tool: 'track' });
+    await clicks(s, { x: 100, y: 100 }, { x: 300, y: 100 }, { x: 500, y: 200 });
+    await s.undo();
+    expect(s.trace!.nodes).toHaveLength(2);
+    await s.undo();
+    expect(s.trace).toEqual({ start: { x: 100, y: 100 }, nodes: [] });
+    await s.undo();
+    expect(s.trace).toBeNull();
+    expect(s.tracks).toHaveLength(0);
+  });
+
+  it('refuses a click that would turn too sharply, and says why', async () => {
+    const s = session({ tool: 'track' });
+    await clicks(s, { x: 100, y: 100 }, { x: 300, y: 100 });
+    expect(await s.click({ x: 300, y: 400 }, SCALE)).toEqual({
+      kind: 'notice',
+      message: TURN_TOO_SHARP,
+    });
+    expect(s.trace!.nodes).toHaveLength(2);
+  });
+
+  it('ignores a click within the grab radius of the last node, scaled to the screen', async () => {
+    const s = session({ tool: 'track' });
+    await clicks(s, { x: 100, y: 100 }, { x: 300, y: 100 });
+    expect(await s.click({ x: 310, y: 100 }, SCALE)).toEqual({ kind: 'none' });
+    expect(s.trace!.nodes).toHaveLength(2);
+    await s.click({ x: 310, y: 100 }, 0.5);
+    expect(s.trace!.nodes).toHaveLength(3);
+  });
+
+  it('previews the node a click would add, with the snap scaled to the screen', async () => {
+    const s = session({ tool: 'track' });
+    await clicks(s, { x: 100, y: 100 }, { x: 300, y: 100 });
+    const node = (scale: number) => {
+      const step = s.previewTrace({ x: 500, y: 104 }, scale);
+      return step?.kind === 'node' ? step.nodes[2] : null;
+    };
+    expect(node(SCALE)).toMatchObject({ x: 500, y: 100 });
+    expect(node(0.5)).toMatchObject({ x: 500, y: 104 });
+    expect(s.trace!.nodes).toHaveLength(2);
+  });
+
+  it('grabs nothing while a trace is live, so a sensor on the track stays put', async () => {
+    const s = session({ tool: 'track' });
+    sensors(s).push({ id: 'S1abcdefghi', x: 300, y: 100 });
+    await clicks(s, { x: 100, y: 100 });
+    expect(s.beginDrag({ x: 300, y: 100 }, SCALE)).toBeNull();
+    s.endTrace();
+    expect(s.beginDrag({ x: 300, y: 100 }, SCALE)).not.toBeNull();
+  });
+
+  it('refuses redo while a trace is live', async () => {
+    const s = session({ tool: 'sensor' });
+    await clicks(s, { x: 50, y: 50 });
+    await s.undo();
+    s.selectTool('track');
+    await clicks(s, { x: 100, y: 100 }, { x: 300, y: 100 });
+    await s.redo();
+    expect(sensors(s)).toHaveLength(0);
+    expect(s.trace!.nodes).toHaveLength(2);
+  });
+
+  it('ends a trace when DPT stops resolving', async () => {
+    const s = session({ tool: 'track' });
+    await clicks(s, { x: 100, y: 100 }, { x: 300, y: 100 });
+    await s.delete({ kind: 'calibration', index: 0, px: { x: 0, y: 0 } });
+    expect(s.tool).toBe('calibration');
+    expect(s.trace).toBeNull();
+    expect(s.tracks).toHaveLength(1);
   });
 });

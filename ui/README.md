@@ -48,7 +48,8 @@ rr-app                          ← shell: owns the editing session and the view
 │   ├── rr-viewer               ← SHARED: media + SVG overlay; reports pointer gestures
 │   │   ├── calibrationMarker.ts ← module, not an element: the labelled crosshair
 │   │   ├── sensorMarker.ts     ← module: the labelled diamond, recoloured by L1 state
-│   │   └── carMarker.ts        ← module: the authored chord + rectangle, and the L0 box
+│   │   ├── carMarker.ts        ← module: the authored chord + rectangle, and the L0 box
+│   │   └── trackMarker.ts      ← module: a traced centerline and its two rails
 │   ├── rr-thumbnail-bar        ← horizontal image selector strip
 │   ├── rr-calibration-dialog   ← asks for a point's x/y/z in mm (look-dialog)
 │   ├── rr-sensor-dialog        ← asks for a sensor's optional name (look-dialog)
@@ -137,6 +138,7 @@ rr-app                          ← shell: owns the editing session and the view
 > [#260]: https://github.com/rails49/occupancy/issues/260
 > [#262]: https://github.com/rails49/occupancy/issues/262
 > [#265]: https://github.com/rails49/occupancy/issues/265
+> [#284]: https://github.com/rails49/occupancy/issues/284
 
 ## State and data flow
 
@@ -389,6 +391,8 @@ image pixel coordinates.
 | `detections` | `readonly Detection[]` | L0 for this frame: dashed oriented boxes at the model's **own** predicted width. Empty in the editor |
 | `cars` | `readonly CarLabel[]` | Car spans to draw: a chord inside its width rectangle. Per **image**, so switching images swaps the whole list; empty in the live view |
 | `pendingCar` | `PendingCar \| null` | The **rubber band** — `{ anchor, to }` for the chain in flight. The one thing here that is not in the manifest; empty in the live view |
+| `tracks` | `readonly Track[]` | Traced centerlines ([#284]), drawn under everything else. Held by the session, not the manifest; empty in the live view |
+| `pendingTrack` | `PendingTrack \| null` | The trace in flight, with the node a click at the pointer would add |
 | `highlight` | `ViewerHighlight \| null` | The objects a reveal is pointing at — `{ cars, sensors, calibration }`, ids for the first two and **indices** for the third. Already resolved by `rr-editor-view`; the viewer draws it and decides nothing. `null` in the live view |
 | `zoom` | `Rect \| null` | The region of the **authored frame** on screen ([#44]). `null` is fit — the absence of a zoom, which is exactly what this element drew before the property existed. View state the editor owns; never in the manifest and never in the history. `null` in the live view |
 | `zoomPreview` | `Rect \| null` | The rect being dragged out — zoom's counterpart to `pendingCar`. Drawn in the overlay with a screen-constant stroke, never as an HTML box on the glass |
@@ -715,6 +719,34 @@ name a human chose and stops matching as sensors come and go. A blank name is tr
 
 ---
 
+### `trackMarker.ts`
+
+A traced centerline's SVG ([#284]). The exports must be used together.
+
+| Export | Type | Description |
+|---|---|---|
+| `renderTrack(track, size)` | `(Track, TrackSymbolSize) => SVGTemplateResult` | The centerline as one cubic per segment, the two rails at ±G/2, and a dot per node. No rails when `size.dpt` is `null` |
+| `renderPendingTrack(pending, size)` | `(PendingTrack, TrackSymbolSize) => SVGTemplateResult` | The trace in flight. A click that would be refused shows as a red line from the last node to the pointer |
+| `TrackSymbolSize` | `{ dpt, strokePx, nodePx }` | The DPT the rails are spaced by, and screen-constant stroke and dot sizes |
+| `PendingTrack` | `{ start, nodes, cursor, refused }` | The trace's first click, its nodes including the pointer's, the pointer, and whether a click there is refused |
+| `trackMarkerStyles` | `CSSResult` | The violet ink and the refused line's red |
+
+### `track.ts`
+
+The arithmetic of a G1 centerline ([#284]): pure functions, tested in `tests/track.test.ts`. A
+`Track` is a list of `TrackNode`s (`x`, `y`, `heading` in radians, `atan2(dy, dx)` in image
+pixels). Between two nodes the curve is a cubic Bézier whose handles leave each node along its
+heading, with length `d / (3 cos²(φ/4))`.
+
+| Export | Description |
+|---|---|
+| `segment(a, b)`, `segments(nodes)` | The Bézier between two nodes, or between each consecutive pair |
+| `pointAt`, `tangentAt` | A point on a segment, and the derivative there |
+| `trackPath(nodes)` | An SVG path, one `C` per segment |
+| `offsetPoints(nodes, offset)` | Sampled points `offset` px to the right of the line; negative is left |
+| `traceTo(start, nodes, to, snapPx, minPx)` | What a click at `to` does to a trace: the new nodes, `too-close` to the last point, or `too-sharp` |
+| `STRAIGHT_SNAP_SCREEN_PX`, `MAX_TURN` | The straight snap's tolerance, and the largest turn one segment may make (90°) |
+
 ### `carMarker.ts`
 
 The car's own SVG, with the same shape and the same rules as the two markers above. **The exports
@@ -1029,9 +1061,10 @@ it gets the objects the entry changed.
 | `image`, `imageIndex`, `tool`, `calibrated`, `anchor` | What is on screen, the tool, whether DPT resolves, and where a live chain's next car starts |
 | `car(id)`, `sensor(id)` | The car on the image on screen, or the sensor, with this id; undefined once it is gone |
 | `selectTool`, `selectImage`, `endChain` | Changes to the editing state, none of them recorded |
+| `tracks`, `trace`, `traceEnd`, `previewTrace(point, scale)`, `endTrace` | Traced centerlines and the trace in progress ([#284]). Held in the session only: not saved, not in the history |
 | `click(point, scale)` | Writes, or returns what the editor must ask for: a reference point's world position, a sensor's name, or a notice |
 | `beginDrag(point, scale)` | A `Drag` (`move`, `end`, `cancel`) on what is under the point, or null |
-| `rightClick(point, scale)` | Ends a live chain, or returns the `MenuSubject` a menu acts on |
+| `rightClick(point, scale)` | Ends a live chain or trace, or returns the `MenuSubject` a menu acts on |
 | `placeReferencePoint`, `editReferencePoint`, `nameSensor`, `delete`, `reclassifyCar`, `setComplete` | The answers to a dialog, a menu row or the checkbox |
 | `editLayout`, `setCameraHeight` | The settings dialog's edits, one `layout` entry each |
 | `addImage`, `deleteImage`, `reorderImages` | The image list. Deleting the image on screen shows its neighbour. `addImage` may set `camera.resolution` (`SPEC.md` § Images, [#254]) |
@@ -1356,7 +1389,7 @@ The editor's tools, in one list that drives both the rail's buttons and the sess
 
 | Export | Description |
 |---|---|
-| `EditorTool` | `'calibration' \| 'sensor' \| 'car'` |
+| `EditorTool` | `'calibration' \| 'sensor' \| 'car' \| 'track'` |
 | `TOOLS` | Each tool's icon, label and `needsDpt` |
 | `GATE_REASON` | The disabled tools' tooltip while DPT is unresolved |
 

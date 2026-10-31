@@ -22,6 +22,8 @@ import type { DragHandle, HitKind, HitScene, HitTarget, HitTolerance, Size } fro
 import { EditHistory, revealTarget } from './history.js';
 import type { HistoryEntry, HistoryGesture, HistoryHighlight, HistoryTarget } from './history.js';
 import { TOOLS } from './tools.js';
+import { STRAIGHT_SNAP_SCREEN_PX, traceTo } from './track.js';
+import type { Track, TraceStep, TrackNode } from './track.js';
 import type { EditorTool } from './tools.js';
 import { rootClass } from './vocabulary.js';
 
@@ -57,6 +59,9 @@ export interface AddedImage {
   /** The size those bytes measure, or undefined when they did not decode. */
   readonly size?: Size;
 }
+
+/** Why the track tool refused a click (#284). */
+export const TURN_TOO_SHARP = 'One segment turns at most 90°. Place a node before the turn gets that sharp.';
 
 /** Why the car tool refused a click on a car's body or on one of its ends (#43). */
 export const ALREADY_LABELED =
@@ -129,6 +134,13 @@ interface Chain {
   readonly links: readonly ChainLink[];
 }
 
+/** A centerline being traced (#284): the first click, and the nodes placed since. */
+export interface Trace {
+  readonly start: Point;
+  /** Empty until the second click, which gives the first node its heading. */
+  readonly nodes: readonly TrackNode[];
+}
+
 /**
  * The editing rules for one archive: every write the editor makes, the tool,
  * the chain, drags, and the image on screen. Pointer input arrives in image
@@ -145,6 +157,12 @@ export class EditSession {
   private _index = 0;
   private _tool: EditorTool = 'calibration';
   private _chain: Chain | null = null;
+  /**
+   * Traced centerlines and the one being traced (#284). Held here and nowhere
+   * else: they are not saved and have no undo once ended.
+   */
+  private _tracks: readonly Track[] = [];
+  private _trace: Trace | null = null;
   private _drag: Drag | null = null;
   private readonly _listeners = new Set<SessionListener>();
 
@@ -189,6 +207,57 @@ export class EditSession {
     return this._chain?.anchor ?? null;
   }
 
+  /** The centerlines traced and ended in this session. */
+  get tracks(): readonly Track[] {
+    return this._tracks;
+  }
+
+  /** The centerline being traced, or null when none is. */
+  get trace(): Trace | null {
+    return this._trace;
+  }
+
+  /** The last point a live trace placed, or null when no trace is live. */
+  get traceEnd(): Point | null {
+    const trace = this._trace;
+    if (!trace) return null;
+    const last = trace.nodes[trace.nodes.length - 1];
+    return last ? { x: last.x, y: last.y } : trace.start;
+  }
+
+  /**
+   * What a click at `at` would do to a live trace, or null when none is live. A
+   * click within the grab radius of the last point placed adds nothing.
+   */
+  previewTrace(at: Point, scale: number): TraceStep | null {
+    const trace = this._trace;
+    return (
+      trace &&
+      traceTo(
+        trace.start,
+        trace.nodes,
+        at,
+        STRAIGHT_SNAP_SCREEN_PX * scale,
+        DEFAULT_GRAB_RADIUS_SCREEN_PX * scale
+      )
+    );
+  }
+
+  /** Ends a live trace. A line of two nodes or more is kept; a lone start is dropped. */
+  endTrace() {
+    if (!this._closeTrace()) return;
+    this._changed();
+  }
+
+  /** Ends a live trace without telling the listeners. Returns whether one was live. */
+  private _closeTrace(): boolean {
+    const trace = this._trace;
+    if (!trace) return false;
+    if (trace.nodes.length >= 2) this._tracks = [...this._tracks, { nodes: trace.nodes }];
+    this._trace = null;
+    return true;
+  }
+
   /** The car with this id on the image on screen, or undefined once it is gone. */
   car(id: string): CarLabel | undefined {
     return this.image?.labels.find(car => car.id === id);
@@ -199,11 +268,12 @@ export class EditSession {
     return this._sensors().find(sensor => sensor.id === id);
   }
 
-  /** Makes `tool` the active one. Ends a live chain. A gated tool drops back to calibration. */
+  /** Makes `tool` the active one. Ends a live chain or trace. A gated tool drops back to calibration. */
   selectTool(tool: EditorTool) {
     if (tool === this._tool) return;
     this._tool = tool;
     this._chain = null;
+    this._closeTrace();
     this._changed();
   }
 
@@ -229,14 +299,25 @@ export class EditSession {
   }
 
   /**
-   * A click at `at`. A live chain takes it as the next car end. Otherwise an
-   * object under it is edited whatever the tool, and empty image runs the tool.
+   * A click at `at`. A live chain takes it as the next car end, and a live
+   * trace as its next node. The track tool starts a trace wherever it is
+   * clicked. Otherwise an object under it is edited whatever the tool, and
+   * empty image runs the tool.
    */
   async click(at: Point, scale: number): Promise<ClickResult> {
     const px = { x: Math.round(at.x), y: Math.round(at.y) };
 
+    if (this._trace) return this._extendTrace(px, scale);
+
     if (this._chain) {
       await this._completeCar(this._chain, px);
+      return NONE;
+    }
+
+    if (this._tool === 'track') {
+      if (this._gated('track')) return NONE;
+      this._trace = { start: px, nodes: [] };
+      this._changed();
       return NONE;
     }
 
@@ -282,10 +363,11 @@ export class EditSession {
 
   /**
    * Starts a drag of whatever is under `at`, or returns null when nothing is.
-   * A second drag while one is open is refused.
+   * A second drag while one is open is refused, and so is any drag while a
+   * trace is live: sensors sit on the track being traced.
    */
   beginDrag(at: Point, scale: number): Drag | null {
-    if (this._drag) return null;
+    if (this._drag || this._trace) return null;
     const scene = this._scene();
     const hit = hitTest(scene, at, grab(scale));
     if (!hit) return null;
@@ -317,11 +399,15 @@ export class EditSession {
   }
 
   /**
-   * A right-click. A live chain ends and nothing else happens. Otherwise
+   * A right-click. A live chain or trace ends and nothing else happens. Otherwise
    * returns what a menu would act on: a sensor or reference point under `at`,
    * else the car whose body is under it, else null.
    */
   rightClick(at: Point, scale: number): MenuSubject | null {
+    if (this._trace) {
+      this.endTrace();
+      return null;
+    }
     if (this._chain) {
       this.endChain();
       return null;
@@ -560,10 +646,19 @@ export class EditSession {
    * listeners what changed (`SPEC.md` § Undo and redo). A live chain takes
    * every undo: at its start the chain ends and nothing is undone; further
    * along the anchor steps back if the undo removed the chain's last car.
-   * Refused while a drag is open.
+   * A live trace takes every undo too: it loses its last node, or back to
+   * its start from the first segment, whose heading the second click set; a
+   * trace at its start ends. Refused while a drag is open.
    */
   async undo() {
     if (this._drag) return;
+    const trace = this._trace;
+    if (trace) {
+      const nodes = trace.nodes.length > 2 ? trace.nodes.slice(0, -1) : [];
+      this._trace = trace.nodes.length === 0 ? null : { start: trace.start, nodes };
+      this._changed();
+      return;
+    }
     const chain = this._chain;
     const link = chain?.links[chain.links.length - 1];
     if (chain && !link) {
@@ -577,9 +672,9 @@ export class EditSession {
     this._changed(entry && { highlights: entry.highlights });
   }
 
-  /** Redoes one entry, the same way. Ends a live chain. Refused while a drag is open. */
+  /** Redoes one entry, the same way. Ends a live chain. Refused while a drag is open or a trace is live. */
   async redo() {
-    if (this._drag) return;
+    if (this._drag || this._trace) return;
     this._chain = null;
     const entry = await this._apply(this.history.redoEntry, () => this.history.redo());
     this._changed(entry && { highlights: entry.highlights });
@@ -623,6 +718,17 @@ export class EditSession {
     await this._record('place car', { kind: 'image', filename: image.filename }, () => {
       this._writeImage(image.filename, { labels: [...image.labels, car] });
     });
+  }
+
+  /** Adds the node a click at `px` makes, or says why the click was refused. */
+  private _extendTrace(px: Point, scale: number): ClickResult {
+    const step = this.previewTrace(px, scale);
+    if (!this._trace || step?.kind !== 'node') {
+      return step?.kind === 'too-sharp' ? { kind: 'notice', message: TURN_TOO_SHARP } : NONE;
+    }
+    this._trace = { start: this._trace.start, nodes: step.nodes };
+    this._changed();
+    return NONE;
   }
 
   /** Writes an unnamed sensor at `px`. */
@@ -737,13 +843,15 @@ export class EditSession {
 
   /**
    * Brings the session's own state in step with the manifest: a gated tool
-   * drops back to calibration and ends the chain, and an image that is gone
-   * is replaced by its neighbour, which ends the chain too.
+   * drops back to calibration and ends the chain or trace, and an image that
+   * is gone is replaced by its neighbour, which ends the chain too. A trace
+   * outlives an image change: track belongs to the layout.
    */
   private _settle() {
     if (this._gated(this._tool)) {
       this._tool = 'calibration';
       this._chain = null;
+      this._closeTrace();
     }
     const image = this.image;
     if (image?.filename !== this._filename) {

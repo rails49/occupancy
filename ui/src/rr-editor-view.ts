@@ -24,6 +24,8 @@ import {
 } from './geometry.js';
 import type { FrameSize, Rect, Size } from './geometry.js';
 import type { PendingCar } from './carMarker.js';
+import type { PendingTrack } from './trackMarker.js';
+import { isInsideOpenDialog } from './keyboard.js';
 import { classChoices, rootClass } from './vocabulary.js';
 import type { ClassChoice } from './vocabulary.js';
 import { lookTheme, TURN_HEIGHT_PX } from '@rails49/look';
@@ -460,10 +462,12 @@ export class RREditorView extends LitElement {
   /** What the context menu is open on, or null when it is closed. */
   private _menuSubject: MenuSubject | null = null;
   /**
-   * Where the pointer last was, in whole image pixels, while a chain is live:
-   * the rubber band's far end.
+   * Where the pointer last was, in whole image pixels, while a chain or a
+   * trace is live: the rubber band's far end, or the trace's next node.
    */
   @state() private _cursor: Point | null = null;
+  /** The screen scale `_cursor` was reported at, for the trace's straight snap. */
+  private _cursorScale = 1;
   /**
    * The objects a reveal is pointing at, or `null` when none is. Held as ids
    * and pixels and resolved on every render, so a later edit cannot leave the
@@ -622,7 +626,7 @@ export class RREditorView extends LitElement {
       // Zoom rects mean nothing on the next archive.
       this._fitZoom();
     }
-    if (!this.session?.anchor) this._cursor = null;
+    if (!this.session?.anchor && !this.session?.trace) this._cursor = null;
   }
 
   updated() {
@@ -894,9 +898,9 @@ export class RREditorView extends LitElement {
   }
 
   /**
-   * Escape fits — a desktop accelerator for the overlay control, never a
-   * substitute for it: the labeling device is a phone, which has no Escape at
-   * all.
+   * Escape ends a live trace (#284). Otherwise it fits — a desktop accelerator
+   * for the overlay control, never a substitute for it: the labeling device is
+   * a phone, which has no Escape at all.
    *
    * Nothing here asks whether a menu is open, and asking would not work:
    * `rr-context-menu` listens on the document in the **capture** phase, so it
@@ -905,8 +909,11 @@ export class RREditorView extends LitElement {
    * no menu consumed.
    */
   private readonly _onKeyDown = (event: KeyboardEvent) => {
-    if (event.key !== 'Escape' || this._zoom === null) return;
-    this._fitZoom();
+    if (event.key !== 'Escape') return;
+    if (this.session?.trace) {
+      // An Escape that closes a dialog is the dialog's.
+      if (!isInsideOpenDialog(event)) this.session.endTrace();
+    } else if (this._zoom !== null) this._fitZoom();
   };
 
   /**
@@ -989,12 +996,13 @@ export class RREditorView extends LitElement {
   }
 
   /**
-   * Motion. It moves the rubber band while a chain is live, and becomes a drag
-   * once it leaves the click slop.
+   * Motion. It moves the rubber band while a chain or trace is live, and
+   * becomes a drag once it leaves the click slop.
    */
   private _onViewerPointerMove(e: CustomEvent<ViewerPointerDetail>) {
-    if (this.session?.anchor) {
+    if (this.session?.anchor || this.session?.trace) {
       this._cursor = { x: Math.round(e.detail.point.x), y: Math.round(e.detail.point.y) };
+      this._cursorScale = e.detail.imagePxPerScreenPx;
     }
 
     const gesture = this._current(e);
@@ -1093,8 +1101,8 @@ export class RREditorView extends LitElement {
     if (!isClick(gesture.origin, e.detail.point, this._slop(gesture))) return;
 
     const result = await this.session.click(gesture.origin, gesture.scale);
-    const anchor = this.session.anchor;
-    this._cursor = anchor && { ...anchor };
+    const live = this.session.anchor ?? this.session.traceEnd;
+    this._cursor = live && { ...live };
     await this._answer(result);
   }
 
@@ -1326,6 +1334,24 @@ export class RREditorView extends LitElement {
     return anchor ? { anchor, to: this._cursor ?? anchor } : null;
   }
 
+  /**
+   * The trace in flight, or null when none is: the nodes a click at the pointer
+   * would make, or the nodes placed so far when that click adds nothing.
+   */
+  private _pendingTrack(): PendingTrack | null {
+    const session = this.session;
+    const trace = session?.trace;
+    if (!session || !trace) return null;
+    const cursor = this._cursor;
+    const step = cursor && session.previewTrace(cursor, this._cursorScale);
+    return {
+      start: trace.start,
+      nodes: step?.kind === 'node' ? step.nodes : trace.nodes,
+      cursor,
+      refused: step?.kind === 'too-sharp',
+    };
+  }
+
   /** Zoom to fit, present only while zoomed. */
   private _renderFitControl() {
     if (this._zoom === null) return '';
@@ -1363,6 +1389,8 @@ export class RREditorView extends LitElement {
                 .sensors=${manifest.layout.sensors}
                 .cars=${currentImage?.labels ?? []}
                 .pendingCar=${this._pendingCar()}
+                .tracks=${this.session.tracks}
+                .pendingTrack=${this._pendingTrack()}
                 .highlight=${this._highlight && this._resolveHighlight(this._highlight)}
                 .zoom=${this._zoom}
                 .zoomPreview=${this._zoomPreview}
