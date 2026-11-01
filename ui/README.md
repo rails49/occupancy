@@ -44,6 +44,7 @@ rr-app                          ← shell: owns the editing session and the view
 │   ├── look-band               ← UI name, layout name and scale, bound file, settings gear
 │   └── look-rail               ← the views; in the editor, File, History and Tools
 ├── rr-settings-dialog          ← layout metadata + required-metadata gate (look-dialog)
+├── rr-discard-dialog           ← Save, Discard changes or Cancel before New and Open (look-dialog)
 ├── rr-editor-view              ← editor mode; drives editSession.ts, the rules for one archive
 │   ├── rr-viewer               ← SHARED: media + SVG overlay; reports pointer gestures
 │   │   ├── calibrationMarker.ts ← module, not an element: the labelled crosshair
@@ -336,6 +337,15 @@ carry their own world coordinate instead.
 
 Classifier selection is **not implemented**: there is no classifier tab, and nothing loads the
 classifier (ADR 0004).
+
+---
+
+### `rr-discard-dialog`
+
+Asks what to do with unsaved changes before New or Open replaces the archive. Opened imperatively
+with `ask()`, which resolves `'save'`, `'discard'` or `'cancel'`; closing the dialog any other way is
+`'cancel'`. `rr-app` goes ahead after a discard, or after a save that leaves the history clean, and
+stays otherwise.
 
 ---
 

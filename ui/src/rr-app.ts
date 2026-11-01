@@ -18,6 +18,8 @@ import './rr-live-view.js';
 import './rr-diagnostics-view.js';
 import './rr-settings-dialog.js';
 import type { RRSettingsDialog } from './rr-settings-dialog.js';
+import './rr-discard-dialog.js';
+import type { RRDiscardDialog } from './rr-discard-dialog.js';
 import { setBasePath } from '@shoelace-style/shoelace/dist/utilities/base-path.js';
 import '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
@@ -58,6 +60,7 @@ export class RRApp extends LitElement {
   @state() private _viewMode: ViewMode = 'editor';
 
   @query('rr-settings-dialog') private _settingsDialog!: RRSettingsDialog;
+  @query('rr-discard-dialog') private _discardDialog!: RRDiscardDialog;
 
   /**
    * The file this session writes back to, or null for a layout that has never
@@ -125,8 +128,8 @@ export class RRApp extends LitElement {
   /**
    * The third act undo cannot cover: closing or reloading the tab (#49).
    *
-   * `_confirmDiscard()` is not shared — it answers with a boolean out of
-   * `window.confirm`, which this cannot use. All `beforeunload` may do is
+   * `_confirmDiscard()` is not shared — it waits on `rr-discard-dialog`, which
+   * this cannot do. All `beforeunload` may do is
    * cancel and let the browser ask, in wording nobody can set. That generic
    * dialog is accepted on the cost asymmetry `SPEC.md` § Undo and redo states:
    * one extra click on a deliberate close, against a whole hand-labeling
@@ -189,15 +192,24 @@ export class RRApp extends LitElement {
 
   /**
    * Guards the two acts undo structurally cannot cover: New and Open replace
-   * the archive, and the stack goes with it.
+   * the archive, and the stack goes with it. Resolves true to go ahead: the
+   * changes were discarded, or saved. A save that is cancelled or fails stops.
    */
-  private _confirmDiscard(): boolean {
+  private async _confirmDiscard(): Promise<boolean> {
     if (!this._session?.history.isDirty) return true;
-    return window.confirm('Discard unsaved changes to this layout?');
+    switch (await this._discardDialog.ask()) {
+      case 'cancel':
+        return false;
+      case 'discard':
+        return true;
+      case 'save':
+        await this._onFileSave();
+        return !this._session?.history.isDirty;
+    }
   }
 
-  private _onFileNew() {
-    if (!this._confirmDiscard()) return;
+  private async _onFileNew() {
+    if (!(await this._confirmDiscard())) return;
     const archive = new R49Archive();
     archive.setManifest({
       version: MANIFEST_VERSION,
@@ -219,7 +231,7 @@ export class RRApp extends LitElement {
   }
 
   private async _onFileOpen() {
-    if (!this._confirmDiscard()) return;
+    if (!(await this._confirmDiscard())) return;
     let opened;
     try {
       opened = await openArchive();
@@ -462,6 +474,8 @@ export class RRApp extends LitElement {
           }
         </main>
       </look-shell>
+
+      <rr-discard-dialog></rr-discard-dialog>
 
       <!-- The placeholder layout is for the dialog to render against, not an
            answer any archive gave. -->

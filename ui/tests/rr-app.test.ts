@@ -313,6 +313,69 @@ describe('rr-app', () => {
   // more. No browser here renders a leave-site dialog — jsdom dispatches the
   // event and records `defaultPrevented`, exactly as the viewer's CTM stub and
   // the File System Access fakes prove routing rather than behaviour.
+  describe('unsaved changes before New', () => {
+    async function mountDirty() {
+      const el = await fixture<RRApp>(html`<rr-app></rr-app>`);
+      (el as any)._open(archive);
+      const history = (el as any)._session.history as EditHistory;
+      await history.record('rename layout', { kind: 'layout' }, () => {
+        archive.getManifest().layout.name = 'Renamed';
+      });
+      return el;
+    }
+
+    function answer(el: RRApp, choice: 'save' | 'discard' | 'cancel') {
+      return vi.spyOn((el as any)._discardDialog, 'ask').mockResolvedValue(choice);
+    }
+
+    function currentArchive(el: RRApp): R49Archive {
+      return (el as any)._session.archive;
+    }
+
+    it('stays on the layout when the person cancels', async () => {
+      const el = await mountDirty();
+      answer(el, 'cancel');
+      await (el as any)._onFileNew();
+      expect(currentArchive(el)).toBe(archive);
+    });
+
+    it('drops the changes when the person discards them', async () => {
+      const el = await mountDirty();
+      const save = vi.spyOn(el as any, '_onFileSave');
+      answer(el, 'discard');
+      await (el as any)._onFileNew();
+      expect(currentArchive(el)).not.toBe(archive);
+      expect(save).not.toHaveBeenCalled();
+    });
+
+    it('saves, then goes ahead, when the person saves', async () => {
+      const el = await mountDirty();
+      vi.spyOn(el as any, '_onFileSave').mockImplementation(async () => {
+        (el as any)._session.history.markSaved();
+      });
+      answer(el, 'save');
+      await (el as any)._onFileNew();
+      expect(currentArchive(el)).not.toBe(archive);
+    });
+
+    it('stays when the save does not happen', async () => {
+      const el = await mountDirty();
+      vi.spyOn(el as any, '_onFileSave').mockResolvedValue(undefined);
+      answer(el, 'save');
+      await (el as any)._onFileNew();
+      expect(currentArchive(el)).toBe(archive);
+    });
+
+    it('asks nothing of a clean session', async () => {
+      const el = await fixture<RRApp>(html`<rr-app></rr-app>`);
+      (el as any)._open(archive);
+      const ask = answer(el, 'cancel');
+      await (el as any)._onFileNew();
+      expect(ask).not.toHaveBeenCalled();
+      expect(currentArchive(el)).not.toBe(archive);
+    });
+  });
+
   describe('the guard on closing the tab (#49)', () => {
     /** An app whose history has one unsaved edit on it. */
     async function mountDirty() {
