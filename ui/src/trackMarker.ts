@@ -6,7 +6,7 @@ import type { Track, TrackNode } from './track.js';
 
 /**
  * Track rendering for SVG (#284): the centerline, the two rails half a gauge to
- * either side, a dot at each node, and while the track tool is idle a handle on
+ * either side, a dot at each node, and under the track tool a handle on
  * each node's heading.
  *
  * A module rather than a custom element, like the other markers. Its exports

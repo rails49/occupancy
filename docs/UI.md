@@ -45,10 +45,11 @@ node adds nothing. Right-click or Escape ends a line. Lines are written to `layo
 a car chain writes cars: the second click writes a new centerline and each later click replaces its
 nodes, one `layout` entry per click, so undo removes a line node by node whether or not the trace is
 still live. A live trace takes every undo, ends at its start, and refuses redo. While a trace is
-live, a click always traces, even on a sensor, and a drag grabs nothing, because sensors sit on the
-track being traced.
+live, a click always traces, even on a sensor, and a drag grabs only a node or a heading handle,
+because sensors sit on the track being traced. A trace still at its start ends when a node is
+dragged; one further along keeps going.
 
-With the track tool idle, the track comes first under the pointer (`track.ts` § `hitTrack`): a
+Under the track tool, the track comes first under the pointer (`track.ts` § `hitTrack`): a
 heading handle, then a node, then a line. Dragging a node moves it and keeps its heading; dragging
 the handle at the end of a node's heading tick turns the node to face the pointer. A click on a line
 inserts a node there, heading along it. A click on an end node continues that line; from the first

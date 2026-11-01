@@ -990,6 +990,25 @@ describe('rr-editor-view', () => {
       expect(el.session!.tracks[0].nodes.map(n => n.x)).to.deep.equal([100, 500]);
     });
 
+    it('drags a node rather than the view, even right after a click started a trace', async () => {
+      archive.getManifest().layout.centerlines = [
+        {
+          nodes: [
+            { x: 100, y: 100, heading: 0 },
+            { x: 300, y: 100, heading: 0 },
+          ],
+        },
+      ];
+      const el = await mountWithTool('track');
+      await clickAt(el, { x: 600, y: 600 });
+      expect(el.session!.trace).not.toBe(null);
+
+      await drag(el, [{ x: 300, y: 100 }, { x: 320, y: 140 }]);
+
+      expect(el.session!.tracks[0].nodes[1]).to.deep.include({ x: 320, y: 140 });
+      expect(el.shadowRoot!.querySelector('rr-viewer')!.zoom).to.equal(null);
+    });
+
     it('ends the trace on right-click, opening no menu', async () => {
       const el = await mountWithTool('track');
       await traced(el);

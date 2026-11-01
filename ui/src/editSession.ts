@@ -387,13 +387,19 @@ export class EditSession {
 
   /**
    * Starts a drag of whatever is under `at`, or returns null when nothing is.
-   * A second drag while one is open is refused, and so is any drag while a
-   * trace is live: sensors sit on the track being traced.
+   * A second drag while one is open is refused. Under the track tool a node or
+   * heading handle is grabbed even while a trace is live, which keeps tracing
+   * unless it is still at its start; nothing else is grabbed while tracing,
+   * since sensors sit on the track being traced.
    */
   beginDrag(at: Point, scale: number): Drag | null {
-    if (this._drag || this._trace) return null;
+    if (this._drag) return null;
     const trackHit = this._trackHit(at, scale);
-    if (trackHit && trackHit.kind !== 'curve') return this._beginTrackDrag(trackHit, at);
+    if (trackHit && trackHit.kind !== 'curve') {
+      if (this._trace?.index === null) this._trace = null;
+      return this._beginTrackDrag(trackHit, at);
+    }
+    if (this._trace) return null;
     const scene = this._scene();
     const hit = hitTest(scene, at, grab(scale));
     if (!hit) return null;
@@ -1035,10 +1041,10 @@ export class EditSession {
 
   /**
    * What the track tool's pointer is on: a heading handle, a node or a line.
-   * Null under another tool, while a trace is live, or while the tool is gated.
+   * Null under another tool, or while the tool is gated.
    */
   private _trackHit(at: Point, scale: number): TrackHit | null {
-    if (this._tool !== 'track' || this._trace || this._gated('track')) return null;
+    if (this._tool !== 'track' || this._gated('track')) return null;
     return hitTrack(
       this._centerlines(),
       at,

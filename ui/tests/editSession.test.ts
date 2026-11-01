@@ -2088,6 +2088,22 @@ describe('EditSession track editing (#284)', () => {
     expect(xs(s)).toEqual([100, 300, 500]);
   });
 
+  it('moves a node while a trace is live, and keeps tracing', async () => {
+    const s = withLine();
+    await clicks(s, { x: 500, y: 100 }, { x: 700, y: 100 });
+    await drag(s, [{ x: 300, y: 100 }, { x: 300, y: 140 }]);
+    expect(s.tracks[0].nodes[1]).toMatchObject({ x: 300, y: 140 });
+    expect(s.trace?.nodes).toHaveLength(4);
+  });
+
+  it('drops a trace still at its start when a node is dragged', async () => {
+    const s = withLine();
+    await clicks(s, { x: 100, y: 400 });
+    await drag(s, [{ x: 300, y: 100 }, { x: 300, y: 140 }]);
+    expect(s.tracks[0].nodes[1]).toMatchObject({ x: 300, y: 140 });
+    expect(s.trace).toBeNull();
+  });
+
   it('leaves track alone under another tool', async () => {
     const s = withLine();
     s.selectTool('sensor');
