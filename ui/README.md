@@ -50,7 +50,7 @@ rr-app                          ← shell: owns the editing session and the view
 │   │   ├── calibrationMarker.ts ← module, not an element: the labelled crosshair
 │   │   ├── sensorMarker.ts     ← module: the labelled diamond, recoloured by L1 state
 │   │   ├── carMarker.ts        ← module: the authored chord + rectangle, and the L0 box
-│   │   └── trackMarker.ts      ← module: a traced centerline and its two rails
+│   │   └── trackMarker.ts      ← module: a centerline and its two rails
 │   ├── rr-thumbnail-bar        ← horizontal image selector strip
 │   ├── rr-calibration-dialog   ← asks for a point's x/y/z in mm (look-dialog)
 │   ├── rr-sensor-dialog        ← asks for a sensor's optional name (look-dialog)
@@ -402,9 +402,9 @@ image pixel coordinates.
 | `cars` | `readonly CarLabel[]` | Car spans to draw: a chord inside its width rectangle. Per **image**, so switching images swaps the whole list; empty in the live view |
 | `pendingCar` | `PendingCar \| null` | The **rubber band** — `{ anchor, to }` for the chain in flight. The one thing here that is not in the manifest; empty in the live view |
 | `tracks` | `readonly Track[]` | The layout's centerlines ([#284]), drawn under everything else. Per layout, so the same on every image; empty in the live view |
-| `pendingTrack` | `PendingTrack \| null` | The trace in flight, with the node a click at the pointer would add |
+| `pendingTrack` | `PendingTrack \| null` | The track chain in flight, with the node a click at the pointer would add |
 | `trackHandles` | `boolean` | Whether each centerline node shows the handle that turns its heading. The editor sets it while the track tool is chosen |
-| `highlight` | `ViewerHighlight \| null` | The objects a reveal is pointing at — `{ cars, sensors, calibration }`, ids for the first two and **indices** for the third. Already resolved by `rr-editor-view`; the viewer draws it and decides nothing. `null` in the live view |
+| `highlight` | `ViewerHighlight \| null` | The objects a reveal is pointing at — `{ cars, sensors, calibration, trackNodes }`, ids for the first two, **indices** for the third and pixels for the fourth. Already resolved by `rr-editor-view`; the viewer draws it and decides nothing. `null` in the live view |
 | `zoom` | `Rect \| null` | The region of the **authored frame** on screen ([#44]). `null` is fit — the absence of a zoom, which is exactly what this element drew before the property existed. View state the editor owns; never in the manifest and never in the history. `null` in the live view |
 | `zoomPreview` | `Rect \| null` | The rect being dragged out — zoom's counterpart to `pendingCar`. Drawn in the overlay with a screen-constant stroke, never as an HTML box on the glass |
 | `dpt` | `number \| null` | The scale the **world-sized** symbols are drawn at. `null` falls them back to `symbolSize` |
@@ -730,16 +730,33 @@ name a human chose and stops matching as sensors come and go. A blank name is tr
 
 ---
 
+### `chain.ts`, `carChain.ts`, `trackChain.ts`
+
+A chain is what the car tool and the track tool share ([#33], [#284]): each click adds one segment —
+a car on the image on screen, or a stretch of one centerline — as one history entry. `EditSession`
+holds at most one live `Chain` and runs click, undo, redo, right-click and drags the same way for
+both; each tool module supplies what differs.
+
+| Export | Description |
+|---|---|
+| `Chain` | A live chain: `view()`, `atStart()`, `extend(px, scale)`, `settle()`. It keeps where it started and what it wrote, and reads the dot it goes on from out of the manifest |
+| `ChainTool` | A tool's half of a click with no chain live: a `ChainHit` (a chain to start or continue, or an edit to run) or null, when the session asks the other objects |
+| `ChainView`, `ChainContext`, `ClickResult` | What the editor draws of a chain; what a tool reads and writes through the session; what a click asks the editor for |
+| `carTool`, `ALREADY_LABELED` | A free car end continues a chain, a coupling is refused with `ALREADY_LABELED`, a click on a car's body splits it, and empty image starts a chain |
+| `trackTool`, `TrackChain`, `trackHitAt`, `TURN_TOO_SHARP` | An end node continues its line, a click on a line inserts a node, a middle node or heading handle does nothing, and anywhere else starts a chain. `TrackChain.preview` is what a click would add |
+
+---
+
 ### `trackMarker.ts`
 
-A traced centerline's SVG ([#284]). The exports must be used together.
+A centerline's SVG ([#284]). The exports must be used together.
 
 | Export | Type | Description |
 |---|---|---|
-| `renderTrack(track, size)` | `(Track, TrackSymbolSize) => SVGTemplateResult` | The centerline as one cubic per segment, the two rails at ±G/2, and a dot per node. No rails when `size.dpt` is `null` |
-| `renderPendingTrack(pending, size)` | `(PendingTrack, TrackSymbolSize) => SVGTemplateResult` | The trace in flight. A click that would be refused shows as a red line from the last node to the pointer |
+| `renderTrack(track, size, highlighted?)` | `(Track, TrackSymbolSize, Point[]?) => SVGTemplateResult` | The centerline as one cubic per segment, the two rails at ±G/2, and a dot per node. No rails when `size.dpt` is `null`. A node at a pixel in `highlighted` takes `highlight.ts`'s class |
+| `renderPendingTrack(pending, size)` | `(PendingTrack, TrackSymbolSize) => SVGTemplateResult` | The track chain in flight. A click that would be refused shows as a red line from the last node to the pointer |
 | `TrackSymbolSize` | `{ dpt, strokePx, nodePx, handlePx }` | The DPT the rails are spaced by, screen-constant stroke and dot sizes, and how far out a heading handle is drawn, or `null` for none |
-| `PendingTrack` | `{ start, nodes, cursor, refused }` | The trace's first click, its nodes including the pointer's, the pointer, and whether a click there is refused |
+| `PendingTrack` | `{ start, nodes, cursor, refused }` | The chain's first click, its nodes including the pointer's, the pointer, and whether a click there is refused |
 | `trackMarkerStyles` | `CSSResult` | The violet ink and the refused line's red |
 
 ### `track.ts`
@@ -755,7 +772,7 @@ heading, with length `d / (3 cos²(φ/4))`.
 | `pointAt`, `tangentAt` | A point on a segment, and the derivative there |
 | `trackPath(nodes)` | An SVG path, one `C` per segment |
 | `offsetPoints(nodes, offset)` | Sampled points `offset` px to the right of the line; negative is left |
-| `traceTo(start, nodes, to, snapPx, minPx)` | What a click at `to` does to a trace: the new nodes, `too-close` to the last point, or `too-sharp` |
+| `extendTrack(start, nodes, to, snapPx, minPx)` | What a click at `to` does to a track chain: the new nodes, `too-close` to the last point, or `too-sharp` |
 | `hitTrack(tracks, at, radius, handleLength)` | The heading handle, node or line under the pointer, in that order of preference |
 | `headingHandle(node, length)`, `insertNode(nodes, segment, t)`, `reverseNodes(nodes)` | Where a heading handle sits; a node added on the curve; the line run the other way |
 | `STRAIGHT_SNAP_SCREEN_PX`, `MAX_TURN`, `HEADING_HANDLE_SCREEN_PX` | The straight snap's tolerance, the largest turn one segment may make (90°), and how far a heading handle sits from its node |
@@ -1071,13 +1088,13 @@ it gets the objects the entry changed.
 | Member | Description |
 |---|---|
 | `archive`, `history` | The archive and its undo stack |
-| `image`, `imageIndex`, `tool`, `calibrated`, `anchor` | What is on screen, the tool, whether DPT resolves, and where a live chain's next car starts |
+| `image`, `imageIndex`, `tool`, `calibrated`, `chain` | What is on screen, the tool, whether DPT resolves, and the chain in progress as a `ChainView`: the dot its next segment starts from, and a track chain's start and nodes |
 | `car(id)`, `sensor(id)` | The car on the image on screen, or the sensor, with this id; undefined once it is gone |
 | `selectTool`, `selectImage`, `endChain` | Changes to the editing state, none of them recorded |
-| `tracks`, `trace`, `traceEnd`, `previewTrace(point, scale)`, `endTrace` | The layout's centerlines and the trace in progress ([#284]). Each click of a trace writes one `layout` entry |
+| `tracks`, `previewTrack(point, scale)` | The layout's centerlines, and what a click would add to a live track chain ([#284]) |
 | `click(point, scale)` | Writes, or returns what the editor must ask for: a reference point's world position, a sensor's name, or a notice |
 | `beginDrag(point, scale)` | A `Drag` (`move`, `end`, `cancel`) on what is under the point, or null |
-| `rightClick(point, scale)` | Ends a live chain or trace, or returns the `MenuSubject` a menu acts on |
+| `rightClick(point, scale)` | Ends a live chain, or returns the `MenuSubject` a menu acts on |
 | `placeReferencePoint`, `editReferencePoint`, `nameSensor`, `delete`, `reclassifyCar`, `setComplete` | The answers to a dialog, a menu row or the checkbox |
 | `editLayout`, `setCameraHeight` | The settings dialog's edits, one `layout` entry each |
 | `addImage`, `deleteImage`, `reorderImages` | The image list. Deleting the image on screen shows its neighbour. `addImage` may set `camera.resolution` (`SPEC.md` § Images, [#254]) |

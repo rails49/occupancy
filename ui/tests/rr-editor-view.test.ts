@@ -1813,6 +1813,7 @@ describe('rr-editor-view', () => {
         cars: ['car-a', 'car-b'],
         sensors: [],
         calibration: [],
+        trackNodes: [],
       });
     });
 
@@ -1842,6 +1843,25 @@ describe('rr-editor-view', () => {
 
       expect(highlightOf(el)!.sensors).to.deep.equal([id]);
       expect(el.shadowRoot!.querySelector('rr-thumbnail-bar')!.selectedIndex).to.equal(1);
+    });
+
+    it('lights a centerline node an undo moved back, by pixel', async () => {
+      calibrate();
+      archive.getManifest().layout.centerlines = [
+        {
+          nodes: [
+            { x: 100, y: 100, heading: 0 },
+            { x: 300, y: 100, heading: 0 },
+          ],
+        },
+      ];
+      const el = await mountWithTool('track');
+      await drag(el, [{ x: 300, y: 100 }, { x: 320, y: 140 }]);
+
+      await el.session!.undo();
+      await el.updateComplete;
+
+      expect(highlightOf(el)!.trackNodes).to.deep.equal([{ x: 300, y: 100 }]);
     });
 
     it('resolves a reference point by pixel, and follows it through a renumbering', async () => {

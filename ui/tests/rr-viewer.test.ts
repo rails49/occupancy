@@ -771,7 +771,7 @@ describe('rr-viewer', () => {
           .calibrationPoints=${points}
           .dpt=${90}
           .resolution=${resolution}
-          .highlight=${{ cars: ['C2abcdefghi'], sensors: [], calibration: [1] }}
+          .highlight=${{ cars: ['C2abcdefghi'], sensors: [], calibration: [1], trackNodes: [] }}
         ></rr-viewer>
       `);
 
@@ -793,7 +793,7 @@ describe('rr-viewer', () => {
         <rr-viewer
           .sensors=${sensors}
           .resolution=${resolution}
-          .highlight=${{ cars: [], sensors: ['S1abcdefghi'], calibration: [] }}
+          .highlight=${{ cars: [], sensors: ['S1abcdefghi'], calibration: [], trackNodes: [] }}
         ></rr-viewer>
       `);
       expect(lit(el, '.sensor')).to.deep.equal([true]);

@@ -1,6 +1,7 @@
 import { svg, css } from 'lit';
 import type { SVGTemplateResult, CSSResult } from 'lit';
 import type { Point } from '@rails49/r49';
+import { HIGHLIGHT_CLASS } from './highlight.js';
 import { headingHandle, offsetPoints, trackPath } from './track.js';
 import type { Track, TrackNode } from './track.js';
 
@@ -82,7 +83,11 @@ function polyline(points: readonly Point[]): string {
   return points.map(p => `${p.x},${p.y}`).join(' ');
 }
 
-function renderLine(nodes: readonly TrackNode[], size: TrackSymbolSize): SVGTemplateResult {
+function renderLine(
+  nodes: readonly TrackNode[],
+  size: TrackSymbolSize,
+  highlighted: readonly Point[] = []
+): SVGTemplateResult {
   const gauge = size.dpt;
   const handle = size.handlePx;
   return svg`
@@ -100,7 +105,7 @@ function renderLine(nodes: readonly TrackNode[], size: TrackSymbolSize): SVGTemp
     <path class="centerline" d="${trackPath(nodes)}" stroke-width="${size.strokePx}" />
     ${nodes.map(
       n => svg`<circle
-        class="node"
+        class="node ${highlighted.some(p => p.x === n.x && p.y === n.y) ? HIGHLIGHT_CLASS : ''}"
         cx="${n.x}"
         cy="${n.y}"
         r="${size.nodePx / 2}"
@@ -133,8 +138,13 @@ function renderHeading(node: TrackNode, length: number, size: TrackSymbolSize): 
   `;
 }
 
-export function renderTrack(track: Track, size: TrackSymbolSize): SVGTemplateResult {
-  return svg`<g class="track">${renderLine(track.nodes, size)}</g>`;
+/** One centerline. `highlighted` are the pixels of nodes a reveal points at (#37). */
+export function renderTrack(
+  track: Track,
+  size: TrackSymbolSize,
+  highlighted: readonly Point[] = []
+): SVGTemplateResult {
+  return svg`<g class="track">${renderLine(track.nodes, size, highlighted)}</g>`;
 }
 
 /**
