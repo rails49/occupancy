@@ -466,11 +466,11 @@ export class RREditorView extends LitElement {
   /** What the context menu is open on, or null when it is closed. */
   private _menuSubject: MenuSubject | null = null;
   /**
-   * Where the pointer last was, in whole image pixels, while a chain or a
-   * trace is live: the rubber band's far end, or the trace's next node.
+   * Where the pointer last was, in whole image pixels, while a chain is
+   * live: the rubber band's far end, or the track's next node.
    */
   @state() private _cursor: Point | null = null;
-  /** The screen scale `_cursor` was reported at, for the trace's straight snap. */
+  /** The screen scale `_cursor` was reported at, for the track's straight snap. */
   private _cursorScale = 1;
   /**
    * The objects a reveal is pointing at, or `null` when none is. Held as ids
@@ -630,7 +630,7 @@ export class RREditorView extends LitElement {
       // Zoom rects mean nothing on the next archive.
       this._fitZoom();
     }
-    if (!this.session?.anchor && !this.session?.trace) this._cursor = null;
+    if (!this.session?.chain) this._cursor = null;
   }
 
   updated() {
@@ -902,7 +902,7 @@ export class RREditorView extends LitElement {
   }
 
   /**
-   * Escape ends a live trace (#284). Otherwise it fits — a desktop accelerator
+   * Escape ends a live chain (#284). Otherwise it fits — a desktop accelerator
    * for the overlay control, never a substitute for it: the labeling device is
    * a phone, which has no Escape at all.
    *
@@ -914,9 +914,9 @@ export class RREditorView extends LitElement {
    */
   private readonly _onKeyDown = (event: KeyboardEvent) => {
     if (event.key !== 'Escape') return;
-    if (this.session?.trace) {
+    if (this.session?.chain) {
       // An Escape that closes a dialog is the dialog's.
-      if (!isInsideOpenDialog(event)) this.session.endTrace();
+      if (!isInsideOpenDialog(event)) this.session.endChain();
     } else if (this._zoom !== null) this._fitZoom();
   };
 
@@ -1000,11 +1000,11 @@ export class RREditorView extends LitElement {
   }
 
   /**
-   * Motion. It moves the rubber band while a chain or trace is live, and
+   * Motion. It moves the rubber band while a chain is live, and
    * becomes a drag once it leaves the click slop.
    */
   private _onViewerPointerMove(e: CustomEvent<ViewerPointerDetail>) {
-    if (this.session?.anchor || this.session?.trace) {
+    if (this.session?.chain) {
       this._cursor = { x: Math.round(e.detail.point.x), y: Math.round(e.detail.point.y) };
       this._cursorScale = e.detail.imagePxPerScreenPx;
     }
@@ -1105,8 +1105,8 @@ export class RREditorView extends LitElement {
     if (!isClick(gesture.origin, e.detail.point, this._slop(gesture))) return;
 
     const result = await this.session.click(gesture.origin, gesture.scale);
-    const live = this.session.anchor ?? this.session.traceEnd;
-    this._cursor = live && { ...live };
+    const live = this.session.chain;
+    this._cursor = live && { ...live.end };
     await this._answer(result);
   }
 
@@ -1330,27 +1330,28 @@ export class RREditorView extends LitElement {
   }
 
   /**
-   * The rubber band, or null when no chain is live. Before the pointer has
+   * The rubber band, or null when no car chain is live. Before the pointer has
    * moved it is the anchor twice over, which draws the anchor's handle.
    */
   private _pendingCar(): PendingCar | null {
-    const anchor = this.session?.anchor;
-    return anchor ? { anchor, to: this._cursor ?? anchor } : null;
+    const chain = this.session?.chain;
+    if (chain?.tool !== 'car') return null;
+    return { anchor: chain.end, to: this._cursor ?? chain.end };
   }
 
   /**
-   * The trace in flight, or null when none is: the nodes a click at the pointer
-   * would make, or the nodes placed so far when that click adds nothing.
+   * The track chain in flight, or null when none is: the nodes a click at the
+   * pointer would make, or the nodes placed so far when that click adds nothing.
    */
   private _pendingTrack(): PendingTrack | null {
     const session = this.session;
-    const trace = session?.trace;
-    if (!session || !trace) return null;
+    const chain = session?.chain;
+    if (!session || chain?.tool !== 'track') return null;
     const cursor = this._cursor;
-    const step = cursor && session.previewTrace(cursor, this._cursorScale);
+    const step = cursor && session.previewTrack(cursor, this._cursorScale);
     return {
-      start: trace.start,
-      nodes: step?.kind === 'node' ? step.nodes : trace.nodes,
+      start: chain.start,
+      nodes: step?.kind === 'node' ? step.nodes : chain.nodes,
       cursor,
       refused: step?.kind === 'too-sharp',
     };

@@ -8,7 +8,7 @@ import {
   pointAt,
   segment,
   tangentAt,
-  traceTo,
+  extendTrack,
   trackPath,
   wrapAngle,
   MAX_TURN,
@@ -78,14 +78,14 @@ describe('offsetPoints', () => {
   });
 });
 
-describe('traceTo', () => {
+describe('extendTrack', () => {
   const start = { x: 0, y: 0 };
   const MIN = 10;
   const straight = [node(0, 0, 0), node(100, 0, 0)];
 
   /** The nodes a click adds, failing the test if it adds none. */
   function nodesAfter(nodes: readonly TrackNode[], to: { x: number; y: number }, snap = SNAP) {
-    const step = traceTo(start, nodes, to, snap, MIN);
+    const step = extendTrack(start, nodes, to, snap, MIN);
     if (step.kind !== 'node') throw new Error(`expected a node, got ${step.kind}`);
     return step.nodes;
   }
@@ -98,7 +98,7 @@ describe('traceTo', () => {
   });
 
   it('adds nothing for a click within the minimum distance of the start', () => {
-    expect(traceTo(start, [], { x: 6, y: 6 }, SNAP, MIN)).toEqual({ kind: 'too-close' });
+    expect(extendTrack(start, [], { x: 6, y: 6 }, SNAP, MIN)).toEqual({ kind: 'too-close' });
   });
 
   it('ends an arc tangent to the last node, its heading mirrored about the chord', () => {
@@ -119,20 +119,20 @@ describe('traceTo', () => {
   });
 
   it('refuses a click behind the last node as too sharp', () => {
-    expect(traceTo(start, straight, { x: 50, y: 0 }, SNAP, MIN)).toEqual({ kind: 'too-sharp' });
+    expect(extendTrack(start, straight, { x: 50, y: 0 }, SNAP, MIN)).toEqual({ kind: 'too-sharp' });
   });
 
   it('refuses a turn sharper than the limit and accepts one at it', () => {
     const half = MAX_TURN / 2;
     const ok = { x: 100 + 100 * Math.cos(half - 0.01), y: 100 * Math.sin(half - 0.01) };
     const sharp = { x: 100 + 100 * Math.cos(half + 0.01), y: 100 * Math.sin(half + 0.01) };
-    expect(traceTo(start, straight, ok, SNAP, MIN).kind).toBe('node');
-    expect(traceTo(start, straight, sharp, SNAP, MIN)).toEqual({ kind: 'too-sharp' });
+    expect(extendTrack(start, straight, ok, SNAP, MIN).kind).toBe('node');
+    expect(extendTrack(start, straight, sharp, SNAP, MIN)).toEqual({ kind: 'too-sharp' });
   });
 
   it('adds nothing for a click within the minimum distance of the last node', () => {
-    expect(traceTo(start, straight, { x: 100, y: 0 }, SNAP, MIN)).toEqual({ kind: 'too-close' });
-    expect(traceTo(start, straight, { x: 95, y: 8 }, SNAP, MIN)).toEqual({ kind: 'too-close' });
+    expect(extendTrack(start, straight, { x: 100, y: 0 }, SNAP, MIN)).toEqual({ kind: 'too-close' });
+    expect(extendTrack(start, straight, { x: 95, y: 8 }, SNAP, MIN)).toEqual({ kind: 'too-close' });
   });
 
   it('keeps every segment G1: each node is shared, with one heading', () => {

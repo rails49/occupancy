@@ -11,8 +11,8 @@ import type { Track, TrackNode } from './track.js';
  *
  * A module rather than a custom element, like the other markers. Its exports
  * must be used together: `trackMarkerStyles` in the host's `static styles`,
- * `renderTrack` once per centerline and `renderPendingTrack` for the trace in
- * flight.
+ * `renderTrack` once per centerline and `renderPendingTrack` for the track
+ * chain in flight.
  *
  * The rails are what the person compares with the photograph. They are drawn
  * at ±G/2, where the inner faces of the rails are.
@@ -68,7 +68,7 @@ export interface TrackSymbolSize {
   readonly handlePx: number | null;
 }
 
-/** The trace in flight: what it has placed, with the pointer's next node if a click there adds one. */
+/** The track chain in flight: what it has placed, with the pointer's next node if a click there adds one. */
 export interface PendingTrack {
   readonly start: Point;
   readonly nodes: readonly TrackNode[];
@@ -138,7 +138,7 @@ export function renderTrack(track: Track, size: TrackSymbolSize): SVGTemplateRes
 }
 
 /**
- * The trace in flight. A refused click shows as a straight red line from the
+ * The track chain in flight. A refused click shows as a straight red line from the
  * last node to the pointer.
  */
 export function renderPendingTrack(pending: PendingTrack, size: TrackSymbolSize): SVGTemplateResult {

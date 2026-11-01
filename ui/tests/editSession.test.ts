@@ -1,7 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import { R49Archive, MANIFEST_VERSION, getDPT } from '@rails49/r49';
 import type { ReferencePoint, CarLabel, ManifestData, Point, Sensor } from '@rails49/r49';
-import { ALREADY_LABELED, EditSession, TURN_TOO_SHARP } from '../src/editSession.js';
+import { EditSession } from '../src/editSession.js';
+import { ALREADY_LABELED } from '../src/carChain.js';
+import { TURN_TOO_SHARP } from '../src/trackChain.js';
 import type { Reveal } from '../src/editSession.js';
 import { TOOLS } from '../src/tools.js';
 import type { EditorTool } from '../src/tools.js';
@@ -63,6 +65,18 @@ async function withBytes(filenames: readonly string[]): Promise<EditSession> {
     await archive.addImage(filename, Uint8Array.from([i + 1, 2, 3]));
   }
   return new EditSession(archive);
+}
+
+/** Where the next car of a live car chain starts, or null when none is live. */
+function anchor(s: EditSession): Point | null {
+  const chain = s.chain;
+  return chain?.tool === 'car' ? chain.end : null;
+}
+
+/** A live track chain's start and nodes, or null when none is live. */
+function trackChain(s: EditSession) {
+  const chain = s.chain;
+  return chain?.tool === 'track' ? { start: chain.start, nodes: chain.nodes } : null;
 }
 
 function points(s: EditSession): ReferencePoint[] {
@@ -663,7 +677,7 @@ describe('EditSession', () => {
       await clicks(s, { x: 200, y: 300 });
 
       expect(s.rightClick({ x: 500, y: 300 }, SCALE)).toBeNull();
-      expect(s.anchor).toBeNull();
+      expect(anchor(s)).toBeNull();
       expect(s.history.size).toBe(0);
 
       await clicks(s, { x: 600, y: 600 }, { x: 800, y: 600 });
@@ -682,30 +696,82 @@ describe('EditSession', () => {
     });
 
     describe('a click on a car already labeled (#43)', () => {
-      it('refuses a click on its body, with a notice', async () => {
+      it('splits a car where a click lands on its body, as one entry', async () => {
         const s = session({ tool: 'car' });
-        await train(s, [100, 400]);
-        const size = s.history.size;
+        seedCar(s, { class: 'stock.freight' });
 
-        expect(await s.click({ x: 250, y: 100 }, SCALE)).toEqual({
-          kind: 'notice',
-          message: ALREADY_LABELED,
-        });
+        expect(await s.click({ x: 250, y: 110 }, SCALE)).toEqual({ kind: 'none' });
+
+        expect(cars(s).map(car => [car.p0, car.p1])).toEqual([
+          [{ x: 100, y: 100 }, { x: 250, y: 100 }],
+          [{ x: 250, y: 100 }, { x: 400, y: 100 }],
+        ]);
+        expect(cars(s)[0].id).toBe('C1abcdefghi');
+        expect(cars(s)[1].id).not.toBe('C1abcdefghi');
+        expect(cars(s).map(car => car.class)).toEqual(['stock.freight', 'stock.freight']);
+        expect(anchor(s)).toBeNull();
+        expect(s.history.undoLabel).toBe('split car');
+        await s.undo();
         expect(cars(s)).toHaveLength(1);
-        expect(s.anchor).toBeNull();
-        expect(s.history.size).toBe(size);
+        expect(cars(s)[0].p1).toEqual({ x: 400, y: 100 });
       });
 
-      it('refuses a click on one of its ends with the same notice', async () => {
+      it('splits nothing within the grab radius of an end', async () => {
+        const s = session({ tool: 'car' });
+        seedCar(s);
+
+        await clicks(s, { x: 110, y: 40 });
+
+        expect(cars(s)).toHaveLength(1);
+        expect(s.history.canUndo).toBe(false);
+      });
+
+      it('continues a chain from a free end', async () => {
         const s = session({ tool: 'car' });
         await train(s, [100, 400]);
+
+        await clicks(s, { x: 400, y: 100 });
+        expect(anchor(s)).toEqual({ x: 400, y: 100 });
+        await clicks(s, { x: 700, y: 100 });
+
+        expect(cars(s)).toHaveLength(2);
+        expect(cars(s)[1].p0).toEqual({ x: 400, y: 100 });
+        expect(cars(s)[1].p1).toEqual({ x: 700, y: 100 });
+      });
+
+      it('continues a chain from the first car\'s free end too', async () => {
+        const s = session({ tool: 'car' });
+        await train(s, [400, 700]);
+
+        await clicks(s, { x: 400, y: 100 }, { x: 100, y: 100 });
+
+        expect(cars(s)[1].p0).toEqual({ x: 400, y: 100 });
+        expect(cars(s)[1].p1).toEqual({ x: 100, y: 100 });
+      });
+
+      it('ends a continued chain on undo once it is back at the end it continued', async () => {
+        const s = session({ tool: 'car' });
+        await train(s, [100, 400]);
+        await clicks(s, { x: 400, y: 100 }, { x: 700, y: 100 });
+
+        await s.undo();
+        expect(anchor(s)).toEqual({ x: 400, y: 100 });
+        await s.undo();
+
+        expect(anchor(s)).toBeNull();
+        expect(cars(s)).toHaveLength(1);
+      });
+
+      it('refuses a click on a coupling, with a notice', async () => {
+        const s = session({ tool: 'car' });
+        await train(s, [100, 400, 700]);
 
         expect(await s.click({ x: 400, y: 100 }, SCALE)).toEqual({
           kind: 'notice',
           message: ALREADY_LABELED,
         });
-        expect(s.anchor).toBeNull();
-        expect(cars(s)).toHaveLength(1);
+        expect(anchor(s)).toBeNull();
+        expect(cars(s)).toHaveLength(2);
       });
 
       it('says nothing about a car end under another tool', async () => {
@@ -721,7 +787,7 @@ describe('EditSession', () => {
         await train(s, [100, 400]);
 
         await clicks(s, { x: 250, y: 400 });
-        expect(s.anchor).toEqual({ x: 250, y: 400 });
+        expect(anchor(s)).toEqual({ x: 250, y: 400 });
         await clicks(s, { x: 600, y: 400 });
         expect(cars(s)).toHaveLength(2);
       });
@@ -793,20 +859,20 @@ describe('EditSession', () => {
 
       it('moves the anchor to the coupling each click makes', async () => {
         const s = session({ tool: 'car' });
-        expect(s.anchor).toBeNull();
+        expect(anchor(s)).toBeNull();
 
         await clicks(s, { x: 100, y: 100 });
-        expect(s.anchor).toEqual({ x: 100, y: 100 });
+        expect(anchor(s)).toEqual({ x: 100, y: 100 });
 
         await clicks(s, { x: 400, y: 100 });
-        expect(s.anchor).toEqual({ x: 400, y: 100 });
+        expect(anchor(s)).toEqual({ x: 400, y: 100 });
       });
 
       it('keeps the cars when the chain ends, and starts a new train on the next click', async () => {
         const s = session({ tool: 'car' });
         await train(s, [100, 400]);
 
-        expect(s.anchor).toBeNull();
+        expect(anchor(s)).toBeNull();
         expect(cars(s)).toHaveLength(1);
         expect(s.history.size).toBe(1);
 
@@ -823,6 +889,45 @@ describe('EditSession', () => {
 
         await clicks(s, { x: 500, y: 200 });
         expect(cars(s)[0].p0).toEqual({ x: 200, y: 200 });
+      });
+
+      it('writes no car for a click within the grab radius of the anchor, scaled to the screen', async () => {
+        const s = session({ tool: 'car' });
+
+        await clicks(s, { x: 200, y: 200 }, { x: 210, y: 200 });
+        expect(cars(s)).toHaveLength(0);
+
+        await s.click({ x: 210, y: 200 }, 0.5);
+        expect(cars(s)).toHaveLength(1);
+      });
+
+      it('starts the next car from where a drag left the last one\'s end', async () => {
+        const s = session({ tool: 'car' });
+        await clicks(s, { x: 100, y: 500 }, { x: 400, y: 500 });
+
+        await drag(s, [
+          { x: 400, y: 500 },
+          { x: 400, y: 700 },
+        ]);
+        expect(anchor(s)).toEqual({ x: 400, y: 700 });
+        await clicks(s, { x: 700, y: 700 });
+
+        expect(cars(s)[0].p1).toEqual({ x: 400, y: 700 });
+        expect(cars(s)[1].p0).toEqual({ x: 400, y: 700 });
+      });
+
+      it('ends a chain still at its first click when something is dragged', async () => {
+        const s = session({ tool: 'car' });
+        await train(s, [100, 400]);
+        await clicks(s, { x: 800, y: 800 });
+
+        await drag(s, [
+          { x: 400, y: 100 },
+          { x: 450, y: 100 },
+        ]);
+
+        expect(anchor(s)).toBeNull();
+        expect(cars(s)[0].p1).toEqual({ x: 450, y: 100 });
       });
 
       it('leaves the manifest untouched for a chain that never got a second click', async () => {
@@ -845,7 +950,7 @@ describe('EditSession', () => {
 
           expect(cars(s)).toHaveLength(1);
           expect(s.history.canRedo).toBe(true);
-          expect(s.anchor).toEqual({ x: 400, y: 100 });
+          expect(anchor(s)).toEqual({ x: 400, y: 100 });
 
           await clicks(s, { x: 700, y: 400 });
           expect(cars(s)).toHaveLength(2);
@@ -860,7 +965,7 @@ describe('EditSession', () => {
           await s.undo();
 
           expect(cars(s)).toHaveLength(0);
-          expect(s.anchor).toEqual({ x: 100, y: 100 });
+          expect(anchor(s)).toEqual({ x: 100, y: 100 });
         });
 
         it('stops at the chain\'s start: it ends the chain and undoes nothing', async () => {
@@ -870,7 +975,7 @@ describe('EditSession', () => {
 
           await s.undo();
 
-          expect(s.anchor).toBeNull();
+          expect(anchor(s)).toBeNull();
           expect(cars(s)).toHaveLength(1);
           expect(s.history.size).toBe(1);
           expect(s.history.canRedo).toBe(false);
@@ -897,7 +1002,7 @@ describe('EditSession', () => {
 
           expect(points(s)[1].px).toEqual({ x: 100, y: 0 });
           expect(cars(s)).toHaveLength(1);
-          expect(s.anchor).toEqual({ x: 400, y: 100 });
+          expect(anchor(s)).toEqual({ x: 400, y: 100 });
         });
       });
     });
@@ -1542,7 +1647,7 @@ describe('EditSession', () => {
       await s.deleteImage('b.jpg');
 
       expect(s.image!.filename).toBe('c.jpg');
-      expect(s.anchor).toBeNull();
+      expect(anchor(s)).toBeNull();
     });
 
     it('shows the previous image when the last one is deleted', async () => {
@@ -1683,7 +1788,7 @@ describe('EditSession', () => {
 
       await s.redo();
 
-      expect(s.anchor).toBeNull();
+      expect(anchor(s)).toBeNull();
       expect(cars(s)).toHaveLength(2);
     });
 
@@ -1734,13 +1839,13 @@ describe('EditSession', () => {
       };
       s.selectTool('car');
       await clicks(s, { x: 100, y: 100 });
-      expect(s.anchor).toEqual({ x: 100, y: 100 });
+      expect(anchor(s)).toEqual({ x: 100, y: 100 });
 
       await s.setCameraHeight(undefined);
 
       expect(s.calibrated).toBe(false);
       expect(s.tool).toBe('calibration');
-      expect(s.anchor).toBeNull();
+      expect(anchor(s)).toBeNull();
     });
   });
 
@@ -1775,28 +1880,28 @@ describe('EditSession track tool (#284)', () => {
     s.selectTool('track');
     expect(s.tool).toBe('calibration');
     await clicks(s, { x: 10, y: 10 });
-    expect(s.trace).toBeNull();
+    expect(trackChain(s)).toBeNull();
   });
 
   it('starts a trace at the first click, and places nodes after it', async () => {
     const s = session({ tool: 'track' });
     await clicks(s, { x: 100, y: 100 });
-    expect(s.trace).toEqual({ start: { x: 100, y: 100 }, nodes: [] });
-    expect(s.traceEnd).toEqual({ x: 100, y: 100 });
+    expect(trackChain(s)).toEqual({ start: { x: 100, y: 100 }, nodes: [] });
+    expect(s.chain?.end).toEqual({ x: 100, y: 100 });
     await clicks(s, { x: 300, y: 100 }, { x: 500, y: 200 });
-    expect(s.trace!.nodes.map(n => [n.x, n.y])).toEqual([
+    expect(trackChain(s)!.nodes.map(n => [n.x, n.y])).toEqual([
       [100, 100],
       [300, 100],
       [500, 200],
     ]);
-    expect(s.traceEnd).toEqual({ x: 500, y: 200 });
+    expect(s.chain?.end).toEqual({ x: 500, y: 200 });
   });
 
   it('starts a trace on a sensor rather than opening its name', async () => {
     const s = session({ tool: 'track' });
     sensors(s).push({ id: 'S1abcdefghi', x: 100, y: 100 });
     expect(await s.click({ x: 100, y: 100 }, SCALE)).toEqual({ kind: 'none' });
-    expect(s.trace).not.toBeNull();
+    expect(trackChain(s)).not.toBeNull();
   });
 
   it('writes the line to layout.centerlines, one layout entry per click', async () => {
@@ -1813,15 +1918,15 @@ describe('EditSession track tool (#284)', () => {
     ]);
     expect(s.tracks).toEqual(lines);
     expect(s.history.undoLabel).toBe('extend centerline');
-    s.endTrace();
-    expect(s.trace).toBeNull();
+    s.endChain();
+    expect(trackChain(s)).toBeNull();
     expect(s.tracks).toHaveLength(1);
   });
 
   it('writes a second line beside the first', async () => {
     const s = session({ tool: 'track' });
     await clicks(s, { x: 100, y: 100 }, { x: 300, y: 100 });
-    s.endTrace();
+    s.endChain();
     await clicks(s, { x: 100, y: 500 }, { x: 300, y: 500 });
     expect(s.tracks.map(t => t.nodes[0].y)).toEqual([100, 500]);
   });
@@ -1829,7 +1934,7 @@ describe('EditSession track tool (#284)', () => {
   it('writes nothing for a trace that never got past its start', async () => {
     const s = session({ tool: 'track' });
     await clicks(s, { x: 100, y: 100 });
-    s.endTrace();
+    s.endChain();
     expect(s.tracks).toHaveLength(0);
     expect('centerlines' in s.archive.getManifest().layout).toBe(false);
   });
@@ -1837,7 +1942,7 @@ describe('EditSession track tool (#284)', () => {
   it('undoes an ended line node by node, through the history', async () => {
     const s = session({ tool: 'track' });
     await clicks(s, { x: 100, y: 100 }, { x: 300, y: 100 }, { x: 500, y: 200 });
-    s.endTrace();
+    s.endChain();
     await s.undo();
     expect(s.tracks[0].nodes).toHaveLength(2);
     await s.undo();
@@ -1850,7 +1955,7 @@ describe('EditSession track tool (#284)', () => {
   it('round-trips through a save and reopen', async () => {
     const s = session({ tool: 'track' });
     await clicks(s, { x: 100, y: 100 }, { x: 300, y: 100 }, { x: 500, y: 200 });
-    s.endTrace();
+    s.endChain();
 
     const reopened = new EditSession(await R49Archive.load(await s.archive.export()));
 
@@ -1861,7 +1966,7 @@ describe('EditSession track tool (#284)', () => {
     const s = session({ tool: 'track' });
     await clicks(s, { x: 100, y: 100 }, { x: 300, y: 100 });
     expect(s.rightClick({ x: 300, y: 100 }, SCALE)).toBeNull();
-    expect(s.trace).toBeNull();
+    expect(trackChain(s)).toBeNull();
     expect(s.tracks).toHaveLength(1);
   });
 
@@ -1869,7 +1974,7 @@ describe('EditSession track tool (#284)', () => {
     const s = session({ tool: 'track' });
     await clicks(s, { x: 100, y: 100 }, { x: 300, y: 100 });
     s.selectTool('car');
-    expect(s.trace).toBeNull();
+    expect(trackChain(s)).toBeNull();
     expect(s.tracks).toHaveLength(1);
   });
 
@@ -1877,19 +1982,19 @@ describe('EditSession track tool (#284)', () => {
     const s = session({ images: ['a.jpg', 'b.jpg'], tool: 'track' });
     await clicks(s, { x: 100, y: 100 }, { x: 300, y: 100 });
     s.selectImage('b.jpg');
-    expect(s.trace?.nodes).toHaveLength(2);
+    expect(trackChain(s)?.nodes).toHaveLength(2);
   });
 
   it('takes undo node by node while tracing, then ends at the start', async () => {
     const s = session({ tool: 'track' });
     await clicks(s, { x: 100, y: 100 }, { x: 300, y: 100 }, { x: 500, y: 200 });
     await s.undo();
-    expect(s.trace!.nodes).toHaveLength(2);
+    expect(trackChain(s)!.nodes).toHaveLength(2);
     await s.undo();
-    expect(s.trace).toEqual({ start: { x: 100, y: 100 }, nodes: [] });
+    expect(trackChain(s)).toEqual({ start: { x: 100, y: 100 }, nodes: [] });
     expect(s.tracks).toHaveLength(0);
     await s.undo();
-    expect(s.trace).toBeNull();
+    expect(trackChain(s)).toBeNull();
     expect(s.history.canUndo).toBe(false);
   });
 
@@ -1912,28 +2017,28 @@ describe('EditSession track tool (#284)', () => {
       kind: 'notice',
       message: TURN_TOO_SHARP,
     });
-    expect(s.trace!.nodes).toHaveLength(2);
+    expect(trackChain(s)!.nodes).toHaveLength(2);
   });
 
   it('ignores a click within the grab radius of the last node, scaled to the screen', async () => {
     const s = session({ tool: 'track' });
     await clicks(s, { x: 100, y: 100 }, { x: 300, y: 100 });
     expect(await s.click({ x: 310, y: 100 }, SCALE)).toEqual({ kind: 'none' });
-    expect(s.trace!.nodes).toHaveLength(2);
+    expect(trackChain(s)!.nodes).toHaveLength(2);
     await s.click({ x: 310, y: 100 }, 0.5);
-    expect(s.trace!.nodes).toHaveLength(3);
+    expect(trackChain(s)!.nodes).toHaveLength(3);
   });
 
   it('previews the node a click would add, with the snap scaled to the screen', async () => {
     const s = session({ tool: 'track' });
     await clicks(s, { x: 100, y: 100 }, { x: 300, y: 100 });
     const node = (scale: number) => {
-      const step = s.previewTrace({ x: 500, y: 104 }, scale);
+      const step = s.previewTrack({ x: 500, y: 104 }, scale);
       return step?.kind === 'node' ? step.nodes[2] : null;
     };
     expect(node(SCALE)).toMatchObject({ x: 500, y: 100 });
     expect(node(0.5)).toMatchObject({ x: 500, y: 104 });
-    expect(s.trace!.nodes).toHaveLength(2);
+    expect(trackChain(s)!.nodes).toHaveLength(2);
   });
 
   it('grabs nothing while a trace is live, so a sensor on the track stays put', async () => {
@@ -1941,27 +2046,26 @@ describe('EditSession track tool (#284)', () => {
     sensors(s).push({ id: 'S1abcdefghi', x: 300, y: 100 });
     await clicks(s, { x: 100, y: 100 });
     expect(s.beginDrag({ x: 300, y: 100 }, SCALE)).toBeNull();
-    s.endTrace();
+    s.endChain();
     expect(s.beginDrag({ x: 300, y: 100 }, SCALE)).not.toBeNull();
   });
 
-  it('refuses redo while a trace is live', async () => {
+  it('ends a chain on redo, then redoes', async () => {
     const s = session({ tool: 'sensor' });
     await clicks(s, { x: 50, y: 50 });
     await s.undo();
     s.selectTool('track');
     await clicks(s, { x: 100, y: 100 }, { x: 300, y: 100 });
     await s.redo();
-    expect(sensors(s)).toHaveLength(0);
-    expect(s.trace!.nodes).toHaveLength(2);
+    expect(trackChain(s)).toBeNull();
   });
 
-  it('ends a trace when DPT stops resolving', async () => {
+  it('ends a chain when DPT stops resolving', async () => {
     const s = session({ tool: 'track' });
     await clicks(s, { x: 100, y: 100 }, { x: 300, y: 100 });
     await s.delete({ kind: 'calibration', index: 0, px: { x: 0, y: 0 } });
     expect(s.tool).toBe('calibration');
-    expect(s.trace).toBeNull();
+    expect(trackChain(s)).toBeNull();
     expect(s.tracks).toHaveLength(1);
   });
 });
@@ -1992,13 +2096,13 @@ describe('EditSession track editing (#284)', () => {
     expect(xs(s)).toEqual([100, 200, 300, 500]);
     expect(s.tracks[0].nodes[1].y).toBeCloseTo(100);
     expect(s.history.undoLabel).toBe('insert centerline node');
-    expect(s.trace).toBeNull();
+    expect(trackChain(s)).toBeNull();
   });
 
   it('continues a line from its last node', async () => {
     const s = withLine();
     await clicks(s, { x: 500, y: 100 });
-    expect(s.trace?.nodes).toHaveLength(3);
+    expect(trackChain(s)?.nodes).toHaveLength(3);
     await clicks(s, { x: 700, y: 100 });
     expect(xs(s)).toEqual([100, 300, 500, 700]);
     expect(s.tracks).toHaveLength(1);
@@ -2007,16 +2111,26 @@ describe('EditSession track editing (#284)', () => {
   it('continues a line from its first node, keeping the stored order', async () => {
     const s = withLine();
     await clicks(s, { x: 100, y: 100 });
-    expect(s.trace?.nodes[s.trace.nodes.length - 1]).toMatchObject({ x: 100, y: 100 });
+    expect(trackChain(s)!.nodes.at(-1)).toMatchObject({ x: 100, y: 100 });
     await clicks(s, { x: -100, y: 100 });
     expect(xs(s)).toEqual([-100, 100, 300, 500]);
     expect(s.tracks[0].nodes[0].heading).toBeCloseTo(0);
   });
 
+  it('ends a continued chain on undo once it is back at the node it continued', async () => {
+    const s = withLine();
+    await clicks(s, { x: 500, y: 100 }, { x: 700, y: 100 });
+    await s.undo();
+    expect(trackChain(s)!.nodes).toHaveLength(3);
+    await s.undo();
+    expect(trackChain(s)).toBeNull();
+    expect(xs(s)).toEqual([100, 300, 500]);
+  });
+
   it('does nothing for a click on a middle node', async () => {
     const s = withLine();
     await clicks(s, { x: 300, y: 100 });
-    expect(s.trace).toBeNull();
+    expect(trackChain(s)).toBeNull();
     expect(s.history.canUndo).toBe(false);
   });
 
@@ -2093,7 +2207,7 @@ describe('EditSession track editing (#284)', () => {
     await clicks(s, { x: 500, y: 100 }, { x: 700, y: 100 });
     await drag(s, [{ x: 300, y: 100 }, { x: 300, y: 140 }]);
     expect(s.tracks[0].nodes[1]).toMatchObject({ x: 300, y: 140 });
-    expect(s.trace?.nodes).toHaveLength(4);
+    expect(trackChain(s)?.nodes).toHaveLength(4);
   });
 
   it('drops a trace still at its start when a node is dragged', async () => {
@@ -2101,7 +2215,7 @@ describe('EditSession track editing (#284)', () => {
     await clicks(s, { x: 100, y: 400 });
     await drag(s, [{ x: 300, y: 100 }, { x: 300, y: 140 }]);
     expect(s.tracks[0].nodes[1]).toMatchObject({ x: 300, y: 140 });
-    expect(s.trace).toBeNull();
+    expect(trackChain(s)).toBeNull();
   });
 
   it('leaves track alone under another tool', async () => {

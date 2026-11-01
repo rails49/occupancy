@@ -431,11 +431,11 @@ export class RrViewer extends LitElement {
    */
   @property({ attribute: false }) pendingCar: PendingCar | null = null;
   /**
-   * Traced centerlines (#284). Per layout, so the same on every image. Empty in
+   * Centerlines (#284). Per layout, so the same on every image. Empty in
    * the live view.
    */
   @property({ attribute: false }) tracks: readonly Track[] = [];
-  /** The trace in flight, or `null`. View state, like `pendingCar`. */
+  /** The track chain in flight, or `null`. View state, like `pendingCar`. */
   @property({ attribute: false }) pendingTrack: PendingTrack | null = null;
   /** Whether each centerline node shows the handle that turns its heading. */
   @property({ attribute: false }) trackHandles = false;

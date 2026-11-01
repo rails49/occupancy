@@ -18,7 +18,7 @@ export interface TrackNode {
   readonly heading: number;
 }
 
-/** A traced centerline: at least two nodes. */
+/** A centerline: at least two nodes. */
 export interface Track {
   readonly nodes: readonly TrackNode[];
 }
@@ -122,8 +122,8 @@ export function offsetPoints(nodes: readonly TrackNode[], offset: number): Point
   return points;
 }
 
-/** What a click does to a trace. */
-export type TraceStep =
+/** What a click does to a track chain. */
+export type TrackStep =
   | { readonly kind: 'node'; readonly nodes: readonly TrackNode[] }
   /** No farther than `minPx` from the last point placed: nothing. */
   | { readonly kind: 'too-close' }
@@ -131,7 +131,7 @@ export type TraceStep =
   | { readonly kind: 'too-sharp' };
 
 /**
- * What a click at `to` does to a trace.
+ * What a click at `to` does to a track chain.
  *
  * `start` is the first click and `nodes` the nodes placed since, empty until
  * the second click. The first segment is a straight, so both of its nodes take
@@ -140,13 +140,13 @@ export type TraceStep =
  * about the chord. A click within `snapPx` of the tangent line, ahead of the
  * last node, is moved onto it and makes a straight.
  */
-export function traceTo(
+export function extendTrack(
   start: Point,
   nodes: readonly TrackNode[],
   to: Point,
   snapPx: number,
   minPx: number
-): TraceStep {
+): TrackStep {
   const last = nodes[nodes.length - 1] ?? start;
   const dx = to.x - last.x;
   const dy = to.y - last.y;

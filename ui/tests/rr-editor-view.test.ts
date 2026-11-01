@@ -929,14 +929,14 @@ describe('rr-editor-view', () => {
       await el.updateComplete;
     }
 
-    async function traced(el: RREditorView) {
+    async function laid(el: RREditorView) {
       await clickAt(el, { x: 100, y: 100 });
       await clickAt(el, { x: 300, y: 100 });
     }
 
     it('previews the arc a click at the pointer would add', async () => {
       const el = await mountWithTool('track');
-      await traced(el);
+      await laid(el);
       await moveTo(el, { x: 500, y: 200 });
 
       const p = pending(el)!;
@@ -946,21 +946,22 @@ describe('rr-editor-view', () => {
         [500, 200],
       ]);
       expect(p.refused).to.equal(false);
-      expect(el.session!.trace!.nodes).to.have.length(2);
+      const chain = el.session!.chain;
+      expect(chain?.tool === 'track' && chain.nodes).to.have.length(2);
     });
 
     it('marks a pointer the next click would be refused at', async () => {
       const el = await mountWithTool('track');
-      await traced(el);
+      await laid(el);
       await moveTo(el, { x: 300, y: 400 });
 
       expect(pending(el)!.refused).to.equal(true);
       expect(pending(el)!.nodes).to.have.length(2);
     });
 
-    it('ends the trace on Escape and hands the line to the viewer', async () => {
+    it('ends the chain on Escape and hands the line to the viewer', async () => {
       const el = await mountWithTool('track');
-      await traced(el);
+      await laid(el);
 
       await pressEscape(el);
 
@@ -990,7 +991,7 @@ describe('rr-editor-view', () => {
       expect(el.session!.tracks[0].nodes.map(n => n.x)).to.deep.equal([100, 500]);
     });
 
-    it('drags a node rather than the view, even right after a click started a trace', async () => {
+    it('drags a node rather than the view, even right after a click started a chain', async () => {
       archive.getManifest().layout.centerlines = [
         {
           nodes: [
@@ -1001,7 +1002,7 @@ describe('rr-editor-view', () => {
       ];
       const el = await mountWithTool('track');
       await clickAt(el, { x: 600, y: 600 });
-      expect(el.session!.trace).not.toBe(null);
+      expect(el.session!.chain).not.toBe(null);
 
       await drag(el, [{ x: 300, y: 100 }, { x: 320, y: 140 }]);
 
@@ -1009,9 +1010,9 @@ describe('rr-editor-view', () => {
       expect(el.shadowRoot!.querySelector('rr-viewer')!.zoom).to.equal(null);
     });
 
-    it('ends the trace on right-click, opening no menu', async () => {
+    it('ends the chain on right-click, opening no menu', async () => {
       const el = await mountWithTool('track');
-      await traced(el);
+      await laid(el);
 
       await rightClickAt(el, { x: 300, y: 100 });
 
@@ -1094,21 +1095,34 @@ describe('rr-editor-view', () => {
       expect(band(el)).to.deep.equal({ anchor: { x: 100, y: 100 }, to: { x: 700, y: 100 } });
     });
 
-    it('says why it refused a click on a car already labeled', async () => {
+    it('says why it refused a click on a coupling', async () => {
       const el = await mountWithCarTool();
       await clickAt(el, { x: 100, y: 100 });
       await clickAt(el, { x: 400, y: 100 });
+      await clickAt(el, { x: 700, y: 100 });
       await rightClickAt(el, { x: 900, y: 900 });
       const notices = noticesOf(el);
 
-      await clickAt(el, { x: 250, y: 100 });
       await clickAt(el, { x: 400, y: 100 });
 
       expect(notices).to.deep.equal([
         'That pixel is already inside a labeled car — a car is labeled once.',
-        'That pixel is already inside a labeled car — a car is labeled once.',
       ]);
       expect(band(el)).to.equal(null);
+    });
+
+    it('ends the chain on Escape, and takes the band away', async () => {
+      const el = await mountWithCarTool();
+      await clickAt(el, { x: 100, y: 100 });
+      await clickAt(el, { x: 400, y: 100 });
+
+      document.body.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true })
+      );
+      await el.updateComplete;
+
+      expect(band(el)).to.equal(null);
+      expect(cars()).to.have.length(1);
     });
 
     it('offers delete and the authored vocabulary on a car, never the root', async () => {
