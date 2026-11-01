@@ -638,7 +638,13 @@ describe('rr-viewer', () => {
 
       it('draws the centerline and both rails, under the cars', async () => {
         const el = await fixture<RrViewer>(html`
-          <rr-viewer .tracks=${tracks} .cars=${cars} .dpt=${90} .resolution=${resolution}></rr-viewer>
+          <rr-viewer
+            .tracks=${tracks}
+            .cars=${cars}
+            .dpt=${90}
+            .resolution=${resolution}
+            .trackDetail=${true}
+          ></rr-viewer>
         `);
         const track = el.shadowRoot!.querySelector('.track')!;
         expect(track.querySelector('.centerline')!.getAttribute('d')).to.equal(
@@ -650,13 +656,17 @@ describe('rr-viewer', () => {
         expect(track.compareDocumentPosition(car) & Node.DOCUMENT_POSITION_FOLLOWING).to.not.equal(0);
       });
 
-      it('draws a heading handle on each node only when asked', async () => {
+      it('draws the centerline alone unless asked for the detail', async () => {
         const el = await fixture<RrViewer>(html`
           <rr-viewer .tracks=${tracks} .dpt=${90} .resolution=${resolution}></rr-viewer>
         `);
+        expect(el.shadowRoot!.querySelector('.track .centerline')).to.exist;
+        expect(el.shadowRoot!.querySelector('.track .rail')).to.not.exist;
+        expect(el.shadowRoot!.querySelector('.track .node')).to.not.exist;
         expect(el.shadowRoot!.querySelector('.heading-handle')).to.not.exist;
-        el.trackHandles = true;
+        el.trackDetail = true;
         await el.updateComplete;
+        expect(el.shadowRoot!.querySelectorAll('.track .rail')).to.have.length(2);
         expect(el.shadowRoot!.querySelectorAll('.heading-handle')).to.have.length(2);
       });
 

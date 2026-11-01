@@ -439,8 +439,11 @@ export class RrViewer extends LitElement {
   @property({ attribute: false }) tracks: readonly Track[] = [];
   /** The track chain in flight, or `null`. View state, like `pendingCar`. */
   @property({ attribute: false }) pendingTrack: PendingTrack | null = null;
-  /** Whether each centerline node shows the handle that turns its heading. */
-  @property({ attribute: false }) trackHandles = false;
+  /**
+   * Whether centerlines show their rails, node dots and heading handles, or the
+   * centerline alone. The editor sets it while the track tool is chosen.
+   */
+  @property({ attribute: false }) trackDetail = false;
   /**
    * The layout's DPT, or `null` when calibration does not resolve one.
    *
@@ -846,7 +849,8 @@ export class RrViewer extends LitElement {
       dpt: this.dpt,
       strokePx: this.symbolSize * TRACK_STROKE_RATIO,
       nodePx: this.symbolSize * CAR_HANDLE_SIZE_RATIO,
-      handlePx: this.trackHandles ? HEADING_HANDLE_SCREEN_PX * this.imagePxPerScreenPx : null,
+      handlePx: HEADING_HANDLE_SCREEN_PX * this.imagePxPerScreenPx,
+      detail: this.trackDetail,
     };
   }
 

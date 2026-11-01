@@ -403,7 +403,7 @@ image pixel coordinates.
 | `pendingCar` | `PendingCar \| null` | The **rubber band** — `{ anchor, to }` for the chain in flight. The one thing here that is not in the manifest; empty in the live view |
 | `tracks` | `readonly Track[]` | The layout's centerlines ([#284]), drawn under everything else. Per layout, so the same on every image; empty in the live view |
 | `pendingTrack` | `PendingTrack \| null` | The track chain in flight, with the node a click at the pointer would add |
-| `trackHandles` | `boolean` | Whether each centerline node shows the handle that turns its heading. The editor sets it while the track tool is chosen |
+| `trackDetail` | `boolean` | Whether centerlines show their rails, node dots and heading handles, or the centerline alone. The editor sets it while the track tool is chosen |
 | `highlight` | `ViewerHighlight \| null` | The objects a reveal is pointing at — `{ cars, sensors, calibration, trackNodes }`, ids for the first two, **indices** for the third and pixels for the fourth. Already resolved by `rr-editor-view`; the viewer draws it and decides nothing. `null` in the live view |
 | `zoom` | `Rect \| null` | The region of the **authored frame** on screen ([#44]). `null` is fit — the absence of a zoom, which is exactly what this element drew before the property existed. View state the editor owns; never in the manifest and never in the history. `null` in the live view |
 | `zoomPreview` | `Rect \| null` | The rect being dragged out — zoom's counterpart to `pendingCar`. Drawn in the overlay with a screen-constant stroke, never as an HTML box on the glass |
@@ -753,11 +753,11 @@ A centerline's SVG ([#284]). The exports must be used together.
 
 | Export | Type | Description |
 |---|---|---|
-| `renderTrack(track, size, highlighted?)` | `(Track, TrackSymbolSize, Point[]?) => SVGTemplateResult` | The centerline as one cubic per segment, the two rails at ±G/2, and a dot per node. No rails when `size.dpt` is `null`. A node at a pixel in `highlighted` takes `highlight.ts`'s class |
+| `renderTrack(track, size, highlighted?)` | `(Track, TrackSymbolSize, Point[]?) => SVGTemplateResult` | The centerline as one cubic per segment, and with `size.detail` the two rails at ±G/2, a dot per node and the heading handles. No rails when `size.dpt` is `null`. A node at a pixel in `highlighted` is drawn either way and takes `highlight.ts`'s class |
 | `renderPendingTrack(pending, size)` | `(PendingTrack, TrackSymbolSize) => SVGTemplateResult` | The track chain in flight. A click that would be refused shows as a red line from the last node to the pointer |
-| `TrackSymbolSize` | `{ dpt, strokePx, nodePx, handlePx }` | The DPT the rails are spaced by, screen-constant stroke and dot sizes, and how far out a heading handle is drawn, or `null` for none |
+| `TrackSymbolSize` | `{ dpt, strokePx, nodePx, handlePx, detail }` | The DPT the rails are spaced by, screen-constant stroke and dot sizes, how far out a heading handle is drawn, and whether to draw the rails, dots and handles or the centerline alone |
 | `PendingTrack` | `{ start, nodes, cursor, refused }` | The chain's first click, its nodes including the pointer's, the pointer, and whether a click there is refused |
-| `trackMarkerStyles` | `CSSResult` | The violet ink and the refused line's red |
+| `trackMarkerStyles` | `CSSResult` | The green ink and the refused line's red |
 
 ### `track.ts`
 

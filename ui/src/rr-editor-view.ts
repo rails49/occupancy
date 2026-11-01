@@ -1408,7 +1408,7 @@ export class RREditorView extends LitElement {
                 .pendingCar=${this._pendingCar()}
                 .tracks=${this.session.tracks}
                 .pendingTrack=${this._pendingTrack()}
-                .trackHandles=${this.session.tool === 'track'}
+                .trackDetail=${this.session.tool === 'track'}
                 .highlight=${this._highlight && this._resolveHighlight(this._highlight)}
                 .zoom=${this._zoom}
                 .zoomPreview=${this._zoomPreview}

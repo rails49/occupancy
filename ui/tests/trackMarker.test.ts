@@ -20,7 +20,7 @@ const track: Track = {
   ],
 };
 
-const size: TrackSymbolSize = { dpt: 90, strokePx: 2, nodePx: 12, handlePx: 36 };
+const size: TrackSymbolSize = { dpt: 90, strokePx: 2, nodePx: 12, handlePx: 36, detail: true };
 
 describe('renderTrack', () => {
   it('draws the centerline, both rails, a dot per node and a handle per node', () => {
@@ -29,6 +29,19 @@ describe('renderTrack', () => {
     expect(el.querySelectorAll('.rail')).toHaveLength(2);
     expect(el.querySelectorAll('.node')).toHaveLength(3);
     expect(el.querySelectorAll('.heading-handle')).toHaveLength(3);
+  });
+
+  it('draws the centerline alone without the detail', () => {
+    const el = renderSvg(renderTrack(track, { ...size, detail: false }));
+    expect(el.querySelectorAll('.centerline')).toHaveLength(1);
+    expect(el.querySelectorAll('.rail, .node, .heading, .heading-handle')).toHaveLength(0);
+  });
+
+  it('draws a node a reveal points at even without the detail', () => {
+    const el = renderSvg(renderTrack(track, { ...size, detail: false }, [{ x: 300, y: 100 }]));
+    const nodes = el.querySelectorAll('.node');
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0].classList.contains(HIGHLIGHT_CLASS)).toBe(true);
   });
 
   it('lights the node a reveal points at, and no other', () => {

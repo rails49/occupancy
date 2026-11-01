@@ -980,7 +980,7 @@ describe('rr-editor-view', () => {
         },
       ];
       const el = await mountWithTool('track');
-      expect(el.shadowRoot!.querySelector('rr-viewer')!.trackHandles).to.equal(true);
+      expect(el.shadowRoot!.querySelector('rr-viewer')!.trackDetail).to.equal(true);
 
       await rightClickAt(el, { x: 200, y: 104 });
       expect(menuItems(el)).to.deep.equal(['delete']);

@@ -6,8 +6,8 @@ import { headingHandle, offsetPoints, trackPath } from './track.js';
 import type { Track, TrackNode } from './track.js';
 
 /**
- * Track rendering for SVG (#284): the centerline, the two rails half a gauge to
- * either side, a dot at each node, and under the track tool a handle on
+ * Track rendering for SVG (#284): the centerline, and under the track tool the
+ * two rails half a gauge to either side, a dot at each node and a handle on
  * each node's heading.
  *
  * A module rather than a custom element, like the other markers. Its exports
@@ -18,13 +18,14 @@ import type { Track, TrackNode } from './track.js';
  * The rails are what the person compares with the photograph. They are drawn
  * at ±G/2, where the inner faces of the rails are.
  *
- * Violet, against the crosshair's cyan, the sensor's amber and the car's
- * magenta.
+ * Green, against the crosshair's cyan, the sensor's amber and the car's
+ * magenta. Green is also a sensor's clear state, but only in the live view,
+ * which draws no track.
  */
 
 export const trackMarkerStyles: CSSResult = css`
   .track {
-    --track-ink: #a78bfa;
+    --track-ink: #4ade80;
     fill: none;
     pointer-events: none;
   }
@@ -65,8 +66,13 @@ export interface TrackSymbolSize {
   readonly dpt: number | null;
   readonly strokePx: number;
   readonly nodePx: number;
-  /** How far from its node a heading handle is drawn, or null to draw none. */
-  readonly handlePx: number | null;
+  /** How far from its node a heading handle is drawn. */
+  readonly handlePx: number;
+  /**
+   * Whether to draw the rails, the node dots and the heading handles, or the
+   * centerline alone. A node a reveal points at is drawn either way.
+   */
+  readonly detail: boolean;
 }
 
 /** The track chain in flight: what it has placed, with the pointer's next node if a click there adds one. */
@@ -89,10 +95,10 @@ function renderLine(
   highlighted: readonly Point[] = []
 ): SVGTemplateResult {
   const gauge = size.dpt;
-  const handle = size.handlePx;
+  const lit = (n: TrackNode) => highlighted.some(p => p.x === n.x && p.y === n.y);
   return svg`
     ${
-      gauge === null
+      gauge === null || !size.detail
         ? ''
         : [gauge / 2, -gauge / 2].map(
             offset => svg`<polyline
@@ -103,16 +109,18 @@ function renderLine(
           )
     }
     <path class="centerline" d="${trackPath(nodes)}" stroke-width="${size.strokePx}" />
-    ${nodes.map(
-      n => svg`<circle
-        class="node ${highlighted.some(p => p.x === n.x && p.y === n.y) ? HIGHLIGHT_CLASS : ''}"
-        cx="${n.x}"
-        cy="${n.y}"
-        r="${size.nodePx / 2}"
-        stroke-width="${size.strokePx / 2}"
-      />`
-    )}
-    ${handle === null ? '' : nodes.map(n => renderHeading(n, handle, size))}
+    ${nodes
+      .filter(n => size.detail || lit(n))
+      .map(
+        n => svg`<circle
+          class="node ${lit(n) ? HIGHLIGHT_CLASS : ''}"
+          cx="${n.x}"
+          cy="${n.y}"
+          r="${size.nodePx / 2}"
+          stroke-width="${size.strokePx / 2}"
+        />`
+      )}
+    ${size.detail ? nodes.map(n => renderHeading(n, size.handlePx, size)) : ''}
   `;
 }
 
