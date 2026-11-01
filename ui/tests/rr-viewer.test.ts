@@ -410,17 +410,17 @@ describe('rr-viewer', () => {
       return Math.max(...xs) - Math.min(...xs);
     }
 
-    it('draws a sensor one track width across, which is DPT', async () => {
+    it('draws a sensor two track widths across, which is twice DPT', async () => {
       // A world size, not a screen one: the sensor shrinks with the photograph
       // exactly as the cars around it do, so the two are comparable.
       const el = await fixture<RrViewer>(html`
         <rr-viewer .sensors=${sensors} .dpt=${90} .resolution=${resolution}></rr-viewer>
       `);
-      expect(diamondSpan(el)).to.equal(90);
+      expect(diamondSpan(el)).to.equal(180);
 
       el.dpt = 20;
       await el.updateComplete;
-      expect(diamondSpan(el)).to.equal(20);
+      expect(diamondSpan(el)).to.equal(40);
     });
 
     it('falls back to the screen size when no DPT resolves', async () => {

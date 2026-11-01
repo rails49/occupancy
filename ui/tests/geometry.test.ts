@@ -383,18 +383,18 @@ describe('hitTest', () => {
     });
 
     it('grabs anywhere inside a sensor wider than the pointer radius', () => {
-      // DPT 120: the diamond is 120 image px across, so its half-diagonal is 60
+      // DPT 120: the diamond is 240 image px across, so its half-diagonal is 120
       // — far beyond the 10 image px the pointer alone reaches here.
-      const hit = hitTest(at(120), { x: 150, y: 100 }, tolerance);
+      const hit = hitTest(at(120), { x: 210, y: 100 }, tolerance);
       expect(hit).to.deep.equal({ kind: 'sensor', id: 's1' });
     });
 
     it('stops at the symbol\'s edge rather than reaching past it', () => {
-      expect(hitTest(at(120), { x: 161, y: 100 }, tolerance)).to.equal(null);
+      expect(hitTest(at(120), { x: 221, y: 100 }, tolerance)).to.equal(null);
     });
 
     it('never grabs at less than the pointer radius, however small the track', () => {
-      // At DPT 4 the diamond is 4 px across; a fingertip is still a fingertip,
+      // At DPT 4 the diamond is 8 px across; a fingertip is still a fingertip,
       // so the sensor stays as easy to hit as anything else on the image.
       const hit = hitTest(at(4), { x: 108, y: 100 }, tolerance);
       expect(hit).to.deep.equal({ kind: 'sensor', id: 's1' });
@@ -563,8 +563,8 @@ describe('carUnderPointer', () => {
 });
 
 describe('sensorDiameterPx', () => {
-  it('is one track width when the layout is calibrated', () => {
-    expect(sensorDiameterPx(24, 2)).to.equal(trackWidthPx(24));
+  it('is two track widths when the layout is calibrated', () => {
+    expect(sensorDiameterPx(24, 2)).to.equal(2 * trackWidthPx(24));
   });
 
   it('falls back to the screen-constant size with no DPT', () => {

@@ -448,8 +448,8 @@ export class RrViewer extends LitElement {
    * The layout's DPT, or `null` when calibration does not resolve one.
    *
    * The one property here that is neither media nor a thing to draw: it is the
-   * **scale** the world-sized symbols are drawn at. A sensor is one track width
-   * across (`geometry.ts` § `trackWidthPx`) and a car will be 2.09, so both
+   * **scale** the world-sized symbols are drawn at. A sensor is two track widths
+   * across (`geometry.ts` § `sensorDiameterPx`) and a car 2.09, so both
    * shrink with the photograph rather than staying a constant size on screen —
    * which is what makes a sensor's footprint comparable to the cars around it.
    *

@@ -543,7 +543,7 @@ covered today.
 | Export | Description |
 |---|---|
 | `trackWidthPx(dpt)` | Track width in image pixels — which **is** DPT, since `getDPT` returns px/mm × gauge_mm. A sensor is drawn one of these across |
-| `sensorDiameterPx(dpt, imagePxPerScreenPx)` | The diameter a sensor is **drawn** at: one track width, or the screen-constant size with no DPT. The renderer and the hit-test share it, so what you see is what you can grab |
+| `sensorDiameterPx(dpt, imagePxPerScreenPx)` | The diameter a sensor is **drawn** at: two track widths, or the screen-constant size with no DPT. The renderer and the hit-test share it, so what you see is what you can grab |
 | `SYMBOL_SIZE_SCREEN_PX` | Size of a screen-constant symbol (markers, crosshairs, labels), in screen pixels |
 | `carWidthPx(dpt)` | Car width in image pixels: `dpt × STANDARD_WIDTH / STANDARD_GAUGE` — 2.09 track widths |
 | `carCorners(p0, p1, dpt)` | The four corners of the oriented rectangle, in polygon order from the `p0` side |
@@ -705,7 +705,7 @@ must be used together** — styles in the host's `static styles`, the renderer o
 | Export | Type | Description |
 |---|---|---|
 | `renderSensor(sensor, size, frame, highlighted?)` | `(Sensor, SensorSymbolSize, FrameSize, boolean?) => SVGTemplateResult` | A diamond centered on the sensor, a filled core at the exact pixel, and a `text` label. `frame` is `rr-viewer`'s `resolution`; `highlighted` adds `highlight.ts`'s class |
-| `SensorSymbolSize` | `{ diameterPx, labelPx }` | **Two independent sizes.** `diameterPx` is a *world* size — one track width, so the diamond shrinks with the photograph; `labelPx` is a *screen* size, from the viewer's `symbolSize` |
+| `SensorSymbolSize` | `{ diameterPx, labelPx }` | **Two independent sizes.** `diameterPx` is a *world* size — two track widths, so the diamond shrinks with the photograph; `labelPx` is a *screen* size, from the viewer's `symbolSize` |
 | `sensorLabelText(sensor)` | `(Sensor) => string` | The sensor's `name`, or its `id` when it has none |
 | `sensorMarkerStyles` | `CSSResult` | Diamond and label colors, the translucent fill, non-scaling strokes |
 
@@ -714,12 +714,12 @@ sensor and a calibration point are different objects with different tools, and `
 § Reference points requires them to be unmistakable. The symbol also *closes* around its pixel rather
 than extending arms, because a sensor is a single query point and nothing about it implies an extent.
 
-**The diamond is one track width across**, not a constant size on screen — the only honest sense of
+**The diamond is two track widths across**, not a constant size on screen — the only honest sense of
 how big a sensor is comes from the track it sits on, and a car is 2.09 of the same unit, so the two
 are directly comparable on the photograph. The **label is a screen size**, because it is annotation
 about the sensor rather than a measurement of it: a name scaled to the track is illegible at the
 DPT 18–19 the fixture corpus sits at. The centre dot has a **floor** (`MIN_CORE_RADIUS_PX`): it names
-the pixel the sensor *is*, and 12% of an 18-pixel diamond is not a visible dot.
+the pixel the sensor *is*, and 12% of a 36-pixel diamond is not a visible dot.
 
 **An unnamed sensor is labelled with its `id`.** Names are optional, free text, not unique, and never
 auto-generated (`../SPEC.md` § Occupancy Output): an invented "Sensor 3" is indistinguishable from a

@@ -62,13 +62,13 @@ export const SYMBOL_SIZE_SCREEN_PX = 36;
  * cannot drift apart; two independent copies of the sizing rule is exactly how
  * a symbol ends up looking bigger than it is clickable.
  *
- * One track width when the layout is calibrated. With no DPT it falls back to
+ * Two track widths when the layout is calibrated. With no DPT it falls back to
  * the screen-constant size: an archive can carry sensors and no calibration —
  * deleting a calibration point is allowed at any time — and a symbol sized from
  * a number that does not exist would vanish.
  */
 export function sensorDiameterPx(dpt: number | null, imagePxPerScreenPx: number): number {
-  return dpt === null ? SYMBOL_SIZE_SCREEN_PX * imagePxPerScreenPx : trackWidthPx(dpt);
+  return dpt === null ? SYMBOL_SIZE_SCREEN_PX * imagePxPerScreenPx : 2 * trackWidthPx(dpt);
 }
 
 /**
@@ -460,7 +460,7 @@ interface Candidate {
  *
  * **A sensor is grabbable across the whole symbol**, not just at its centre.
  * Every other target is a point wearing an annotation, so the pointing device's
- * radius is the whole story; a sensor is a drawn *footprint* one track wide,
+ * radius is the whole story; a sensor is a drawn *footprint* two tracks wide,
  * and a symbol visibly larger than its own hit area reads as a bug the first
  * time a click on it misses. Its reach is therefore the larger of the two —
  * never smaller, so a sensor on a distant track stays as easy to hit as
