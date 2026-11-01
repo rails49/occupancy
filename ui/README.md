@@ -274,7 +274,7 @@ the editor adds three command groups:
 |---|---|---|
 | File | `#file-new`, `#file-open`, `#file-save` | A Shift-click on Save is Save As ([#48]) |
 | History | `#edit-undo` (`Mod+Z`), `#edit-redo` (`Shift+Mod+Z`) | Disabled when the stack is empty |
-| Tools | `#tool-calibration`, `#tool-sensor`, `#tool-car` | Only while a manifest is loaded; the active tool is `pressed` |
+| Tools | `#tool-calibration`, `#tool-track`, `#tool-sensor`, `#tool-car` | Only while a manifest is loaded, in the order they are used; the active tool is `pressed` |
 
 Save As is a modifier rather than a button of its own: on a browser without the File System Access
 API it does exactly what Save does. The tooltip **names the modifier only where the browser can

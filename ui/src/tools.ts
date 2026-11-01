@@ -36,9 +36,9 @@ export interface ToolSpec {
 
 export const TOOLS: readonly ToolSpec[] = [
   { tool: 'calibration', icon: 'crosshair', label: 'Calibration point', needsDpt: false },
+  { tool: 'track', icon: 'bezier2', label: 'Track', needsDpt: true },
   { tool: 'sensor', icon: 'broadcast-pin', label: 'Sensor', needsDpt: true },
   { tool: 'car', icon: 'train-front', label: 'Car', needsDpt: true },
-  { tool: 'track', icon: 'bezier2', label: 'Track', needsDpt: true },
 ];
 
 /**
