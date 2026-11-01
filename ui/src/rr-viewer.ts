@@ -15,6 +15,7 @@ import {
 import type { CarSymbolSize, CarWarning, PendingCar } from './carMarker.js';
 import { renderTrack, renderPendingTrack, trackMarkerStyles } from './trackMarker.js';
 import type { PendingTrack, TrackSymbolSize } from './trackMarker.js';
+import { HEADING_HANDLE_SCREEN_PX } from './track.js';
 import type { Track } from './track.js';
 import {
   coupledEnds,
@@ -436,6 +437,8 @@ export class RrViewer extends LitElement {
   @property({ attribute: false }) tracks: readonly Track[] = [];
   /** The trace in flight, or `null`. View state, like `pendingCar`. */
   @property({ attribute: false }) pendingTrack: PendingTrack | null = null;
+  /** Whether each centerline node shows the handle that turns its heading. */
+  @property({ attribute: false }) trackHandles = false;
   /**
    * The layout's DPT, or `null` when calibration does not resolve one.
    *
@@ -841,6 +844,7 @@ export class RrViewer extends LitElement {
       dpt: this.dpt,
       strokePx: this.symbolSize * TRACK_STROKE_RATIO,
       nodePx: this.symbolSize * CAR_HANDLE_SIZE_RATIO,
+      handlePx: this.trackHandles ? HEADING_HANDLE_SCREEN_PX * this.imagePxPerScreenPx : null,
     };
   }
 

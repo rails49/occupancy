@@ -177,3 +177,87 @@ export function traceTo(
   const node = { x: to.x, y: to.y, heading: wrapAngle(last.heading + 2 * deviation) };
   return { kind: 'node', nodes: [...nodes, node] };
 }
+
+/** Distance, in screen pixels, from a node to the handle that turns its heading. */
+export const HEADING_HANDLE_SCREEN_PX = 36;
+
+/** What a pointer is on, most specific first. Lines and nodes are indices. */
+export type TrackHit =
+  | { readonly kind: 'heading'; readonly line: number; readonly node: number }
+  | { readonly kind: 'node'; readonly line: number; readonly node: number }
+  | { readonly kind: 'curve'; readonly line: number; readonly segment: number; readonly t: number };
+
+/** Where a node's heading handle is, `length` image pixels along its heading. */
+export function headingHandle(node: TrackNode, length: number): Point {
+  return { x: node.x + length * Math.cos(node.heading), y: node.y + length * Math.sin(node.heading) };
+}
+
+/** The candidate nearest `at` and no farther than `radius`, or null. */
+function nearest<T>(candidates: readonly (readonly [T, Point])[], at: Point, radius: number): T | null {
+  let best: T | null = null;
+  let bestD = radius;
+  for (const [hit, p] of candidates) {
+    const d = Math.hypot(p.x - at.x, p.y - at.y);
+    if (d <= bestD) {
+      best = hit;
+      bestD = d;
+    }
+  }
+  return best;
+}
+
+/**
+ * The heading handle, node or curve within `radius` of `at`, in that order of
+ * preference, nearest first within each. Handles are tested only when
+ * `handleLength` is given, which is when they are drawn.
+ */
+export function hitTrack(
+  tracks: readonly Track[],
+  at: Point,
+  radius: number,
+  handleLength: number | null
+): TrackHit | null {
+  const handles =
+    handleLength === null
+      ? []
+      : tracks.flatMap((track, line) =>
+          track.nodes.map(
+            (n, node) => [{ kind: 'heading', line, node } as const, headingHandle(n, handleLength)] as const
+          )
+        );
+  const nodes = tracks.flatMap((track, line) =>
+    track.nodes.map((n, node) => [{ kind: 'node', line, node } as const, n] as const)
+  );
+  const curves = tracks.flatMap((track, line) =>
+    segments(track.nodes).flatMap((s, segment) => {
+      const n = Math.max(4, Math.ceil(Math.hypot(s.p1.x - s.p0.x, s.p1.y - s.p0.y) / SAMPLE_PX));
+      return Array.from({ length: n + 1 }, (_, k) => {
+        const t = k / n;
+        return [{ kind: 'curve', line, segment, t } as const, pointAt(s, t)] as const;
+      });
+    })
+  );
+  return (
+    nearest<TrackHit>(handles, at, radius) ??
+    nearest<TrackHit>(nodes, at, radius) ??
+    nearest<TrackHit>(curves, at, radius)
+  );
+}
+
+/**
+ * The nodes with one more, on the curve at `t` along `segment`, heading along
+ * it. The curve moves a little, since each half now has its own handles.
+ */
+export function insertNode(nodes: readonly TrackNode[], segment: number, t: number): TrackNode[] {
+  const s = segments(nodes)[segment];
+  if (!s) return [...nodes];
+  const p = pointAt(s, t);
+  const v = tangentAt(s, t);
+  const node = { x: p.x, y: p.y, heading: Math.atan2(v.y, v.x) };
+  return [...nodes.slice(0, segment + 1), node, ...nodes.slice(segment + 1)];
+}
+
+/** The same line run the other way. */
+export function reverseNodes(nodes: readonly TrackNode[]): TrackNode[] {
+  return [...nodes].reverse().map(n => ({ x: n.x, y: n.y, heading: wrapAngle(n.heading + Math.PI) }));
+}

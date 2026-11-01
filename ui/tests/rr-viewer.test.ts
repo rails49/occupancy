@@ -650,6 +650,16 @@ describe('rr-viewer', () => {
         expect(track.compareDocumentPosition(car) & Node.DOCUMENT_POSITION_FOLLOWING).to.not.equal(0);
       });
 
+      it('draws a heading handle on each node only when asked', async () => {
+        const el = await fixture<RrViewer>(html`
+          <rr-viewer .tracks=${tracks} .dpt=${90} .resolution=${resolution}></rr-viewer>
+        `);
+        expect(el.shadowRoot!.querySelector('.heading-handle')).to.not.exist;
+        el.trackHandles = true;
+        await el.updateComplete;
+        expect(el.shadowRoot!.querySelectorAll('.heading-handle')).to.have.length(2);
+      });
+
       it('draws no rails without a DPT', async () => {
         const el = await fixture<RrViewer>(html`
           <rr-viewer .tracks=${tracks} .dpt=${null} .resolution=${resolution}></rr-viewer>

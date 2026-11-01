@@ -1,12 +1,13 @@
 import { svg, css } from 'lit';
 import type { SVGTemplateResult, CSSResult } from 'lit';
 import type { Point } from '@rails49/r49';
-import { offsetPoints, trackPath } from './track.js';
+import { headingHandle, offsetPoints, trackPath } from './track.js';
 import type { Track, TrackNode } from './track.js';
 
 /**
  * Track rendering for SVG (#284): the centerline, the two rails half a gauge to
- * either side, and a dot at each node.
+ * either side, a dot at each node, and while the track tool is idle a handle on
+ * each node's heading.
  *
  * A module rather than a custom element, like the other markers. Its exports
  * must be used together: `trackMarkerStyles` in the host's `static styles`,
@@ -46,6 +47,15 @@ export const trackMarkerStyles: CSSResult = css`
   .track .refused {
     stroke: #ef4444;
   }
+
+  .track .heading {
+    stroke: var(--track-ink);
+  }
+
+  .track .heading-handle {
+    fill: rgba(0, 0, 0, 0.6);
+    stroke: var(--track-ink);
+  }
 `;
 
 /** The sizes a track is drawn at: the DPT the rails are spaced by, and screen-constant strokes. */
@@ -54,6 +64,8 @@ export interface TrackSymbolSize {
   readonly dpt: number | null;
   readonly strokePx: number;
   readonly nodePx: number;
+  /** How far from its node a heading handle is drawn, or null to draw none. */
+  readonly handlePx: number | null;
 }
 
 /** The trace in flight: what it has placed, with the pointer's next node if a click there adds one. */
@@ -72,6 +84,7 @@ function polyline(points: readonly Point[]): string {
 
 function renderLine(nodes: readonly TrackNode[], size: TrackSymbolSize): SVGTemplateResult {
   const gauge = size.dpt;
+  const handle = size.handlePx;
   return svg`
     ${
       gauge === null
@@ -94,6 +107,29 @@ function renderLine(nodes: readonly TrackNode[], size: TrackSymbolSize): SVGTemp
         stroke-width="${size.strokePx / 2}"
       />`
     )}
+    ${handle === null ? '' : nodes.map(n => renderHeading(n, handle, size))}
+  `;
+}
+
+/** A tick along a node's heading, with the handle that turns it at its end. */
+function renderHeading(node: TrackNode, length: number, size: TrackSymbolSize): SVGTemplateResult {
+  const end = headingHandle(node, length);
+  return svg`
+    <line
+      class="heading"
+      x1="${node.x}"
+      y1="${node.y}"
+      x2="${end.x}"
+      y2="${end.y}"
+      stroke-width="${size.strokePx}"
+    />
+    <circle
+      class="heading-handle"
+      cx="${end.x}"
+      cy="${end.y}"
+      r="${size.nodePx / 2}"
+      stroke-width="${size.strokePx}"
+    />
   `;
 }
 

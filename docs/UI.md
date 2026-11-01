@@ -44,9 +44,18 @@ straight, a turn over 90° in one segment is refused, and a click within the gra
 node adds nothing. Right-click or Escape ends a line. Lines are written to `layout.centerlines` like
 a car chain writes cars: the second click writes a new centerline and each later click replaces its
 nodes, one `layout` entry per click, so undo removes a line node by node whether or not the trace is
-still live. A live trace takes every undo, ends at its start, and refuses redo. Lines cannot be
-edited yet. A click under the track tool always traces, even on a sensor, and a live trace grabs
-nothing, because sensors sit on the track being traced.
+still live. A live trace takes every undo, ends at its start, and refuses redo. While a trace is
+live, a click always traces, even on a sensor, and a drag grabs nothing, because sensors sit on the
+track being traced.
+
+With the track tool idle, the track comes first under the pointer (`track.ts` § `hitTrack`): a
+heading handle, then a node, then a line. Dragging a node moves it and keeps its heading; dragging
+the handle at the end of a node's heading tick turns the node to face the pointer. A click on a line
+inserts a node there, heading along it. A click on an end node continues that line; from the first
+node the trace runs against the stored order and writes back in it. Right-click opens Delete node or
+Delete line, and deleting one of a line's last two nodes deletes the line. Lines and nodes have no
+id, so a menu carries the node's pixel and checks it is still there. Under any other tool the track
+grabs nothing.
 
 The picker takes **several files in one pick** (#262), and the pick — not the file — is the unit:
 `addPickedFiles` prepares and judges each file in filename order, hands what survives to

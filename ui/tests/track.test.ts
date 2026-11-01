@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
+  headingHandle,
+  hitTrack,
+  insertNode,
+  reverseNodes,
   offsetPoints,
   pointAt,
   segment,
@@ -138,5 +142,62 @@ describe('traceTo', () => {
     const out = tangentAt(segment(nodes[1], nodes[2]), 1);
     const into = tangentAt(segment(nodes[2], nodes[3]), 0);
     expect(Math.atan2(out.y, out.x)).toBeCloseTo(Math.atan2(into.y, into.x));
+  });
+});
+
+describe('hitTrack', () => {
+  const tracks = [{ nodes: [node(100, 100, 0), node(300, 100, 0)] }];
+
+  it('prefers a heading handle, then a node, then the curve', () => {
+    expect(hitTrack(tracks, { x: 136, y: 100 }, 14, 36)).toEqual({ kind: 'heading', line: 0, node: 0 });
+    expect(hitTrack(tracks, { x: 102, y: 103 }, 14, 36)).toEqual({ kind: 'node', line: 0, node: 0 });
+    expect(hitTrack(tracks, { x: 200, y: 105 }, 14, 36)).toMatchObject({ kind: 'curve', line: 0, segment: 0 });
+  });
+
+  it('finds the point on the curve nearest the pointer', () => {
+    const hit = hitTrack(tracks, { x: 200, y: 105 }, 14, null);
+    expect(hit?.kind === 'curve' && hit.t).toBeCloseTo(0.5, 1);
+  });
+
+  it('tests no handles when none are drawn', () => {
+    expect(hitTrack(tracks, { x: 136, y: 100 }, 14, null)).toMatchObject({ kind: 'curve' });
+  });
+
+  it('finds nothing beyond the radius', () => {
+    expect(hitTrack(tracks, { x: 200, y: 130 }, 14, 36)).toBeNull();
+  });
+});
+
+describe('insertNode', () => {
+  it('puts a node on the curve, heading along it', () => {
+    const nodes = insertNode([node(0, 0, 0), node(100, 100, Math.PI / 2)], 0, 0.5);
+    expect(nodes).toHaveLength(3);
+    expect(Math.hypot(nodes[1].x, nodes[1].y - 100)).toBeCloseTo(100, 0);
+    expect(nodes[1].heading).toBeCloseTo(Math.PI / 4, 1);
+  });
+
+  it('keeps a straight straight', () => {
+    const nodes = insertNode([node(0, 0, 0), node(300, 0, 0)], 0, 0.5);
+    expect(nodes[1]).toEqual(node(150, 0, 0));
+  });
+});
+
+describe('reverseNodes', () => {
+  it('runs the line the other way', () => {
+    const reversed = reverseNodes([node(0, 0, 0), node(100, 0, 0.5)]);
+    expect(reversed.map(n => [n.x, n.y])).toEqual([
+      [100, 0],
+      [0, 0],
+    ]);
+    expect(reversed[0].heading).toBeCloseTo(0.5 - Math.PI);
+    expect(reversed[1].heading).toBeCloseTo(Math.PI);
+  });
+});
+
+describe('headingHandle', () => {
+  it('sits along the heading', () => {
+    const p = headingHandle(node(10, 10, Math.PI / 2), 36);
+    expect(p.x).toBeCloseTo(10);
+    expect(p.y).toBeCloseTo(46);
   });
 });

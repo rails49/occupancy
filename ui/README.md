@@ -393,6 +393,7 @@ image pixel coordinates.
 | `pendingCar` | `PendingCar \| null` | The **rubber band** — `{ anchor, to }` for the chain in flight. The one thing here that is not in the manifest; empty in the live view |
 | `tracks` | `readonly Track[]` | The layout's centerlines ([#284]), drawn under everything else. Per layout, so the same on every image; empty in the live view |
 | `pendingTrack` | `PendingTrack \| null` | The trace in flight, with the node a click at the pointer would add |
+| `trackHandles` | `boolean` | Whether each centerline node shows the handle that turns its heading. The editor sets it while the track tool is idle |
 | `highlight` | `ViewerHighlight \| null` | The objects a reveal is pointing at — `{ cars, sensors, calibration }`, ids for the first two and **indices** for the third. Already resolved by `rr-editor-view`; the viewer draws it and decides nothing. `null` in the live view |
 | `zoom` | `Rect \| null` | The region of the **authored frame** on screen ([#44]). `null` is fit — the absence of a zoom, which is exactly what this element drew before the property existed. View state the editor owns; never in the manifest and never in the history. `null` in the live view |
 | `zoomPreview` | `Rect \| null` | The rect being dragged out — zoom's counterpart to `pendingCar`. Drawn in the overlay with a screen-constant stroke, never as an HTML box on the glass |
@@ -727,7 +728,7 @@ A traced centerline's SVG ([#284]). The exports must be used together.
 |---|---|---|
 | `renderTrack(track, size)` | `(Track, TrackSymbolSize) => SVGTemplateResult` | The centerline as one cubic per segment, the two rails at ±G/2, and a dot per node. No rails when `size.dpt` is `null` |
 | `renderPendingTrack(pending, size)` | `(PendingTrack, TrackSymbolSize) => SVGTemplateResult` | The trace in flight. A click that would be refused shows as a red line from the last node to the pointer |
-| `TrackSymbolSize` | `{ dpt, strokePx, nodePx }` | The DPT the rails are spaced by, and screen-constant stroke and dot sizes |
+| `TrackSymbolSize` | `{ dpt, strokePx, nodePx, handlePx }` | The DPT the rails are spaced by, screen-constant stroke and dot sizes, and how far out a heading handle is drawn, or `null` for none |
 | `PendingTrack` | `{ start, nodes, cursor, refused }` | The trace's first click, its nodes including the pointer's, the pointer, and whether a click there is refused |
 | `trackMarkerStyles` | `CSSResult` | The violet ink and the refused line's red |
 
@@ -745,7 +746,9 @@ heading, with length `d / (3 cos²(φ/4))`.
 | `trackPath(nodes)` | An SVG path, one `C` per segment |
 | `offsetPoints(nodes, offset)` | Sampled points `offset` px to the right of the line; negative is left |
 | `traceTo(start, nodes, to, snapPx, minPx)` | What a click at `to` does to a trace: the new nodes, `too-close` to the last point, or `too-sharp` |
-| `STRAIGHT_SNAP_SCREEN_PX`, `MAX_TURN` | The straight snap's tolerance, and the largest turn one segment may make (90°) |
+| `hitTrack(tracks, at, radius, handleLength)` | The heading handle, node or line under the pointer, in that order of preference |
+| `headingHandle(node, length)`, `insertNode(nodes, segment, t)`, `reverseNodes(nodes)` | Where a heading handle sits; a node added on the curve; the line run the other way |
+| `STRAIGHT_SNAP_SCREEN_PX`, `MAX_TURN`, `HEADING_HANDLE_SCREEN_PX` | The straight snap's tolerance, the largest turn one segment may make (90°), and how far a heading handle sits from its node |
 
 ### `carMarker.ts`
 

@@ -1965,3 +1965,135 @@ describe('EditSession track tool (#284)', () => {
     expect(s.tracks).toHaveLength(1);
   });
 });
+
+describe('EditSession track editing (#284)', () => {
+  /** A calibrated session with the track tool and one straight line of three nodes. */
+  function withLine(): EditSession {
+    const s = session({ tool: 'track' });
+    s.archive.getManifest().layout.centerlines = [
+      {
+        nodes: [
+          { x: 100, y: 100, heading: 0 },
+          { x: 300, y: 100, heading: 0 },
+          { x: 500, y: 100, heading: 0 },
+        ],
+      },
+    ];
+    return s;
+  }
+
+  function xs(s: EditSession, line = 0): number[] {
+    return s.tracks[line].nodes.map(n => n.x);
+  }
+
+  it('inserts a node where a click lands on a line', async () => {
+    const s = withLine();
+    await clicks(s, { x: 200, y: 104 });
+    expect(xs(s)).toEqual([100, 200, 300, 500]);
+    expect(s.tracks[0].nodes[1].y).toBeCloseTo(100);
+    expect(s.history.undoLabel).toBe('insert centerline node');
+    expect(s.trace).toBeNull();
+  });
+
+  it('continues a line from its last node', async () => {
+    const s = withLine();
+    await clicks(s, { x: 500, y: 100 });
+    expect(s.trace?.nodes).toHaveLength(3);
+    await clicks(s, { x: 700, y: 100 });
+    expect(xs(s)).toEqual([100, 300, 500, 700]);
+    expect(s.tracks).toHaveLength(1);
+  });
+
+  it('continues a line from its first node, keeping the stored order', async () => {
+    const s = withLine();
+    await clicks(s, { x: 100, y: 100 });
+    expect(s.trace?.nodes[s.trace.nodes.length - 1]).toMatchObject({ x: 100, y: 100 });
+    await clicks(s, { x: -100, y: 100 });
+    expect(xs(s)).toEqual([-100, 100, 300, 500]);
+    expect(s.tracks[0].nodes[0].heading).toBeCloseTo(0);
+  });
+
+  it('does nothing for a click on a middle node', async () => {
+    const s = withLine();
+    await clicks(s, { x: 300, y: 100 });
+    expect(s.trace).toBeNull();
+    expect(s.history.canUndo).toBe(false);
+  });
+
+  it('moves a dragged node, keeping its heading, as one entry', async () => {
+    const s = withLine();
+    expect(await drag(s, [{ x: 300, y: 100 }, { x: 310, y: 120 }, { x: 320, y: 140 }])).toBe(true);
+    expect(s.tracks[0].nodes[1]).toEqual({ x: 320, y: 140, heading: 0 });
+    expect(s.history.undoLabel).toBe('move centerline node');
+    await s.undo();
+    expect(s.tracks[0].nodes[1]).toEqual({ x: 300, y: 100, heading: 0 });
+  });
+
+  it('turns a node to face its dragged heading handle', async () => {
+    const s = withLine();
+    await drag(s, [{ x: 336, y: 100 }, { x: 300, y: 136 }]);
+    expect(s.tracks[0].nodes[1]).toMatchObject({ x: 300, y: 100 });
+    expect(s.tracks[0].nodes[1].heading).toBeCloseTo(Math.PI / 2);
+    expect(s.history.undoLabel).toBe('turn centerline node');
+  });
+
+  it('never moves a node onto its neighbour', async () => {
+    const s = withLine();
+    await drag(s, [{ x: 300, y: 100 }, { x: 100, y: 100 }]);
+    expect(s.tracks[0].nodes[1]).toMatchObject({ x: 300, y: 100 });
+  });
+
+  it('puts a cancelled node drag back', async () => {
+    const s = withLine();
+    const d = s.beginDrag({ x: 300, y: 100 }, SCALE)!;
+    d.move({ x: 350, y: 150 });
+    await d.cancel();
+    expect(s.tracks[0].nodes[1]).toEqual({ x: 300, y: 100, heading: 0 });
+    expect(s.history.canUndo).toBe(false);
+  });
+
+  it('names a node or a line as the subject of a right-click', () => {
+    const s = withLine();
+    expect(s.rightClick({ x: 300, y: 100 }, SCALE)).toEqual({
+      kind: 'track-node',
+      line: 0,
+      node: 1,
+      px: { x: 300, y: 100 },
+    });
+    expect(s.rightClick({ x: 200, y: 104 }, SCALE)).toEqual({
+      kind: 'track',
+      line: 0,
+      px: { x: 100, y: 100 },
+    });
+  });
+
+  it('deletes a node, and the line with one of its last two', async () => {
+    const s = withLine();
+    await s.delete({ kind: 'track-node', line: 0, node: 1, px: { x: 300, y: 100 } });
+    expect(xs(s)).toEqual([100, 500]);
+    await s.delete({ kind: 'track-node', line: 0, node: 1, px: { x: 500, y: 100 } });
+    expect(s.tracks).toHaveLength(0);
+  });
+
+  it('deletes a whole line', async () => {
+    const s = withLine();
+    await s.delete({ kind: 'track', line: 0, px: { x: 100, y: 100 } });
+    expect(s.tracks).toHaveLength(0);
+    expect(s.history.undoLabel).toBe('delete centerline');
+  });
+
+  it('drops a delete whose node moved after the menu opened', async () => {
+    const s = withLine();
+    await s.delete({ kind: 'track-node', line: 0, node: 1, px: { x: 301, y: 100 } });
+    expect(xs(s)).toEqual([100, 300, 500]);
+  });
+
+  it('leaves track alone under another tool', async () => {
+    const s = withLine();
+    s.selectTool('sensor');
+    await clicks(s, { x: 200, y: 100 });
+    expect(xs(s)).toEqual([100, 300, 500]);
+    expect(sensors(s)).toHaveLength(1);
+    expect(s.beginDrag({ x: 300, y: 100 }, SCALE)).toBeNull();
+  });
+});

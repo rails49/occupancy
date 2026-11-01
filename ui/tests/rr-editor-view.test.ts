@@ -968,6 +968,28 @@ describe('rr-editor-view', () => {
       expect(el.shadowRoot!.querySelector('rr-viewer')!.tracks).to.have.length(1);
     });
 
+    it('opens a delete row on a node and on a line, and deletes the node', async () => {
+      archive.getManifest().layout.centerlines = [
+        {
+          nodes: [
+            { x: 100, y: 100, heading: 0 },
+            { x: 300, y: 100, heading: 0 },
+            { x: 500, y: 100, heading: 0 },
+          ],
+        },
+      ];
+      const el = await mountWithTool('track');
+      expect(el.shadowRoot!.querySelector('rr-viewer')!.trackHandles).to.equal(true);
+
+      await rightClickAt(el, { x: 200, y: 104 });
+      expect(menuItems(el)).to.deep.equal(['delete']);
+
+      await rightClickAt(el, { x: 300, y: 100 });
+      expect(menuItems(el)).to.deep.equal(['delete']);
+      await choose(el, 'delete');
+      expect(el.session!.tracks[0].nodes.map(n => n.x)).to.deep.equal([100, 500]);
+    });
+
     it('ends the trace on right-click, opening no menu', async () => {
       const el = await mountWithTool('track');
       await traced(el);

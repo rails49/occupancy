@@ -183,6 +183,10 @@ function itemsFor(subject: MenuSubject): readonly ContextMenuItem[] {
       return SENSOR_ITEMS;
     case 'car':
       return carItems();
+    case 'track-node':
+      return [{ id: 'delete', label: 'Delete node' }];
+    case 'track':
+      return [{ id: 'delete', label: 'Delete line' }];
   }
 }
 
@@ -1391,6 +1395,7 @@ export class RREditorView extends LitElement {
                 .pendingCar=${this._pendingCar()}
                 .tracks=${this.session.tracks}
                 .pendingTrack=${this._pendingTrack()}
+                .trackHandles=${this.session.tool === 'track' && !this.session.trace}
                 .highlight=${this._highlight && this._resolveHighlight(this._highlight)}
                 .zoom=${this._zoom}
                 .zoomPreview=${this._zoomPreview}
