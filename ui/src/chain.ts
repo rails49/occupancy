@@ -35,6 +35,11 @@ export type ClickResult =
 
 export const NONE: ClickResult = { kind: 'none' };
 
+/** Why a sensor or car end was refused: no centerline is near enough to land on. */
+export const NO_TRACK = 'No track here — sensors and cars sit on a track.';
+
+export const NO_TRACK_NOTICE: ClickResult = { kind: 'notice', message: NO_TRACK };
+
 /** A live chain as the editor draws it: the dot the next segment starts from, and a track's nodes. */
 export type ChainView =
   | { readonly tool: 'car'; readonly end: Point }
@@ -54,10 +59,10 @@ export interface Chain {
   /** Whether nothing it wrote is still in the manifest. */
   atStart(): boolean;
   /**
-   * Writes the segment a click at `px` adds, or says why it adds none. A click
+   * Writes the segment a click at `at` adds, or says why it adds none. A click
    * within the grab radius of the last dot adds nothing.
    */
-  extend(px: Point, scale: number): Promise<ClickResult>;
+  extend(at: Point, scale: number): Promise<ClickResult>;
   /** Brings the chain in step with the manifest. False once it cannot go on. */
   settle(): boolean;
 }
@@ -75,6 +80,8 @@ export interface ChainContext {
   /** The image on screen. */
   image(): Image | undefined;
   scene(): HitScene;
+  /** `at` on the nearest centerline, in whole pixels, or null when none is near enough. */
+  snap(at: Point): Point | null;
   /** Runs a write through the history, then tells the listeners. */
   record(label: string, target: HistoryTarget, mutate: () => void): Promise<void>;
   writeLayout(changes: {

@@ -320,6 +320,15 @@ describe('renderPendingCar()', () => {
     expect(el.querySelector('g')!.getAttribute('class')).toContain('pending');
     expect(carMarkerStyles.cssText).toContain('stroke-dasharray');
   });
+
+  it('marks a band a click would be refused at, and only that one', () => {
+    const band = (refused?: boolean) =>
+      renderSvg(
+        renderPendingCar({ anchor: { x: 100, y: 200 }, to: { x: 400, y: 200 }, refused }, size(90))
+      ).querySelector('g')!.classList;
+    expect(band(true).contains('refused')).toBe(true);
+    expect(band().contains('refused')).toBe(false);
+  });
 });
 
 describe('renderDetection()', () => {

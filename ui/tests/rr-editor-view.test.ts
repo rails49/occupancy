@@ -440,9 +440,26 @@ describe('rr-editor-view', () => {
     ];
   }
 
-  /** A calibrated editor with `tool` live, as the rail would choose it. */
+  /**
+   * Straight track along y = 100, 200, … 800, so cars and sensors placed near
+   * those rows land on them.
+   */
+  function layRows() {
+    archive.getManifest().layout.centerlines = Array.from({ length: 8 }, (_, i) => ({
+      nodes: [
+        { x: -1000, y: 100 * (i + 1), heading: 0 },
+        { x: 3000, y: 100 * (i + 1), heading: 0 },
+      ],
+    }));
+  }
+
+  /**
+   * A calibrated editor with `tool` live, as the rail would choose it. The car
+   * and sensor tools get {@link layRows} to land on.
+   */
   async function mountWithTool(tool: 'sensor' | 'car' | 'track') {
     calibrate();
+    if (tool !== 'track') layRows();
     const el = await mount();
     el.session!.selectTool(tool);
     await el.updateComplete;
@@ -1061,8 +1078,17 @@ describe('rr-editor-view', () => {
       // the feedback that the first click landed.
       expect(band(el)).to.deep.equal({ anchor: { x: 100, y: 100 }, to: { x: 100, y: 100 } });
 
+      // The band ends where a click would land: on the track along y = 200.
       await moveTo(el, { x: 380.4, y: 220.6 });
-      expect(band(el)).to.deep.equal({ anchor: { x: 100, y: 100 }, to: { x: 380, y: 221 } });
+      expect(band(el)).to.deep.equal({ anchor: { x: 100, y: 100 }, to: { x: 380, y: 200 } });
+
+      // With no track near, it runs to the pointer, marked refused.
+      await moveTo(el, { x: 380, y: 1100 });
+      expect(band(el)).to.deep.equal({
+        anchor: { x: 100, y: 100 },
+        to: { x: 380, y: 1100 },
+        refused: true,
+      });
 
       await clickAt(el, { x: 400, y: 100 });
       await moveTo(el, { x: 600, y: 100 });
@@ -1831,9 +1857,8 @@ describe('rr-editor-view', () => {
 
     it('lights a layout object without changing the image on screen', async () => {
       addSecondImage();
-      calibrate();
       const el = await mountWithTool('sensor');
-      await clickAt(el, { x: 50, y: 50 });
+      await clickAt(el, { x: 50, y: 100 });
       const { id } = sensors()[0];
       await el.session!.undo();
       await selectImage(el, 1);
@@ -2289,6 +2314,7 @@ describe('rr-editor-view', () => {
       // is still there afterwards.
       widen();
       calibrate();
+      layRows();
       const el = await mount();
       el.session!.selectTool('car');
 

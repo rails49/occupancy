@@ -178,6 +178,54 @@ export function extendTrack(
   return { kind: 'node', nodes: [...nodes, node] };
 }
 
+/**
+ * How far from a centerline, in track widths, a sensor or a car end still
+ * lands on it. Parallel tracks sit farther apart than this, so the nearest
+ * track is the one under the pointer.
+ */
+export const SNAP_TRACK_WIDTHS = 1.5;
+
+/**
+ * The point on `tracks` nearest `at` and no farther than `maxPx`, or null.
+ * Each segment is sampled every couple of image pixels, and the nearest sample
+ * refined between its neighbours, so a point on a straight comes back exact.
+ */
+export function nearestOnTrack(tracks: readonly Track[], at: Point, maxPx: number): Point | null {
+  const dist = (s: Segment, t: number) => {
+    const p = pointAt(s, t);
+    return Math.hypot(p.x - at.x, p.y - at.y);
+  };
+  let best: { s: Segment; t: number; step: number } | null = null;
+  let bestD = Infinity;
+  for (const track of tracks) {
+    for (const s of segments(track.nodes)) {
+      const n = Math.max(4, Math.ceil(Math.hypot(s.p1.x - s.p0.x, s.p1.y - s.p0.y) / SAMPLE_PX));
+      for (let k = 0; k <= n; k++) {
+        const d = dist(s, k / n);
+        if (d < bestD) {
+          best = { s, t: k / n, step: 1 / n };
+          bestD = d;
+        }
+      }
+    }
+  }
+  if (!best) return null;
+
+  // Golden-section search on the interval around the nearest sample.
+  const { s } = best;
+  let lo = Math.max(0, best.t - best.step);
+  let hi = Math.min(1, best.t + best.step);
+  const g = (Math.sqrt(5) - 1) / 2;
+  for (let i = 0; i < 40; i++) {
+    const a = hi - g * (hi - lo);
+    const b = lo + g * (hi - lo);
+    if (dist(s, a) < dist(s, b)) hi = b;
+    else lo = a;
+  }
+  const t = (lo + hi) / 2;
+  return dist(s, t) <= maxPx ? pointAt(s, t) : null;
+}
+
 /** Distance, in screen pixels, from a node to the handle that turns its heading. */
 export const HEADING_HANDLE_SCREEN_PX = 36;
 

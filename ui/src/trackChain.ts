@@ -95,8 +95,8 @@ export class TrackChain implements Chain {
   }
 
   /** The second click writes a new centerline; each later one replaces its nodes. */
-  async extend(px: Point, scale: number): Promise<ClickResult> {
-    const step = this.preview(px, scale);
+  async extend(at: Point, scale: number): Promise<ClickResult> {
+    const step = this.preview(pixel(at), scale);
     if (step.kind !== 'node') {
       return step.kind === 'too-sharp' ? { kind: 'notice', message: TURN_TOO_SHARP } : NONE;
     }

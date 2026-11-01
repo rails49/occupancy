@@ -741,7 +741,8 @@ both; each tool module supplies what differs.
 |---|---|
 | `Chain` | A live chain: `view()`, `atStart()`, `extend(px, scale)`, `settle()`. It keeps where it started and what it wrote, and reads the dot it goes on from out of the manifest |
 | `ChainTool` | A tool's half of a click with no chain live: a `ChainHit` (a chain to start or continue, or an edit to run) or null, when the session asks the other objects |
-| `ChainView`, `ChainContext`, `ClickResult` | What the editor draws of a chain; what a tool reads and writes through the session; what a click asks the editor for |
+| `ChainView`, `ChainContext`, `ClickResult` | What the editor draws of a chain; what a tool reads and writes through the session, including `snap`; what a click asks the editor for |
+| `NO_TRACK`, `NO_TRACK_NOTICE` | Why a sensor or car end was refused: no centerline within `SNAP_TRACK_WIDTHS` |
 | `carTool`, `ALREADY_LABELED` | A free car end continues a chain, a coupling is refused with `ALREADY_LABELED`, a click on a car's body splits it, and empty image starts a chain |
 | `trackTool`, `TrackChain`, `trackHitAt`, `TURN_TOO_SHARP` | An end node continues its line, a click on a line inserts a node, a middle node or heading handle does nothing, and anywhere else starts a chain. `TrackChain.preview` is what a click would add |
 
@@ -774,6 +775,7 @@ heading, with length `d / (3 cos²(φ/4))`.
 | `offsetPoints(nodes, offset)` | Sampled points `offset` px to the right of the line; negative is left |
 | `extendTrack(start, nodes, to, snapPx, minPx)` | What a click at `to` does to a track chain: the new nodes, `too-close` to the last point, or `too-sharp` |
 | `hitTrack(tracks, at, radius, handleLength)` | The heading handle, node or line under the pointer, in that order of preference |
+| `nearestOnTrack(tracks, at, maxPx)`, `SNAP_TRACK_WIDTHS` | The point on any centerline nearest `at` within `maxPx`, or null; and the reach sensors and car ends snap within, 1.5 track widths |
 | `headingHandle(node, length)`, `insertNode(nodes, segment, t)`, `reverseNodes(nodes)` | Where a heading handle sits; a node added on the curve; the line run the other way |
 | `STRAIGHT_SNAP_SCREEN_PX`, `MAX_TURN`, `HEADING_HANDLE_SCREEN_PX` | The straight snap's tolerance, the largest turn one segment may make (90°), and how far a heading handle sits from its node |
 
@@ -789,7 +791,7 @@ must be used together** — styles in the host's `static styles`, the renderers 
 | `renderPendingCar(pending, size)` | `(PendingCar, CarSymbolSize) => SVGTemplateResult` | The **rubber band**: the car the next click would write, dashed, rectangle and all |
 | `CarSymbolSize` | `{ dpt, handlePx, labelPx }` | The **DPT the rectangle is derived from** — not a width — plus screen-constant handle and warning-label sizes |
 | `CarWarning` | `{ text, frame }` | A class the vocabulary does not name: the offending class, and the image bounds the label flips inside |
-| `PendingCar` | `{ anchor, to }` | The chain in flight: the end already clicked, and where the pointer is |
+| `PendingCar` | `{ anchor, to, refused? }` | The chain in flight: the end already clicked, where the next click would land, and whether it would be refused (drawn red) |
 | `carMarkerStyles` | `CSSResult` | Rectangle, chord, handle, coupler and band colours; the translucent fill; the band's dashes; non-scaling strokes |
 
 **The rectangle is why the car tool is gated on calibration.** Two clicks say where the ends are and
@@ -1092,6 +1094,7 @@ it gets the objects the entry changed.
 | `car(id)`, `sensor(id)` | The car on the image on screen, or the sensor, with this id; undefined once it is gone |
 | `selectTool`, `selectImage`, `endChain` | Changes to the editing state, none of them recorded |
 | `tracks`, `previewTrack(point, scale)` | The layout's centerlines, and what a click would add to a live track chain ([#284]) |
+| `previewCar(point)` | Where a click would put the next car of a live car chain: the nearest track, or null when none is near |
 | `click(point, scale)` | Writes, or returns what the editor must ask for: a reference point's world position, a sensor's name, or a notice |
 | `beginDrag(point, scale)` | A `Drag` (`move`, `end`, `cancel`) on what is under the point, or null |
 | `rightClick(point, scale)` | Ends a live chain, or returns the `MenuSubject` a menu acts on |

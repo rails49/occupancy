@@ -2,7 +2,7 @@ import { make_id } from '@rails49/r49';
 import type { CarLabel, Point } from '@rails49/r49';
 import { carCovering, hitTest, DEFAULT_GRAB_RADIUS_SCREEN_PX } from './geometry.js';
 import type { CarEnd } from './geometry.js';
-import { grab, pixel, NONE } from './chain.js';
+import { grab, NONE, NO_TRACK_NOTICE } from './chain.js';
 import type { Chain, ChainContext, ChainTool, ChainView, ClickResult } from './chain.js';
 import { rootClass } from './vocabulary.js';
 
@@ -16,8 +16,9 @@ export const ALREADY_LABELED =
 /**
  * The car tool's click with no chain live (#33). A free car end continues a
  * chain from it, a coupling is refused, and a click on a car's body splits it
- * there. Empty image starts a chain. A sensor or reference point under the
- * pointer is the session's.
+ * there. Empty image starts a chain on the nearest track, and is refused with
+ * no track near. A sensor or reference point under the pointer is the
+ * session's.
  */
 export const carTool: ChainTool = (ctx, at, scale) => {
   const image = ctx.image();
@@ -39,12 +40,15 @@ export const carTool: ChainTool = (ctx, at, scale) => {
   }
   const car = carCovering(scene, at);
   if (car) return { kind: 'edit', run: () => splitCar(ctx, image.filename, car.id, at, scale) };
-  return { kind: 'chain', chain: new CarChain(ctx, image.filename, pixel(at), null) };
+  const start = ctx.snap(at);
+  if (!start) return { kind: 'edit', run: async () => NO_TRACK_NOTICE };
+  return { kind: 'chain', chain: new CarChain(ctx, image.filename, start, null) };
 };
 
 /**
  * A chain of cars on one image. Each click writes the car from the last dot
- * to the click, so the coupling it makes is exact by construction. The last
+ * to the point on the nearest track, so the coupling it makes is exact by
+ * construction. The last
  * dot is the far end of the last car it wrote that is still there, else the
  * car end it continues, else its first click.
  */
@@ -71,7 +75,9 @@ class CarChain implements Chain {
     return !this._written.some(id => this._car(id));
   }
 
-  async extend(px: Point, scale: number): Promise<ClickResult> {
+  async extend(at: Point, scale: number): Promise<ClickResult> {
+    const px = this._ctx.snap(at);
+    if (!px) return NO_TRACK_NOTICE;
     const from = this._lastDot();
     const image = this._ctx.manifest().images.find(img => img.filename === this._filename);
     if (!image || near(px, from, DEFAULT_GRAB_RADIUS_SCREEN_PX * scale)) return NONE;
@@ -111,7 +117,8 @@ class CarChain implements Chain {
 }
 
 /**
- * Splits car `id` in two at the point on its axis nearest `at`, as one entry.
+ * Splits car `id` in two at the point on its axis nearest `at`, moved onto
+ * the track, as one entry.
  * The second half gets a new id and keeps everything else. A split within the
  * grab radius of either end does nothing.
  */
@@ -128,9 +135,11 @@ async function splitCar(
   const dx = car.p1.x - car.p0.x;
   const dy = car.p1.y - car.p0.y;
   const t = ((at.x - car.p0.x) * dx + (at.y - car.p0.y) * dy) / (dx * dx + dy * dy);
-  const mid = pixel({ x: car.p0.x + t * dx, y: car.p0.y + t * dy });
+  if (!Number.isFinite(t)) return NONE;
+  const mid = ctx.snap({ x: car.p0.x + t * dx, y: car.p0.y + t * dy });
+  if (!mid) return NO_TRACK_NOTICE;
   const reach = DEFAULT_GRAB_RADIUS_SCREEN_PX * scale;
-  if (!Number.isFinite(t) || near(mid, car.p0, reach) || near(mid, car.p1, reach)) return NONE;
+  if (near(mid, car.p0, reach) || near(mid, car.p1, reach)) return NONE;
 
   const labels = image.labels.flatMap(label =>
     label.id === id ? [{ ...label, p1: mid }, { ...label, id: make_id(CAR_NODE_ID), p0: mid }] : [label]

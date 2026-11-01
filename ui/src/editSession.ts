@@ -10,15 +10,16 @@ import type {
   Sensor,
   WorldPoint,
 } from '@rails49/r49';
-import { carUnderPointer, dragHandles, dragTo, hitTest, samePoint } from './geometry.js';
+import { carUnderPointer, dragHandles, dragTo, hitTest, samePoint, trackWidthPx } from './geometry.js';
 import type { DragHandle, HitKind, HitScene, HitTarget, Size } from './geometry.js';
 import { EditHistory, revealTarget } from './history.js';
 import type { HistoryEntry, HistoryGesture, HistoryHighlight, HistoryTarget } from './history.js';
 import { TOOLS } from './tools.js';
-import { grab, pixel, NONE } from './chain.js';
+import { grab, pixel, NONE, NO_TRACK_NOTICE } from './chain.js';
 import type { Chain, ChainContext, ChainTool, ChainView, ClickResult } from './chain.js';
 import { carTool } from './carChain.js';
 import { trackHitAt, trackTool, TrackChain } from './trackChain.js';
+import { nearestOnTrack, SNAP_TRACK_WIDTHS } from './track.js';
 import type { Track, TrackHit, TrackStep, TrackNode } from './track.js';
 import type { EditorTool } from './tools.js';
 
@@ -119,6 +120,7 @@ export class EditSession {
     manifest: () => this.archive.getManifest(),
     image: () => this.image,
     scene: () => this._scene(),
+    snap: at => this._snap(at),
     record: (label, target, mutate) => this._record(label, target, mutate),
     writeLayout: changes => this._writeLayout(changes),
     writeImage: (filename, changes) => this._writeImage(filename, changes),
@@ -168,6 +170,14 @@ export class EditSession {
   /** The layout's centerlines, the one a track chain is laying included. */
   get tracks(): readonly Track[] {
     return this._centerlines();
+  }
+
+  /**
+   * Where a click at `at` would put the next car of a live car chain: the
+   * nearest track, or null when none is near.
+   */
+  previewCar(at: Point): Point | null {
+    return this._snap(at);
   }
 
   /**
@@ -225,7 +235,7 @@ export class EditSession {
   async click(at: Point, scale: number): Promise<ClickResult> {
     const px = pixel(at);
 
-    if (this._chain) return this._chain.extend(px, scale);
+    if (this._chain) return this._chain.extend(at, scale);
 
     const chainTool = CHAIN_TOOLS[this._tool];
     const chainHit = chainTool && !this._gated(this._tool) ? chainTool(this._context, at, scale) : null;
@@ -244,8 +254,7 @@ export class EditSession {
         return { kind: 'place-reference-point', px };
       case 'sensor':
         if (this._gated('sensor')) return NONE;
-        await this._placeSensor(px);
-        return NONE;
+        return this._placeSensor(px);
       case 'car':
       case 'track':
         return NONE;
@@ -311,7 +320,7 @@ export class EditSession {
       },
       cancel: async () => {
         if (this._drag !== drag) return;
-        this._moveHandles(handles, filename, { x: 0, y: 0 });
+        this._moveHandles(handles, filename, { x: 0, y: 0 }, false);
         await drag.end();
       },
     };
@@ -675,13 +684,16 @@ export class EditSession {
     return drag;
   }
 
-  /** Writes an unnamed sensor at `px`. */
-  private async _placeSensor(px: Point) {
+  /** Writes an unnamed sensor on the track nearest `px`, or refuses with no track near. */
+  private async _placeSensor(px: Point): Promise<ClickResult> {
+    const at = this._snap(px);
+    if (!at) return NO_TRACK_NOTICE;
     await this._record('place sensor', { kind: 'layout' }, () => {
       this._writeLayout({
-        sensors: [...this._sensors(), { id: make_id(SENSOR_NODE_ID), x: px.x, y: px.y }],
+        sensors: [...this._sensors(), { id: make_id(SENSOR_NODE_ID), x: at.x, y: at.y }],
       });
     });
+    return NONE;
   }
 
   /** Opens the one entry a drag writes. Its target follows what was grabbed. */
@@ -702,9 +714,16 @@ export class EditSession {
 
   /**
    * Moves every handle by `delta` from where it started, so coupled ends stay
-   * on one pixel. Writes only the subtree the handles are in.
+   * on one pixel. With `snap`, a sensor or car end lands on the nearest track,
+   * and stays where it is when no track is near. Writes only the subtree the
+   * handles are in.
    */
-  private _moveHandles(handles: readonly DragHandle[], filename: string | undefined, delta: Point) {
+  private _moveHandles(
+    handles: readonly DragHandle[],
+    filename: string | undefined,
+    delta: Point,
+    snap = true
+  ) {
     const points = [...this._points()];
     const sensors = [...this._sensors()];
     const image = this.archive.getManifest().images.find(img => img.filename === filename);
@@ -713,7 +732,9 @@ export class EditSession {
     let movedLabels = false;
 
     for (const handle of handles) {
-      const at = dragTo(handle, delta);
+      const to = dragTo(handle, delta);
+      const at = snap && handle.ref.kind !== 'calibration' ? this._snap(to) : to;
+      if (!at) continue;
       switch (handle.ref.kind) {
         case 'calibration': {
           const point = points[handle.ref.index];
@@ -843,6 +864,18 @@ export class EditSession {
   private _trackHit(at: Point, scale: number): TrackHit | null {
     if (this._tool !== 'track' || this._gated('track')) return null;
     return trackHitAt(this._centerlines(), at, scale);
+  }
+
+  /**
+   * `at` on the nearest centerline within {@link SNAP_TRACK_WIDTHS} track
+   * widths, in whole pixels, or null when none is that near. With no DPT there
+   * is no track width, and `at` is kept.
+   */
+  private _snap(at: Point): Point | null {
+    const dpt = getDPT(this.archive.getManifest());
+    if (dpt === null) return pixel(at);
+    const on = nearestOnTrack(this._centerlines(), at, SNAP_TRACK_WIDTHS * trackWidthPx(dpt));
+    return on && pixel(on);
   }
 
   /** Whether node `node` of line `line` is still at `px`: lines and nodes have no id. */

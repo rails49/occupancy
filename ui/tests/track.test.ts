@@ -12,8 +12,10 @@ import {
   trackPath,
   wrapAngle,
   MAX_TURN,
+  nearestOnTrack,
+  segments,
 } from '../src/track.js';
-import type { TrackNode } from '../src/track.js';
+import type { Track, TrackNode } from '../src/track.js';
 
 const SNAP = 6;
 
@@ -201,3 +203,47 @@ describe('headingHandle', () => {
     expect(p.y).toBeCloseTo(46);
   });
 });
+
+describe('nearestOnTrack', () => {
+  const straight: Track[] = [
+    {
+      nodes: [
+        { x: 0, y: 100, heading: 0 },
+        { x: 1000, y: 100, heading: 0 },
+      ],
+    },
+  ];
+
+  it('moves a point straight onto a straight, exactly', () => {
+    const p = nearestOnTrack(straight, { x: 333, y: 140 }, 50)!;
+    expect(p.x).toBeCloseTo(333, 6);
+    expect(p.y).toBeCloseTo(100, 6);
+  });
+
+  it('finds nothing beyond the reach', () => {
+    expect(nearestOnTrack(straight, { x: 333, y: 151 }, 50)).toBeNull();
+    expect(nearestOnTrack([], { x: 0, y: 0 }, 50)).toBeNull();
+  });
+
+  it('takes the nearer of two tracks', () => {
+    const two: Track[] = [...straight, { nodes: straight[0].nodes.map(n => ({ ...n, y: 200 })) }];
+    expect(nearestOnTrack(two, { x: 500, y: 160 }, 100)!.y).toBeCloseTo(200, 6);
+  });
+
+  it('lands on a curve, at the curve\'s own distance', () => {
+    const arc = segments([
+      { x: 0, y: 0, heading: 0 },
+      { x: 100, y: 100, heading: Math.PI / 2 },
+    ])[0];
+    const on = pointAt(arc, 0.5);
+    const curve: Track = {
+      nodes: [
+        { x: 0, y: 0, heading: 0 },
+        { x: 100, y: 100, heading: Math.PI / 2 },
+      ],
+    };
+    const p = nearestOnTrack([curve], { x: on.x + 3, y: on.y - 3 }, 20)!;
+    expect(Math.hypot(p.x - on.x, p.y - on.y)).toBeLessThan(0.5);
+  });
+});
+

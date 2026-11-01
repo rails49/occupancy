@@ -1342,13 +1342,19 @@ export class RREditorView extends LitElement {
   }
 
   /**
-   * The rubber band, or null when no car chain is live. Before the pointer has
-   * moved it is the anchor twice over, which draws the anchor's handle.
+   * The rubber band, or null when no car chain is live: to where the pointer
+   * lands on the track, or red to the pointer when no track is near. Before
+   * the pointer has moved it is the anchor twice over, which draws the
+   * anchor's handle.
    */
   private _pendingCar(): PendingCar | null {
-    const chain = this.session?.chain;
-    if (chain?.tool !== 'car') return null;
-    return { anchor: chain.end, to: this._cursor ?? chain.end };
+    const session = this.session;
+    const chain = session?.chain;
+    if (!session || chain?.tool !== 'car') return null;
+    const cursor = this._cursor;
+    if (!cursor) return { anchor: chain.end, to: chain.end };
+    const to = session.previewCar(cursor);
+    return to ? { anchor: chain.end, to } : { anchor: chain.end, to: cursor, refused: true };
   }
 
   /**
