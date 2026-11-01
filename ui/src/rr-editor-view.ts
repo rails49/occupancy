@@ -161,7 +161,7 @@ function reclassifyItems(choices: readonly ClassChoice[]): ContextMenuItem[] {
 function carItems(): ContextMenuItem[] {
   const choices = classChoices();
 
-  const items: ContextMenuItem[] = [{ id: 'delete', label: 'Delete car' }];
+  const items: ContextMenuItem[] = [{ id: 'delete', label: 'Delete' }];
   if (choices.length > 0) {
     items.push({
       // A group row: opened, never chosen. Its class is the root's, so every

@@ -1143,7 +1143,7 @@ describe('rr-editor-view', () => {
           .join('')
           .trim()
       );
-      expect(labels).to.deep.equal(['Delete car', 'Reclassify car']);
+      expect(labels).to.deep.equal(['Delete', 'Reclassify car']);
       // Generated from the vocabulary in `@rails49/r49`'s data file: a subtype added there changes this
       // menu with no code edit (#35).
       expect(submenuItems(el, `reclassify-group:${rootClass()}`)).to.deep.equal(
