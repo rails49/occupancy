@@ -15,8 +15,9 @@ import type { TrackNode } from './track.js';
  * chained part by part, refit jointly by Levenberg-Marquardt within bounds,
  * split once where points are out of tolerance, then merged or straightened
  * while that lowers the cost. A line still out of tolerance after the split
- * is returned as it is, so points nothing fits cost two segmentations, a
- * small refit per part and at most two whole refits of at most 100 steps.
+ * has the halves merged back when that is cheaper, and is returned as it is,
+ * so points nothing fits cost two segmentations, a small refit per part and
+ * at most three whole refits of at most 100 steps.
  * Each join's position uncertainty comes from the inverse of the normal
  * matrix the refit forms.
  *
@@ -845,7 +846,21 @@ function halve(fit: Fit, i: number): Fit {
   return { ...fit, parts: [...fit.parts.slice(0, i), half, half, ...fit.parts.slice(i + 1)] };
 }
 
-/** Halve the part holding the most points beyond the tolerance, and refit. */
+/** Parts `i` and `i + 1` made one, of their mean curvature. */
+function merge(parts: readonly Part[], i: number): Part[] {
+  const a = parts[i];
+  const b = parts[i + 1];
+  const length = a.length + b.length;
+  const curvature = (a.curvature * a.length + b.curvature * b.length) / length;
+  return [...parts.slice(0, i), { length, curvature }, ...parts.slice(i + 2)];
+}
+
+/**
+ * Halve the part holding the most points beyond the tolerance, and refit.
+ * When the halves still miss the tolerance, `simplify` will not see them, so
+ * they are merged back here when that costs less: two arcs of one curvature
+ * are a split that did not help.
+ */
 function split(res: FitResult, points: readonly Point[], start: Pose | null, opts: FitOptions): FitResult {
   const outside = new Array<number>(res.fit.parts.length).fill(0);
   res.residuals.forEach((d, i) => {
@@ -855,7 +870,11 @@ function split(res: FitResult, points: readonly Point[], start: Pose | null, opt
   const halved = halve(res.fit, worstPart);
   // A straight that cannot reach the points has to bend.
   const free = halved.parts.map((p, i) => p.curvature !== 0 || i === worstPart || i === worstPart + 1);
-  return result(refit(halved, points, { start, free, bounds: opts.bounds }, opts), points, start, opts);
+  const halves = result(refit(halved, points, { start, free, bounds: opts.bounds }, opts), points, start, opts);
+  if (halves.worst <= opts.tolerance) return halves;
+  const joined = { ...halves.fit, parts: merge(halves.fit.parts, worstPart) };
+  const back = result(refit(joined, points, { start, free: free.slice(1), bounds: opts.bounds }, opts), points, start, opts);
+  return penalised(back, opts) <= penalised(halves, opts) ? back : halves;
 }
 
 /** The cost of a fitted line: squared error over σ² plus ln n per parameter. */
@@ -886,13 +905,7 @@ function simplify(first: FitResult, points: readonly Point[], start: Pose | null
   for (;;) {
     const parts = res.fit.parts;
     const trials: Part[][] = [];
-    for (let i = 0; i + 1 < parts.length; i++) {
-      const a = parts[i];
-      const b = parts[i + 1];
-      const length = a.length + b.length;
-      const curvature = (a.curvature * a.length + b.curvature * b.length) / length;
-      trials.push([...parts.slice(0, i), { length, curvature }, ...parts.slice(i + 2)]);
-    }
+    for (let i = 0; i + 1 < parts.length; i++) trials.push(merge(parts, i));
     parts.forEach((p, i) => {
       if (p.curvature !== 0) trials.push(joinStraights(parts.map((q, j) => (j === i ? { length: q.length, curvature: 0 } : q))));
     });
@@ -934,7 +947,7 @@ export function fitWindow(points: readonly Point[], start: Pose | null, opts: Fi
   const free = start ? first.parts.map(() => true) : freeOf(first);
   const res = result(refit(first, inliers, { start, free, bounds: opts.bounds }, opts), inliers, start, opts);
   // Out of tolerance, one split, and a line still out of it is returned as it is:
-  // two segmentations and at most two refits, whatever the points.
+  // two segmentations and at most three refits, whatever the points.
   const within = res.worst <= opts.tolerance ? res : split(res, inliers, start, opts);
   const done = within.worst <= opts.tolerance ? simplify(within, inliers, start, opts) : within;
   if (!outliers.length) return done;

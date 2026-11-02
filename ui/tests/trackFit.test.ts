@@ -168,6 +168,22 @@ describe('fitTrack on a long line clicked every 2 G', () => {
   });
 });
 
+describe('fitTrack on a split that stays out of tolerance', () => {
+  /** Twelve clicks every 3 G, every other one 1.5 G across: no straight or arc reaches them. */
+  const zigzag = Array.from({ length: 12 }, (_, i) => ({ x: 400 + i * 3 * G, y: 300 + (i % 2) * 1.5 * G }));
+
+  it('merges the halves back rather than keeping two arcs of one curvature', () => {
+    const res = fit(zigzag);
+    expect(res.worst).toBeGreaterThan(TOLERANCE);
+    const parts = res.fit.parts;
+    for (let i = 0; i + 1 < parts.length; i++) {
+      const a = parts[i].curvature;
+      const b = parts[i + 1].curvature;
+      expect(Math.abs(a - b), `parts ${i} and ${i + 1}`).toBeGreaterThan(0.01 * Math.max(Math.abs(a), Math.abs(b)));
+    }
+  });
+});
+
 describe('fitTrack on clicks nothing fits', () => {
   /** Clicks scattered at random over a 3000 px square, seeded. */
   function scatter(n: number): Point[] {
