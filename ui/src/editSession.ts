@@ -276,12 +276,19 @@ export class EditSession {
    * Starts a drag of whatever is under `at`, or returns null when nothing is.
    * A second drag while one is open is refused. A drag goes on while a chain
    * is live, and ends one still at its start. While a track chain is live
-   * only a click of its line is grabbed. Otherwise the track tool grabs a
+   * only a click of its line is grabbed, or, while it is still at its start,
+   * a click of another line, which ends it. Otherwise the track tool grabs a
    * line's click before anything else.
    */
   beginDrag(at: Point, scale: number): Drag | null {
     if (this._drag) return null;
-    if (this._chain instanceof TrackChain) return this._grabTraced(this._chain, at, scale);
+    if (this._chain instanceof TrackChain) {
+      const traced = this._grabTraced(this._chain, at, scale);
+      const click = traced || !this._chain.atStart() ? null : this._clickHit(at, scale);
+      if (!click) return traced;
+      this._chain = null;
+      return this._grabClick(click, at);
+    }
     const drag = this._grab(at, scale);
     if (drag && this._chain?.atStart()) this._chain = null;
     return drag;

@@ -1142,7 +1142,7 @@ it gets the objects the entry changed.
 | `tracks` | The layout's centerlines ([#284]) |
 | `previewCar(point)` | Where a click would put the next car of a live car chain: the nearest track, or null when none is near |
 | `click(point, scale)` | Writes, or returns what the editor must ask for: a reference point's world position, a sensor's name, or a notice |
-| `beginDrag(point, scale)` | A `Drag` (`move`, `end`, `cancel`) on what is under the point, or null. Under the track tool a click comes first; its line refits on `end` ([#302]). While a track chain is live only a click of its line is grabbed, and the chain takes the move on `end` ([#303]) |
+| `beginDrag(point, scale)` | A `Drag` (`move`, `end`, `cancel`) on what is under the point, or null. Under the track tool a click comes first; its line refits on `end` ([#302]). While a track chain is live only a click of its line is grabbed, and the chain takes the move on `end` ([#303]); a chain still at its start gives way to a drag of another line's click, and ends |
 | `rightClick(point, scale)` | Ends a live chain, or returns the `MenuSubject` a menu acts on. Under the track tool a click is `track-click` (Delete click) and the rest of a line `track` (Delete line). While a track chain is live a click of its line other than the last is `track-click` and the chain goes on ([#303]) |
 | `placeReferencePoint`, `editReferencePoint`, `nameSensor`, `delete`, `reclassifyCar`, `setComplete` | The answers to a dialog, a menu row or the checkbox |
 | `editLayout`, `setCameraHeight` | The settings dialog's edits, one `layout` entry each |

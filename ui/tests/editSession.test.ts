@@ -2329,6 +2329,22 @@ describe('EditSession finished track lines (#302)', () => {
     expect(line(s).nodes).toEqual(fitOf(s, moved));
     expect(trackChain(s)).toBeNull();
   });
+  it('ends a trace still at its first click when a click of a line is dragged, and moves the click', async () => {
+    const { s, at } = await finished();
+    await clicks(s, { x: -2000, y: -2000 });
+    expect(trackChain(s)).toEqual({ line: null, clicks: [{ x: -2000, y: -2000 }] });
+    const from = at[3];
+    const to = { x: from.x + 3, y: from.y - 40 };
+
+    const d = s.beginDrag(from, SCALE);
+    expect(d).not.toBeNull();
+    expect(trackChain(s)).toBeNull();
+    d!.move(to);
+    await d!.end();
+
+    expect(line(s).clicks).toEqual(at.map((p, i) => (i === 3 ? to : p)));
+  });
+
   it('names a click as the subject of a right-click, and the line between clicks', async () => {
     const { s, at } = await finished();
     expect(s.rightClick(at[3], SCALE)).toEqual({ kind: 'track-click', line: 0, index: 3, px: at[3] });

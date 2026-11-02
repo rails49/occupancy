@@ -57,7 +57,7 @@ replayed (`TrackChain.settle`). A chain continued from a line's first click trac
 backwards and writes them back in stored order. While a trace is live a click always traces, even on
 a sensor: near the line and behind its last click it goes between clicks (`Trace.insertion`,
 `Trace.insert`), otherwise it extends the line, and Shift, which `rr-editor-view` passes through
-`EditSession.click` to `Chain.extend`, always extends. A drag grabs only a click of the traced line. A drag of a click holds the dot
+`EditSession.click` to `Chain.extend`, always extends. A drag grabs only a click of the traced line, or, while the chain is still at its start, a click of another line, which ends the chain. A drag of a click holds the dot
 (`TrackChain.hold`, or the stored click for a finished line) and leaves the fit as it is until
 release. Right-click on a traced click other than the last opens Delete click and the chain goes
 on; deleting one of a line's last two clicks deletes the line and ends the chain. The trace draws
