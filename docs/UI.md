@@ -67,6 +67,19 @@ in place of its stored line, which `rr-editor-view` leaves out of the viewer's `
 a stored line has red clicks (`flaggedClicks`, the renderer's own cached check). `rr-editor-view`
 shows it under the DPT bar while the track tool is selected and DPT resolves.
 
+A red click marks disagreement between clicks, not a wrong click (#307). The fit never looks at the
+photo: it knows the clicks and one shape rule, a chain of straights and arcs tangent at the joins
+with no radius under `TRACK_FIT.minRadius`, and only the window, the last two parts, may move. Red
+means no such line from the window's fixed start reaches all of the window's clicks within
+`TRACK_FIT.tolerance`, and this click is the farthest from the best compromise. A click on the
+track centre goes red when an earlier click, off but within the tolerance, bent a part that has
+since left the window and now heads slightly wrong; when the click sits beside or behind the
+window's fixed start; when the bend needs a radius under the floor in the photo; or when the solve
+stops short, which is the fit's fault and what the click-set tests measure. What the person does:
+move the red click onto the track centre; if it stays red, move the last clicks before it, or
+delete it and click a nearer point first; or delete it. The hint stays one line and says only to
+move or delete the red clicks.
+
 Lines and clicks have no id, so a menu carries the line's first node or the click's pixel and checks
 it is still there, and the reveal after an undo lights the changed clicks by pixel. Under any other
 tool the track grabs nothing.

@@ -4,51 +4,32 @@ import type { TrackNode } from './track.js';
 
 /**
  * Fit straights and circular arcs, tangent where they meet, to clicks along
- * the middle of a track (#298). Pure; `trackTrace.ts` drives it.
+ * the middle of a track (#298, #307). Pure; `trackTrace.ts` drives it.
  *
  * A fit is a start pose and a length and a curvature per part (curvature 0
- * is a straight); tangency holds by construction. The start pose is free
- * (the line's start) or fixed (a committed join).
- *
- * Parts are chosen by dynamic programming over the points (squared error
- * over σ² plus ln n per parameter, docs/research/track-fitting-methods.md),
- * chained part by part, refit jointly by Levenberg-Marquardt within bounds,
- * split once where points are out of tolerance, then merged or straightened
- * while that lowers the cost. A line still out of tolerance after the split
- * has the halves merged back when that is cheaper, and is returned as it is,
- * so points nothing fits cost two segmentations, a small refit per part and
- * at most three whole refits of at most 100 steps.
- * Each join's σ comes from the inverse of the normal matrix the refit forms:
- * how far the line beside the join could move across the track. Its margin
- * is how much more the line would cost without it, from the merges the
- * simplification tried last.
- *
- * A run may leave out one interior point that no straight or arc through
- * its neighbours reaches (an outlier). Such a point is reported and never
- * deleted. A run's first and last point are always fitted through, so the
- * line's ends are too; two bad clicks in a row split the part.
+ * is a straight); tangency holds by construction. The line is a function of
+ * its clicks in order: `extend` takes the clicks with one more on the end
+ * and solves the window, the last two parts, from where they are, by
+ * Levenberg-Marquardt within the radius bound. A click in the window still
+ * past the tolerance splits its part at that click; two parts of the window
+ * that can be one within the tolerance are one. Nothing before the window
+ * moves. `fitTrack` folds `extend` over every click.
  */
 
-/** The fit's constants, in gauges (`maxSweep` in radians). `traceOptions` converts them through DPT. */
+/** The fit's constants, in gauges. `traceOptions` converts them through DPT. */
 export const TRACK_FIT = {
   /** Largest distance a click may lie from the line. */
   tolerance: 0.25,
-  /** Expected click noise. Sets the cost of a part and scales the uncertainties. */
-  noise: 0.075,
-  /** A join whose σ is under this, and whose margin is at or over `commitMargin`, is committed. */
-  commitSigma: 0.25,
-  /** The least a join's margin may be to commit, in the fit's penalised cost. */
-  commitMargin: 10,
-  /** How far past a join its σ looks: a join that slides along the track moves the line across it there. */
-  reach: 20,
-  /** Longest σ bar drawn at a join. */
-  barCap: 4,
-  /** A click this near the line being traced, behind its last click, goes between clicks. */
-  insertReach: 4,
-  minLength: 1,
+  /** Tightest arc track comes in. */
   minRadius: 10,
-  maxSweep: Math.PI,
 } as const;
+
+export interface FitOptions {
+  /** Largest distance a click may lie from the line, px. */
+  readonly tolerance: number;
+  /** Tightest arc, px. */
+  readonly minRadius: number;
+}
 
 export interface Pose {
   readonly x: number;
@@ -67,54 +48,15 @@ export interface Fit {
   readonly parts: readonly Part[];
 }
 
-interface Bounds {
-  /** Shortest part, px. */
-  readonly minLength: number;
-  /** Tightest arc, px. */
-  readonly minRadius: number;
-  /** Largest turn of one arc, rad. */
-  readonly maxSweep: number;
-}
-
-export interface FitOptions {
-  /** Largest distance a point may lie from the line, px. */
-  readonly tolerance: number;
-  /** Expected click noise, px. Sets the cost of a part and scales the uncertainties. */
-  readonly noise: number;
-  /** How far past a join its σ looks, px. */
-  readonly reach: number;
-  readonly bounds: Bounds;
-}
-
-/** A pose on the line with its σ and its margin. */
-export interface Join {
-  readonly x: number;
-  readonly y: number;
-  readonly heading: number;
-  /** How far the line beside the join could move across the track, px. */
-  readonly sigma: number;
-  /**
-   * How much more the fit would cost without the join, the parts beside it
-   * made one, in the fit's penalised cost; 0 at the line's ends and on a line
-   * out of tolerance.
-   */
-  readonly margin: number;
-}
-
-export interface FitResult {
+/** A fitted line and which clicks each part owns. */
+export interface Line {
   readonly fit: Fit;
-  /** Signed distance of each point from the line, px. */
-  readonly residuals: readonly number[];
-  /** Index of the part nearest each point. */
-  readonly partOf: readonly number[];
-  /** Largest distance of a point the fit kept. */
-  readonly worst: number;
-  readonly rms: number;
-  /** The pose at the start of each part, then at the line's end. */
-  readonly joins: readonly Join[];
-  /** Indices of points the fit left out as outliers; their residuals are still reported. */
-  readonly outliers: readonly number[];
+  /** Index of the first click of each part; a part's clicks run to the next part's first. */
+  readonly firstClick: readonly number[];
 }
+
+/** A part shorter than this cannot be told from none; a solver floor, not a fact about track. */
+const MIN_LENGTH = 1;
 
 function advance(p: Pose, s: number, k: number): Pose {
   if (Math.abs(k) < 1e-12) {
@@ -243,46 +185,33 @@ function evaluate(fit: Fit, points: readonly Point[]): Evaluation {
   return out;
 }
 
+/** Signed distance of each point from the line, px. */
+export function distances(fit: Fit, points: readonly Point[]): number[] {
+  return evaluate(fit, points).d;
+}
+
 /** Index of the part nearest each point. */
 export function nearestParts(fit: Fit, points: readonly Point[]): number[] {
   return evaluate(fit, points).part;
-}
-
-/** Arc length along the line of the nearest point to each point. */
-export function positionsAlong(fit: Fit, points: readonly Point[]): number[] {
-  return evaluate(fit, points).s;
-}
-
-/** Where `point` lies along `fit`, as `positionsAlong` gives it, and how far from it, px. */
-export function projectOnto(fit: Fit, point: Point): { s: number; d: number } {
-  const e = evaluate(fit, [point]);
-  return { s: e.s[0], d: Math.abs(e.d[0]) };
-}
-
-/** Huber: a residual past `c` counts linearly. */
-function robust(r: number, c: number): number {
-  const a = Math.abs(r);
-  return a <= c ? r : Math.sign(r) * Math.sqrt(c * (2 * a - c));
 }
 
 /**
  * Residuals: each distance, then how far the line's ends miss the first point
  * (a free start only) and the last.
  */
-function residuals(fit: Fit, points: readonly Point[], start: Pose | null, opts: FitOptions): number[] {
+function residuals(fit: Fit, points: readonly Point[], start: Pose | null): number[] {
   const e = evaluate(fit, points);
-  const c = 2 * opts.noise;
-  const out = e.d.map(d => robust(d, c));
+  const out = [...e.d];
   if (!start) out.push(e.s[0]);
   out.push(e.s[e.s.length - 1] - e.total);
   return out;
 }
 
-/** What the refit may change: the start pose when free (`start` null), each length, and each arc's curvature. */
+/** What the solve may change: the start pose when free (`start` null), each length and each curvature. */
 interface Model {
   readonly start: Pose | null;
-  readonly free: readonly boolean[];
-  readonly bounds: Bounds;
+  readonly parts: number;
+  readonly minRadius: number;
 }
 
 const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
@@ -290,33 +219,28 @@ const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x
 /** Lengths and curvatures are mapped so the bounds hold for every parameter value. */
 function pack(fit: Fit, m: Model): number[] {
   const v = m.start ? [] : [fit.start.x, fit.start.y, fit.start.heading];
-  fit.parts.forEach((p, i) => {
-    v.push(Math.sqrt(Math.max(0, p.length - m.bounds.minLength)));
-    if (m.free[i]) v.push(Math.atanh(clamp(p.curvature * m.bounds.minRadius, -0.999, 0.999)));
-  });
+  for (const p of fit.parts) {
+    v.push(Math.sqrt(Math.max(0, p.length - MIN_LENGTH)));
+    v.push(Math.atanh(clamp(p.curvature * m.minRadius, -0.999, 0.999)));
+  }
   return v;
 }
 
 function unpack(v: readonly number[], m: Model): Fit {
   let j = m.start ? 0 : 3;
   const start = m.start ?? { x: v[0], y: v[1], heading: v[2] };
-  const parts = m.free.map(f => {
-    const length = m.bounds.minLength + v[j++] ** 2;
-    let curvature = f ? Math.tanh(v[j++]) / m.bounds.minRadius : 0;
-    if (Math.abs(curvature) * length > m.bounds.maxSweep) {
-      curvature = (Math.sign(curvature) * m.bounds.maxSweep) / length;
-    }
-    return { length, curvature };
-  });
+  const parts: Part[] = [];
+  for (let i = 0; i < m.parts; i++) {
+    const length = MIN_LENGTH + v[j++] ** 2;
+    const curvature = Math.tanh(v[j++]) / m.minRadius;
+    parts.push({ length, curvature });
+  }
   return { start, parts };
 }
 
 function steps(m: Model): number[] {
   const h = m.start ? [] : [1e-3, 1e-3, 1e-6];
-  for (const f of m.free) {
-    h.push(1e-3);
-    if (f) h.push(1e-4);
-  }
+  for (let i = 0; i < m.parts; i++) h.push(1e-3, 1e-4);
   return h;
 }
 
@@ -343,22 +267,7 @@ function solve(a: number[][], b: number[]): number[] {
   return x;
 }
 
-function inverse(a: number[][]): number[][] {
-  const n = a.length;
-  const cols = Array.from({ length: n }, (_, j) => solve(a, a.map((_, i) => (i === j ? 1 : 0))));
-  return Array.from({ length: n }, (_, i) => cols.map(col => col[i]));
-}
-
 const sumSq = (r: readonly number[]) => r.reduce((s, x) => s + x * x, 0);
-
-/** One column per parameter: the change of `f` per unit step, by forward differences. */
-function jacobian(v: readonly number[], h: readonly number[], r0: readonly number[], f: (v: readonly number[]) => number[]): number[][] {
-  return v.map((_, j) => {
-    const w = [...v];
-    w[j] += h[j];
-    return f(w).map((x, i) => (x - r0[i]) / h[j]);
-  });
-}
 
 /**
  * How the point `u` along an arc from a pose at heading 0 moves per unit of
@@ -375,39 +284,25 @@ function bend(u: number, k: number): [number, number] {
  * line moves each point's nearest point on it, and the distance changes by
  * that move toward the point. The end residuals are differenced.
  */
-function residualJacobian(v: readonly number[], m: Model, points: readonly Point[], opts: FitOptions): number[][] {
+function residualJacobian(v: readonly number[], m: Model, points: readonly Point[]): number[][] {
   const fit = unpack(v, m);
   const parts = fit.parts;
   const n = parts.length;
   const ps = poses(fit);
   const e = evaluate(fit, points);
-  const c = 2 * opts.noise;
   const off = m.start ? 0 : 3;
   // Each part's packed columns, and how its length and curvature move with them.
   const lengthAt: number[] = [];
   const curveAt: number[] = [];
   const dLength: number[] = [];
   const dCurve: number[] = [];
-  /** Curvature per unit of length, where the sweep bound holds the curvature. */
-  const held: number[] = [];
   let j = off;
   for (let i = 0; i < n; i++) {
-    const vl = v[j];
-    lengthAt.push(j++);
-    dLength.push(2 * vl);
-    held.push(0);
-    if (m.free[i]) {
-      const t = Math.tanh(v[j]);
-      curveAt.push(j++);
-      const k = t / m.bounds.minRadius;
-      if (Math.abs(k) * parts[i].length > m.bounds.maxSweep) {
-        dCurve.push(0);
-        held[i] = -parts[i].curvature / parts[i].length;
-      } else dCurve.push((1 - t * t) / m.bounds.minRadius);
-    } else {
-      curveAt.push(-1);
-      dCurve.push(0);
-    }
+    lengthAt.push(j);
+    dLength.push(2 * v[j++]);
+    const t = Math.tanh(v[j]);
+    curveAt.push(j++);
+    dCurve.push((1 - t * t) / m.minRadius);
   }
   // Where each part ends, and how that end moves per unit of the part's curvature.
   const ends = parts.map((p, i) => {
@@ -433,9 +328,8 @@ function residualJacobian(v: readonly number[], m: Model, points: readonly Point
       gx = -Math.sin(h);
       gy = Math.cos(h);
     }
-    const w = Math.abs(d) <= c ? -1 : -Math.sqrt(c / (2 * Math.abs(d) - c));
     /** The residual's change for a move (mx, my) of the nearest point. */
-    const by = (mx: number, my: number) => w * (gx * mx + gy * my);
+    const by = (mx: number, my: number) => -(gx * mx + gy * my);
     /** The residual's change for a turn about (ox, oy). */
     const turn = (ox: number, oy: number) => by(-(fy - oy), fx - ox);
     if (!m.start) {
@@ -449,8 +343,8 @@ function residualJacobian(v: readonly number[], m: Model, points: readonly Point
       const spin = turn(end.x, end.y);
       const dl = by(Math.cos(end.heading), Math.sin(end.heading)) + parts[i].curvature * spin;
       const dk = by(ends[i].x, ends[i].y) + parts[i].length * spin;
-      cols[lengthAt[i]][k] = (dl + held[i] * dk) * dLength[i];
-      if (curveAt[i] >= 0) cols[curveAt[i]][k] = dk * dCurve[i];
+      cols[lengthAt[i]][k] = dl * dLength[i];
+      cols[curveAt[i]][k] = dk * dCurve[i];
     }
     if (on >= 0 && on < n) {
       const p = parts[on];
@@ -461,13 +355,13 @@ function residualJacobian(v: readonly number[], m: Model, points: readonly Point
       // Only a point past the part's end follows its length.
       const h = h0 + p.curvature * u;
       const dl = u >= p.length ? by(Math.cos(h), Math.sin(h)) : 0;
-      cols[lengthAt[on]][k] = (dl + held[on] * dk) * dLength[on];
-      if (curveAt[on] >= 0) cols[curveAt[on]][k] = dk * dCurve[on];
+      cols[lengthAt[on]][k] = dl * dLength[on];
+      cols[curveAt[on]][k] = dk * dCurve[on];
     }
   }
   // The end residuals depend on the first and last points alone.
   const few = points.length === 1 ? points : [points[0], points[points.length - 1]];
-  const endsOf = (w: readonly number[]) => residuals(unpack(w, m), few, m.start, opts).slice(few.length);
+  const endsOf = (w: readonly number[]) => residuals(unpack(w, m), few, m.start).slice(few.length);
   const r0 = endsOf(v);
   const h = steps(m);
   return cols.map((col, i) => {
@@ -495,15 +389,15 @@ function normal(jac: number[][]): number[][] {
   return a;
 }
 
-/** Levenberg-Marquardt from `start`. */
-function refit(start: Fit, points: readonly Point[], m: Model, opts: FitOptions): Fit {
-  const f = (v: readonly number[]) => residuals(unpack(v, m), points, m.start, opts);
+/** Levenberg-Marquardt from `start`: the least squares of `points` over the model's parameters. */
+function refit(start: Fit, points: readonly Point[], m: Model): Fit {
+  const f = (v: readonly number[]) => residuals(unpack(v, m), points, m.start);
   let v = pack(start, m);
   let r = f(v);
   let cost = sumSq(r);
   let lambda = 1e-3;
   for (let iter = 0; iter < 100; iter++) {
-    const jac = residualJacobian(v, m, points, opts);
+    const jac = residualJacobian(v, m, points);
     const a = normal(jac);
     const g = jac.map(col => col.reduce((s, x, k) => s + x * r[k], 0));
     let improved = false;
@@ -529,128 +423,8 @@ function refit(start: Fit, points: readonly Point[], m: Model, opts: FitOptions)
   return unpack(v, m);
 }
 
-/** Sample points per part for a join's σ, both ends included. */
-const SIGMA_SAMPLES = 8;
-
-/**
- * The poses every `1/SIGMA_SAMPLES` of each part, its start and end
- * included.
- */
-function samples(fit: Fit): Pose[] {
-  const ps = poses(fit);
-  return fit.parts.flatMap((p, i) =>
-    Array.from({ length: SIGMA_SAMPLES + 1 }, (_, j) => advance(ps[i], (p.length * j) / SIGMA_SAMPLES, p.curvature))
-  );
-}
-
-/**
- * Each pose's σ, from the fit's covariance σ²(JᵀJ)⁻¹ pushed through the
- * chain: the line's displacement across the track at sample points along
- * the two parts beside the join, and the displacement `reach` past the join
- * when the join slides along the track by its σ there, which kinks the line
- * by the curvature step. The larger is the σ. A slide between parts of
- * similar curvature moves the line little and counts little.
- */
-function joinsOf(fit: Fit, points: readonly Point[], m: Model, opts: FitOptions): Join[] {
-  const v = pack(fit, m);
-  const h = steps(m);
-  const base = unpack(v, m);
-  const cov = inverse(normal(residualJacobian(v, m, points, opts)));
-  const flat = (ps: Pose[]) => ps.flatMap(p => [p.x, p.y]);
-  const s0 = samples(base);
-  const sj = jacobian(v, h, flat(s0), w => flat(samples(unpack(w, m))));
-  const n = v.length;
-  const across = s0.map((p, q) => {
-    const nx = -Math.sin(p.heading);
-    const ny = Math.cos(p.heading);
-    const g = sj.map(col => nx * col[2 * q] + ny * col[2 * q + 1]);
-    let s = 0;
-    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) s += g[i] * cov[i][j] * g[j];
-    return s * opts.noise ** 2;
-  });
-  const partSigma = base.parts.map((_, i) =>
-    Math.sqrt(Math.max(0, ...across.slice(i * (SIGMA_SAMPLES + 1), (i + 1) * (SIGMA_SAMPLES + 1))))
-  );
-  // Each join's σ along the track, and the kink that slide makes `reach` past the join.
-  const p0 = poses(base);
-  const pj = jacobian(v, h, flat(p0), w => flat(poses(unpack(w, m))));
-  return p0.map((p, q) => {
-    const tx = Math.cos(p.heading);
-    const ty = Math.sin(p.heading);
-    const g = pj.map(col => tx * col[2 * q] + ty * col[2 * q + 1]);
-    let s = 0;
-    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) s += g[i] * cov[i][j] * g[j];
-    const along = Math.sqrt(Math.max(0, s)) * opts.noise;
-    const ka = base.parts[q - 1]?.curvature;
-    const kb = base.parts[q]?.curvature;
-    const kink = ka === undefined || kb === undefined ? 0 : Math.abs(ka - kb) * along * opts.reach;
-    return { ...p, sigma: Math.max(partSigma[q - 1] ?? 0, partSigma[q] ?? 0, kink), margin: 0 };
-  });
-}
-
-function withMargins(res: FitResult, margins: readonly number[]): FitResult {
-  return { ...res, joins: res.joins.map((j, i) => ({ ...j, margin: margins[i] ?? 0 })) };
-}
-
-interface LineFit {
-  sse: number;
-  worst: number;
-  /** Signed distance of each point. */
-  ds: number[];
-  /** Unit direction, oriented first point to last. */
-  ux: number;
-  uy: number;
-  cx: number;
-  cy: number;
-}
-
-function fitLine(points: readonly Point[]): LineFit {
-  const n = points.length;
-  const mx = points.reduce((s, p) => s + p.x, 0) / n;
-  const my = points.reduce((s, p) => s + p.y, 0) / n;
-  let sxx = 0;
-  let sxy = 0;
-  let syy = 0;
-  for (const p of points) {
-    sxx += (p.x - mx) ** 2;
-    sxy += (p.x - mx) * (p.y - my);
-    syy += (p.y - my) ** 2;
-  }
-  const angle = 0.5 * Math.atan2(2 * sxy, sxx - syy);
-  let ux = Math.cos(angle);
-  let uy = Math.sin(angle);
-  const a = points[0];
-  const b = points[n - 1];
-  if ((b.x - a.x) * ux + (b.y - a.y) * uy < 0) {
-    ux = -ux;
-    uy = -uy;
-  }
-  let sse = 0;
-  let worst = 0;
-  const ds: number[] = [];
-  for (const p of points) {
-    const d = (p.y - my) * ux - (p.x - mx) * uy;
-    ds.push(d);
-    sse += d * d;
-    worst = Math.max(worst, Math.abs(d));
-  }
-  return { sse, worst, ds, ux, uy, cx: mx, cy: my };
-}
-
-interface CircleFit {
-  sse: number;
-  worst: number;
-  ds: number[];
-  cx: number;
-  cy: number;
-  /** Signed curvature for travel from the first point to the last. */
-  k: number;
-  /** How far the points turn around the centre, first to last, rad. */
-  sweep: number;
-}
-
-/** Kåsa's algebraic circle fit, then the geometric error of that circle. */
-function fitCircle(points: readonly Point[]): CircleFit | null {
+/** Kåsa's algebraic circle fit: the signed curvature for travel from the first point to the last, or null. */
+function circleCurvature(points: readonly Point[]): number | null {
   const n = points.length;
   if (n < 3) return null;
   const mx = points.reduce((s, p) => s + p.x, 0) / n;
@@ -679,19 +453,8 @@ function fitCircle(points: readonly Point[]): CircleFit | null {
   const f = -sz / n;
   const r2 = (d * d + e * e) / 4 - f;
   if (r2 <= 0) return null;
-  const r = Math.sqrt(r2);
   const cx = mx - d / 2;
   const cy = my - e / 2;
-  let sse = 0;
-  let worst = 0;
-  const ds: number[] = [];
-  for (const p of points) {
-    const dd = Math.hypot(p.x - cx, p.y - cy) - r;
-    ds.push(dd);
-    sse += dd * dd;
-    worst = Math.max(worst, Math.abs(dd));
-  }
-  // The way the points travel around the centre; the chord's side flips past 180°.
   let turn = 0;
   for (let i = 1; i < n; i++) {
     const ax = points[i - 1].x - cx;
@@ -700,315 +463,197 @@ function fitCircle(points: readonly Point[]): CircleFit | null {
     const by = points[i].y - cy;
     turn += Math.atan2(ax * by - ay * bx, ax * bx + ay * by);
   }
-  return { sse, worst, ds, cx, cy, k: Math.sign(turn) / r, sweep: Math.abs(turn) };
+  return Math.sign(turn) / Math.sqrt(r2);
 }
 
-/** Arc length along the points, point to point. */
-function chords(points: readonly Point[]): number[] {
-  const s = [0];
-  for (let i = 1; i < points.length; i++) {
-    s.push(s[i - 1] + Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y));
+/** Curvature of the circle tangent at `p` through `q`. */
+function tangentCurvature(p: Pose, q: Point): number {
+  const dx = q.x - p.x;
+  const dy = q.y - p.y;
+  const r2 = dx * dx + dy * dy;
+  if (r2 < 1e-12) return 0;
+  return (2 * (Math.cos(p.heading) * dy - Math.sin(p.heading) * dx)) / r2;
+}
+
+/** The window: parts `from` on, and the clicks they own. */
+class Window {
+  parts: Part[];
+  first: number[];
+  start: Pose;
+  readonly from: number;
+  readonly clicks: readonly Point[];
+  readonly opts: FitOptions;
+
+  constructor(line: Line, from: number, clicks: readonly Point[], opts: FitOptions) {
+    this.from = from;
+    this.clicks = clicks;
+    this.opts = opts;
+    this.parts = [...line.fit.parts];
+    this.first = [...line.firstClick];
+    this.start = line.fit.start;
   }
-  return s;
-}
 
-/** Start pose on a group's line or circle, at its first point, heading toward its last. */
-function startPose(points: readonly Point[], line: LineFit, circle: CircleFit | null): Pose {
-  const p = points[0];
-  if (!circle) {
-    const t = (p.x - line.cx) * line.ux + (p.y - line.cy) * line.uy;
-    return { x: line.cx + t * line.ux, y: line.cy + t * line.uy, heading: Math.atan2(line.uy, line.ux) };
+  private points(): Point[] {
+    return this.clicks.slice(this.first[this.from]);
   }
-  const r = 1 / Math.abs(circle.k);
-  const len = Math.hypot(p.x - circle.cx, p.y - circle.cy);
-  const x = circle.cx + (r * (p.x - circle.cx)) / len;
-  const y = circle.cy + (r * (p.y - circle.cy)) / len;
-  // The centre sits to the left of the heading at distance 1/k.
-  const heading = Math.atan2(-circle.k * (circle.cx - x), circle.k * (circle.cy - y));
-  return { x, y, heading };
-}
 
-interface Group {
-  from: number;
-  to: number;
-  arc: boolean;
-  /** Index of the one interior point this run leaves out, or -1. */
-  drop: number;
-}
-
-/**
- * The index in 2..n-3 of the largest residual: two points on each side, so
- * a bad point next to a run's end is never mistaken for its neighbour.
- */
-function worstInterior(ds: readonly number[]): number {
-  let j = 2;
-  for (let i = 3; i < ds.length - 2; i++) if (Math.abs(ds[i]) > Math.abs(ds[j])) j = i;
-  return j;
-}
-
-interface RunCost {
-  cost: number;
-  /** Index within the run of the one interior point left out, or -1. */
-  drop: number;
-}
-
-/**
- * The cost of a straight, or an arc, through every point of a run; Infinity
- * when it does not fit. A run pays for its own fit's parameters (a line has
- * two, a circle three) and for where it starts. When `lenient`, a point out
- * of tolerance costs as much as one at the tolerance instead of ruling the
- * run out.
- */
-function plainCost(run: readonly Point[], arc: boolean, opts: FitOptions, perParam: number, lenient: boolean): number {
-  // Three points fit any circle, which says nothing about the track.
-  const fit = !arc ? fitLine(run) : run.length < 4 ? null : fitCircle(run);
-  if (!fit) return Infinity;
-  if ('k' in fit && (Math.abs(fit.k) * opts.bounds.minRadius > 1 || fit.sweep > opts.bounds.maxSweep)) return Infinity;
-  if (!lenient && fit.worst > opts.tolerance) return Infinity;
-  const t2 = opts.tolerance ** 2;
-  const sse = fit.ds.reduce((sum, d) => sum + Math.min(d * d, t2), 0);
-  return sse / opts.noise ** 2 + (arc ? 4 : 3) * perParam;
-}
-
-/**
- * The cost of a straight, or an arc, through a run. When it does not reach
- * every point, the interior point furthest from the line, or from the circle
- * (they differ when the circle bends toward the outlier), is left out at the
- * price of one more parameter, and the rest must then fit as they are.
- */
-function runCost(run: readonly Point[], arc: boolean, opts: FitOptions, perParam: number, lenient: boolean): RunCost {
-  const plain = { cost: plainCost(run, arc, opts, perParam, lenient), drop: -1 };
-  if (plain.cost < Infinity || run.length < 5) return plain;
-  const circle = fitCircle(run);
-  let best = plain;
-  for (const j of new Set([worstInterior(fitLine(run).ds), ...(circle ? [worstInterior(circle.ds)] : [])])) {
-    const cost = plainCost([...run.slice(0, j), ...run.slice(j + 1)], arc, opts, perParam, lenient) + perParam;
-    if (cost < best.cost) best = { cost, drop: j };
+  private sub(): Fit {
+    return { start: poses({ start: this.start, parts: this.parts.slice(0, this.from) })[this.from], parts: this.parts.slice(this.from) };
   }
-  return best;
-}
 
-/**
- * Groups of three or more points, each a straight or an arc, at the least
- * total cost. Two straights never follow each other: tangent, they would be
- * one straight. When no groups fit within the tolerance, the groups are
- * chosen again with `lenient` costs.
- */
-function segment(points: readonly Point[], opts: FitOptions, lenient = false): Group[] {
-  const n = points.length;
-  const perParam = Math.log(n);
-  // The cheapest groups for points[0..to), ending in a straight [0] or an arc [1].
-  const best = Array.from({ length: n + 1 }, () => [Infinity, Infinity]);
-  const choice = Array.from({ length: n + 1 }, (): (Group | null)[] => [null, null]);
-  best[0] = [0, 0];
-  // Two points fit any straight exactly, which says nothing about the track.
-  for (let to = 3; to <= n; to++) {
-    // Runs grow back from `to`. Once one of six or more points fits neither a straight nor an
-    // arc, a longer one would not either, and the search stops; lenient costs rule nothing out.
-    for (let from = to - 3; from >= 0; from--) {
-      const run = points.slice(from, to);
-      let fits = lenient || run.length < 6;
-      for (const arc of [false, true]) {
-        const before = arc || from === 0 ? Math.min(...best[from]) : best[from][1];
-        if (before === Infinity && fits) continue;
-        const r = runCost(run, arc, opts, perParam, lenient);
-        fits ||= r.cost < Infinity;
-        const c = before + r.cost;
-        const k = arc ? 1 : 0;
-        // Ties go to the longer run, as a search from the front would.
-        if (c <= best[to][k] && c < Infinity) {
-          best[to][k] = c;
-          choice[to][k] = { from, to, arc, drop: r.drop < 0 ? -1 : from + r.drop };
-        }
+  /** Least squares of the window's parts to its clicks, from where they are. */
+  solve() {
+    const sub = this.sub();
+    const m: Model = { start: this.from === 0 ? null : sub.start, parts: sub.parts.length, minRadius: this.opts.minRadius };
+    const fitted = refit(sub, this.points(), m);
+    this.parts.splice(this.from, fitted.parts.length, ...fitted.parts);
+    if (this.from === 0) this.start = fitted.start;
+  }
+
+  evaluate(): Evaluation {
+    return evaluate(this.sub(), this.points());
+  }
+
+  /** The window's click farthest from the line, as a click index, with its distance. */
+  private worst(e: Evaluation): { click: number; distance: number } {
+    let j = 0;
+    for (let i = 1; i < e.d.length; i++) if (Math.abs(e.d[i]) > Math.abs(e.d[j])) j = i;
+    return { click: this.first[this.from] + j, distance: Math.abs(e.d[j]) };
+  }
+
+  /**
+   * Curvatures the second half of part `q`, from click `j` on, may start
+   * from: a circle through its clicks, the circle tangent at the cut through
+   * its last click, and its parent's. Each is kept inside 0.9 of the floor:
+   * the bound is a tanh, and a guess at it has no gradient to move with.
+   */
+  private guesses(q: number, j: number, u: number): number[] {
+    const part = this.parts[q];
+    const to = this.first[q + 1] ?? this.clicks.length;
+    const cut = advance(poses({ start: this.start, parts: this.parts })[q], u, part.curvature);
+    const kMax = 0.9 / this.opts.minRadius;
+    const all = [circleCurvature(this.clicks.slice(j, to)), tangentCurvature(cut, this.clicks[to - 1]), part.curvature];
+    const ks = all.filter((k): k is number => k !== null).map((k) => clamp(k, -kMax, kMax));
+    return ks.filter((k, i) => ks.indexOf(k) === i);
+  }
+
+  /** Where part `q` is cut for click `j` to start its second half, or null if it cannot be. */
+  private cut(q: number, j: number, e: Evaluation): number | null {
+    const part = this.parts[q];
+    if (j <= this.first[q] || part.length < 2 * MIN_LENGTH) return null;
+    const k = j - this.first[this.from];
+    return clamp(e.part[k] === q - this.from ? e.u[k] : part.length / 2, MIN_LENGTH, part.length - MIN_LENGTH);
+  }
+
+  /** Split part `q` at `u` along it; click `j` starts the second half, bending at `curvature`. */
+  private split(q: number, j: number, u: number, curvature: number) {
+    const part = this.parts[q];
+    this.parts.splice(q, 1, { length: u, curvature: part.curvature }, { length: part.length - u, curvature });
+    this.first.splice(q + 1, 0, j);
+  }
+
+  /**
+   * Split where a click is still past the tolerance, until every click is
+   * within it. A split is solved from each guess and the best kept; one
+   * that leaves its click out is undone and ends the splitting: the click
+   * stays red.
+   */
+  splitWhileOut() {
+    for (;;) {
+      const e = this.evaluate();
+      const { click, distance } = this.worst(e);
+      if (distance <= this.opts.tolerance) return;
+      const q = this.from + e.part[click - this.first[this.from]];
+      // At a part's first click the part before it is the one that misses, and it splits at its last click.
+      let at = { q, j: click, u: this.cut(q, click, e) };
+      if (at.u === null && q > this.from) at = { q: q - 1, j: click - 1, u: this.cut(q - 1, click - 1, e) };
+      if (at.u === null) return;
+      const before = { parts: this.parts, first: this.first, start: this.start };
+      let best: { parts: Part[]; first: number[]; start: Pose; d: number } | null = null;
+      for (const k of this.guesses(at.q, at.j, at.u)) {
+        this.parts = [...before.parts];
+        this.first = [...before.first];
+        this.start = before.start;
+        this.split(at.q, at.j, at.u, k);
+        this.solve();
+        const d = Math.abs(this.evaluate().d[click - this.first[this.from]]);
+        if (!best || d < best.d) best = { parts: this.parts, first: this.first, start: this.start, d };
       }
-      if (!fits) break;
+      if (!best || best.d > this.opts.tolerance) {
+        this.parts = before.parts;
+        this.first = before.first;
+        this.start = before.start;
+        return;
+      }
+      this.parts = best.parts;
+      this.first = best.first;
+      this.start = best.start;
     }
   }
-  if (Math.min(...best[n]) === Infinity) {
-    // Under three points, one straight.
-    return !lenient && n >= 3 ? segment(points, opts, true) : [{ from: 0, to: n, arc: false, drop: -1 }];
+
+  /** Parts `i` and `i + 1` made one, of their mean curvature. */
+  private merged(i: number): Window {
+    const w = new Window({ fit: { start: this.start, parts: this.parts }, firstClick: this.first }, this.from, this.clicks, this.opts);
+    const a = this.parts[i];
+    const b = this.parts[i + 1];
+    const length = a.length + b.length;
+    w.parts.splice(i, 2, { length, curvature: (a.curvature * a.length + b.curvature * b.length) / length });
+    w.first.splice(i + 1, 1);
+    return w;
   }
-  const groups: Group[] = [];
-  let k = best[n][0] <= best[n][1] ? 0 : 1;
-  for (let at = n; at > 0; ) {
-    const g = choice[at][k] as Group;
-    groups.unshift(g);
-    at = g.from;
-    // The group before a straight is an arc; before an arc, the cheaper.
-    k = !g.arc ? 1 : best[at][0] <= best[at][1] ? 0 : 1;
-  }
-  return groups;
-}
 
-/**
- * A first G1 line, from `start` when it is fixed. Each part starts from its
- * group's independent fit and is then refit, with the part before it, to
- * their groups' points from where the line before them ends, so the line
- * follows the points however many parts it has.
- */
-function chain(points: readonly Point[], groups: readonly Group[], start: Pose | null, opts: FitOptions): Fit {
-  const off = start ? 1 : 0;
-  const s = chords(start ? [start, ...points] : points);
-  const parts: Part[] = groups.map((g, i) => {
-    const lo = i === 0 ? 0 : (s[groups[i - 1].to - 1 + off] + s[g.from + off]) / 2;
-    const hi = i === groups.length - 1 ? s[s.length - 1] : (s[g.to - 1 + off] + s[g.to + off]) / 2;
-    const run = points.slice(g.from, g.to);
-    const circle = g.arc ? fitCircle(run) : null;
-    return { length: Math.max(1, hi - lo), curvature: circle ? circle.k : 0 };
-  });
-  const first = points.slice(groups[0].from, groups[0].to);
-  const origin = start ?? startPose(first, fitLine(first), groups[0].arc ? fitCircle(first) : null);
-  for (let i = 0; i < parts.length; i++) {
-    const a = Math.max(0, i - 1);
-    const from = poses({ start: origin, parts: parts.slice(0, a) })[a];
-    // A fixed start may point a little off the points, so every part may bend, as in the refit after.
-    const m: Model = { start: from, free: groups.slice(a, i + 1).map(g => g.arc || start !== null), bounds: opts.bounds };
-    const fitted = refit({ start: from, parts: parts.slice(a, i + 1) }, points.slice(groups[a].from, groups[i].to), m, opts);
-    parts.splice(a, fitted.parts.length, ...fitted.parts);
-  }
-  return { start: origin, parts };
-}
-
-const freeOf = (fit: Fit) => fit.parts.map(p => p.curvature !== 0);
-
-function result(fit: Fit, points: readonly Point[], start: Pose | null, opts: FitOptions, outliers: readonly number[] = []): FitResult {
-  const e = evaluate(fit, points);
-  const out = new Set(outliers);
-  const kept = e.d.filter((_, i) => !out.has(i));
-  const worst = Math.max(...kept.map(Math.abs));
-  const rms = Math.sqrt(sumSq(kept) / kept.length);
-  const m: Model = { start, free: freeOf(fit), bounds: opts.bounds };
-  const inliers = out.size ? points.filter((_, i) => !out.has(i)) : points;
-  return { fit, residuals: e.d, partOf: e.part, worst, rms, joins: joinsOf(fit, inliers, m, opts), outliers };
-}
-
-/** Split part `i` into two halves of the same curvature. */
-function halve(fit: Fit, i: number): Fit {
-  const p = fit.parts[i];
-  const half = { length: p.length / 2, curvature: p.curvature };
-  return { ...fit, parts: [...fit.parts.slice(0, i), half, half, ...fit.parts.slice(i + 1)] };
-}
-
-/** Parts `i` and `i + 1` made one, of their mean curvature. */
-function merge(parts: readonly Part[], i: number): Part[] {
-  const a = parts[i];
-  const b = parts[i + 1];
-  const length = a.length + b.length;
-  const curvature = (a.curvature * a.length + b.curvature * b.length) / length;
-  return [...parts.slice(0, i), { length, curvature }, ...parts.slice(i + 2)];
-}
-
-/**
- * Halve the part holding the most points beyond the tolerance, and refit.
- * When the halves still miss the tolerance, `simplify` will not see them, so
- * they are merged back here when that costs less: two arcs of one curvature
- * are a split that did not help.
- */
-function split(res: FitResult, points: readonly Point[], start: Pose | null, opts: FitOptions): FitResult {
-  const outside = new Array<number>(res.fit.parts.length).fill(0);
-  res.residuals.forEach((d, i) => {
-    if (Math.abs(d) > opts.tolerance) outside[res.partOf[i]]++;
-  });
-  const worstPart = outside.indexOf(Math.max(...outside));
-  const halved = halve(res.fit, worstPart);
-  // A straight that cannot reach the points has to bend.
-  const free = halved.parts.map((p, i) => p.curvature !== 0 || i === worstPart || i === worstPart + 1);
-  const halves = result(refit(halved, points, { start, free, bounds: opts.bounds }, opts), points, start, opts);
-  if (halves.worst <= opts.tolerance) return halves;
-  const joined = { ...halves.fit, parts: merge(halves.fit.parts, worstPart) };
-  const back = result(refit(joined, points, { start, free: free.slice(1), bounds: opts.bounds }, opts), points, start, opts);
-  return penalised(back, opts) <= penalised(halves, opts) ? back : halves;
-}
-
-/** The cost of a fitted line: squared error over σ² plus ln n per parameter. */
-function penalised(res: FitResult, opts: FitOptions): number {
-  const params = res.fit.parts.reduce((sum, p) => sum + (p.curvature !== 0 ? 2 : 1), 0);
-  return sumSq(res.residuals) / opts.noise ** 2 + Math.log(res.residuals.length) * params;
-}
-
-/** Consecutive straights made one. */
-function joinStraights(parts: readonly Part[]): Part[] {
-  const out: Part[] = [];
-  for (const p of parts) {
-    const last = out[out.length - 1];
-    if (last && last.curvature === 0 && p.curvature === 0) out[out.length - 1] = { length: last.length + p.length, curvature: 0 };
-    else out.push(p);
-  }
-  return out;
-}
-
-/**
- * The independent fits overfit, so after the joint refit try each merge of
- * two neighbours and each arc made straight, and keep the cheapest while it
- * lowers the cost and stays within the tolerance. The last round's merges,
- * none of which was kept, give each join its margin.
- */
-function simplify(first: FitResult, points: readonly Point[], start: Pose | null, opts: FitOptions): FitResult {
-  let res = first;
-  let cost = penalised(res, opts);
-  for (;;) {
-    const parts = res.fit.parts;
-    /** Each trial, and the join a merge removes (-1 for an arc made straight). */
-    const trials: { parts: Part[]; join: number }[] = [];
-    for (let i = 0; i + 1 < parts.length; i++) trials.push({ parts: merge(parts, i), join: i + 1 });
-    parts.forEach((p, i) => {
-      if (p.curvature !== 0) {
-        trials.push({ parts: joinStraights(parts.map((q, j) => (j === i ? { length: q.length, curvature: 0 } : q))), join: -1 });
-      }
-    });
-    const margins = new Array<number>(parts.length + 1).fill(0);
-    let best: FitResult | null = null;
-    let bestCost = cost;
-    for (const trial of trials) {
-      const fit = { ...res.fit, parts: trial.parts };
-      const fitted = result(refit(fit, points, { start, free: freeOf(fit), bounds: opts.bounds }, opts), points, start, opts);
-      const c = penalised(fitted, opts);
-      if (trial.join >= 0) margins[trial.join] = c - cost;
-      if (fitted.worst <= opts.tolerance && c < bestCost) {
-        best = fitted;
-        bestCost = c;
-      }
+  /** Merge neighbours while the window stays within the tolerance: the fewest parts that reach the clicks. */
+  mergeWhileIn() {
+    for (let i = this.from; i + 1 < this.parts.length; ) {
+      const w = this.merged(i);
+      w.solve();
+      if (w.worst(w.evaluate()).distance <= this.opts.tolerance) {
+        this.parts = w.parts;
+        this.first = w.first;
+        this.start = w.start;
+        i = this.from;
+      } else i++;
     }
-    if (!best) return withMargins(res, margins);
-    res = best;
-    cost = bestCost;
+  }
+
+  line(): Line {
+    return { fit: { start: this.start, parts: this.parts }, firstClick: this.first };
   }
 }
 
 /**
- * Fit points that run in order along the track, from a fixed start pose or,
- * with `start` null, a free one. Needs two points when the start is free, one
- * otherwise.
+ * The line of `clicks`, given the line of all but the last. Null with fewer
+ * than two clicks; a straight through the first two; after that the last
+ * part extends to the new click and the window, the last two parts, is
+ * solved, split while a click is out of tolerance and merged while within
+ * it.
  */
-export function fitWindow(points: readonly Point[], start: Pose | null, opts: FitOptions): FitResult | null {
-  if (points.length < (start ? 1 : 2)) return null;
-  const all = segment(points, opts);
-  const outliers = all.map(g => g.drop).filter(d => d >= 0);
-  // The rest of the fit sees only the inliers; the groups are renumbered to them.
-  const kept = points.map((_, i) => i).filter(i => !outliers.includes(i));
-  const inliers = kept.map(i => points[i]);
-  const index = new Map(kept.map((i, j) => [i, j]));
-  // A run never drops its first point, so every run bound is kept.
-  const at = (i: number) => index.get(i) as number;
-  const groups = all.map(g => ({ ...g, from: at(g.from), to: g.to === points.length ? inliers.length : at(g.to) }));
-  const first = chain(inliers, groups, start, opts);
-  // A fixed start may point a little off the points, so every part may bend at first.
-  const free = start ? first.parts.map(() => true) : freeOf(first);
-  const res = result(refit(first, inliers, { start, free, bounds: opts.bounds }, opts), inliers, start, opts);
-  // Out of tolerance, one split, and a line still out of it is returned as it is:
-  // two segmentations and at most three refits, whatever the points.
-  const within = res.worst <= opts.tolerance ? res : split(res, inliers, start, opts);
-  const done = within.worst <= opts.tolerance ? simplify(within, inliers, start, opts) : within;
-  if (!outliers.length) return done;
-  // A point left out that the line reaches after all is no outlier.
-  const d = evaluate(done.fit, points).d;
-  const whole = result(done.fit, points, start, opts, outliers.filter(i => Math.abs(d[i]) > opts.tolerance));
-  return withMargins(whole, done.joins.map(j => j.margin));
+export function extend(line: Line | null, clicks: readonly Point[], opts: FitOptions): Line | null {
+  const n = clicks.length;
+  if (n < 2) return null;
+  if (!line) {
+    const a = clicks[0];
+    const b = clicks[n - 1];
+    const length = Math.max(MIN_LENGTH, Math.hypot(b.x - a.x, b.y - a.y));
+    return { fit: { start: { x: a.x, y: a.y, heading: Math.atan2(b.y - a.y, b.x - a.x) }, parts: [{ length, curvature: 0 }] }, firstClick: [0] };
+  }
+  const m = line.fit.parts.length;
+  const w = new Window(line, Math.max(0, m - 2), clicks, opts);
+  const last = w.parts[m - 1];
+  const p = clicks[n - 2];
+  const q = clicks[n - 1];
+  w.parts[m - 1] = { ...last, length: last.length + Math.hypot(q.x - p.x, q.y - p.y) };
+  w.solve();
+  w.splitWhileOut();
+  w.mergeWhileIn();
+  return w.line();
 }
 
-/** Fit a whole line at once, start free. */
-export function fitTrack(points: readonly Point[], opts: FitOptions): FitResult | null {
-  return fitWindow(points, null, opts);
+/** The line of `clicks` in order: `extend` folded over them. */
+export function fitTrack(clicks: readonly Point[], opts: FitOptions): Line | null {
+  let line: Line | null = null;
+  for (let n = 2; n <= clicks.length; n++) line = extend(line, clicks.slice(0, n), opts);
+  return line;
 }
 
 /**
