@@ -1,32 +1,27 @@
 import { describe, it, expect } from 'vitest';
 import type { Point } from '@rails49/r49';
-import { distances, extend, fitNodes, fitTrack, sampleFit, type Line } from '../src/trackFit.js';
-import { traceOptions } from '../src/trackTrace.js';
-import { G, TEN_PARTS, clicksAlong, offLine, type Piece } from './trackClicks.js';
+import { distances, extend, fitNodes, projection, type Line } from '../src/trackFit.js';
+import { Trace, traceOptions } from '../src/trackTrace.js';
+import { G, along, clicksAlong, clicksAt, type Piece } from './trackClicks.js';
 
 const opts = traceOptions(G);
-const TOLERANCE = 0.25 * G;
 
-function fit(clicks: readonly Point[]): Line {
-  const line = fitTrack(clicks, opts);
-  if (!line) throw new Error('no fit');
+/** The line of `clicks` in order; throws when a click does not go on it. */
+function fold(clicks: readonly Point[]): Line {
+  let line: Line | null = null;
+  for (let n = 1; n < clicks.length; n++) {
+    const step = extend(line, clicks.slice(0, n), clicks[n], opts);
+    if (step.kind !== 'added') throw new Error(`click ${n + 1} ${step.kind}`);
+    line = step.line;
+  }
+  if (!line) throw new Error('no line');
   return line;
 }
 
-/** How far the click farthest from the line lies, px. */
-function worst(line: Line, clicks: readonly Point[]): number {
-  return Math.max(...distances(line.fit, clicks).map(Math.abs));
-}
-
-/** The clicks farther than the tolerance from the line. */
-function red(line: Line, clicks: readonly Point[]): number[] {
-  return distances(line.fit, clicks).flatMap((d, i) => (Math.abs(d) > TOLERANCE ? [i] : []));
-}
-
 /**
- * Each part's radius in gauges. The solver's curvature is never exactly 0,
- * so a straight is a part whose radius is over 200 G: its sagitta over a 40 G
- * straight is under 1 G.
+ * Each part's radius in gauges. A refit straight's curvature is never exactly
+ * 0, so a straight is a part whose radius is over 200 G: its sagitta over a
+ * 40 G straight is under 1 G.
  */
 function radii(line: Line): number[] {
   return line.fit.parts.map(p => {
@@ -35,261 +30,198 @@ function radii(line: Line): number[] {
   });
 }
 
-describe('fitTrack', () => {
-  it('needs two clicks, and makes the first straight of them', () => {
-    expect(fitTrack([{ x: 1, y: 1 }], opts)).toBeNull();
-    const line = fit([
+/** How far the click farthest from the line lies, in gauges. */
+function worst(line: Line, clicks: readonly Point[]): number {
+  return Math.max(...distances(line, clicks)) / G;
+}
+
+/** The true point `gauges` along an arc of 30 G turning left. */
+const ARC = [{ radius: 30, turn: 120 }];
+const onArc = (gauges: number) => along(ARC, gauges);
+
+describe('the first clicks of a line', () => {
+  it('make a straight of two clicks, with a straight projection ahead', () => {
+    const line = fold([
       { x: 100, y: 100 },
       { x: 400, y: 500 },
     ]);
-    expect(line.fit.start).toEqual({ x: 100, y: 100, heading: Math.atan2(400, 300) });
+    const heading = Math.atan2(400, 300);
+    expect(line.fit.start).toEqual({ x: 100, y: 100, heading });
     expect(line.fit.parts).toEqual([{ length: 500, curvature: 0 }]);
-    expect(line.firstClick).toEqual([0]);
+    const ahead = projection(line, 20 * G);
+    expect(ahead.start.x).toBeCloseTo(400, 6);
+    expect(ahead.start.y).toBeCloseTo(500, 6);
+    expect(ahead.start.heading).toBe(heading);
+    expect(ahead.parts).toEqual([{ length: 20 * G, curvature: 0 }]);
   });
 
-  // Radii in gauges, Infinity for a straight.
-  const shapes: [string, Piece[], number[]][] = [
-    ['a straight', [{ straight: 40 }], [Infinity]],
-    ['an arc', [{ radius: 30, turn: 90 }], [30]],
-    ['a straight into an arc', [{ straight: 20 }, { radius: 30, turn: 90 }], [Infinity, 30]],
-    ['a reverse curve', [{ radius: 30, turn: 60 }, { radius: 30, turn: -60 }], [30, 30]],
-    ['a 180° curve', [{ straight: 15 }, { radius: 25, turn: 180 }, { straight: 15 }], [Infinity, 25, Infinity]],
+  it('make one arc through three clicks, which the projection follows', () => {
+    const line = fold([onArc(0), onArc(20), onArc(40)]);
+    expect(line.fit.parts).toHaveLength(1);
+    const [part] = line.fit.parts;
+    expect(1 / part.curvature / G).toBeCloseTo(30, 6);
+    expect(part.length / G).toBeCloseTo(40, 6);
+    expect(line.fit.start.heading).toBeCloseTo(0.3, 6);
+    expect(projection(line, 20 * G).parts[0].curvature).toBe(part.curvature);
+  });
+});
+
+describe('a click within the tolerance', () => {
+  it('continues a straight, refit over its clicks so their noise averages out', () => {
+    const clicks = clicksAlong([{ straight: 40 }]);
+    const line = fold(clicks);
+    expect(line.fit.parts).toHaveLength(1);
+    expect(radii(line)[0]).toBeGreaterThan(200);
+    expect(worst(line, clicks)).toBeLessThanOrEqual(0.5);
+    // The refit heading is the straight's, not the first two clicks'.
+    expect(line.fit.start.heading).toBeCloseTo(0.3, 2);
+  });
+
+  it('continues an arc, refit over its clicks to its radius', () => {
+    const clicks = clicksAlong([{ radius: 30, turn: 120 }]);
+    const line = fold(clicks);
+    expect(line.fit.parts).toHaveLength(1);
+    expect(radii(line)[0]).toBeCloseTo(30, 0);
+    expect(line.fit.parts[0].length / G).toBeCloseTo(Math.PI * 20, 0);
+    expect(worst(line, clicks)).toBeLessThanOrEqual(0.5);
+  });
+});
+
+describe('a click beyond the tolerance', () => {
+  it('starts a new part at the last click, which one click bends and the projection follows', () => {
+    const straight = clicksAlong([{ straight: 20 }], { noise: 0 });
+    const into = along([{ straight: 20 }, { radius: 30, turn: 90 }], 26);
+    const line = fold([...straight, into]);
+    expect(radii(line)).toHaveLength(2);
+    expect(radii(line)[0]).toBe(Infinity);
+    expect(radii(line)[1]).toBeCloseTo(30, 0);
+    expect(line.fit.parts[1].length / G).toBeCloseTo(6, 2);
+    expect(line.firstClick).toEqual([0, straight.length]);
+    expect(projection(line, 20 * G).parts[0].curvature).toBe(line.fit.parts[1].curvature);
+  });
+
+  // Clicks where the curvature changes and about 10 G apart, as the rule
+  // expects: radii in gauges, Infinity for a straight.
+  const shapes: [string, Piece[], number[], number[]][] = [
+    ['a straight into an arc', [{ straight: 20 }, { radius: 30, turn: 90 }], [0, 10, 20, 30, 40, 50, 60, 67.1], [Infinity, 30]],
+    ['a reverse curve', [{ radius: 30, turn: 60 }, { radius: 30, turn: -60 }], [0, 10, 20, 31.4, 41.4, 51.4, 62.8], [30, 30]],
+    [
+      'a 180° curve',
+      [{ straight: 15 }, { radius: 25, turn: 180 }, { straight: 15 }],
+      [0, 7, 15, 25, 35, 45, 55, 65, 75, 85, 93.5, 100, 108.5],
+      [Infinity, 25, Infinity],
+    ],
   ];
-  for (const [name, pieces, expected] of shapes) {
-    for (const spacing of [3, 5]) {
-      it(`fits ${name}, a click every ${spacing} G`, () => {
-        const clicks = clicksAlong(pieces, { spacing });
-        const line = fit(clicks);
-        const got = radii(line);
-        expect(got).toHaveLength(expected.length);
-        // Radii within 5%.
-        got.forEach((r, i) => expect(r === expected[i] || Math.abs(r / expected[i] - 1) < 0.05).toBe(true));
-        expect(worst(line, clicks)).toBeLessThanOrEqual(TOLERANCE);
-      });
-    }
+  for (const [name, pieces, positions, expected] of shapes) {
+    it(`traces ${name} as its parts, every click within the tolerance`, () => {
+      const clicks = clicksAt(pieces, positions, { noise: 0 });
+      const line = fold(clicks);
+      const got = radii(line);
+      expect(got).toHaveLength(expected.length);
+      got.forEach((r, i) => expect(r === expected[i] || Math.abs(r / expected[i] - 1) < 0.02).toBe(true));
+      expect(worst(line, clicks)).toBeLessThanOrEqual(0.5);
+    });
   }
 
   it('turns the way the track turns', () => {
-    const line = fit(clicksAlong([{ radius: 30, turn: 60 }, { radius: 30, turn: -60 }]));
+    const line = fold(clicksAt([{ radius: 30, turn: 60 }, { radius: 30, turn: -60 }], [0, 10, 20, 31.4, 41.4, 51.4, 62.8], { noise: 0 }));
     expect(line.fit.parts.map(p => Math.sign(p.curvature))).toEqual([1, -1]);
   });
+});
 
-  it('gives each part the clicks from its first to the next part’s first', () => {
-    const clicks = clicksAlong([{ straight: 20 }, { radius: 30, turn: 90 }]);
-    const line = fit(clicks);
-    expect(line.firstClick[0]).toBe(0);
-    for (let i = 1; i < line.firstClick.length; i++) expect(line.firstClick[i]).toBeGreaterThan(line.firstClick[i - 1]);
-    expect(line.firstClick[line.firstClick.length - 1]).toBeLessThan(clicks.length);
+describe('a click not ahead of the last click', () => {
+  const straight = [
+    { x: 100, y: 100 },
+    { x: 300, y: 100 },
+    { x: 500, y: 100 },
+  ];
+
+  it('adds nothing: beside it, behind it, or on it', () => {
+    const line = fold(straight);
+    for (const p of [{ x: 500, y: 140 }, { x: 400, y: 100 }, { x: 500, y: 100 }, { x: 100, y: 100 }]) {
+      expect(extend(line, straight, p, opts)).toEqual({ kind: 'ignored' });
+    }
+  });
+
+  it('adds nothing on an arc either, a click behind its start included', () => {
+    const clicks = clicksAt(ARC, [0, 15, 30, 45], { noise: 0 });
+    const line = fold(clicks);
+    expect(extend(line, clicks, onArc(40), opts)).toEqual({ kind: 'ignored' });
+    expect(extend(line, clicks, along([{ radius: 30, turn: -120 }], 10), opts)).toEqual({ kind: 'ignored' });
+  });
+
+  it('goes on from the second click, which only a click on the first cannot', () => {
+    expect(extend(null, [straight[0]], straight[0], opts)).toEqual({ kind: 'ignored' });
+    expect(extend(null, [straight[0]], { x: 100, y: 300 }, opts).kind).toBe('added');
   });
 });
 
-describe('fitTrack with a click past the tolerance', () => {
-  const straight = clicksAlong([{ straight: 30 }]);
-  /** `clicks` with click `i` moved `gauges` across the track. */
-  const moved = (clicks: readonly Point[], gauges: number, i: number) =>
-    clicks.map((p, k) => (k === i ? offLine(p, clicks[k - 1] ?? p, clicks[k + 1] ?? p, gauges) : p));
-
-  it('leaves a lone click a gauge across a straight red, and keeps the straight', () => {
-    const clicks = moved(straight, 1, 4);
-    const line = fit(clicks);
-    expect(radii(line)).toEqual([Infinity]);
-    expect(red(line, clicks)).toEqual([4]);
-  });
-
-  it('reaches a click a gauge across on the end with a new part', () => {
-    const clicks = moved(straight, 1, straight.length - 1);
-    const line = fit(clicks);
-    expect(line.fit.parts.length).toBeGreaterThan(1);
-    expect(red(line, clicks)).toEqual([]);
-  });
-
-  // The last click, past the end of a straight into a curve, was the worst
-  // click and cut its part at its own projection, the part's end: a second
-  // half of no length the solve could not grow, so splitting stopped there.
-  it('splits for a last click past the end of its part, so a straight into a reverse curve stays five parts', () => {
-    const dpt = 89.6875;
-    const clicks = clicksAlong([
-      { straight: 20 },
-      { radius: 30, turn: 90 },
-      { straight: 20 },
-      { radius: 30, turn: -90 },
-      { straight: 20 },
-    ]).map(p => ({ x: Math.round((p.x * dpt) / G), y: Math.round((p.y * dpt) / G) }));
-    const o = traceOptions(dpt);
-    let line: Line | null = null;
-    for (let n = 2; n <= clicks.length; n++) {
-      line = extend(line, clicks.slice(0, n), o);
-      expect(line?.fit.parts.length, `${n} clicks`).toBeLessThanOrEqual(5);
-    }
-    expect(line?.fit.parts).toHaveLength(5);
-    expect(distances(line!.fit, clicks).filter(d => Math.abs(d) > o.tolerance)).toEqual([]);
-  });
-
-  // A click back along a straight left the solve free to wind an arc round
-  // and round: its length ran away, and drawing it ran out of memory.
-  it('keeps a part within one turn of its circle for a click folded back along the line', () => {
-    const o = traceOptions(89.6875);
+describe('a click that needs a radius under the minimum', () => {
+  it('is refused as the third click', () => {
     const clicks = [
       { x: 100, y: 100 },
-      { x: 300, y: 100 },
-      { x: 200, y: 100 },
+      { x: 100 + 10 * G, y: 100 },
     ];
-    const line = fitTrack(clicks, o)!;
-    for (const p of line.fit.parts) expect(Math.abs(p.length * p.curvature)).toBeLessThan(2 * Math.PI);
-    expect(sampleFit(line.fit, 2, 0).length).toBeLessThan(10_000);
+    const line = fold(clicks);
+    // The circle through the three has a radius of 7.5 G.
+    expect(extend(line, clicks, { x: 100 + 11 * G, y: 100 + 10 * G }, opts)).toEqual({ kind: 'refused' });
+    // Through a click farther on it has one of 35 G, which is allowed.
+    expect(extend(line, clicks, { x: 100 + 40 * G, y: 100 + 30 * G }, opts).kind).toBe('added');
   });
 
-  it('adds no part for clicks nothing reaches, and leaves them red', () => {
-    /** Twelve clicks every 3 G, every other one 1.5 G across: no straight or arc reaches them. */
-    const zigzag = Array.from({ length: 12 }, (_, i) => ({ x: 400 + i * 3 * G, y: 300 + (i % 2) * 1.5 * G }));
-    let line: Line | null = null;
-    for (let n = 2; n <= zigzag.length; n++) {
-      line = extend(line, zigzag.slice(0, n), opts);
-      expect(line?.fit.parts, `${n} clicks`).toHaveLength(1);
-    }
-    expect(red(line!, zigzag)).toEqual(zigzag.map((_, i) => i));
-  });
-});
-
-describe('fitTrack on the sparse and dense cases that once collapsed the solver', () => {
-  it('fits seven sparse clicks, 15 G apart, on a straight, a 90° curve and a straight', () => {
-    const clicks = clicksAlong([{ straight: 25 }, { radius: 30, turn: 90 }, { straight: 25 }], { spacing: 15 });
-    expect(clicks).toHaveLength(7);
-    const line = fit(clicks);
-    expect(worst(line, clicks)).toBeLessThanOrEqual(TOLERANCE);
-    for (const p of line.fit.parts) expect(Math.abs(p.curvature)).toBeLessThanOrEqual(1 / (10 * G));
-  });
-
-  // A part turns at most 300°, so a full circle is two arcs.
-  it('fits a dense loop, a click every 1.5 G around a 32 G circle, as two arcs of that radius', () => {
-    const clicks = clicksAlong([{ radius: 32, turn: 360 }], { spacing: 1.5 });
-    const line = fit(clicks);
-    expect(worst(line, clicks)).toBeLessThanOrEqual(TOLERANCE);
-    expect(radii(line)).toHaveLength(2);
-    for (const r of radii(line)) expect(Math.abs(r / 32 - 1)).toBeLessThan(0.05);
+  it('is refused as the first click of a new part, and the line stays as it was', () => {
+    const clicks = clicksAt([{ straight: 30 }], [0, 10, 20, 30], { noise: 0 });
+    const line = fold(clicks);
+    const tight = along([{ straight: 30 }, { radius: 10, turn: 90 }], 40);
+    expect(extend(line, clicks, tight, opts)).toEqual({ kind: 'refused' });
+    const wide = along([{ straight: 30 }, { radius: 20, turn: 90 }], 50);
+    const step = extend(line, clicks, wide, opts);
+    expect(step.kind).toBe('added');
+    if (step.kind === 'added') expect(radii(step.line)).toEqual([Infinity, expect.closeTo(20, 1)]);
   });
 });
 
-describe('fitTrack on a long line clicked every 2 G', () => {
-  const line = clicksAlong(TEN_PARTS, { spacing: 2, seed: 7 });
-
-  // A click may be red while it is the last, until the next click reaches it;
-  // a click before the window is never red, as nothing can reach it later.
-  // Timed with room for a slow machine: a click is well under a second, and a
-  // rebuild (a move or delete) under half of one.
-  it('leaves no click before the window red at any prefix, each click in under 100 ms, and rebuilds in under 400 ms', () => {
-    expect(line).toHaveLength(166);
-    let fitted: Line | null = null;
-    for (let n = 2; n <= line.length; n++) {
-      const t0 = performance.now();
-      fitted = extend(fitted, line.slice(0, n), opts);
-      expect(performance.now() - t0, `click ${n}`).toBeLessThan(100);
-      const m = fitted!.fit.parts.length;
-      const windowFirst = fitted!.firstClick[Math.max(0, m - 2)];
-      expect(red(fitted!, line.slice(0, n)).filter(i => i < windowFirst), `${n} clicks`).toEqual([]);
-    }
-    expect(fitted?.fit.parts).toHaveLength(10);
-    expect(red(fitted!, line)).toEqual([]);
-    const t0 = performance.now();
-    expect(fitTrack(line, opts)).toEqual(fitted);
-    expect(performance.now() - t0).toBeLessThan(400);
-  }, 20_000);
-});
-
-describe('fitTrack on clicks nothing fits', () => {
-  /** Clicks scattered at random over a 3000 px square, seeded. */
-  function scatter(n: number): Point[] {
-    let seed = 7;
-    const next = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-    return Array.from({ length: n }, () => ({ x: next() * 3000, y: next() * 3000 }));
-  }
-
-  it('returns within 500 ms for 40 scattered clicks, most of them red', () => {
-    const clicks = scatter(40);
-    const t0 = performance.now();
-    const line = fit(clicks);
-    expect(performance.now() - t0).toBeLessThan(500);
-    expect(red(line, clicks).length).toBeGreaterThan(20);
+describe('a loop of one radius', () => {
+  it('clicked round 297° is one part', () => {
+    const positions = Array.from({ length: 10 }, (_, i) => i * 19);
+    const clicks = clicksAt([{ radius: 33, turn: 300 }], positions);
+    const line = fold(clicks);
+    expect(radii(line)).toEqual([expect.closeTo(33, 0)]);
+    expect((line.fit.parts[0].length / G / 33 / Math.PI) * 180).toBeCloseTo(297, 0);
+    expect(worst(line, clicks)).toBeLessThanOrEqual(0.5);
   });
 });
 
 /**
  * A click set as the prototype's copy key wrote it, `{ gauge, lines }` with
- * each click `[x, y]` in image pixels, plus what its lines fit to when it was
- * recorded: the part count and the worst distance in gauges.
+ * each click `[x, y]` in image pixels, plus what the rule makes of each line:
+ * how many parts, and how many of the clicks go on it.
  */
 interface ClickSet {
   readonly note?: string;
   readonly gauge: number;
   readonly lines: readonly (readonly [number, number])[][];
   readonly parts: readonly number[];
-  readonly worst: readonly number[];
+  readonly kept: readonly number[];
 }
 
-describe('fitTrack on the recorded click sets in tests/clickSets', () => {
+describe('the recorded click sets in tests/clickSets', () => {
   const sets = import.meta.glob<ClickSet>('./clickSets/*.json', { eager: true, import: 'default' });
 
-  it('finds the click sets', () => {
+  it('are found', () => {
     expect(Object.keys(sets).length).toBeGreaterThan(0);
   });
 
   for (const [file, set] of Object.entries(sets)) {
     set.lines.forEach((raw, i) => {
-      it(`fits ${file} line ${i + 1} to ${set.parts[i]} parts, worst within ${set.worst[i]} G, none red`, () => {
-        const clicks = raw.map(([x, y]) => ({ x, y }));
-        const line = fitTrack(clicks, traceOptions(set.gauge));
-        expect(line?.fit.parts).toHaveLength(set.parts[i]);
-        expect(worst(line!, clicks) / set.gauge).toBeLessThanOrEqual(Math.min(set.worst[i], 0.25));
-      });
-    });
-  }
-});
-
-describe('extend when the solve has moved a part’s end past the next part’s first click', () => {
-  // The ninth click lay nearest the first part, which the second part's first
-  // click had been given; the split went in behind that click, and the line
-  // had a part with no clicks at all.
-  it('gives the clicks up to the red one to the part they lie on, so every part starts after the one before', () => {
-    const clicks = clicksAlong([{ straight: 20 }, { radius: 30, turn: 90 }], { spacing: 3, noise: 0.2, seed: 2 });
-    let line: Line | null = null;
-    for (let n = 2; n <= clicks.length; n++) {
-      line = extend(line, clicks.slice(0, n), opts)!;
-      const { firstClick } = line;
-      for (let q = 1; q < firstClick.length; q++) {
-        expect(firstClick[q], `${n} clicks, part ${q}`).toBeGreaterThan(firstClick[q - 1]);
-        expect(firstClick[q], `${n} clicks, part ${q}`).toBeLessThan(n);
-      }
-    }
-  });
-});
-
-describe('extend on every recorded click set', () => {
-  const sets = import.meta.glob<ClickSet>('./clickSets/*.json', { eager: true, import: 'default' });
-  /** The most a part may turn, `trackFit.ts`'s `MAX_SWEEP`. */
-  const MAX_SWEEP = (5 * Math.PI) / 3;
-
-  for (const [file, set] of Object.entries(sets)) {
-    set.lines.forEach((raw, i) => {
-      // A part's clicks run from its first click to the next part's first, so
-      // the first clicks rise with the parts; a split that cut a part at a
-      // click of the part before it, or at a click the next part owned,
-      // broke that. And a step past the sweep cap is brought back to it
-      // whichever way the squared length parameter went.
-      it(`${file} line ${i + 1}: keeps each part's first click after the one before, and each part within the sweep cap`, () => {
-        const clicks = raw.map(([x, y]) => ({ x, y }));
-        const o = traceOptions(set.gauge);
-        let line: Line | null = null;
-        for (let n = 2; n <= clicks.length; n++) {
-          line = extend(line, clicks.slice(0, n), o)!;
-          const { firstClick, fit } = line;
-          expect(firstClick[0], `${n} clicks`).toBe(0);
-          expect(firstClick, `${n} clicks`).toHaveLength(fit.parts.length);
-          for (let q = 1; q < firstClick.length; q++) {
-            expect(firstClick[q], `${n} clicks, part ${q}`).toBeGreaterThan(firstClick[q - 1]);
-            expect(firstClick[q], `${n} clicks, part ${q}`).toBeLessThan(n);
-          }
-          for (const p of fit.parts) expect(Math.abs(p.length * p.curvature), `${n} clicks`).toBeLessThanOrEqual(MAX_SWEEP + 1e-9);
-        }
+      it(`${file} line ${i + 1}: ${set.parts[i]} parts of ${set.kept[i]} of its ${raw.length} clicks, every one within the tolerance`, () => {
+        const t = Trace.replay(
+          raw.map(([x, y]) => ({ x, y })),
+          traceOptions(set.gauge)
+        );
+        expect(t.line?.fit.parts).toHaveLength(set.parts[i]);
+        expect(t.clicks).toHaveLength(set.kept[i]);
+        expect(Math.max(...distances(t.line!, t.clicks)) / set.gauge).toBeLessThanOrEqual(0.5);
       });
     });
   }

@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import {
-  clicksOff,
   hitClick,
   hitTrack,
   offsetPoints,
@@ -109,19 +108,6 @@ describe('hitClick', () => {
   it('finds nothing beyond the radius, or on a line without clicks', () => {
     expect(hitClick(tracks, { x: 250, y: 100 }, 14)).toBeNull();
     expect(hitClick([{ nodes }], { x: 100, y: 100 }, 14)).toBeNull();
-  });
-});
-
-describe('clicksOff', () => {
-  const nodes = [node(100, 100, 0), node(300, 100, 0)];
-
-  it('gives the indices of the clicks farther than the reach from the line', () => {
-    const track: Track = { nodes, clicks: [{ x: 100, y: 100 }, { x: 150, y: 103 }, { x: 200, y: 110 }, { x: 300, y: 95 }] };
-    expect(clicksOff(track, 5)).toEqual([2]);
-  });
-
-  it('gives none for a line without clicks', () => {
-    expect(clicksOff({ nodes }, 5)).toEqual([]);
   });
 });
 

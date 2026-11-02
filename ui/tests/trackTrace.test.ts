@@ -1,78 +1,108 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import { TRACK_FIT, distances, fitTrack } from '../src/trackFit.js';
+import { TRACK_FIT, distances } from '../src/trackFit.js';
 import { Trace, traceOptions } from '../src/trackTrace.js';
-import { G, clicksAlong, offLine } from './trackClicks.js';
+import { G, along, clicksAt } from './trackClicks.js';
 
 const opts = traceOptions(G);
-const clicks = clicksAlong([{ straight: 20 }, { radius: 30, turn: 90 }, { straight: 20 }]);
+const PIECES = [{ straight: 20 }, { radius: 30, turn: 90 }, { straight: 20 }];
+const clicks = clicksAt(PIECES, [0, 10, 20, 30, 40, 50, 60, 67.1, 77, 87.1], { noise: 0 });
 
 describe('traceOptions', () => {
-  it('converts the fit constants through DPT', () => {
-    expect(opts).toEqual({ tolerance: TRACK_FIT.tolerance * G, minRadius: TRACK_FIT.minRadius * G });
+  it('converts the three constants through DPT', () => {
+    expect(opts).toEqual({ tolerance: 0.5 * G, minRadius: 15 * G, projection: 20 * G });
+    expect(TRACK_FIT).toEqual({ tolerance: 0.5, minRadius: 15, projection: 20 });
   });
 });
 
 describe('Trace while tracing', () => {
-  it('shows nothing but the click before the second, then the line of its clicks', () => {
+  it('shows the first click alone, then the line of its clicks with the projection ahead', () => {
     const t = new Trace();
-    t.add(clicks[0], opts);
-    expect(t.view(opts)).toEqual({ clicks: [clicks[0]], fit: null, red: [] });
-    t.add(clicks[1], opts);
-    expect(t.fit()?.parts).toHaveLength(1);
-    expect(t.view(opts).clicks).toEqual(clicks.slice(0, 2));
+    expect(t.add(clicks[0], opts)).toBe('added');
+    expect(t.view(opts)).toEqual({ clicks: [clicks[0]], fit: null, projection: null });
+    expect(t.add(clicks[1], opts)).toBe('added');
+    const view = t.view(opts);
+    expect(view.clicks).toEqual(clicks.slice(0, 2));
+    expect(view.fit?.parts).toEqual([{ length: expect.closeTo(10 * G, 6), curvature: 0 }]);
+    expect(view.projection?.parts).toEqual([{ length: 20 * G, curvature: 0 }]);
+    expect(view.projection?.start.x).toBeCloseTo(clicks[1].x, 6);
+    expect(view.projection?.start.y).toBeCloseTo(clicks[1].y, 6);
   });
 
   it('shows after each click the line a replay of the clicks so far gives', () => {
     const t = new Trace();
     for (const [i, p] of clicks.entries()) {
       t.add(p, opts);
-      expect(t.fit(), `after click ${i + 1}`).toEqual(Trace.replay(clicks.slice(0, i + 1), opts).fit());
+      expect(t.view(opts), `after click ${i + 1}`).toEqual(Trace.replay(clicks.slice(0, i + 1), opts).view(opts));
     }
   });
 
-  it('fits the straight, the arc and the straight within the tolerance, none red', () => {
+  it('traces the straight, the arc and the straight as three parts, every click within the tolerance', () => {
     const t = Trace.replay(clicks, opts);
-    expect(t.fit()?.parts).toHaveLength(3);
-    expect(t.view(opts).red).toEqual([]);
+    expect(t.line?.fit.parts).toHaveLength(3);
+    expect(t.line?.firstClick).toEqual([0, 3, 8]);
+    expect(Math.max(...distances(t.line!, t.clicks))).toBeLessThanOrEqual(opts.tolerance);
   });
 
-  it('marks a click farther than the tolerance from the line red', () => {
+  it('adds nothing for a click on the last click, beside it or behind it', () => {
     const t = Trace.replay(clicks, opts);
-    const last = clicks.length - 1;
-    // A click a gauge beside the line, on the end, where nothing reaches it.
-    const stray = offLine(clicks[last], clicks[last - 1], clicks[last], 1);
-    t.add({ x: clicks[last].x + 40, y: clicks[last].y }, opts);
-    const n = t.clicks.length;
-    t.add(stray, opts);
-    const d = distances(t.fit()!, t.clicks);
-    expect(t.view(opts).red).toEqual(d.flatMap((x, i) => (Math.abs(x) > opts.tolerance ? [i] : [])));
-    expect(t.clicks).toHaveLength(n + 1);
+    const last = clicks[clicks.length - 1];
+    const before = t.view(opts);
+    for (const p of [last, { x: last.x + 30, y: last.y - 100 }, clicks[clicks.length - 2]]) {
+      expect(t.add(p, opts)).toBe('ignored');
+    }
+    expect(t.view(opts)).toEqual(before);
+  });
+
+  it('refuses a click that needs an arc tighter than the minimum, and keeps the line', () => {
+    const t = Trace.replay(clicks, opts);
+    const before = t.view(opts);
+    expect(t.add(along(PIECES.concat({ radius: 8, turn: 90 }), 93), opts)).toBe('refused');
+    expect(t.view(opts)).toEqual(before);
   });
 });
 
 describe('Trace edits', () => {
   it('builds the line again from the moved clicks', () => {
     const t = Trace.replay(clicks, opts);
-    const moved = clicks.map((p, i) => (i === 5 ? offLine(p, clicks[4], clicks[6], 0.2) : p));
-    t.move(5, moved[5], opts);
+    const moved = clicks.map((p, i) => (i === 5 ? { x: p.x + 3, y: p.y - 4 } : p));
+    expect(t.move(5, moved[5], opts)).toBe(true);
     expect(t.clicks).toEqual(moved);
-    expect(t.fit()).toEqual(fitTrack(moved, opts)?.fit);
+    expect(t.view(opts)).toEqual(Trace.replay(moved, opts).view(opts));
   });
 
   it('builds the line again from the remaining clicks', () => {
     const t = Trace.replay(clicks, opts);
-    t.remove(5, opts);
+    expect(t.remove(5, opts)).toBe(true);
     expect(t.clicks).toEqual(clicks.filter((_, i) => i !== 5));
-    expect(t.fit()).toEqual(fitTrack(t.clicks, opts)?.fit);
+    expect(t.view(opts)).toEqual(Trace.replay(t.clicks, opts).view(opts));
+  });
+
+  it('refuses a move that leaves a click off the line, and keeps the line', () => {
+    const t = Trace.replay(clicks, opts);
+    const before = t.view(opts);
+    // The fourth click 4 G across, 10 G on from the straight's end: a 13 G arc, which the fifth click then cannot follow.
+    const across = along([{ straight: 20 }, { radius: 13, turn: 90 }], 30);
+    expect(t.move(3, across, opts)).toBe(false);
+    expect(t.view(opts)).toEqual(before);
+  });
+
+  it('refuses a delete the same way', () => {
+    const tight = clicksAt([{ straight: 20 }, { radius: 16, turn: 90 }], [0, 10, 20, 28, 36, 44], { noise: 0 });
+    const t = Trace.replay(tight, opts);
+    expect(t.clicks).toHaveLength(6);
+    const before = t.view(opts);
+    // Without the click where the curve starts, the first click into it bends a wide arc from the straight's
+    // last click, and the next needs an arc of 8 G from where that one ends.
+    expect(t.remove(2, opts)).toBe(false);
+    expect(t.view(opts)).toEqual(before);
   });
 
   it('has no line once fewer than two clicks are left', () => {
     const t = Trace.replay(clicks.slice(0, 2), opts);
-    t.remove(1, opts);
-    expect(t.fit()).toBeNull();
-    expect(t.view(opts)).toEqual({ clicks: [clicks[0]], fit: null, red: [] });
+    expect(t.remove(1, opts)).toBe(true);
+    expect(t.view(opts)).toEqual({ clicks: [clicks[0]], fit: null, projection: null });
   });
 
   it('leaves a clone where it was', () => {
@@ -80,7 +110,7 @@ describe('Trace edits', () => {
     const kept = t.clone();
     t.remove(5, opts);
     expect(kept.clicks).toEqual(clicks);
-    expect(kept.fit()).toEqual(Trace.replay(clicks, opts).fit());
+    expect(kept.view(opts)).toEqual(Trace.replay(clicks, opts).view(opts));
   });
 });
 
@@ -92,23 +122,16 @@ describe('Trace on the real clicks in clickSets/real-ceiling-2026-10-29b.json', 
   };
   const real = traceOptions(set.gauge);
 
-  it('leaves no click red on either line in track order', () => {
-    for (const line of set.lines) {
-      const t = Trace.replay(
-        line.map(([x, y]) => ({ x, y })),
-        real
-      );
-      expect(t.view(real).red).toEqual([]);
-    }
-  });
-
-  it('folds the second line back on itself in the order it was clicked, and marks clicks red', () => {
+  it('adds nothing for the two clicks back along the second line, in the order they were made', () => {
     const line2 = set.lines[1].map(([x, y]) => ({ x, y }));
+    const order = set.clickOrder[1]!;
     const t = Trace.replay(
-      set.clickOrder[1]!.map(k => line2[k]),
+      order.slice(0, -2).map(k => line2[k]),
       real
     );
-    expect(t.view(real).red.length).toBeGreaterThan(0);
+    const before = t.view(opts);
+    expect(order.slice(-2).map(k => t.add(line2[k], real))).toEqual(['ignored', 'ignored']);
+    expect(t.view(opts)).toEqual(before);
   });
 });
 

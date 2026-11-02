@@ -1,36 +1,37 @@
 import type { Point } from '@rails49/r49';
 
 /**
- * One track traced click by click (#298, #307): the clicks in track order
- * and the line `fitTrack` folds over them. A click extends the line
- * (`extend`); a move or delete builds it again from the clicks, the way it
- * was built, so the line is a function of its clicks alone. Pure.
+ * One track traced click by click (#311): the clicks in track order and the
+ * line `extend` folds over them. A click goes on the end of the line, adds
+ * nothing, or is refused; a move or delete builds the line again from the
+ * clicks, the way it was built, so the line is a function of its clicks
+ * alone. Pure.
  */
-import { TRACK_FIT, distances, extend, fitTrack, type Fit, type FitOptions, type Line } from './trackFit.js';
+import { TRACK_FIT, extend, projection, type Fit, type FitOptions, type Line, type Step } from './trackFit.js';
 
 export type TraceOptions = FitOptions;
 
 /** `TRACK_FIT` in image pixels, for a layout whose DPT (a gauge in pixels) is `dpt`. */
 export function traceOptions(dpt: number): TraceOptions {
-  return { tolerance: TRACK_FIT.tolerance * dpt, minRadius: TRACK_FIT.minRadius * dpt };
+  return { tolerance: TRACK_FIT.tolerance * dpt, minRadius: TRACK_FIT.minRadius * dpt, projection: TRACK_FIT.projection * dpt };
 }
 
-/** What a trace draws: its clicks, the line and the clicks past the tolerance. */
+/** What a trace draws: its clicks, the line and the projection ahead of it. */
 export interface TraceView {
   readonly clicks: readonly Point[];
   /** Null before the second click. */
   readonly fit: Fit | null;
-  /** Indices of the clicks farther than the tolerance from the line: drawn red. */
-  readonly red: readonly number[];
+  /** The current part carried on past the last click; null before the second click. */
+  readonly projection: Fit | null;
 }
 
 export class Trace {
-  /** Every click, in track order. */
+  /** Every click on the line, in track order. */
   clicks: Point[] = [];
   /** The line of the clicks; null before the second. */
   line: Line | null = null;
 
-  /** A trace of `clicks`, added one by one. */
+  /** A trace of `clicks`, added one by one; a click that adds nothing or is refused is left out. */
   static replay(clicks: readonly Point[], opts: TraceOptions): Trace {
     const t = new Trace();
     for (const p of clicks) t.add(p, opts);
@@ -47,28 +48,38 @@ export class Trace {
   }
 
   view(opts: TraceOptions): TraceView {
-    const fit = this.fit();
-    const red = fit ? distances(fit, this.clicks).flatMap((d, i) => (Math.abs(d) > opts.tolerance ? [i] : [])) : [];
-    return { clicks: [...this.clicks], fit, red };
+    return { clicks: [...this.clicks], fit: this.fit(), projection: this.line ? projection(this.line, opts.projection) : null };
   }
 
-  /** Appends a click and solves the window at the end of the line. */
-  add(p: Point, opts: TraceOptions) {
-    this.clicks.push(p);
-    this.line = extend(this.line, this.clicks, opts);
+  /** Puts a click on the end of the line, or says why it adds nothing. */
+  add(p: Point, opts: TraceOptions): Step['kind'] {
+    if (this.clicks.length === 0) {
+      this.clicks.push(p);
+      return 'added';
+    }
+    const step = extend(this.line, this.clicks, p, opts);
+    if (step.kind === 'added') {
+      this.clicks.push(p);
+      this.line = step.line;
+    }
+    return step.kind;
   }
 
-  move(i: number, p: Point, opts: TraceOptions) {
-    this.clicks[i] = p;
-    this.rebuild(opts);
+  /** Moves click `i` and builds the line again from the clicks; false, and nothing changes, when a click then does not go on it. */
+  move(i: number, p: Point, opts: TraceOptions): boolean {
+    return this._rebuild(this.clicks.map((q, k) => (k === i ? p : q)), opts);
   }
 
-  remove(i: number, opts: TraceOptions) {
-    this.clicks.splice(i, 1);
-    this.rebuild(opts);
+  /** Deletes click `i` the same way. */
+  remove(i: number, opts: TraceOptions): boolean {
+    return this._rebuild(this.clicks.filter((_, k) => k !== i), opts);
   }
 
-  private rebuild(opts: TraceOptions) {
-    this.line = fitTrack(this.clicks, opts);
+  private _rebuild(clicks: readonly Point[], opts: TraceOptions): boolean {
+    const t = Trace.replay(clicks, opts);
+    if (t.clicks.length !== clicks.length) return false;
+    this.clicks = t.clicks;
+    this.line = t.line;
+    return true;
   }
 }

@@ -1,18 +1,18 @@
-import { svg, css } from 'lit';
+import { svg, css, nothing } from 'lit';
 import type { SVGTemplateResult, CSSResult } from 'lit';
 import type { Point } from '@rails49/r49';
 import { HIGHLIGHT_CLASS } from './highlight.js';
 import { samePoint } from './geometry.js';
-import { SAMPLE_PX, clicksOff, offsetPoints, trackPath } from './track.js';
+import { SAMPLE_PX, offsetPoints, trackPath } from './track.js';
 import type { Track } from './track.js';
 import { sampleFit } from './trackFit.js';
 import type { Fit } from './trackFit.js';
-import { traceOptions } from './trackTrace.js';
 import type { TraceView } from './trackTrace.js';
 
 /**
- * Track rendering for SVG (#284, #298): the centerline, and under the track
- * tool the two rails half a gauge to either side and a dot at each click.
+ * Track rendering for SVG (#284, #311): the centerline, and under the track
+ * tool the two rails half a gauge to either side, a dot at each click and,
+ * ahead of the line being traced, the projection as a dashed centerline.
  *
  * A module rather than a custom element, like the other markers. Its exports
  * must be used together: `trackMarkerStyles` in the host's `static styles`,
@@ -35,7 +35,8 @@ export const trackMarkerStyles: CSSResult = css`
   }
 
   .track .centerline,
-  .track .rail {
+  .track .rail,
+  .track .projection {
     stroke: var(--track-ink);
     stroke-linecap: round;
     stroke-linejoin: round;
@@ -48,10 +49,6 @@ export const trackMarkerStyles: CSSResult = css`
   .track .click {
     fill: var(--track-ink);
     stroke: rgba(0, 0, 0, 0.75);
-  }
-
-  .track .click.red {
-    fill: var(--sl-color-danger-500);
   }
 `;
 
@@ -83,26 +80,8 @@ function renderDot(p: Point, size: TrackSymbolSize, cls: string): SVGTemplateRes
   />`;
 }
 
-function renderClicks(clicks: readonly Point[], size: TrackSymbolSize, red: readonly number[]) {
-  return clicks.map((p, i) => renderDot(p, size, red.includes(i) ? 'click red' : 'click'));
-}
-
-/** The flagged clicks of each track drawn, kept until the track is written again. */
-const offCache = new WeakMap<Track, { readonly dpt: number; readonly off: readonly number[] }>();
-
-/** The clicks of `track` past the tolerance from its line, which `gauge` sets; none without one. */
-export function flaggedClicks(track: Track, gauge: number | null): readonly number[] {
-  if (gauge === null) return [];
-  const cached = offCache.get(track);
-  if (cached?.dpt === gauge) return cached.off;
-  const off = clicksOff(track, traceOptions(gauge).tolerance);
-  offCache.set(track, { dpt: gauge, off });
-  return off;
-}
-
 /**
- * One centerline. A click past the tolerance from the line drawn takes the
- * danger ink. `highlighted` are the pixels of clicks a reveal points at (#37).
+ * One centerline. `highlighted` are the pixels of clicks a reveal points at (#37).
  */
 export function renderTrack(
   track: Track,
@@ -111,12 +90,10 @@ export function renderTrack(
 ): SVGTemplateResult {
   const { nodes } = track;
   const gauge = size.dpt;
-  const off = size.detail ? flaggedClicks(track, gauge) : [];
-  const dots = (track.clicks ?? []).flatMap((p, i) => {
+  const dots = (track.clicks ?? []).flatMap(p => {
     const lit = highlighted.some(h => samePoint(h, p));
     if (!size.detail && !lit) return [];
-    const cls = `click${off.includes(i) ? ' red' : ''}${lit ? ` ${HIGHLIGHT_CLASS}` : ''}`;
-    return [renderDot(p, size, cls)];
+    return [renderDot(p, size, lit ? `click ${HIGHLIGHT_CLASS}` : 'click')];
   });
   return svg`<g class="track">
     ${
@@ -136,20 +113,21 @@ export function renderTrack(
 }
 
 /** A fitted line `offset` image pixels to its left, as an SVG polyline. */
-function renderFit(fit: Fit, offset: number, cls: string, size: TrackSymbolSize) {
+function renderFit(fit: Fit, offset: number, cls: string, size: TrackSymbolSize, dashed = false) {
   return svg`<polyline
     class="${cls}"
     points="${polyline(sampleFit(fit, SAMPLE_PX, offset))}"
     stroke-width="${size.strokePx}"
+    stroke-dasharray="${dashed ? `${4 * size.strokePx} ${4 * size.strokePx}` : nothing}"
   />`;
 }
 
 /**
- * The line a track chain is tracing (#298): its rails and centerline from the
- * fit, and a dot per click, red for one past the tolerance.
+ * The line a track chain is tracing (#311): its rails and centerline from the
+ * fit, the projection ahead of it dashed, and a dot per click.
  */
 export function renderPendingTrack(view: TraceView, size: TrackSymbolSize): SVGTemplateResult {
-  const { fit } = view;
+  const { fit, projection } = view;
   const gauge = size.dpt;
   return svg`<g class="track track-pending">
     ${
@@ -160,6 +138,7 @@ export function renderPendingTrack(view: TraceView, size: TrackSymbolSize): SVGT
           ]
         : ''
     }
-    ${renderClicks(view.clicks, size, view.red)}
+    ${projection ? renderFit(projection, 0, 'projection', size, true) : ''}
+    ${view.clicks.map(p => renderDot(p, size, 'click'))}
   </g>`;
 }

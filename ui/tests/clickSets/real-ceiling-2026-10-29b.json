@@ -1,8 +1,8 @@
 {
   "note": "Real clicks from the archive ceiling-2026-10-29b-t (2026-11-02): a long straight into a curve of about 200°, a click every 3-30 G. On the fit of #298 the last click hid the live tail (two arcs, join σ 5.9 G past the bar cap). The second line is stored in track order; clickOrder gives the order its clicks were made: on to the far end, then two clicks back along the line where it strayed. null is a line clicked in track order.",
   "gauge": 32.54,
-  "parts": [3, 4],
-  "worst": [0.12, 0.04],
+  "parts": [7, 6],
+  "kept": [13, 14],
   "clickOrder": [
     null,
     [

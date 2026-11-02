@@ -686,13 +686,13 @@ describe('rr-viewer', () => {
       it('draws the line being traced from its trace', async () => {
         const el = await fixture<RrViewer>(html`
           <rr-viewer
-            .pendingTrack=${{ clicks: tracks[0].clicks, fit: null, red: [1] }}
+            .pendingTrack=${{ clicks: tracks[0].clicks, fit: null, projection: null }}
             .dpt=${90}
             .resolution=${resolution}
           ></rr-viewer>
         `);
         expect(el.shadowRoot!.querySelectorAll('.track-pending .click')).to.have.length(3);
-        expect(el.shadowRoot!.querySelectorAll('.track-pending .red')).to.have.length(1);
+        expect(el.shadowRoot!.querySelectorAll('.track-pending .centerline, .track-pending .projection')).to.have.length(0);
       });
     });
 

@@ -27,7 +27,6 @@ import {
 import type { FrameSize, Rect, Size } from './geometry.js';
 import type { PendingCar } from './carMarker.js';
 import type { TraceView } from './trackTrace.js';
-import { flaggedClicks } from './trackMarker.js';
 import { trackHint } from './trackHint.js';
 import { isInsideOpenDialog } from './keyboard.js';
 import { classChoices, rootClass } from './vocabulary.js';
@@ -1398,8 +1397,7 @@ export class RREditorView extends LitElement {
   private _renderTrackHint(manifest: ManifestData) {
     const dpt = getDPT(manifest);
     if (this.session?.tool !== 'track' || dpt === null) return '';
-    const offLine = this._tracks().some(t => flaggedClicks(t, dpt).length > 0);
-    return html`<div class="track-hint">${trackHint(this._pendingTrack(), offLine)}</div>`;
+    return html`<div class="track-hint">${trackHint(this._pendingTrack(), false)}</div>`;
   }
 
   /** Zoom to fit, present only while zoomed. */

@@ -44,14 +44,13 @@ vi.mock('../src/thumbnail.js', () => ({
   makeThumbnail: (image: Blob) => makeThumbnail(image),
 }));
 
-// The fit runs as it is; the spies count its calls, so a test can show a
+// The fit runs as it is; the spy counts its calls, so a test can show a
 // pointer move runs none.
-const { extend, fitTrack } = vi.hoisted(() => ({ extend: vi.fn(), fitTrack: vi.fn() }));
+const { extend } = vi.hoisted(() => ({ extend: vi.fn() }));
 vi.mock('../src/trackFit.js', async importOriginal => {
   const fit = await importOriginal<typeof import('../src/trackFit.js')>();
   extend.mockImplementation(fit.extend);
-  fitTrack.mockImplementation(fit.fitTrack);
-  return { ...fit, extend, fitTrack };
+  return { ...fit, extend };
 });
 
 // Mock ResizeObserver for RRViewer
@@ -976,37 +975,19 @@ describe('rr-editor-view', () => {
     it('shows what to do next under the track tool alone', async () => {
       const el = await mountWithTool('track');
       const hint = () => el.shadowRoot!.querySelector('.track-hint')?.textContent?.trim();
-      expect(hint()).to.match(/^Click along the middle of a track/);
+      expect(hint()).to.match(/^Click at least a gauge from any track/);
       await laid(el);
-      expect(hint()).to.match(/^Click on along the middle of the track/);
+      expect(hint()).to.match(/^Click ahead on the track centre/);
 
       el.session!.selectTool('sensor');
       await el.updateComplete;
       expect(hint()).to.equal(undefined);
     });
 
-    it('asks for the red clicks of a stored line to be fixed', async () => {
-      archive.getManifest().layout.centerlines = [
-        {
-          nodes: [
-            { x: 0, y: 100, heading: 0 },
-            { x: 1000, y: 100, heading: 0 },
-          ],
-          clicks: [
-            { x: 0, y: 100 },
-            { x: 500, y: 160 },
-            { x: 1000, y: 100 },
-          ],
-        },
-      ];
-      const el = await mountWithTool('track');
-      expect(el.shadowRoot!.querySelector('.track-hint')?.textContent?.trim()).to.match(/^Red points lie off the line/);
-    });
-
     it('extends the line with a Shift-click like a plain click: Shift is the zoom rect\'s', async () => {
       const el = await mountWithTool('track');
       await laid(el);
-      const at = { x: 200, y: 100 };
+      const at = { x: 500, y: 100 };
       gesture(el, 'rr-pointer-down', at, 1, { shiftKey: true });
       gesture(el, 'rr-pointer-up', at, 1, { shiftKey: true });
       await flush();
@@ -1019,16 +1000,14 @@ describe('rr-editor-view', () => {
       const el = await mountWithTool('track');
       await laid(el);
       const before = pending(el);
-      // The spies see the window solve a click runs; a click rebuilds nothing.
+      // The spy sees the step a click runs.
       expect(extend).toHaveBeenCalled();
-      expect(fitTrack).not.toHaveBeenCalled();
       extend.mockClear();
 
       await moveTo(el, { x: 500, y: 200 });
       await moveTo(el, { x: 600, y: 300 });
 
       expect(extend).not.toHaveBeenCalled();
-      expect(fitTrack).not.toHaveBeenCalled();
       expect(pending(el)).to.equal(before);
     });
 

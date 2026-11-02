@@ -5,10 +5,10 @@ import { EditSession } from '../src/editSession.js';
 import { ALREADY_LABELED } from '../src/carChain.js';
 import { NO_TRACK } from '../src/chain.js';
 import { wrapAngle } from '../src/track.js';
-import { fitNodes, fitTrack } from '../src/trackFit.js';
+import { fitNodes } from '../src/trackFit.js';
 import { Trace, traceOptions } from '../src/trackTrace.js';
 import type { TraceView } from '../src/trackTrace.js';
-import { G, along, clicksAlong, offLine, type Piece } from './trackClicks.js';
+import { G, along, clicksAt, offLine, positionsAlong, type Piece } from './trackClicks.js';
 import type { Reveal } from '../src/editSession.js';
 import { TOOLS } from '../src/tools.js';
 import type { EditorTool } from '../src/tools.js';
@@ -1962,10 +1962,10 @@ describe('EditSession', () => {
   });
 });
 describe('EditSession track tool (#284, #298)', () => {
-  /** Synthetic clicks along `pieces`, at this session's DPT, in whole pixels. */
+  /** Clicks where the curvature of `pieces` changes and every 10 G between, at this session's DPT, in whole pixels. */
   function laidAlong(s: EditSession, pieces: readonly Piece[]): Point[] {
     const k = getDPT(s.archive.getManifest())! / G;
-    return clicksAlong(pieces).map(p => ({ x: Math.round(p.x * k), y: Math.round(p.y * k) }));
+    return clicksAt(pieces, positionsAlong(pieces), { noise: 0 }).map(p => ({ x: Math.round(p.x * k), y: Math.round(p.y * k) }));
   }
 
   /** The true centerline point `s` gauges along `pieces`, at this session's DPT. */
@@ -1983,7 +1983,7 @@ describe('EditSession track tool (#284, #298)', () => {
     const s = session({ tool: 'track', rows: false });
     const pieces = [{ straight: 20 }];
     const at = laidAlong(s, pieces);
-    const tolerance = 0.25 * getDPT(s.archive.getManifest())!;
+    const tolerance = 0.5 * getDPT(s.archive.getManifest())!;
 
     await clicks(s, at[0]);
     expect(s.history.size).toBe(0);
@@ -2007,7 +2007,7 @@ describe('EditSession track tool (#284, #298)', () => {
     const s = session({ tool: 'track', rows: false });
     const pieces = [{ radius: 30, turn: 120 }];
     const at = laidAlong(s, pieces);
-    const tolerance = 0.25 * getDPT(s.archive.getManifest())!;
+    const tolerance = 0.5 * getDPT(s.archive.getManifest())!;
     await clicks(s, ...at);
 
     const nodes = line(s).nodes;
@@ -2070,16 +2070,29 @@ describe('EditSession track tool (#284, #298)', () => {
     expect(line(s).clicks).toHaveLength(3);
   });
 
-  it('puts every click on the end of the line, a click behind its last click too', async () => {
+  it('writes nothing for a click behind its last click, and keeps the chain', async () => {
     const s = session({ tool: 'track', rows: false });
     const at = laidAlong(s, [{ straight: 20 }]);
     const [first, last] = [at[0], at[at.length - 1]];
     const between = { x: Math.round((first.x + last.x) / 2), y: Math.round((first.y + last.y) / 2) };
     await clicks(s, first, last);
 
-    await s.click(between, SCALE);
-    expect(line(s).clicks).toEqual([first, last, between]);
-    expect(s.history.undoLabel).toBe('extend centerline');
+    expect(await s.click(between, SCALE)).toEqual({ kind: 'none' });
+    expect(line(s).clicks).toEqual([first, last]);
+    expect(s.history.size).toBe(1);
+    expect(trackChain(s)?.clicks).toEqual([first, last]);
+  });
+
+  it('writes nothing for a click that needs an arc tighter than the minimum, and keeps the chain', async () => {
+    const s = session({ tool: 'track', rows: false });
+    const dpt = getDPT(s.archive.getManifest())!;
+    await clicks(s, { x: 100, y: 100 }, { x: 100 + Math.round(10 * dpt), y: 100 });
+    // Ahead of the straight, at a right angle to it within 11 G: a radius of 7.5 G.
+    const tight = { x: 100 + Math.round(11 * dpt), y: 100 + Math.round(10 * dpt) };
+    expect(await s.click(tight, SCALE)).toEqual({ kind: 'none' });
+    expect(line(s).clicks).toHaveLength(2);
+    expect(s.history.size).toBe(1);
+    expect(trackChain(s)?.clicks).toHaveLength(2);
   });
 
   it('saves a valid line mid-trace, and loads it as written with no refit', async () => {
@@ -2258,14 +2271,14 @@ describe('EditSession track lines without clicks (#284, #298, #302)', () => {
 /** Expects `nodes` to be the whole-line fit of `at`. */
 function expectFitOf(s: EditSession, nodes: readonly Centerline['nodes'][number][], at: readonly Point[]) {
   const dpt = getDPT(s.archive.getManifest())!;
-  expect(nodes).toEqual(fitNodes(fitTrack(at, traceOptions(dpt))!.fit));
+  expect(nodes).toEqual(fitNodes(Trace.replay(at, traceOptions(dpt)).fit()!));
 }
 
 describe('EditSession finished track lines (#302)', () => {
-  /** Synthetic clicks along `pieces`, at this session's DPT, in whole pixels. */
+  /** Clicks where the curvature of `pieces` changes and every 10 G between, at this session's DPT, in whole pixels. */
   function laidAlong(s: EditSession, pieces: readonly Piece[]): Point[] {
     const k = getDPT(s.archive.getManifest())! / G;
-    return clicksAlong(pieces).map(p => ({ x: Math.round(p.x * k), y: Math.round(p.y * k) }));
+    return clicksAt(pieces, positionsAlong(pieces), { noise: 0 }).map(p => ({ x: Math.round(p.x * k), y: Math.round(p.y * k) }));
   }
 
   function line(s: EditSession, index = 0): Centerline {
@@ -2274,7 +2287,7 @@ describe('EditSession finished track lines (#302)', () => {
 
   /** The nodes a fresh whole-line fit of `at` gives, at this session's DPT. */
   function fitOf(s: EditSession, at: readonly Point[]) {
-    return fitNodes(fitTrack(at, traceOptions(getDPT(s.archive.getManifest())!))!.fit);
+    return fitNodes(Trace.replay(at, traceOptions(getDPT(s.archive.getManifest())!)).fit()!);
   }
 
   /** A traced and finished line along a straight and an arc, and its clicks. */
@@ -2291,11 +2304,11 @@ describe('EditSession finished track lines (#302)', () => {
     const before = structuredClone(line(s));
     const entries = s.history.size;
     const from = at[3];
-    const to = { x: from.x + 3, y: from.y - 40 };
+    const to = { x: from.x + 3, y: from.y - 10 };
 
     const d = s.beginDrag(from, SCALE)!;
     expect(d).not.toBeNull();
-    d.move({ x: from.x + 1, y: from.y - 20 });
+    d.move({ x: from.x + 1, y: from.y - 5 });
     d.move(to);
     expect(line(s).nodes).toEqual(before.nodes);
     expect(s.history.size).toBe(entries);
@@ -2313,7 +2326,7 @@ describe('EditSession finished track lines (#302)', () => {
     await clicks(s, { x: -2000, y: -2000 });
     expect(trackChain(s)).toEqual({ line: null, clicks: [{ x: -2000, y: -2000 }] });
     const from = at[3];
-    const to = { x: from.x + 3, y: from.y - 40 };
+    const to = { x: from.x + 3, y: from.y - 10 };
 
     const d = s.beginDrag(from, SCALE);
     expect(d).not.toBeNull();
@@ -2358,11 +2371,13 @@ describe('EditSession finished track lines (#302)', () => {
     expect(s.history.undoLabel).toBe('delete centerline');
   });
   it('does nothing for a click on the line between clicks', async () => {
-    const { s, at } = await finished();
+    const { s } = await finished();
     const entries = s.history.size;
     const before = structuredClone(line(s));
-    // Off the middle of two clicks, toward the line's outside: still on the line.
-    const on = { x: Math.round((at[4].x + at[5].x) / 2) + 2, y: Math.round((at[4].y + at[5].y) / 2) - 3 };
+    // A few pixels off the line, between its fifth and sixth clicks: still on the line.
+    const k = getDPT(s.archive.getManifest())! / G;
+    const mid = along([{ straight: 20 }, { radius: 30, turn: 60 }], 46);
+    const on = { x: Math.round(mid.x * k) + 2, y: Math.round(mid.y * k) - 3 };
     expect(await s.click(on, SCALE)).toEqual({ kind: 'none' });
     expect(trackChain(s)).toBeNull();
     expect(s.history.size).toBe(entries);
@@ -2452,10 +2467,10 @@ describe('EditSession finished track lines (#302)', () => {
     const { s, at } = await finished();
     const sensor = { id: 'S1abcdefghi', x: at[2].x, y: at[2].y + 3 };
     sensors(s).push({ ...sensor });
-    const car = seedCar(s, { p0: { x: at[5].x, y: at[5].y }, p1: { x: at[7].x, y: at[7].y } });
+    const car = seedCar(s, { p0: { x: at[3].x, y: at[3].y }, p1: { x: at[5].x, y: at[5].y } });
     const nodes = line(s).nodes;
 
-    expect(await drag(s, [at[4], { x: at[4].x + 10, y: at[4].y + 60 }])).toBe(true);
+    expect(await drag(s, [at[4], { x: at[4].x + 3, y: at[4].y + 10 }])).toBe(true);
 
     expect(line(s).nodes).not.toEqual(nodes);
     expect(sensors(s)).toEqual([sensor]);
@@ -2490,10 +2505,10 @@ describe('EditSession finished track lines (#302)', () => {
 });
 
 describe('EditSession track edits while tracing (#303)', () => {
-  /** Synthetic clicks along `pieces`, at this session's DPT, in whole pixels. */
+  /** Clicks where the curvature of `pieces` changes and every 10 G between, at this session's DPT, in whole pixels. */
   function laidAlong(s: EditSession, pieces: readonly Piece[]): Point[] {
     const k = getDPT(s.archive.getManifest())! / G;
-    return clicksAlong(pieces).map(p => ({ x: Math.round(p.x * k), y: Math.round(p.y * k) }));
+    return clicksAt(pieces, positionsAlong(pieces), { noise: 0 }).map(p => ({ x: Math.round(p.x * k), y: Math.round(p.y * k) }));
   }
 
   function line(s: EditSession): Centerline {
@@ -2520,15 +2535,15 @@ describe('EditSession track edits while tracing (#303)', () => {
 
   /**
    * A live trace along five pieces, five parts, and the middle click of
-   * part 2, the second straight: a click added while the window was parts
-   * 1 and 2, so the start and part 0 were out of it.
+   * part 2, the second straight: a click added after parts 0 and 1 were
+   * done, so the start and part 0 were out of the edit's reach.
    */
   async function tracing(): Promise<{ s: EditSession; at: Point[]; onPart2: number }> {
     const s = session({ tool: 'track', rows: false });
     const at = laidAlong(s, [
       { straight: 20 },
       { radius: 30, turn: 90 },
-      { straight: 20 },
+      { straight: 30 },
       { radius: 30, turn: -90 },
       { straight: 20 },
     ]);
@@ -2614,7 +2629,7 @@ describe('EditSession track edits while tracing (#303)', () => {
     expect(line(s).clicks).toEqual(at.slice(0, -1));
   });
 
-  it('appends the next click after an edit, moving nothing before the last two parts', async () => {
+  it('appends the next click after an edit, moving nothing before the current part', async () => {
     const { s, at, onPart2 } = await tracing();
     await s.delete(s.rightClick(at[onPart2], SCALE)!);
     const left = at.filter((_, i) => i !== onPart2);
@@ -2630,7 +2645,7 @@ describe('EditSession track edits while tracing (#303)', () => {
       await clicks(s, p);
       const now = traceOf(s);
       expect(now.clicks).toEqual([...left, ...next.slice(0, k + 1)]);
-      const n = Math.max(0, (shown.fit?.parts.length ?? 0) - 2);
+      const n = Math.max(0, (shown.fit?.parts.length ?? 0) - 1);
       expect(now.fit?.start).toEqual(shown.fit?.start);
       expect(now.fit?.parts.slice(0, n)).toEqual(shown.fit?.parts.slice(0, n));
       shown = now;

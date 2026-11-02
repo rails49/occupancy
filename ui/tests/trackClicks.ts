@@ -78,19 +78,41 @@ export function lengthOf(pieces: readonly Piece[]): number {
   );
 }
 
-/** Clicks every `spacing` gauges from one end to the other, both ends included. */
-export function clicksAlong(pieces: readonly Piece[], { spacing = 3, noise = 0.075, seed = 1 }: Lay = {}): Point[] {
-  const total = lengthOf(pieces);
-  const n = Math.round(total / spacing);
+/** Where the curvature changes, and about every `spacing` gauges between: the clicks the projection rule expects. */
+export function positionsAlong(pieces: readonly Piece[], spacing = 10): number[] {
+  const out = [0];
+  let from = 0;
+  for (const piece of pieces) {
+    const length = 'straight' in piece ? piece.straight : (piece.radius * Math.abs(piece.turn) * Math.PI) / 180;
+    const n = Math.max(1, Math.round(length / spacing));
+    for (let i = 1; i <= n; i++) out.push(from + (length * i) / n);
+    from += length;
+  }
+  return out;
+}
+
+/** A click at each of `positions`, gauges along the pieces. */
+export function clicksAt(pieces: readonly Piece[], positions: readonly number[], { noise = 0.075, seed = 1 }: Lay = {}): Point[] {
   const rand = random(seed);
   const jitter = () => {
     const g = Math.sqrt(-2 * Math.log(1 - rand())) * Math.cos(2 * Math.PI * rand());
     return Math.max(-2, Math.min(2, g)) * noise * G;
   };
-  return Array.from({ length: n + 1 }, (_, i) => {
-    const p = along(pieces, (total * i) / n);
+  return positions.map(s => {
+    const p = along(pieces, s);
     return { x: p.x + jitter(), y: p.y + jitter() };
   });
+}
+
+/** Clicks every `spacing` gauges from one end to the other, both ends included. */
+export function clicksAlong(pieces: readonly Piece[], { spacing = 3, ...lay }: Lay = {}): Point[] {
+  const total = lengthOf(pieces);
+  const n = Math.round(total / spacing);
+  return clicksAt(
+    pieces,
+    Array.from({ length: n + 1 }, (_, i) => (total * i) / n),
+    lay
+  );
 }
 
 /** `p` moved `gauges` to the left of the direction from `before` to `after`. */
