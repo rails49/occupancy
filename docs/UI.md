@@ -37,38 +37,51 @@ size rule is the session's — `requiredImageSize` answers it, and `addRefusal` 
 message names the file the user picked. `../SPEC.md` § Images states all three rules, why rotating
 in the browser was rejected, and why an image of another size is not something the screen can show.
 
-The **track tool** (#284, #298, #302, #303) does what `../SPEC.md` § Track centerlines says; this
-section holds what the code keeps true. `trackFit.ts` fits straights and arcs to clicks.
-`trackTrace.ts` holds a chain's trace: the committed parts, and the rest fitted from the last
-committed join (`fitWindow`); `tailMarks` gives what that rest draws. Each join's σ and margin are
-the fit's (`joinsOf`, and the merges `simplify` tried last); `Trace.commit` holds both to their
-thresholds, in order. The fit's constants are `TRACK_FIT`, in gauges, converted through DPT by
-`traceOptions` when a fit runs.
+The **track tool** (#284, #298, #307) does what `../SPEC.md` § Track centerlines says; this
+section holds what the code keeps true. `trackFit.ts` fits straights and arcs to clicks. The line
+is `extend` folded over the clicks in order (`fitTrack`): each click goes on the end, and the solve
+covers the window, the last two parts as they stood when the click arrived, with the start of the
+earlier one fixed and the end free. A click in the window still past the tolerance splits its part
+at that click, and the split is kept only if the click then comes within the tolerance; then two
+neighbouring parts of the window that can be one within the tolerance are merged. Nothing before
+the window moves. The fit's constants are `TRACK_FIT`, in gauges, converted through DPT by
+`traceOptions` when a fit runs. Two more numbers in `trackFit.ts` are solver floors, not facts
+about track: a part is at least `MIN_LENGTH`, 1 px, and turns at most `MAX_SWEEP`, 300°, which
+keeps an arc from winding round without end.
+
+`trackTrace.ts` holds a chain's trace: the clicks and their line. `Trace.add` extends the line;
+`Trace.move` and `Trace.remove` build it again from the clicks, from the first, with `fitTrack`.
+`Trace.view` gives the clicks, the fit and the clicks past the tolerance, which draw red.
 
 Every entry a track chain writes, a click or a move or delete of a click, writes the line's `clicks`
-and the `nodes` of `fitTrack` over those clicks in stored order (`refitLine`), as one `layout`
-entry. The trace is drawing state and is never stored. `fitNodes` turns joins into nodes and adds
-one at the middle of an arc that turns more than 90°. An edit of a finished line refits the same
-way, a drag on release. No fit runs on load or on a pointer move, and nothing follows the pointer.
+in stored order and the `nodes` of the line as the chain drew it, as one `layout` entry. The trace
+is drawing state and is never stored. `fitNodes` makes a node of each part's end and adds one at
+the middle of an arc that turns more than 90°. A chain continued from a line's first click folds
+the clicks backwards and turns the nodes round for storage; an edit of that line later with no
+chain live (`refitLine`, a drag on release) folds the clicks in stored order, which can give
+another line. No fit runs on load or on a pointer move, and nothing follows the pointer.
 
 The chain keeps the trace from before each entry it wrote, so an undo restores it without a replay,
 and the chain ends only once every entry it wrote is undone; stored clicks that match neither are
-replayed (`TrackChain.settle`). A chain continued from a line's first click traces the clicks
-backwards and writes them back in stored order. While a trace is live a click always traces, even on
-a sensor: near the line and behind its last click it goes between clicks (`Trace.insertion`,
-`Trace.insert`), otherwise it extends the line, and Shift, which `rr-editor-view` passes through
-`EditSession.click` to `Chain.extend`, always extends. A drag grabs only a click of the traced line, or, while the chain is still at its start, a click of another line, which ends the chain. A drag of a click holds the dot
-(`TrackChain.hold`, or the stored click for a finished line) and leaves the fit as it is until
-release. Right-click on a traced click other than the last opens Delete click and the chain goes
-on; deleting one of a line's last two clicks deletes the line and ends the chain. The trace draws
-in place of its stored line, which `rr-editor-view` leaves out of the viewer's `tracks`.
+replayed (`TrackChain.settle`). While a trace is live every click goes on the end of the line, even
+on a sensor; Shift means nothing to a click (it keeps its zoom-rectangle meaning on a drag). With
+no chain live, a click on a line's first or last click continues it, and a click on the line or on
+a click between its ends does nothing. A drag grabs only a click of the traced line, or, while the
+chain is still at its start, a click of another line, which ends the chain. A drag of a click holds
+the dot (`TrackChain.hold`, or the stored click for a finished line) and leaves the fit as it is
+until release. Right-click on a traced click other than the last opens Delete click and the chain
+goes on; deleting one of a line's last two clicks deletes the line and ends the chain. The trace
+draws in place of its stored line, which `rr-editor-view` leaves out of the viewer's `tracks`.
+`renderPendingTrack` draws the rails, the centerline and a dot per click from the one fit; a click
+past the tolerance takes the `red` class, on the traced line and on a stored one alike.
 
-`trackHint` words the track tool's hint from the trace's view, or with no line traced from whether
-a stored line has red clicks (`flaggedClicks`, the renderer's own cached check). `rr-editor-view`
-shows it under the DPT bar while the track tool is selected and DPT resolves.
+`trackHint` is one of three sentences: with red clicks on the line being traced, or with none traced
+on a stored line (`flaggedClicks`, the renderer's own cached check), move or delete them; while
+tracing, click on and how to end; otherwise, how to start a line or go on with one.
+`rr-editor-view` shows it under the DPT bar while the track tool is selected and DPT resolves.
 
 A red click marks disagreement between clicks, not a wrong click (#307). The fit never looks at the
-photo: it knows the clicks and one shape rule, a chain of straights and arcs tangent at the joins
+photo: it knows the clicks and one shape rule, a chain of straights and arcs tangent where they meet
 with no radius under `TRACK_FIT.minRadius`, and only the window, the last two parts, may move. Red
 means no such line from the window's fixed start reaches all of the window's clicks within
 `TRACK_FIT.tolerance`, and this click is the farthest from the best compromise. A click on the

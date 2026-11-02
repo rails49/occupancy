@@ -130,22 +130,8 @@ _Avoid_: using it for a sensor or a block
 **Click**:
 `r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
 
-**Join**:
-Where two fitted parts of a centerline meet, each part a straight or a circular arc, with one heading on both sides. See [SPEC § Track centerlines](SPEC.md#track-centerlines).
-_Avoid_: knot, breakpoint
-
-**Sigma (σ)**:
-How far the line beside a join could move across the track, in pixels, from the fit's covariance: the larger of the line's own cross-track uncertainty along the two parts and the shift a reach past the join when the join slides along the track between parts of different curvature. The bar drawn across the track at a join is σ to each side.
-
-**Margin**:
-How much more a fitted line would cost without a join, its two parts made one, in the fit's penalised cost. A join with a small margin may be merged away by the next clicks. See [SPEC § Track centerlines](SPEC.md#track-centerlines).
-
-**Committed**:
-Said of fitted track while tracing: it no longer moves as clicks arrive. Joins commit in order, each once its margin is over a threshold and its σ and that of every join before it are under another; the rest of the line is fitted again with each click. See [SPEC § Track centerlines](SPEC.md#track-centerlines).
-_Avoid_: settled, frozen
-
 **Node**:
-A point of a stored centerline with the direction the track runs there. Each join is stored as a node. See rails49/r49's [FORMAT § Node](https://github.com/rails49/r49/blob/main/FORMAT.md#node).
+A point of a stored centerline with the direction the track runs there. The end of each fitted part is stored as a node. See rails49/r49's [FORMAT § Node](https://github.com/rails49/r49/blob/main/FORMAT.md#node).
 _Avoid_: control point, vertex
 
 **Chain**:
