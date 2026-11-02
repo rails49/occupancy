@@ -3,8 +3,9 @@ import type { Point } from '@rails49/r49';
 /**
  * One track traced click by click (#298). While tracing, the prefix is
  * committed and never moves; only the tail is fitted, from the last
- * committed join, and joins are committed in order, each once it and every
- * live join before it have position uncertainty under `commitSigma`. Editing
+ * committed join, and joins are committed in order, each once it is
+ * established (its margin is at least `commitMargin`) and it and every live
+ * join before it have σ under `commitSigma`. Editing
  * a committed click uncommits every part from the one before it to the end,
  * and the tail is traced again from there.
  * Finishing fits the whole line from its clicks at once, and every later
@@ -26,8 +27,10 @@ import {
 } from './trackFit.js';
 
 export interface TraceOptions extends FitOptions {
-  /** A join whose position σ is under this, px, is committed. */
+  /** A join whose σ is under this, px, and whose margin is at or over `commitMargin`, is committed. */
   readonly commitSigma: number;
+  /** The least margin a join commits with, in the fit's penalised cost. */
+  readonly commitMargin: number;
   /** A join whose σ, px, is at or past this is a guess: its parts are not drawn and never commit. */
   readonly barCap: number;
 }
@@ -38,7 +41,9 @@ export function traceOptions(dpt: number): TraceOptions {
   return {
     tolerance: g.tolerance * dpt,
     noise: g.noise * dpt,
+    reach: g.reach * dpt,
     commitSigma: g.commitSigma * dpt,
+    commitMargin: g.commitMargin,
     barCap: g.barCap * dpt,
     bounds: { minLength: g.minLength * dpt, minRadius: g.minRadius * dpt, maxSweep: g.maxSweep },
   };
@@ -214,13 +219,14 @@ export class Trace {
     this.live = fitWindow(pts, this.origin ? this.liveStart() : null, opts);
   }
 
-  /** Commit the live parts up to the last join, in order, whose σ is under the commit σ. */
+  /** Commit the live parts up to the last join, in order, whose σ is under the commit σ and whose margin is enough. */
   private commit(opts: TraceOptions) {
     const live = this.live;
     if (!live) return;
     const m = live.fit.parts.length;
+    const firm = (j: Join) => j.sigma <= opts.commitSigma && j.margin >= opts.commitMargin;
     let j = 0;
-    while (j + 1 < m && live.joins[j + 1].sigma <= opts.commitSigma) j++;
+    while (j + 1 < m && firm(live.joins[j + 1])) j++;
     if (j === 0) return;
     if (!this.origin) {
       this.origin = live.fit.start;

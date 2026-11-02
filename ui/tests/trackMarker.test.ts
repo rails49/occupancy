@@ -86,7 +86,7 @@ describe('renderPendingTrack', () => {
   function live(fit: Fit, sigmas: readonly number[]): FitResult {
     let x = fit.start.x;
     const joins: Join[] = sigmas.map((sigma, i) => {
-      const join = { x, y: 0, heading: 0, sigma, ux: 1, uy: 0 };
+      const join = { x, y: 0, heading: 0, sigma, margin: 0 };
       x += fit.parts[i]?.length ?? 0;
       return join;
     });

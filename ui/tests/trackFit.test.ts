@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Point } from '@rails49/r49';
-import { fitNodes, fitTrack, sampleFit, type FitResult } from '../src/trackFit.js';
+import { TRACK_FIT, fitNodes, fitTrack, sampleFit, type FitResult } from '../src/trackFit.js';
 import { traceOptions } from '../src/trackTrace.js';
 import { G, TEN_PARTS, clicksAlong, offLine, type Piece } from './trackClicks.js';
 
@@ -85,6 +85,23 @@ describe('fitTrack', () => {
     const res = fit(clicks);
     // The ends may lie on the line extended; every other click is measured to the line itself.
     clicks.slice(1, -1).forEach((p, i) => expect(Math.abs(res.residuals[i + 1])).toBeCloseTo(distanceTo(res, p), 0));
+  });
+});
+
+describe('fitTrack joins', () => {
+  it('give a join where the curvature changes a margin over the commit margin, and the ends none', () => {
+    const res = fit(clicksAlong([{ straight: 20 }, { radius: 30, turn: 90 }]));
+    expect(res.joins).toHaveLength(3);
+    expect(res.joins[1].margin).toBeGreaterThan(TRACK_FIT.commitMargin);
+    expect(res.joins[0].margin).toBe(0);
+    expect(res.joins[2].margin).toBe(0);
+  });
+
+  // The joins slide about 3 G along the track, which hid the tail when that was σ (#298).
+  it('give a join between arcs of similar radius a σ well under the bar cap, though it slides along the track', () => {
+    const res = fit(clicksAlong([{ radius: 30, turn: 60 }, { radius: 34, turn: 60 }, { radius: 38, turn: 60 }], { spacing: 5 }));
+    expect(res.fit.parts).toHaveLength(3);
+    for (const j of res.joins.slice(1, -1)) expect(j.sigma).toBeLessThan(0.5 * G);
   });
 });
 

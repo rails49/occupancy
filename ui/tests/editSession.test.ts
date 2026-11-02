@@ -2488,7 +2488,7 @@ describe('EditSession track edits while tracing (#303)', () => {
   }
 
   /**
-   * A live trace along five pieces, three of them committed, and the middle
+   * A live trace along five pieces, four of them committed, and the middle
    * click of committed part 2, the second straight.
    */
   async function tracing(): Promise<{ s: EditSession; at: Point[]; onPart2: number }> {
@@ -2502,7 +2502,7 @@ describe('EditSession track edits while tracing (#303)', () => {
     ]);
     await clicks(s, ...at);
     const trace = traceOf(s);
-    expect(trace.committed?.parts).toHaveLength(3);
+    expect(trace.committed?.parts).toHaveLength(4);
     const [, , a, b] = poses(trace.committed!);
     const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
     const d = at.map(p => Math.hypot(p.x - mid.x, p.y - mid.y));
@@ -2548,8 +2548,10 @@ describe('EditSession track edits while tracing (#303)', () => {
     expect(await drag(s, [at[i], across(s, at, i, 0.5)])).toBe(true);
 
     const after = traceOf(s);
-    expect(after.committed!.parts.length).toBeLessThan(before.committed!.parts.length);
-    const loose = after.live!.joins.slice(1, -1).filter(j => j.sigma > commitSigma && j.sigma < TRACK_FIT.barCap * dpt);
+    expect(after.committed?.parts.length ?? 0).toBeLessThan(before.committed!.parts.length);
+    const loose = after.live!.joins
+      .slice(1, -1)
+      .filter(j => (j.sigma > commitSigma || j.margin < TRACK_FIT.commitMargin) && j.sigma < TRACK_FIT.barCap * dpt);
     expect(loose.length).toBeGreaterThan(0);
   });
 

@@ -18,8 +18,10 @@ import type { TrackNode } from './track.js';
  * has the halves merged back when that is cheaper, and is returned as it is,
  * so points nothing fits cost two segmentations, a small refit per part and
  * at most three whole refits of at most 100 steps.
- * Each join's position uncertainty comes from the inverse of the normal
- * matrix the refit forms.
+ * Each join's σ comes from the inverse of the normal matrix the refit forms:
+ * how far the line beside the join could move across the track. Its margin
+ * is how much more the line would cost without it, from the merges the
+ * simplification tried last.
  *
  * A run may leave out one interior point that no straight or arc through
  * its neighbours reaches (an outlier). Such a point is reported and never
@@ -33,8 +35,12 @@ export const TRACK_FIT = {
   tolerance: 0.25,
   /** Expected click noise. Sets the cost of a part and scales the uncertainties. */
   noise: 0.075,
-  /** A join whose position σ is under this is committed. */
+  /** A join whose σ is under this, and whose margin is at or over `commitMargin`, is committed. */
   commitSigma: 0.25,
+  /** The least a join's margin may be to commit, in the fit's penalised cost. */
+  commitMargin: 10,
+  /** How far past a join its σ looks: a join that slides along the track moves the line across it there. */
+  reach: 20,
   /** Longest σ bar drawn at a join. */
   barCap: 4,
   minLength: 1,
@@ -73,17 +79,24 @@ export interface FitOptions {
   readonly tolerance: number;
   /** Expected click noise, px. Sets the cost of a part and scales the uncertainties. */
   readonly noise: number;
+  /** How far past a join its σ looks, px. */
+  readonly reach: number;
   readonly bounds: Bounds;
 }
 
-/** A pose on the line with its position uncertainty: σ along the long axis (ux, uy). */
+/** A pose on the line with its σ and its margin. */
 export interface Join {
   readonly x: number;
   readonly y: number;
   readonly heading: number;
+  /** How far the line beside the join could move across the track, px. */
   readonly sigma: number;
-  readonly ux: number;
-  readonly uy: number;
+  /**
+   * How much more the fit would cost without the join, the parts beside it
+   * made one, in the fit's penalised cost; 0 at the line's ends and on a line
+   * out of tolerance.
+   */
+  readonly margin: number;
 }
 
 export interface FitResult {
@@ -508,9 +521,27 @@ function refit(start: Fit, points: readonly Point[], m: Model, opts: FitOptions)
   return unpack(v, m);
 }
 
+/** Sample points per part for a join's σ, both ends included. */
+const SIGMA_SAMPLES = 8;
+
 /**
- * Each pose's position covariance: σ²(JᵀJ)⁻¹, pushed through the chain to
- * the pose, reduced to its long axis. A fixed start has none.
+ * The poses every `1/SIGMA_SAMPLES` of each part, its start and end
+ * included.
+ */
+function samples(fit: Fit): Pose[] {
+  const ps = poses(fit);
+  return fit.parts.flatMap((p, i) =>
+    Array.from({ length: SIGMA_SAMPLES + 1 }, (_, j) => advance(ps[i], (p.length * j) / SIGMA_SAMPLES, p.curvature))
+  );
+}
+
+/**
+ * Each pose's σ, from the fit's covariance σ²(JᵀJ)⁻¹ pushed through the
+ * chain: the line's displacement across the track at sample points along
+ * the two parts beside the join, and the displacement `reach` past the join
+ * when the join slides along the track by its σ there, which kinks the line
+ * by the curvature step. The larger is the σ. A slide between parts of
+ * similar curvature moves the line little and counts little.
  */
 function joinsOf(fit: Fit, points: readonly Point[], m: Model, opts: FitOptions): Join[] {
   const v = pack(fit, m);
@@ -518,35 +549,39 @@ function joinsOf(fit: Fit, points: readonly Point[], m: Model, opts: FitOptions)
   const base = unpack(v, m);
   const cov = inverse(normal(residualJacobian(v, m, points, opts)));
   const flat = (ps: Pose[]) => ps.flatMap(p => [p.x, p.y]);
+  const s0 = samples(base);
+  const sj = jacobian(v, h, flat(s0), w => flat(samples(unpack(w, m))));
+  const n = v.length;
+  const across = s0.map((p, q) => {
+    const nx = -Math.sin(p.heading);
+    const ny = Math.cos(p.heading);
+    const g = sj.map(col => nx * col[2 * q] + ny * col[2 * q + 1]);
+    let s = 0;
+    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) s += g[i] * cov[i][j] * g[j];
+    return s * opts.noise ** 2;
+  });
+  const partSigma = base.parts.map((_, i) =>
+    Math.sqrt(Math.max(0, ...across.slice(i * (SIGMA_SAMPLES + 1), (i + 1) * (SIGMA_SAMPLES + 1))))
+  );
+  // Each join's σ along the track, and the kink that slide makes `reach` past the join.
   const p0 = poses(base);
   const pj = jacobian(v, h, flat(p0), w => flat(poses(unpack(w, m))));
-  const n = v.length;
   return p0.map((p, q) => {
-    const rows = [2 * q, 2 * q + 1];
-    const c = rows.map(ri =>
-      rows.map(rj => {
-        let s = 0;
-        for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) s += pj[i][ri] * cov[i][j] * pj[j][rj];
-        return s * opts.noise ** 2;
-      })
-    );
-    const tr = c[0][0] + c[1][1];
-    const det = c[0][0] * c[1][1] - c[0][1] * c[1][0];
-    const lmax = tr / 2 + Math.sqrt(Math.max(0, (tr * tr) / 4 - det));
-    let ux = c[0][1];
-    let uy = lmax - c[0][0];
-    if (Math.hypot(ux, uy) < 1e-12) {
-      ux = lmax - c[1][1];
-      uy = c[1][0];
-    }
-    const len = Math.hypot(ux, uy);
-    return {
-      ...p,
-      sigma: Math.sqrt(Math.max(0, lmax)),
-      ux: len > 1e-12 ? ux / len : 1,
-      uy: len > 1e-12 ? uy / len : 0,
-    };
+    const tx = Math.cos(p.heading);
+    const ty = Math.sin(p.heading);
+    const g = pj.map(col => tx * col[2 * q] + ty * col[2 * q + 1]);
+    let s = 0;
+    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) s += g[i] * cov[i][j] * g[j];
+    const along = Math.sqrt(Math.max(0, s)) * opts.noise;
+    const ka = base.parts[q - 1]?.curvature;
+    const kb = base.parts[q]?.curvature;
+    const kink = ka === undefined || kb === undefined ? 0 : Math.abs(ka - kb) * along * opts.reach;
+    return { ...p, sigma: Math.max(partSigma[q - 1] ?? 0, partSigma[q] ?? 0, kink), margin: 0 };
   });
+}
+
+function withMargins(res: FitResult, margins: readonly number[]): FitResult {
+  return { ...res, joins: res.joins.map((j, i) => ({ ...j, margin: margins[i] ?? 0 })) };
 }
 
 interface LineFit {
@@ -897,30 +932,36 @@ function joinStraights(parts: readonly Part[]): Part[] {
 /**
  * The independent fits overfit, so after the joint refit try each merge of
  * two neighbours and each arc made straight, and keep the cheapest while it
- * lowers the cost and stays within the tolerance.
+ * lowers the cost and stays within the tolerance. The last round's merges,
+ * none of which was kept, give each join its margin.
  */
 function simplify(first: FitResult, points: readonly Point[], start: Pose | null, opts: FitOptions): FitResult {
   let res = first;
   let cost = penalised(res, opts);
   for (;;) {
     const parts = res.fit.parts;
-    const trials: Part[][] = [];
-    for (let i = 0; i + 1 < parts.length; i++) trials.push(merge(parts, i));
+    /** Each trial, and the join a merge removes (-1 for an arc made straight). */
+    const trials: { parts: Part[]; join: number }[] = [];
+    for (let i = 0; i + 1 < parts.length; i++) trials.push({ parts: merge(parts, i), join: i + 1 });
     parts.forEach((p, i) => {
-      if (p.curvature !== 0) trials.push(joinStraights(parts.map((q, j) => (j === i ? { length: q.length, curvature: 0 } : q))));
+      if (p.curvature !== 0) {
+        trials.push({ parts: joinStraights(parts.map((q, j) => (j === i ? { length: q.length, curvature: 0 } : q))), join: -1 });
+      }
     });
+    const margins = new Array<number>(parts.length + 1).fill(0);
     let best: FitResult | null = null;
     let bestCost = cost;
     for (const trial of trials) {
-      const fit = { ...res.fit, parts: trial };
+      const fit = { ...res.fit, parts: trial.parts };
       const fitted = result(refit(fit, points, { start, free: freeOf(fit), bounds: opts.bounds }, opts), points, start, opts);
       const c = penalised(fitted, opts);
+      if (trial.join >= 0) margins[trial.join] = c - cost;
       if (fitted.worst <= opts.tolerance && c < bestCost) {
         best = fitted;
         bestCost = c;
       }
     }
-    if (!best) return res;
+    if (!best) return withMargins(res, margins);
     res = best;
     cost = bestCost;
   }
@@ -953,7 +994,8 @@ export function fitWindow(points: readonly Point[], start: Pose | null, opts: Fi
   if (!outliers.length) return done;
   // A point left out that the line reaches after all is no outlier.
   const d = evaluate(done.fit, points).d;
-  return result(done.fit, points, start, opts, outliers.filter(i => Math.abs(d[i]) > opts.tolerance));
+  const whole = result(done.fit, points, start, opts, outliers.filter(i => Math.abs(d[i]) > opts.tolerance));
+  return withMargins(whole, done.joins.map(j => j.margin));
 }
 
 /** Fit a whole line at once, start free. */

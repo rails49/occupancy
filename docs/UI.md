@@ -40,8 +40,10 @@ in the browser was rejected, and why an image of another size is not something t
 The **track tool** (#284, #298, #302, #303) does what `../SPEC.md` § Track centerlines says; this
 section holds what the code keeps true. `trackFit.ts` fits straights and arcs to clicks.
 `trackTrace.ts` holds a chain's trace: the committed parts, and the rest fitted from the last
-committed join (`fitWindow`); `tailMarks` gives what that rest draws. The fit's constants are
-`TRACK_FIT`, in gauges, converted through DPT by `traceOptions` when a fit runs.
+committed join (`fitWindow`); `tailMarks` gives what that rest draws. Each join's σ and margin are
+the fit's (`joinsOf`, and the merges `simplify` tried last); `Trace.commit` holds both to their
+thresholds, in order. The fit's constants are `TRACK_FIT`, in gauges, converted through DPT by
+`traceOptions` when a fit runs.
 
 Every entry a track chain writes, a click or a move or delete of a click, writes the line's `clicks`
 and the `nodes` of `fitTrack` over those clicks in stored order (`refitLine`), as one `layout`

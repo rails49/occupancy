@@ -76,11 +76,57 @@ describe('Trace on a long line clicked every 2 G', () => {
     const res = fitTrack(line, opts);
     expect(res?.fit.parts).toHaveLength(10);
     expect(res?.worst).toBeLessThanOrEqual(opts.tolerance);
+    // Every join but the one before the last part has clicks enough on both sides to commit.
+    expect(t.committed).toHaveLength(9);
   }, 20_000);
 });
 
+describe('Trace on a compound curve, arcs of 30, 34 and 38 G clicked every 5 G', () => {
+  const clicks = clicksAlong([{ radius: 30, turn: 60 }, { radius: 34, turn: 60 }, { radius: 38, turn: 60 }], { spacing: 5 });
+
+  it('commits the first two arcs, in order', () => {
+    const t = Trace.replay(clicks, opts);
+    expect(t.committed).toHaveLength(2);
+    for (const j of t.committedJoins.slice(1)) expect(j.sigma).toBeLessThanOrEqual(opts.commitSigma);
+  });
+});
+
+describe('Trace on seven sparse clicks, 15 G apart, on a straight, a 90° curve and a straight', () => {
+  const clicks = clicksAlong([{ straight: 25 }, { radius: 30, turn: 90 }, { straight: 25 }], { spacing: 15 });
+
+  it('commits nothing, and draws every live part with a bar at each join', () => {
+    const t = Trace.replay(clicks, opts);
+    expect(t.committedFit()).toBeNull();
+    const m = t.live?.fit.parts.length ?? 0;
+    expect(m).toBeGreaterThanOrEqual(2);
+    const { parts, bars } = tailMarks(t.live, opts.barCap);
+    expect(parts).toHaveLength(m);
+    expect(bars).toHaveLength(m - 1);
+  });
+});
+
+describe('Trace on the real clicks in clickSets/real-ceiling-2026-10-29b.json', () => {
+  const set = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'clickSets/real-ceiling-2026-10-29b.json'), 'utf8')) as {
+    gauge: number;
+    lines: [number, number][][];
+  };
+  const real = traceOptions(set.gauge);
+  const clicks = set.lines[0].map(([x, y]) => ({ x, y }));
+
+  // From click 8 the tail has two parts; before that the live line is one part from the free start.
+  it('draws every live part after every click from the eighth on', () => {
+    const t = new Trace();
+    for (const [i, p] of clicks.entries()) {
+      t.add(p, real);
+      if (i < 7 || !t.live) continue;
+      const { parts } = tailMarks(t.live, real.barCap);
+      expect(parts, `after click ${i + 1}`).toHaveLength(t.live.fit.parts.length);
+    }
+  });
+});
+
 describe('Trace edits to committed clicks', () => {
-  // The last part of a tail never commits, so five parts commit three.
+  // The last part of a tail never commits, so five parts commit four.
   const clicks = clicksAlong([
     { straight: 20 },
     { radius: 30, turn: 90 },
@@ -95,8 +141,8 @@ describe('Trace edits to committed clicks', () => {
   const owners = nearestParts(fit, clicks.slice(0, before.firstLive));
   const onPart2 = owners.indexOf(2) + Math.floor(owners.filter(o => o === 2).length / 2);
 
-  it('has three parts committed to edit', () => {
-    expect(fit.parts).toHaveLength(3);
+  it('has four parts committed to edit', () => {
+    expect(fit.parts).toHaveLength(4);
     expect(owners.indexOf(2)).toBeGreaterThan(0);
   });
 
@@ -152,7 +198,7 @@ describe('tailMarks', () => {
   /** A straight tail from (x, 0) heading along +x, one part per length, its joins carrying `sigmas`. */
   function tail(x: number, lengths: readonly number[], sigmas: readonly number[]): FitResult {
     const fit: Fit = { start: { x, y: 0, heading: 0 }, parts: lengths.map(length => ({ length, curvature: 0 })) };
-    const joins: Join[] = sigmas.map((sigma, i) => ({ x: x + lengths.slice(0, i).reduce((a, b) => a + b, 0), y: 0, heading: 0, sigma, ux: 1, uy: 0 }));
+    const joins: Join[] = sigmas.map((sigma, i) => ({ x: x + lengths.slice(0, i).reduce((a, b) => a + b, 0), y: 0, heading: 0, sigma, margin: 0 }));
     return { fit, residuals: [], partOf: [], worst: 0, rms: 0, joins, outliers: [] };
   }
 
