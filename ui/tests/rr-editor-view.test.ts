@@ -1020,6 +1020,24 @@ describe('rr-editor-view', () => {
       expect(el.session!.tracks).to.have.length(0);
     });
 
+    it('opens Delete click on a click of a line, and deletes the click', async () => {
+      const el = await mountWithTool('track');
+      await clickAt(el, { x: 100, y: 100 });
+      await clickAt(el, { x: 300, y: 100 });
+      await clickAt(el, { x: 500, y: 100 });
+      await pressEscape(el);
+
+      await rightClickAt(el, { x: 300, y: 100 });
+      expect(menuItems(el)).to.deep.equal(['delete']);
+      const label = menuOf(el).shadowRoot!.querySelector('sl-menu-item[data-id="delete"]')!.textContent;
+      expect(label!.trim()).to.equal('Delete click');
+      await choose(el, 'delete');
+      expect(el.session!.tracks[0].clicks).to.deep.equal([
+        { x: 100, y: 100 },
+        { x: 500, y: 100 },
+      ]);
+    });
+
     it('ends the chain on right-click, opening no menu', async () => {
       const el = await mountWithTool('track');
       await laid(el);

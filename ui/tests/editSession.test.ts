@@ -4,6 +4,8 @@ import type { ReferencePoint, CarLabel, Centerline, ManifestData, Point, Sensor 
 import { EditSession } from '../src/editSession.js';
 import { ALREADY_LABELED } from '../src/carChain.js';
 import { NO_TRACK } from '../src/chain.js';
+import { fitNodes, fitTrack } from '../src/trackFit.js';
+import { traceOptions } from '../src/trackTrace.js';
 import { G, along, clicksAlong, type Piece } from './trackClicks.js';
 import type { Reveal } from '../src/editSession.js';
 import { TOOLS } from '../src/tools.js';
@@ -2184,8 +2186,8 @@ describe('EditSession track tool (#284, #298)', () => {
   });
 });
 
-describe('EditSession track lines (#284, #298)', () => {
-  /** A calibrated session with the track tool and one straight line of three nodes. */
+describe('EditSession track lines without clicks (#284, #298, #302)', () => {
+  /** A calibrated session with the track tool and one straight line of three nodes, no clicks. */
   function withLine(): EditSession {
     const s = session({ tool: 'track', rows: false });
     s.archive.getManifest().layout.centerlines = [
@@ -2200,7 +2202,7 @@ describe('EditSession track lines (#284, #298)', () => {
     return s;
   }
 
-  it('does nothing for a click on a line or on its nodes', async () => {
+  it('does nothing for a click on the line or on its nodes', async () => {
     const s = withLine();
     await clicks(s, { x: 200, y: 104 }, { x: 300, y: 100 }, { x: 500, y: 100 });
     expect(trackChain(s)).toBeNull();
@@ -2226,6 +2228,13 @@ describe('EditSession track lines (#284, #298)', () => {
     expect(s.history.undoLabel).toBe('delete centerline');
   });
 
+  it('lands a sensor', async () => {
+    const s = withLine();
+    s.selectTool('sensor');
+    await clicks(s, { x: 250, y: 130 });
+    expect(sensors(s)).toMatchObject([{ x: 250, y: 100 }]);
+  });
+
   it('leaves track alone under another tool', async () => {
     const s = withLine();
     s.selectTool('sensor');
@@ -2235,3 +2244,214 @@ describe('EditSession track lines (#284, #298)', () => {
   });
 });
 
+
+describe('EditSession finished track lines (#302)', () => {
+  /** Synthetic clicks along `pieces`, at this session's DPT, in whole pixels. */
+  function laidAlong(s: EditSession, pieces: readonly Piece[]): Point[] {
+    const k = getDPT(s.archive.getManifest())! / G;
+    return clicksAlong(pieces).map(p => ({ x: Math.round(p.x * k), y: Math.round(p.y * k) }));
+  }
+
+  function line(s: EditSession, index = 0): Centerline {
+    return s.archive.getManifest().layout.centerlines![index];
+  }
+
+  /** The nodes a fresh whole-line fit of `at` gives, at this session's DPT. */
+  function fitOf(s: EditSession, at: readonly Point[]) {
+    return fitNodes(fitTrack(at, traceOptions(getDPT(s.archive.getManifest())!))!.fit);
+  }
+
+  /** A traced and finished line along a straight and an arc, and its clicks. */
+  async function finished(): Promise<{ s: EditSession; at: Point[] }> {
+    const s = session({ tool: 'track', rows: false });
+    const at = laidAlong(s, [{ straight: 20 }, { radius: 30, turn: 60 }]);
+    await clicks(s, ...at);
+    s.endChain();
+    return { s, at };
+  }
+
+  it('refits the whole line once, on release, when a click is dragged', async () => {
+    const { s, at } = await finished();
+    const before = structuredClone(line(s));
+    const entries = s.history.size;
+    const from = at[3];
+    const to = { x: from.x + 3, y: from.y - 40 };
+
+    const d = s.beginDrag(from, SCALE)!;
+    expect(d).not.toBeNull();
+    d.move({ x: from.x + 1, y: from.y - 20 });
+    d.move(to);
+    expect(line(s).nodes).toEqual(before.nodes);
+    expect(s.history.size).toBe(entries);
+    await d.end();
+
+    const moved = at.map((p, i) => (i === 3 ? to : p));
+    expect(s.history.size).toBe(entries + 1);
+    expect(s.history.undoLabel).toBe('move click');
+    expect(line(s).clicks).toEqual(moved);
+    expect(line(s).nodes).toEqual(fitOf(s, moved));
+    expect(trackChain(s)).toBeNull();
+  });
+  it('names a click as the subject of a right-click, and the line between clicks', async () => {
+    const { s, at } = await finished();
+    expect(s.rightClick(at[3], SCALE)).toEqual({ kind: 'track-click', line: 0, index: 3, px: at[3] });
+    const between = { x: Math.round((at[1].x + at[2].x) / 2), y: Math.round((at[1].y + at[2].y) / 2) };
+    expect(s.rightClick(between, SCALE)).toMatchObject({ kind: 'track', line: 0 });
+  });
+
+  it('deletes a click and refits the whole line, as one entry', async () => {
+    const { s, at } = await finished();
+    const entries = s.history.size;
+    await s.delete({ kind: 'track-click', line: 0, index: 3, px: at[3] });
+    const left = at.filter((_, i) => i !== 3);
+    expect(s.history.size).toBe(entries + 1);
+    expect(s.history.undoLabel).toBe('delete click');
+    expect(line(s).clicks).toEqual(left);
+    expect(line(s).nodes).toEqual(fitOf(s, left));
+  });
+
+  it('does nothing for a delete of a click that has moved since the menu opened', async () => {
+    const { s, at } = await finished();
+    const entries = s.history.size;
+    await s.delete({ kind: 'track-click', line: 0, index: 3, px: at[4] });
+    expect(s.history.size).toBe(entries);
+  });
+
+  it('deletes the line with one of its last two clicks', async () => {
+    const s = session({ tool: 'track', rows: false });
+    await clicks(s, { x: 100, y: 100 }, { x: 400, y: 100 });
+    s.endChain();
+    await s.delete({ kind: 'track-click', line: 0, index: 1, px: { x: 400, y: 100 } });
+    expect(s.tracks).toHaveLength(0);
+    expect(s.history.undoLabel).toBe('delete centerline');
+  });
+  it('adds a click on the line in track order, and refits the whole line, as one entry', async () => {
+    const { s, at } = await finished();
+    const entries = s.history.size;
+    // Off the middle of two clicks, toward the line's outside: still on the line.
+    const added = { x: Math.round((at[4].x + at[5].x) / 2) + 2, y: Math.round((at[4].y + at[5].y) / 2) - 3 };
+    expect(await s.click(added, SCALE)).toEqual({ kind: 'none' });
+    const expected = [...at.slice(0, 5), added, ...at.slice(5)];
+    expect(trackChain(s)).toBeNull();
+    expect(s.history.size).toBe(entries + 1);
+    expect(s.history.undoLabel).toBe('add click');
+    expect(line(s).clicks).toEqual(expected);
+    expect(line(s).nodes).toEqual(fitOf(s, expected));
+  });
+
+  it('does nothing for a click on a click between the ends', async () => {
+    const { s, at } = await finished();
+    const entries = s.history.size;
+    await clicks(s, at[3]);
+    expect(trackChain(s)).toBeNull();
+    expect(s.history.size).toBe(entries);
+  });
+  it('continues the line from its last click, appending', async () => {
+    const { s, at } = await finished();
+    // On along the line's end heading, 0.3 rad plus 60°.
+    const end = at[at.length - 1];
+    const next = [1, 2].map(k => ({
+      x: Math.round(end.x + k * 150 * Math.cos(0.3 + Math.PI / 3)),
+      y: Math.round(end.y + k * 150 * Math.sin(0.3 + Math.PI / 3)),
+    }));
+    const entries = s.history.size;
+
+    await clicks(s, at[at.length - 1]);
+    expect(trackChain(s)).toEqual({ line: 0, clicks: at });
+    expect(s.history.size).toBe(entries);
+    await clicks(s, ...next);
+
+    expect(s.history.size).toBe(entries + next.length);
+    expect(s.history.undoLabel).toBe('extend centerline');
+    expect(s.tracks).toHaveLength(1);
+    expect(line(s).clicks).toEqual([...at, ...next]);
+    expect(line(s).nodes).toEqual(fitOf(s, [...at, ...next]));
+  });
+
+  it('continues the line from its first click, writing back in stored order', async () => {
+    const { s, at } = await finished();
+    // Back along the line's start heading, 0.3 rad.
+    const before = [1, 2].map(k => ({
+      x: Math.round(at[0].x - k * 150 * Math.cos(0.3)),
+      y: Math.round(at[0].y - k * 150 * Math.sin(0.3)),
+    }));
+
+    await clicks(s, at[0]);
+    expect(trackChain(s)).toEqual({ line: 0, clicks: [...at].reverse() });
+    await clicks(s, ...before);
+
+    const stored = [...[...before].reverse(), ...at];
+    expect(trackChain(s)?.clicks).toEqual([...stored].reverse());
+    expect(line(s).clicks).toEqual(stored);
+    expect(line(s).nodes).toEqual(fitOf(s, stored));
+    expect(s.chain?.end).toEqual(before[1]);
+  });
+
+  it('ends a continued chain on undo at its start, undoing nothing', async () => {
+    const { s, at } = await finished();
+    const entries = s.history.size;
+    await clicks(s, at[0], { x: at[0].x - 150, y: at[0].y });
+    await s.undo();
+    expect(trackChain(s)).toEqual({ line: 0, clicks: [...at].reverse() });
+    await s.undo();
+    expect(trackChain(s)).toBeNull();
+    expect(s.history.size).toBe(entries + 1);
+    expect(line(s).clicks).toEqual(at);
+  });
+  it('refits a loaded line everywhere the first time one of its clicks is touched', async () => {
+    const { s, at } = await finished();
+    // Stored nodes no fit of these clicks gives: an older fit, or a hand edit.
+    const stale = line(s).nodes.map(n => ({ ...n, y: n.y + 30 }));
+    s.archive.getManifest().layout.centerlines![0] = { nodes: stale, clicks: at };
+    const reopened = new EditSession(await R49Archive.load(await s.archive.export()));
+    reopened.selectTool('track');
+    expect(reopened.tracks[0].nodes).toEqual(stale);
+
+    const to = { x: at[3].x, y: at[3].y + 2 };
+    expect(await drag(reopened, [at[3], to])).toBe(true);
+
+    const moved = at.map((p, i) => (i === 3 ? to : p));
+    expect(reopened.tracks[0].nodes).toEqual(fitOf(reopened, moved));
+    expect(reopened.tracks[0].nodes.every((n, i) => n.y !== stale[i]?.y)).toBe(true);
+  });
+
+  it('leaves sensors and car ends where they are when the line refits', async () => {
+    const { s, at } = await finished();
+    const sensor = { id: 'S1abcdefghi', x: at[2].x, y: at[2].y + 3 };
+    sensors(s).push({ ...sensor });
+    const car = seedCar(s, { p0: { x: at[5].x, y: at[5].y }, p1: { x: at[7].x, y: at[7].y } });
+    const nodes = line(s).nodes;
+
+    expect(await drag(s, [at[4], { x: at[4].x + 10, y: at[4].y + 60 }])).toBe(true);
+
+    expect(line(s).nodes).not.toEqual(nodes);
+    expect(sensors(s)).toEqual([sensor]);
+    expect(cars(s)).toEqual([car]);
+  });
+
+  it('grabs a click rather than a sensor on it', async () => {
+    const { s, at } = await finished();
+    sensors(s).push({ id: 'S1abcdefghi', x: at[3].x, y: at[3].y });
+    expect(await drag(s, [at[3], { x: at[3].x, y: at[3].y + 20 }])).toBe(true);
+    expect(sensors(s)[0]).toMatchObject({ x: at[3].x, y: at[3].y });
+    expect(line(s).clicks![3]).toEqual({ x: at[3].x, y: at[3].y + 20 });
+  });
+
+  it('puts a dragged click back and writes nothing when the drag is cancelled', async () => {
+    const { s, at } = await finished();
+    const before = structuredClone(line(s));
+    const entries = s.history.size;
+    const d = s.beginDrag(at[3], SCALE)!;
+    d.move({ x: at[3].x, y: at[3].y + 40 });
+    await d.cancel();
+    expect(line(s)).toEqual(before);
+    expect(s.history.size).toBe(entries);
+  });
+
+  it('leaves the clicks alone under another tool', async () => {
+    const { s, at } = await finished();
+    s.selectTool('sensor');
+    expect(s.rightClick(at[3], SCALE)).toBeNull();
+    expect(await drag(s, [at[3], { x: at[3].x, y: at[3].y + 20 }])).toBe(false);
+  });
+});

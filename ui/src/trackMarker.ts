@@ -2,7 +2,7 @@ import { svg, css } from 'lit';
 import type { SVGTemplateResult, CSSResult } from 'lit';
 import type { Point } from '@rails49/r49';
 import { HIGHLIGHT_CLASS } from './highlight.js';
-import { offsetPoints, trackPath } from './track.js';
+import { clicksOff, offsetPoints, trackPath } from './track.js';
 import type { Track } from './track.js';
 import { TRACK_FIT, poses, sampleFit } from './trackFit.js';
 import type { Fit, Join } from './trackFit.js';
@@ -90,7 +90,23 @@ function renderClicks(clicks: readonly Point[], size: TrackSymbolSize, flagged: 
   return clicks.map((p, i) => renderDot(p, size, flagged.includes(i) ? 'click outlier' : 'click'));
 }
 
-/** One centerline. `highlighted` are the pixels of nodes a reveal points at (#37). */
+/** The flagged clicks of each track drawn, kept until the track is written again. */
+const offCache = new WeakMap<Track, { readonly dpt: number; readonly off: readonly number[] }>();
+
+/** The clicks of `track` past the tolerance from its line, which `gauge` sets. */
+function flagged(track: Track, gauge: number | null): readonly number[] {
+  if (gauge === null) return [];
+  const cached = offCache.get(track);
+  if (cached?.dpt === gauge) return cached.off;
+  const off = clicksOff(track, TRACK_FIT.tolerance * gauge);
+  offCache.set(track, { dpt: gauge, off });
+  return off;
+}
+
+/**
+ * One centerline. A click past the tolerance from the line drawn takes the
+ * danger ink. `highlighted` are the pixels of nodes a reveal points at (#37).
+ */
 export function renderTrack(
   track: Track,
   size: TrackSymbolSize,
@@ -112,7 +128,7 @@ export function renderTrack(
           )
     }
     <path class="centerline" d="${trackPath(nodes)}" stroke-width="${size.strokePx}" />
-    ${size.detail ? renderClicks(track.clicks ?? [], size) : ''}
+    ${size.detail ? renderClicks(track.clicks ?? [], size, flagged(track, gauge)) : ''}
     ${lit.map(n => renderDot(n, size, `node ${HIGHLIGHT_CLASS}`))}
   </g>`;
 }

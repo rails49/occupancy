@@ -162,6 +162,12 @@ export function nearestOnTrack(tracks: readonly Track[], at: Point, maxPx: numbe
   return dist(s, t) <= maxPx ? pointAt(s, t) : null;
 }
 
+/** Indices of the clicks of `track` farther than `maxPx` from its line. */
+export function clicksOff(track: Track, maxPx: number): number[] {
+  const clicks = track.clicks ?? [];
+  return clicks.flatMap((p, i) => (nearestOnTrack([track], p, maxPx) ? [] : [i]));
+}
+
 /** A pointer on a line: `t` along `segment` of centerline `line`. */
 export interface TrackHit {
   readonly line: number;
@@ -183,6 +189,28 @@ export function hitTrack(tracks: readonly Track[], at: Point, radius: number): T
           best = { line, segment, t: k / n };
           bestD = d;
         }
+      }
+    }
+  }
+  return best;
+}
+
+/** A pointer on a click: click `index` of centerline `line`. */
+export interface ClickHit {
+  readonly line: number;
+  readonly index: number;
+}
+
+/** The click nearest `at` and no farther than `radius`, or null. */
+export function hitClick(tracks: readonly Track[], at: Point, radius: number): ClickHit | null {
+  let best: ClickHit | null = null;
+  let bestD = radius;
+  for (const [line, track] of tracks.entries()) {
+    for (const [index, p] of (track.clicks ?? []).entries()) {
+      const d = Math.hypot(p.x - at.x, p.y - at.y);
+      if (d <= bestD) {
+        best = { line, index };
+        bestD = d;
       }
     }
   }

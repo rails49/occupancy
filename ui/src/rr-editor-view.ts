@@ -185,6 +185,8 @@ function itemsFor(subject: MenuSubject): readonly ContextMenuItem[] {
       return carItems();
     case 'track':
       return [{ id: 'delete', label: 'Delete line' }];
+    case 'track-click':
+      return [{ id: 'delete', label: 'Delete click' }];
   }
 }
 

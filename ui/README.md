@@ -141,6 +141,7 @@ rr-app                          ← shell: owns the editing session and the view
 > [#265]: https://github.com/rails49/occupancy/issues/265
 > [#284]: https://github.com/rails49/occupancy/issues/284
 > [#298]: https://github.com/rails49/occupancy/issues/298
+> [#302]: https://github.com/rails49/occupancy/issues/302
 
 ## State and data flow
 
@@ -745,7 +746,8 @@ both; each tool module supplies what differs.
 | `ChainView`, `ChainContext`, `ClickResult` | What the editor draws of a chain; what a tool reads and writes through the session, including `snap`; what a click asks the editor for |
 | `NO_TRACK`, `NO_TRACK_NOTICE` | Why a sensor or car end was refused: no centerline within `SNAP_TRACK_WIDTHS` |
 | `carTool`, `ALREADY_LABELED` | A free car end continues a chain, a coupling is refused with `ALREADY_LABELED`, a click on a car's body splits it, and empty image starts a chain |
-| `trackTool`, `TrackChain`, `trackHitAt` | A click on a line does nothing, and anywhere else starts a chain ([#298]). Each click adds to the chain's trace (`trackTrace.ts`) and writes the line's clicks with the nodes of their whole-line fit (`trackFit.ts` § `fitTrack`, `fitNodes`) |
+| `trackTool`, `TrackChain` | A click on a line's first or last click continues it as a chain, on a click between does nothing, on the line adds a click in track order and refits ([#302]), and anywhere else starts a chain ([#298]). Each click adds to the chain's trace (`trackTrace.ts`) and writes the line's clicks with the nodes of their whole-line fit (`trackFit.ts` § `fitTrack`, `fitNodes`). A chain from a first click traces backwards and writes back in stored order |
+| `trackHitAt`, `clickHitAt`, `refitLine` | The line or the click under the track tool's pointer, within the grab radius; a line with given clicks and the nodes of their whole-line fit |
 
 ---
 
@@ -755,7 +757,7 @@ A centerline's SVG ([#284], [#298]). The exports must be used together.
 
 | Export | Type | Description |
 |---|---|---|
-| `renderTrack(track, size, highlighted?)` | `(Track, TrackSymbolSize, Point[]?) => SVGTemplateResult` | The centerline as one cubic per segment, and with `size.detail` the two rails at ±G/2 and a dot per click. No rails when `size.dpt` is `null`. A node at a pixel in `highlighted` is drawn as a dot and takes `highlight.ts`'s class |
+| `renderTrack(track, size, highlighted?)` | `(Track, TrackSymbolSize, Point[]?) => SVGTemplateResult` | The centerline as one cubic per segment, and with `size.detail` the two rails at ±G/2 and a dot per click, red past `TRACK_FIT.tolerance` from the line. No rails and no red when `size.dpt` is `null`. A node at a pixel in `highlighted` is drawn as a dot and takes `highlight.ts`'s class |
 | `renderPendingTrack(view, size)` | `(TraceView, TrackSymbolSize) => SVGTemplateResult` | The line a track chain is tracing. Committed track draws rails and a solid centerline; the live tail a dashed centerline, a part only when both its joins have σ under `TRACK_FIT.barCap`, with a bar across each uncommitted join but the last, half-length σ. A dot per click; a flagged one is red |
 | `TrackSymbolSize` | `{ dpt, strokePx, dotPx, detail }` | The DPT the rails are spaced by, screen-constant stroke and dot sizes, and whether to draw the rails and dots or the centerline alone |
 | `trackMarkerStyles` | `CSSResult` | The green ink and a flagged click's red |
@@ -774,6 +776,8 @@ heading, with length `d / (3 cos²(φ/4))`.
 | `trackPath(nodes)` | An SVG path, one `C` per segment |
 | `offsetPoints(nodes, offset)` | Sampled points `offset` px to the right of the line; negative is left |
 | `hitTrack(tracks, at, radius)` | The line under the pointer: the nearest point on it within `radius`, or null |
+| `hitClick(tracks, at, radius)` | The click under the pointer: the nearest one within `radius`, as a line and an index, or null |
+| `clicksOff(track, maxPx)` | The indices of a line's clicks farther than `maxPx` from its nodes |
 | `nearestOnTrack(tracks, at, maxPx)`, `SNAP_TRACK_WIDTHS` | The point on any centerline nearest `at` within `maxPx`, or null; and the reach sensors and car ends snap within, 1.5 track widths |
 
 ### `carMarker.ts`
@@ -975,7 +979,7 @@ per pick, however many of its files were refused ([#262]). `rr-app` owns the toa
 * **Right-click** ([#29]). `rr-pointer-contextmenu` goes to `session.rightClick`, which ends a live
   chain or names the object a menu acts on. The editor opens `rr-context-menu` at the cursor with
   that subject's rows — **delete** for a reference point, **name and delete** for a sensor,
-  **delete and reclassify** for a car — and a chosen row calls `delete`, `reclassifyCar` or opens the
+  **delete and reclassify** for a car, **Delete click** or **Delete line** for track — and a chosen row calls `delete`, `reclassifyCar` or opens the
   name dialog. Empty image opens nothing.
   * **Reclassify is a submenu generated from the vocabulary in `@rails49/r49`'s data file** ([#35]), through
     `vocabulary.ts`. A new car is the taxonomy's root and refinement is an occasional act, not a
@@ -1093,8 +1097,8 @@ it gets the objects the entry changed.
 | `tracks`, `previewTrack(point, scale)` | The layout's centerlines, and what a click would add to a live track chain ([#284]) |
 | `previewCar(point)` | Where a click would put the next car of a live car chain: the nearest track, or null when none is near |
 | `click(point, scale)` | Writes, or returns what the editor must ask for: a reference point's world position, a sensor's name, or a notice |
-| `beginDrag(point, scale)` | A `Drag` (`move`, `end`, `cancel`) on what is under the point, or null |
-| `rightClick(point, scale)` | Ends a live chain, or returns the `MenuSubject` a menu acts on |
+| `beginDrag(point, scale)` | A `Drag` (`move`, `end`, `cancel`) on what is under the point, or null. Under the track tool a click comes first; its line refits on `end` ([#302]) |
+| `rightClick(point, scale)` | Ends a live chain, or returns the `MenuSubject` a menu acts on. Under the track tool a click is `track-click` (Delete click) and the rest of a line `track` (Delete line) |
 | `placeReferencePoint`, `editReferencePoint`, `nameSensor`, `delete`, `reclassifyCar`, `setComplete` | The answers to a dialog, a menu row or the checkbox |
 | `editLayout`, `setCameraHeight` | The settings dialog's edits, one `layout` entry each |
 | `addImage`, `deleteImage`, `reorderImages` | The image list. Deleting the image on screen shows its neighbour. `addImage` may set `camera.resolution` (`SPEC.md` § Images, [#254]) |
