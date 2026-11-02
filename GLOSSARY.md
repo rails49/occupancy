@@ -134,6 +134,21 @@ _Avoid_: using it for a sensor or a block
 A point of a stored centerline with the direction the track runs there. The end of each fitted part is stored as a node. See rails49/r49's [FORMAT § Node](https://github.com/rails49/r49/blob/main/FORMAT.md#node).
 _Avoid_: control point, vertex
 
+**Part**:
+One straight or one arc of constant curvature in a centerline. Neighbouring parts are tangent where they meet. See [SPEC § Track centerlines](SPEC.md#track-centerlines).
+_Avoid_: segment, section
+
+**Join**:
+Where two neighbouring parts of a centerline meet, with one heading shared by both. Each join is stored as a node.
+_Avoid_: part boundary, break
+
+**Projection**:
+The part being traced, carried on past its last click and drawn ahead of it, where the next click is expected. See [SPEC § Track centerlines](SPEC.md#track-centerlines).
+_Avoid_: preview, extension
+
+**Tolerance**:
+How far a click may lie from the projection and still continue its part. See [SPEC § Track centerlines](SPEC.md#track-centerlines).
+
 **Chain**:
 A run of clicks under the car tool or the track tool, each one going on from the last: the next car of a train, or more of a centerline. See [docs/UI.md § Chaining](docs/UI.md#chaining-33).
 
