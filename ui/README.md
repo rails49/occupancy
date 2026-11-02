@@ -407,7 +407,7 @@ image pixel coordinates.
 | `cars` | `readonly CarLabel[]` | Car spans to draw: a chord inside its width rectangle. Per **image**, so switching images swaps the whole list; empty in the live view |
 | `pendingCar` | `PendingCar \| null` | The **rubber band** — `{ anchor, to }` for the chain in flight. The one thing here that is not in the manifest; empty in the live view |
 | `tracks` | `readonly Track[]` | The layout's centerlines ([#284]), drawn under everything else. Per layout, so the same on every image; empty in the live view |
-| `pendingTrack` | `TraceView \| null` | The line a track chain is tracing ([#298]): its clicks, committed track and live tail. The editor leaves that line out of `tracks` |
+| `pendingTrack` | `TraceView \| null` | The line a track chain is tracing ([#298]): its clicks, committed track and uncommitted end. The editor leaves that line out of `tracks` |
 | `trackDetail` | `boolean` | Whether centerlines show their rails and click dots, or the centerline alone. The editor sets it while the track tool is chosen |
 | `highlight` | `ViewerHighlight \| null` | The objects a reveal is pointing at — `{ cars, sensors, calibration, trackClicks }`, ids for the first two, **indices** for the third and pixels for the fourth. Already resolved by `rr-editor-view`; the viewer draws it and decides nothing. `null` in the live view |
 | `zoom` | `Rect \| null` | The region of the **authored frame** on screen ([#44]). `null` is fit — the absence of a zoom, which is exactly what this element drew before the property existed. View state the editor owns; never in the manifest and never in the history. `null` in the live view |
@@ -760,10 +760,10 @@ A centerline's SVG ([#284], [#298]). The exports must be used together.
 
 | Export | Type | Description |
 |---|---|---|
-| `renderTrack(track, size, highlighted?)` | `(Track, TrackSymbolSize, Point[]?) => SVGTemplateResult` | The centerline as one cubic per segment, and with `size.detail` the two rails at ±G/2 and a dot per click, red past `TRACK_FIT.tolerance` from the line. No rails and no red when `size.dpt` is `null`. A node at a pixel in `highlighted` is drawn as a dot and takes `highlight.ts`'s class |
-| `renderPendingTrack(view, size)` | `(TraceView, TrackSymbolSize) => SVGTemplateResult` | The line a track chain is tracing. Committed track draws rails and a solid centerline; the live tail a dashed centerline, a part only when both its joins have σ under `TRACK_FIT.barCap`, with a bar across each uncommitted join but the last, half-length σ. A dot per click; a flagged one is red |
+| `renderTrack(track, size, highlighted?)` | `(Track, TrackSymbolSize, Point[]?) => SVGTemplateResult` | The centerline as one cubic per segment, and with `size.detail` the two rails at ±G/2 and a dot per click, red past `TRACK_FIT.tolerance` from the line. No rails and no red when `size.dpt` is `null`. A click at a pixel in `highlighted` takes `highlight.ts`'s class, and is drawn without `size.detail` too |
+| `renderPendingTrack(view, size)` | `(TraceView, TrackSymbolSize) => SVGTemplateResult` | The line a track chain is tracing. Committed track draws rails and a solid centerline; the uncommitted end draws `tailMarks`' parts as a dashed centerline, and its bars. A dot per click; a flagged one takes the danger token |
 | `TrackSymbolSize` | `{ dpt, strokePx, dotPx, detail }` | The DPT the rails are spaced by, screen-constant stroke and dot sizes, and whether to draw the rails and dots or the centerline alone |
-| `trackMarkerStyles` | `CSSResult` | The green ink and a flagged click's red |
+| `trackMarkerStyles` | `CSSResult` | The green ink, and `--sl-color-danger-500` for a flagged click |
 
 ### `track.ts`
 
@@ -778,7 +778,7 @@ heading, with length `d / (3 cos²(φ/4))`.
 | `pointAt`, `tangentAt` | A point on a segment, and the derivative there |
 | `trackPath(nodes)` | An SVG path, one `C` per segment |
 | `offsetPoints(nodes, offset)` | Sampled points `offset` px to the right of the line; negative is left |
-| `hitTrack(tracks, at, radius)` | The line under the pointer: the nearest point on it within `radius`, or null |
+| `hitTrack(tracks, at, radius)` | The line under the pointer: the one with a point nearest `at` within `radius`, or null |
 | `hitClick(tracks, at, radius)` | The click under the pointer: the nearest one within `radius`, as a line and an index, or null |
 | `clicksOff(track, maxPx)` | The indices of a line's clicks farther than `maxPx` from its nodes |
 | `nearestOnTrack(tracks, at, maxPx)`, `SNAP_TRACK_WIDTHS` | The point on any centerline nearest `at` within `maxPx`, or null; and the reach sensors and car ends snap within, 1.5 track widths |
@@ -792,7 +792,7 @@ click sets in `tests/clickSets/`. A fit is a start pose and a length and a curva
 | Export | Description |
 |---|---|
 | `fitTrack(points, opts)` | The whole line, start free: the fit, each point's distance from it, the joins with their position σ, and the points left out as outliers. Null with fewer than two points |
-| `fitWindow(points, start, opts)` | The same from a fixed start pose, for the live tail |
+| `fitWindow(points, start, opts)` | The same from a fixed start pose, for the uncommitted end of a trace |
 | `fitNodes(fit)` | The fit as stored nodes: one per join, and one at the middle of an arc that turns more than 90° |
 | `sampleFit(fit, step, offset)` | Points along the line, or beside it at `offset`, for drawing |
 
@@ -805,9 +805,10 @@ clicks alone.
 
 | Export | Description |
 |---|---|
-| `Trace` | `add`, `move`, `remove`, `finish`, and `Trace.replay(clicks, opts, finished?)`, which rebuilds a trace from its clicks |
+| `Trace` | `add`, `move`, `remove`, `finish`, `clone`; `Trace.replay(clicks, opts)`, which rebuilds a trace click by click, and `Trace.finished(clicks, opts)`, a finished line |
 | `traceOptions(dpt)` | `TRACK_FIT` in image pixels |
-| `TraceView` | What the overlay draws: the clicks, the committed line, the live tail and the clicks to flag red |
+| `TraceView` | What the overlay draws: the clicks, the committed line, the uncommitted end and the clicks to flag red |
+| `tailMarks(live, cap)` | What the uncommitted end draws: each part whose two joins have σ under `cap`, and a bar across each join between two parts where one is drawn, half-length σ |
 
 ### `carMarker.ts`
 

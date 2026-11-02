@@ -37,56 +37,31 @@ size rule is the session's — `requiredImageSize` answers it, and `addRefusal` 
 message names the file the user picked. `../SPEC.md` § Images states all three rules, why rotating
 in the browser was rejected, and why an image of another size is not something the screen can show.
 
-The **track tool** (#284, #298) fits straights and circular arcs, tangent where they meet, to
-clicks along the middle of the track (`trackFit.ts`). A chain's clicks build a trace
-(`trackTrace.ts`): the committed prefix never moves, and only the tail is fitted, from the last
-committed join. Each click after the first writes the line's `clicks` and the `nodes` of the
-whole-line fit of those clicks (`fitTrack`), one `layout` entry per click; the joins become nodes, and an arc
-turning more than 90° is split at its midpoint (`fitNodes`). So a save in the middle of a trace holds
-a valid line, and other readers keep reading nodes. Stored nodes win on load: nothing refits. A
-click within the grab radius of the last click adds nothing. Right-click, Escape or a tool change
-ends a line and writes nothing. A live trace takes every undo, which removes its last click and
-shows the trace as it was before that click, and ends at its start; redo ends it, then redoes. No
-fit runs on a pointer move, and nothing follows the pointer. While a trace is live, a click always
-traces, even on a sensor, and a drag grabs only a click of the line being traced, because sensors sit
-on the track being traced. The fit's constants are `TRACK_FIT`, in gauges, converted through DPT
-when a fit runs; `../SPEC.md` § Track centerlines lists them.
+The **track tool** (#284, #298, #302, #303) does what `../SPEC.md` § Track centerlines says; this
+section holds what the code keeps true. `trackFit.ts` fits straights and arcs to clicks.
+`trackTrace.ts` holds a chain's trace: the committed parts, and the rest fitted from the last
+committed join (`fitWindow`); `tailMarks` gives what that rest draws. The fit's constants are
+`TRACK_FIT`, in gauges, converted through DPT by `traceOptions` when a fit runs.
 
-While a trace is live its clicks can be edited (#303). A drag of a click moves the dot and leaves the
-trace as it is; on release the trace takes the move, "move click". Right-click on a click other than
-the last opens Delete click, "delete click", and the chain goes on; right-click on the last click
-ends the chain, as anywhere else. A move or delete of a committed click uncommits every part from
-the one before that click to the end (`Trace.move`, `Trace.remove`): that part's start pose stays
-fixed, the clicks from there on become the live tail, and joins commit again by the σ rule, so a
-join the edit leaves loose shows its bar again and track after the edit may shift. A live click
-refits the tail alone. Each edit writes the clicks and the nodes of the whole-line fit as one
-`layout` entry, like a click; the next click appends to the tail. The chain keeps the trace from
-before each entry it wrote, edits included, so an undo shows the trace as it was and the chain ends
-only once every entry it wrote is undone. Deleting one of a line's last two clicks deletes the line
-and ends the chain.
+Every entry a track chain writes, a click or a move or delete of a click, writes the line's `clicks`
+and the `nodes` of `fitTrack` over those clicks in stored order (`refitLine`), as one `layout`
+entry. The trace is drawing state and is never stored. `fitNodes` turns joins into nodes and adds
+one at the middle of an arc that turns more than 90°. An edit of a finished line refits the same
+way, a drag on release. No fit runs on load or on a pointer move, and nothing follows the pointer.
 
-The trace draws in place of its stored line: committed track with its rails, the live tail as a
-dashed centerline, a part of it only when both its joins have σ under the bar cap, and a bar across
-each uncommitted join of a drawn part but the last, half-length σ. Every click is a dot; one the fit
-leaves out or that lies past the tolerance is red. Under the track tool a stored line draws its
-rails, centerline and click dots, a click farther than the tolerance from the line drawn in red;
-under any other tool its centerline alone.
+The chain keeps the trace from before each entry it wrote, so an undo restores it without a replay,
+and the chain ends only once every entry it wrote is undone; stored clicks that match neither are
+replayed (`TrackChain.settle`). A chain continued from a line's first click traces the clicks
+backwards and writes them back in stored order. While a trace is live a click always traces, even on
+a sensor, and a drag grabs only a click of the traced line. A drag of a click holds the dot
+(`TrackChain.hold`, or the stored click for a finished line) and leaves the fit as it is until
+release. Right-click on a traced click other than the last opens Delete click and the chain goes
+on; deleting one of a line's last two clicks deletes the line and ends the chain. The trace draws
+in place of its stored line, which `rr-editor-view` leaves out of the viewer's `tracks`.
 
-A finished line is a function of its clicks (#302). The clicks are its only handles: there are no
-node dots or heading handles. Under the track tool with no chain live, a drag of a click moves the
-dot and leaves the line as it is; on release the whole line refits from its clicks and writes the
-clicks and nodes as one `layout` entry, "move click". A click on the line adds a click at the
-pointer, in track order by where it projects onto the line fitted to the clicks, and refits, "add
-click". Right-click on a click opens Delete click, which refits, "delete click"; one of a line's
-last two clicks deletes the line. Right-click elsewhere on a line opens Delete line. A click on the
-first or last click continues the line as a chain from there; one continued from its first click
-traces the clicks backwards and writes them back in stored order. A click on a click between the
-ends does nothing. Every refit is of the whole line, so a line loaded from an archive refits
-everywhere the first time one of its clicks is touched. A line without clicks draws, lands sensors
-and cars and can be deleted, but has no click handles and takes no click on the line. Sensors and
-car ends keep their pixels when a line refits; nothing lands them again. Lines and clicks have no
-id, so a menu carries the line's first node or the click's pixel and checks it is still there.
-Under any other tool the track grabs nothing.
+Lines and clicks have no id, so a menu carries the line's first node or the click's pixel and checks
+it is still there, and the reveal after an undo lights the changed clicks by pixel. Under any other
+tool the track grabs nothing.
 
 The picker takes **several files in one pick** (#262), and the pick — not the file — is the unit:
 `addPickedFiles` prepares and judges each file in filename order, hands what survives to

@@ -134,6 +134,13 @@ _Avoid_: using it for a sensor or a block
 Where two fitted parts of a centerline meet, each part a straight or a circular arc, with one heading on both sides. See [SPEC § Track centerlines](SPEC.md#track-centerlines).
 _Avoid_: knot, breakpoint
 
+**Sigma (σ)**:
+How uncertain a join's position is, in pixels: the long axis of its position covariance, from the fit. The bar drawn across the track at a join is σ to each side.
+
+**Committed**:
+Said of fitted track while tracing: it no longer moves as clicks arrive. Joins commit in order, each once its σ and that of every join before it are under a threshold; the rest of the line is fitted again with each click. See [SPEC § Track centerlines](SPEC.md#track-centerlines).
+_Avoid_: settled, frozen
+
 **Node**:
 A point of a stored centerline with the direction the track runs there. Each join is stored as a node. See rails49/r49's [FORMAT § Node](https://github.com/rails49/r49/blob/main/FORMAT.md#node).
 _Avoid_: control point, vertex
