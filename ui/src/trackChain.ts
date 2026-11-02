@@ -68,9 +68,10 @@ async function addClick(ctx: ChainContext, index: number, at: Point): Promise<Cl
  * `layout.centerlines` holds the clicks and the nodes of the whole-line fit;
  * the chain holds the trace, which is what it draws, and replays it from the
  * stored clicks whenever they change under it, as an undo does. The trace
- * before each click is kept, so an undo takes it back rather than replaying
- * every click. A chain continued from a line's first click traces its clicks
- * backwards and writes them back in stored order.
+ * before each entry it writes, a click or a move or delete of a click (#303),
+ * is kept, so an undo takes it back rather than replaying every click. A
+ * chain continued from a line's first click traces its clicks backwards and
+ * writes them back in stored order.
  */
 export class TrackChain implements Chain {
   readonly tool = 'track';
@@ -83,7 +84,7 @@ export class TrackChain implements Chain {
   /** How many clicks the line had when the chain began: 0 for a new line. */
   private readonly _base: number;
   private _trace: Trace;
-  /** The trace before each click this chain added, oldest first. */
+  /** The trace before each entry this chain wrote, oldest first. */
   private _before: Trace[] = [];
   private _view: TraceView;
 
@@ -108,14 +109,19 @@ export class TrackChain implements Chain {
     this._view = this._trace.view(this._opts);
   }
 
+  /** The line's index, or null before the second click writes it. */
+  get line(): number | null {
+    return this._index;
+  }
+
   view(): ChainView {
     const clicks = this._view.clicks;
     return { tool: 'track', end: clicks[clicks.length - 1], line: this._index, trace: this._view };
   }
 
+  /** Whether every entry this chain wrote, click or edit, has been undone. */
   atStart(): boolean {
-    const line = this._index === null ? undefined : centerlines(this._ctx)[this._index];
-    return !line || (line.clicks?.length ?? 0) <= this._base;
+    return this._before.length === 0;
   }
 
   /**
@@ -127,16 +133,53 @@ export class TrackChain implements Chain {
     const p = pixel(at);
     const last = this._trace.clicks[this._trace.clicks.length - 1];
     if (Math.hypot(p.x - last.x, p.y - last.y) <= DEFAULT_GRAB_RADIUS_SCREEN_PX * scale) return NONE;
+    await this._write(this._index === null ? 'place centerline' : 'extend centerline', t => t.add(p, this._opts));
+    return NONE;
+  }
+
+  /**
+   * Draws click `index`, in stored order, at `to` while a drag holds it, and
+   * the trace as it is; null puts the click back.
+   */
+  hold(index: number, to: Point | null) {
+    const view = this._trace.view(this._opts);
+    const clicks = [...view.clicks];
+    if (to) clicks[this._traced(index)] = to;
+    this._view = { ...view, clicks };
+  }
+
+  /**
+   * Moves click `index`, in stored order, to `to`. A committed click
+   * uncommits the trace back to the part before it (`Trace.move`).
+   */
+  async move(index: number, to: Point) {
+    await this._write('move click', t => t.move(this._traced(index), to, this._opts));
+  }
+
+  /** Deletes click `index`, in stored order, the same way. */
+  async remove(index: number) {
+    await this._write('delete click', t => t.remove(this._traced(index), this._opts));
+  }
+
+  /**
+   * Changes the trace, keeping it as it was for an undo, and writes the
+   * line's clicks with the nodes of their whole-line fit as one entry. The
+   * second click of a new line writes a new centerline.
+   */
+  private async _write(label: string, change: (trace: Trace) => void) {
     this._before.push(copy(this._trace));
-    this._trace.add(p, this._opts);
+    change(this._trace);
     this._view = this._trace.view(this._opts);
     const lines = [...centerlines(this._ctx)];
     const index = this._index ?? lines.length;
     lines[index] = refitLine(this._ctx, this._order(this._trace.clicks));
-    const label = this._index === null ? 'place centerline' : 'extend centerline';
     this._index = index;
     await this._ctx.record(label, { kind: 'layout' }, () => this._ctx.writeLayout({ centerlines: lines }));
-    return NONE;
+  }
+
+  /** A stored click index as a trace index. */
+  private _traced(index: number): number {
+    return this._reversed ? this._trace.clicks.length - 1 - index : index;
   }
 
   /**

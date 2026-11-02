@@ -48,7 +48,21 @@ click within the grab radius of the last click adds nothing. Right-click, Escape
 ends a line and writes nothing. A live trace takes every undo, which removes its last click and
 shows the trace as it was before that click, and ends at its start; redo ends it, then redoes. No
 fit runs on a pointer move, and nothing follows the pointer. While a trace is live, a click always
-traces, even on a sensor, and a drag grabs nothing, because sensors sit on the track being traced.
+traces, even on a sensor, and a drag grabs only a click of the line being traced, because sensors sit
+on the track being traced.
+
+While a trace is live its clicks can be edited (#303). A drag of a click moves the dot and leaves the
+trace as it is; on release the trace takes the move, "move click". Right-click on a click other than
+the last opens Delete click, "delete click", and the chain goes on; right-click on the last click
+ends the chain, as anywhere else. A move or delete of a committed click uncommits every part from
+the one before that click to the end (`Trace.move`, `Trace.remove`): that part's start pose stays
+fixed, the clicks from there on become the live tail, and joins commit again by the σ rule, so a
+join the edit leaves loose shows its bar again and track after the edit may shift. A live click
+refits the tail alone. Each edit writes the clicks and the nodes of the whole-line fit as one
+`layout` entry, like a click; the next click appends to the tail. The chain keeps the trace from
+before each entry it wrote, edits included, so an undo shows the trace as it was and the chain ends
+only once every entry it wrote is undone. Deleting one of a line's last two clicks deletes the line
+and ends the chain.
 
 The trace draws in place of its stored line: committed track with its rails, the live tail as a
 dashed centerline, a part of it only when both its joins have σ under the bar cap, and a bar across

@@ -142,6 +142,7 @@ rr-app                          ← shell: owns the editing session and the view
 > [#284]: https://github.com/rails49/occupancy/issues/284
 > [#298]: https://github.com/rails49/occupancy/issues/298
 > [#302]: https://github.com/rails49/occupancy/issues/302
+> [#303]: https://github.com/rails49/occupancy/issues/303
 
 ## State and data flow
 
@@ -746,7 +747,7 @@ both; each tool module supplies what differs.
 | `ChainView`, `ChainContext`, `ClickResult` | What the editor draws of a chain; what a tool reads and writes through the session, including `snap`; what a click asks the editor for |
 | `NO_TRACK`, `NO_TRACK_NOTICE` | Why a sensor or car end was refused: no centerline within `SNAP_TRACK_WIDTHS` |
 | `carTool`, `ALREADY_LABELED` | A free car end continues a chain, a coupling is refused with `ALREADY_LABELED`, a click on a car's body splits it, and empty image starts a chain |
-| `trackTool`, `TrackChain` | A click on a line's first or last click continues it as a chain, on a click between does nothing, on the line adds a click in track order and refits ([#302]), and anywhere else starts a chain ([#298]). Each click adds to the chain's trace (`trackTrace.ts`) and writes the line's clicks with the nodes of their whole-line fit (`trackFit.ts` § `fitTrack`, `fitNodes`). A chain from a first click traces backwards and writes back in stored order |
+| `trackTool`, `TrackChain` | A click on a line's first or last click continues it as a chain, on a click between does nothing, on the line adds a click in track order and refits ([#302]), and anywhere else starts a chain ([#298]). Each click adds to the chain's trace (`trackTrace.ts`) and writes the line's clicks with the nodes of their whole-line fit (`trackFit.ts` § `fitTrack`, `fitNodes`). A chain from a first click traces backwards and writes back in stored order. `hold`, `move` and `remove` take a click of the traced line, by stored index, while the chain is live: a drag draws it held, and a move or delete uncommits the trace back to the part before it and writes one entry ([#303]). `atStart()` is true once every entry the chain wrote is undone |
 | `trackHitAt`, `clickHitAt`, `refitLine` | The line or the click under the track tool's pointer, within the grab radius; a line with given clicks and the nodes of their whole-line fit |
 
 ---
@@ -977,7 +978,8 @@ per pick, however many of its files were refused ([#262]). `rr-app` owns the toa
   * **Pointer capture** is `rr-viewer`'s (it takes it on `pointerdown`); what the editor owes it is
     not bailing on coordinates outside the image, so a drag that leaves the viewer still commits.
 * **Right-click** ([#29]). `rr-pointer-contextmenu` goes to `session.rightClick`, which ends a live
-  chain or names the object a menu acts on. The editor opens `rr-context-menu` at the cursor with
+  chain or names the object a menu acts on; a click of the line a track chain traces, other than its
+  last, is named and the chain goes on ([#303]). The editor opens `rr-context-menu` at the cursor with
   that subject's rows — **delete** for a reference point, **name and delete** for a sensor,
   **delete and reclassify** for a car, **Delete click** or **Delete line** for track — and a chosen row calls `delete`, `reclassifyCar` or opens the
   name dialog. Empty image opens nothing.
@@ -1097,8 +1099,8 @@ it gets the objects the entry changed.
 | `tracks`, `previewTrack(point, scale)` | The layout's centerlines, and what a click would add to a live track chain ([#284]) |
 | `previewCar(point)` | Where a click would put the next car of a live car chain: the nearest track, or null when none is near |
 | `click(point, scale)` | Writes, or returns what the editor must ask for: a reference point's world position, a sensor's name, or a notice |
-| `beginDrag(point, scale)` | A `Drag` (`move`, `end`, `cancel`) on what is under the point, or null. Under the track tool a click comes first; its line refits on `end` ([#302]) |
-| `rightClick(point, scale)` | Ends a live chain, or returns the `MenuSubject` a menu acts on. Under the track tool a click is `track-click` (Delete click) and the rest of a line `track` (Delete line) |
+| `beginDrag(point, scale)` | A `Drag` (`move`, `end`, `cancel`) on what is under the point, or null. Under the track tool a click comes first; its line refits on `end` ([#302]). While a track chain is live only a click of its line is grabbed, and the chain takes the move on `end` ([#303]) |
+| `rightClick(point, scale)` | Ends a live chain, or returns the `MenuSubject` a menu acts on. Under the track tool a click is `track-click` (Delete click) and the rest of a line `track` (Delete line). While a track chain is live a click of its line other than the last is `track-click` and the chain goes on ([#303]) |
 | `placeReferencePoint`, `editReferencePoint`, `nameSensor`, `delete`, `reclassifyCar`, `setComplete` | The answers to a dialog, a menu row or the checkbox |
 | `editLayout`, `setCameraHeight` | The settings dialog's edits, one `layout` entry each |
 | `addImage`, `deleteImage`, `reorderImages` | The image list. Deleting the image on screen shows its neighbour. `addImage` may set `camera.resolution` (`SPEC.md` § Images, [#254]) |

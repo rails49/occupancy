@@ -18,7 +18,7 @@ import { TOOLS } from './tools.js';
 import { grab, pixel, NONE, NO_TRACK_NOTICE } from './chain.js';
 import type { Chain, ChainContext, ChainTool, ChainView, ClickResult } from './chain.js';
 import { carTool } from './carChain.js';
-import { clickHitAt, refitLine, trackHitAt, trackTool } from './trackChain.js';
+import { TrackChain, clickHitAt, refitLine, trackHitAt, trackTool } from './trackChain.js';
 import { nearestOnTrack, SNAP_TRACK_WIDTHS } from './track.js';
 import type { ClickHit, Track, TrackHit, TrackNode } from './track.js';
 import type { EditorTool } from './tools.js';
@@ -276,18 +276,18 @@ export class EditSession {
    * Starts a drag of whatever is under `at`, or returns null when nothing is.
    * A second drag while one is open is refused. A drag goes on while a chain
    * is live, and ends one still at its start. While a track chain is live
-   * nothing is grabbed, since sensors sit on the track being laid. Otherwise
-   * the track tool grabs a line's click before anything else.
+   * only a click of its line is grabbed, since sensors sit on the track being
+   * laid. Otherwise the track tool grabs a line's click before anything else.
    */
   beginDrag(at: Point, scale: number): Drag | null {
     if (this._drag) return null;
+    if (this._chain instanceof TrackChain) return this._grabTraced(this._chain, at, scale);
     const drag = this._grab(at, scale);
     if (drag && this._chain?.atStart()) this._chain = null;
     return drag;
   }
 
   private _grab(at: Point, scale: number): Drag | null {
-    if (this._chain?.tool === 'track') return null;
     const click = this._clickHit(at, scale);
     if (click) return this._grabClick(click, at);
     const scene = this._scene();
@@ -361,21 +361,69 @@ export class EditSession {
   }
 
   /**
-   * A right-click. A live chain ends and nothing else happens. Otherwise
-   * returns what a menu would act on: under the track tool a line's click,
-   * else the line; then a sensor or reference point under `at`, else the car
-   * whose body is under it, else null.
+   * A drag while a track chain is live: of a click of the line it traces, and
+   * nothing else. The dot follows the pointer and the trace stays as it is; on
+   * release the chain takes the move (`TrackChain.move`), as one entry.
+   */
+  private _grabTraced(chain: TrackChain, at: Point, scale: number): Drag | null {
+    const click = this._tracedClick(chain, at, scale);
+    if (!click) return null;
+    const from = this._centerlines()[click.line].clicks![click.index];
+    let to = from;
+    const drag: Drag = {
+      move: p => {
+        if (this._drag !== drag) return;
+        to = pixel({ x: from.x + p.x - at.x, y: from.y + p.y - at.y });
+        chain.hold(click.index, to);
+        this._changed();
+      },
+      end: async () => {
+        if (this._drag !== drag) return;
+        this._drag = null;
+        chain.hold(click.index, null);
+        if (!samePoint(to, from)) await chain.move(click.index, to);
+        this._changed();
+      },
+      cancel: async () => {
+        if (this._drag !== drag) return;
+        to = from;
+        await drag.end();
+      },
+    };
+    this._drag = drag;
+    return drag;
+  }
+
+  /** The menu subject for a line's click, with the pixel it is at. */
+  private _clickSubject(click: ClickHit): MenuSubject & { kind: 'track-click' } {
+    const px = this._centerlines()[click.line].clicks![click.index];
+    return { kind: 'track-click', line: click.line, index: click.index, px };
+  }
+
+  /** The click under the pointer of the line `chain` traces, or null. */
+  private _tracedClick(chain: TrackChain, at: Point, scale: number): ClickHit | null {
+    const click = this._clickHit(at, scale);
+    return click && click.line === chain.line ? click : null;
+  }
+
+  /**
+   * A right-click. On a click of the line a live track chain traces, other
+   * than the last, it returns that click and the chain goes on; anywhere else
+   * a live chain ends and nothing else happens. Otherwise returns what a menu
+   * would act on: under the track tool a line's click, else the line; then a
+   * sensor or reference point under `at`, else the car whose body is under
+   * it, else null.
    */
   rightClick(at: Point, scale: number): MenuSubject | null {
     if (this._chain) {
+      const traced = this._chain instanceof TrackChain ? this._tracedClick(this._chain, at, scale) : null;
+      const subject = traced && this._clickSubject(traced);
+      if (subject && !samePoint(subject.px, this._chain.view().end)) return subject;
       this.endChain();
       return null;
     }
     const click = this._clickHit(at, scale);
-    if (click) {
-      const px = this._centerlines()[click.line].clicks![click.index];
-      return { kind: 'track-click', line: click.line, index: click.index, px };
-    }
+    if (click) return this._clickSubject(click);
     const trackHit = this._trackHit(at, scale);
     if (trackHit) {
       const line = this._centerlines()[trackHit.line];
@@ -457,11 +505,18 @@ export class EditSession {
         return;
       }
       case 'track-click': {
-        // A line keeps at least two clicks, so deleting one of the last two deletes the line.
+        // A line keeps at least two clicks, so deleting one of the last two
+        // deletes the line, and ends a chain tracing it.
         const { line, index } = subject;
         const clicks = this._centerlines()[line]?.clicks;
         const click = clicks?.[index];
         if (!click || !samePoint(click, subject.px)) return;
+        const chain = this._chain instanceof TrackChain && this._chain.line === line ? this._chain : null;
+        if (chain && clicks.length > 2) {
+          await chain.remove(index);
+          return;
+        }
+        if (chain) this._chain = null;
         const lines = [...this._centerlines()];
         if (clicks.length <= 2) lines.splice(line, 1);
         else lines[line] = refitLine(this._context, clicks.filter((_, i) => i !== index));
