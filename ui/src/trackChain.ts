@@ -167,7 +167,7 @@ export class TrackChain implements Chain {
    * one entry. The second click of a new line writes a new centerline.
    */
   private async _write(label: string, change: (trace: Trace) => void) {
-    this._before.push(copy(this._trace));
+    this._before.push(this._trace.clone());
     change(this._trace);
     this._view = this._trace.view(this._opts);
     const lines = [...centerlines(this._ctx)];
@@ -210,11 +210,6 @@ export class TrackChain implements Chain {
   private _order(clicks: readonly Point[]): Point[] {
     return this._reversed ? [...clicks].reverse() : [...clicks];
   }
-}
-
-/** A trace that later clicks on `trace` leave as it is. */
-function copy(trace: Trace): Trace {
-  return Object.assign(new Trace(), structuredClone({ ...trace }));
 }
 
 function samePoints(a: readonly Point[], b: readonly Point[]): boolean {

@@ -3,10 +3,10 @@ import type { Point } from '@rails49/r49';
 /**
  * One track traced click by click (#298). While tracing, the prefix is
  * committed and never moves; only the tail is fitted, from the last
- * committed join, and a join is committed, with every join before it, once
- * its position uncertainty is under `commitSigma`, unless one of those is a
- * guess, at the bar cap. Editing a committed click uncommits every part from
- * the one before it to the end, and the tail is traced again from there.
+ * committed join, and joins are committed in order, each once it and every
+ * live join before it have position uncertainty under `commitSigma`. Editing
+ * a committed click uncommits every part from the one before it to the end,
+ * and the tail is traced again from there.
  * Finishing fits the whole line from its clicks at once, and every later
  * edit does the same, so a finished line depends on its clicks alone. Pure.
  */
@@ -77,6 +77,11 @@ export class Trace {
     for (const p of clicks) t.add(p, opts);
     if (finished) t.finish(opts);
     return t;
+  }
+
+  /** A copy that later changes to this trace leave as it is. */
+  clone(): Trace {
+    return Object.assign(new Trace(), structuredClone({ ...this }));
   }
 
   committedFit(): Fit | null {
@@ -186,16 +191,13 @@ export class Trace {
     this.live = fitWindow(pts, this.origin ? this.liveStart() : null, opts);
   }
 
-  /**
-   * Commit the live parts up to the last join whose σ is under the commit σ,
-   * with the joins before it, but never past a join at the bar cap.
-   */
+  /** Commit the live parts up to the last join, in order, whose σ is under the commit σ. */
   private commit(opts: TraceOptions) {
     const live = this.live;
     if (!live) return;
     const m = live.fit.parts.length;
     let j = 0;
-    for (let i = 1; i < m && live.joins[i].sigma < opts.barCap; i++) if (live.joins[i].sigma <= opts.commitSigma) j = i;
+    while (j + 1 < m && live.joins[j + 1].sigma <= opts.commitSigma) j++;
     if (j === 0) return;
     if (!this.origin) {
       this.origin = live.fit.start;
