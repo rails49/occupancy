@@ -33,7 +33,7 @@ export interface Segment {
 }
 
 /** Spacing, in image pixels, of the points a curve is drawn through. */
-const SAMPLE_PX = 2;
+export const SAMPLE_PX = 2;
 
 /** `angle` in (-π, π]. */
 export function wrapAngle(angle: number): number {

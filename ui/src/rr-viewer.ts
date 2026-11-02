@@ -239,8 +239,8 @@ export interface ViewerHighlight {
   readonly cars: readonly string[];
   readonly sensors: readonly string[];
   readonly calibration: readonly number[];
-  /** Centerline nodes, by pixel. */
-  readonly trackNodes: readonly Point[];
+  /** Centerline clicks, by pixel. */
+  readonly trackClicks: readonly Point[];
 }
 
 /**
@@ -935,7 +935,7 @@ export class RrViewer extends LitElement {
         >
           <g class="frame" transform="scale(${fit.sx}, ${fit.sy})">
             <!-- Track under everything: cars stand on it. -->
-            ${this.tracks.map(t => renderTrack(t, trackSize, this.highlight?.trackNodes ?? []))}
+            ${this.tracks.map(t => renderTrack(t, trackSize, this.highlight?.trackClicks ?? []))}
             ${this.pendingTrack ? renderPendingTrack(this.pendingTrack, trackSize) : ''}
 
             <!-- Cars first: their width rectangles are the only area fills here,

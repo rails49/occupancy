@@ -319,24 +319,32 @@ describe('EditHistory highlights', () => {
     expect(history.undoEntry?.highlights).toEqual([{ kind: 'sensor', id: 'sensor-b' }]);
   });
 
-  it('names the centerline node a layout entry added or turned, by pixel', async () => {
+  it('names the clicks a layout entry added or moved, by pixel, and no node', async () => {
     const archive = await makeArchive();
     const history = attached(archive);
     const manifest = archive.getManifest();
-    const a = { x: 0, y: 0, heading: 0 };
-    const b = { x: 100, y: 0, heading: 0 };
-    manifest.layout = { ...manifest.layout, centerlines: [{ nodes: [a, b] }] };
+    const nodes = [
+      { x: 0, y: 0, heading: 0 },
+      { x: 100, y: 0, heading: 0 },
+    ];
+    const a = { x: 0, y: 0 };
+    const b = { x: 100, y: 0 };
+    manifest.layout = { ...manifest.layout, centerlines: [{ nodes, clicks: [a, b] }] };
 
     await history.record('extend centerline', { kind: 'layout' }, () => {
-      manifest.layout = { ...manifest.layout, centerlines: [{ nodes: [a, b, { x: 200, y: 50, heading: 0.5 }] }] };
+      const more = [...nodes, { x: 200, y: 50, heading: 0.5 }];
+      manifest.layout = { ...manifest.layout, centerlines: [{ nodes: more, clicks: [a, b, { x: 200, y: 50 }] }] };
     });
-    expect(history.undoEntry?.highlights).toEqual([{ kind: 'track-node', px: { x: 200, y: 50 } }]);
+    expect(history.undoEntry?.highlights).toEqual([{ kind: 'track-click', px: { x: 200, y: 50 } }]);
 
-    await history.record('turn centerline node', { kind: 'layout' }, () => {
-      const nodes = manifest.layout.centerlines![0].nodes;
-      manifest.layout = { ...manifest.layout, centerlines: [{ nodes: [nodes[0], { ...b, heading: 1 }, nodes[2]] }] };
+    await history.record('move click', { kind: 'layout' }, () => {
+      const line = manifest.layout.centerlines![0];
+      manifest.layout = { ...manifest.layout, centerlines: [{ ...line, clicks: [a, { x: 100, y: 5 }, line.clicks![2]] }] };
     });
-    expect(history.undoEntry?.highlights).toEqual([{ kind: 'track-node', px: { x: 100, y: 0 } }]);
+    expect(history.undoEntry?.highlights).toEqual([
+      { kind: 'track-click', px: { x: 100, y: 0 } },
+      { kind: 'track-click', px: { x: 100, y: 5 } },
+    ]);
   });
 
   it('names both ends of a calibration point that moved', async () => {

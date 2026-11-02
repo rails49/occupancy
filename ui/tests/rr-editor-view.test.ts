@@ -1850,7 +1850,7 @@ describe('rr-editor-view', () => {
         cars: ['car-a', 'car-b'],
         sensors: [],
         calibration: [],
-        trackNodes: [],
+        trackClicks: [],
       });
     });
 
@@ -1881,13 +1881,17 @@ describe('rr-editor-view', () => {
       expect(el.shadowRoot!.querySelector('rr-thumbnail-bar')!.selectedIndex).to.equal(1);
     });
 
-    it('lights the centerline nodes an undo brought back, by pixel', async () => {
+    it('lights the clicks an undo brought back, by pixel', async () => {
       calibrate();
       archive.getManifest().layout.centerlines = [
         {
           nodes: [
             { x: 100, y: 100, heading: 0 },
             { x: 300, y: 100, heading: 0 },
+          ],
+          clicks: [
+            { x: 100, y: 100 },
+            { x: 300, y: 100 },
           ],
         },
       ];
@@ -1897,7 +1901,7 @@ describe('rr-editor-view', () => {
       await el.session!.undo();
       await el.updateComplete;
 
-      expect(highlightOf(el)!.trackNodes).to.deep.equal([
+      expect(highlightOf(el)!.trackClicks).to.deep.equal([
         { x: 100, y: 100 },
         { x: 300, y: 100 },
       ]);

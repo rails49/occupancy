@@ -63,8 +63,8 @@ export type HistoryHighlight =
   | { readonly kind: 'car'; readonly id: string }
   | { readonly kind: 'sensor'; readonly id: string }
   | { readonly kind: 'calibration'; readonly px: Point }
-  /** A centerline node, by pixel like a calibration point: nodes have no id. */
-  | { readonly kind: 'track-node'; readonly px: Point };
+  /** A centerline's click, by pixel like a calibration point: clicks have no id. */
+  | { readonly kind: 'track-click'; readonly px: Point };
 
 /**
  * One undoable edit. Returned by {@link EditHistory.undo} and
@@ -155,32 +155,28 @@ export function changedObjects(
         ...changedPoints(b?.calibration.points ?? [], a?.calibration.points ?? []).map(
           px => ({ kind: 'calibration', px }) as const
         ),
-        ...changedNodes(b?.centerlines ?? [], a?.centerlines ?? []).map(
-          px => ({ kind: 'track-node', px }) as const
+        ...changedClicks(b?.centerlines ?? [], a?.centerlines ?? []).map(
+          px => ({ kind: 'track-click', px }) as const
         ),
       ];
     }
   }
 }
 
-/**
- * The pixels of the centerline nodes one side has and the other does not, by
- * value like {@link changedPoints}. A node that turned comes back once.
- */
-function changedNodes(before: readonly Centerline[], after: readonly Centerline[]): Point[] {
-  const nodes = (lines: readonly Centerline[]) => lines.flatMap(line => line.nodes);
-  const key = (n: Centerline['nodes'][number]) => `${n.x},${n.y},${n.heading}`;
-  const b = new Set(nodes(before).map(key));
-  const a = new Set(nodes(after).map(key));
+/** The pixels of the clicks one side has and the other does not, by value like {@link changedPoints}. */
+function changedClicks(before: readonly Centerline[], after: readonly Centerline[]): Point[] {
+  const clicks = (lines: readonly Centerline[]) => lines.flatMap(line => line.clicks ?? []);
+  const key = (p: Point) => `${p.x},${p.y}`;
+  const b = new Set(clicks(before).map(key));
+  const a = new Set(clicks(after).map(key));
 
   const pixels: Point[] = [];
   const seen = new Set<string>();
-  for (const node of [...nodes(before), ...nodes(after)]) {
-    if (b.has(key(node)) && a.has(key(node))) continue;
-    const px = `${node.x},${node.y}`;
-    if (seen.has(px)) continue;
-    seen.add(px);
-    pixels.push({ x: node.x, y: node.y });
+  for (const p of [...clicks(before), ...clicks(after)]) {
+    if (b.has(key(p)) && a.has(key(p))) continue;
+    if (seen.has(key(p))) continue;
+    seen.add(key(p));
+    pixels.push({ x: p.x, y: p.y });
   }
   return pixels;
 }

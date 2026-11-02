@@ -254,7 +254,7 @@ describe('rr-app', () => {
         cars: ['car-a'],
         sensors: [],
         calibration: [],
-        trackNodes: [],
+        trackClicks: [],
       });
     });
   });

@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import type { Point } from '@rails49/r49';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fitTrack, nearestParts } from '../src/trackFit.js';
-import { Trace, traceOptions } from '../src/trackTrace.js';
+import { fitTrack, nearestParts, type Fit, type FitResult, type Join } from '../src/trackFit.js';
+import { Trace, tailMarks, traceOptions } from '../src/trackTrace.js';
 import { G, TEN_PARTS, clicksAlong, offLine } from './trackClicks.js';
 
 const opts = traceOptions(G);
@@ -145,6 +145,37 @@ describe('Trace when finished', () => {
     b.add(clicks[5], opts);
     expect(b.clicks).toEqual(a.clicks);
     expect(b.committedFit()).toEqual(a.committedFit());
+  });
+});
+
+describe('tailMarks', () => {
+  /** A straight tail from (x, 0) heading along +x, one part per length, its joins carrying `sigmas`. */
+  function tail(x: number, lengths: readonly number[], sigmas: readonly number[]): FitResult {
+    const fit: Fit = { start: { x, y: 0, heading: 0 }, parts: lengths.map(length => ({ length, curvature: 0 })) };
+    const joins: Join[] = sigmas.map((sigma, i) => ({ x: x + lengths.slice(0, i).reduce((a, b) => a + b, 0), y: 0, heading: 0, sigma, ux: 1, uy: 0 }));
+    return { fit, residuals: [], partOf: [], worst: 0, rms: 0, joins, outliers: [] };
+  }
+
+  it('draws nothing with no tail', () => {
+    expect(tailMarks(null, 40)).toEqual({ parts: [], bars: [] });
+  });
+
+  it('draws each part whose joins both have σ under the cap', () => {
+    const { parts } = tailMarks(tail(0, [100, 100, 100], [1, 3, 40, 2]), 40);
+    expect(parts).toEqual([{ start: { x: 0, y: 0, heading: 0 }, parts: [{ length: 100, curvature: 0 }] }]);
+  });
+
+  it('puts a bar across each join where two parts meet, half-length σ, none at the start or end', () => {
+    const { bars } = tailMarks(tail(0, [100, 100, 100], [5, 3, 4, 2]), 40);
+    expect(bars).toEqual([
+      { from: { x: 100, y: -3 }, to: { x: 100, y: 3 } },
+      { from: { x: 200, y: -4 }, to: { x: 200, y: 4 } },
+    ]);
+  });
+
+  it('puts no bar at a join neither of whose parts is drawn', () => {
+    const { bars } = tailMarks(tail(0, [100, 100, 100], [5, 3, 50, 2]), 40);
+    expect(bars).toEqual([{ from: { x: 100, y: -3 }, to: { x: 100, y: 3 } }]);
   });
 });
 

@@ -725,11 +725,11 @@ export class RREditorView extends LitElement {
    * a stale glow beside it would name the wrong edit.
    */
   private _showHighlight(highlights: readonly HistoryHighlight[]) {
-    const { cars, sensors, calibration, trackNodes } = this._resolveHighlight(highlights);
+    const { cars, sensors, calibration, trackClicks } = this._resolveHighlight(highlights);
     this._revealZoom(highlights);
 
     this._clearHighlight();
-    if (cars.length + sensors.length + calibration.length + trackNodes.length === 0) return;
+    if (cars.length + sensors.length + calibration.length + trackClicks.length === 0) return;
 
     this._highlight = highlights;
     this._highlightTimer = setTimeout(() => this._clearHighlight(), HIGHLIGHT_DURATION_MS);
@@ -756,7 +756,7 @@ export class RREditorView extends LitElement {
     const cars: string[] = [];
     const sensors: string[] = [];
     const calibration: number[] = [];
-    const trackNodes: Point[] = [];
+    const trackClicks: Point[] = [];
     const points = this.session?.archive.getManifest().layout.calibration.points ?? [];
 
     for (const highlight of highlights) {
@@ -772,13 +772,13 @@ export class RREditorView extends LitElement {
           if (index >= 0) calibration.push(index);
           break;
         }
-        case 'track-node':
-          if (this._trackNodeIsAt(highlight.px)) trackNodes.push(highlight.px);
+        case 'track-click':
+          if (this._trackClickIsAt(highlight.px)) trackClicks.push(highlight.px);
           break;
       }
     }
 
-    return { cars, sensors, calibration, trackNodes };
+    return { cars, sensors, calibration, trackClicks };
   }
 
   /**
@@ -836,17 +836,17 @@ export class RREditorView extends LitElement {
           }
           break;
         }
-        case 'track-node':
-          if (this._trackNodeIsAt(highlight.px)) points.push(highlight.px);
+        case 'track-click':
+          if (this._trackClickIsAt(highlight.px)) points.push(highlight.px);
           break;
       }
     }
     return points;
   }
 
-  /** Whether some centerline has a node at `px`. */
-  private _trackNodeIsAt(px: Point): boolean {
-    return this.session?.tracks.some(track => track.nodes.some(node => samePoint(node, px))) ?? false;
+  /** Whether some centerline has a click at `px`. */
+  private _trackClickIsAt(px: Point): boolean {
+    return this.session?.tracks.some(track => track.clicks?.some(click => samePoint(click, px))) ?? false;
   }
 
   /**

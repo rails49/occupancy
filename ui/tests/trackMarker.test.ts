@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { render, svg } from 'lit';
 import type { Point } from '@rails49/r49';
-import { renderPendingTrack, renderTrack } from '../src/trackMarker.js';
+import { renderPendingTrack, renderTrack, trackMarkerStyles } from '../src/trackMarker.js';
 import type { TrackSymbolSize } from '../src/trackMarker.js';
 import type { Track } from '../src/track.js';
 import type { Fit, FitResult, Join } from '../src/trackFit.js';
@@ -61,13 +61,18 @@ describe('renderTrack', () => {
     expect(el.querySelectorAll('.rail, .click, .node')).toHaveLength(0);
   });
 
-  it('draws a node a reveal points at, and no other', () => {
-    for (const detail of [true, false]) {
-      const el = renderSvg(renderTrack(track, { ...size, detail }, [{ x: 300, y: 100 }]));
-      const nodes = el.querySelectorAll('.node');
-      expect(nodes).toHaveLength(1);
-      expect(nodes[0].classList.contains(HIGHLIGHT_CLASS)).toBe(true);
-    }
+  it('lights a click a reveal points at, drawn without the detail too, and no node', () => {
+    const lit = (detail: boolean) => {
+      const el = renderSvg(renderTrack(track, { ...size, detail }, [{ x: 200, y: 101 }]));
+      expect(el.querySelectorAll('.node')).toHaveLength(0);
+      return [...el.querySelectorAll('.click')].map(c => c.classList.contains(HIGHLIGHT_CLASS));
+    };
+    expect(lit(true)).toEqual([false, true, false, false]);
+    expect(lit(false)).toEqual([true]);
+  });
+
+  it('draws flagged clicks in the danger token', () => {
+    expect(trackMarkerStyles.cssText).toMatch(/\.click\.outlier\s*\{\s*fill: var\(--sl-color-danger-500\);/);
   });
 });
 
@@ -119,12 +124,9 @@ describe('renderPendingTrack', () => {
     expect(el.querySelectorAll('.centerline.tail')).toHaveLength(2);
   });
 
-  it('puts a bar across each uncommitted join, half as long as its σ, and none at the end', () => {
+  it('puts a bar across each uncommitted join, half as long as its σ, and none at the start or end', () => {
     const uncommitted = renderSvg(renderPendingTrack(view({ live: live(straight(0, [100, 100]), [5, 3, 1]) }), size));
-    expect(bars(uncommitted)).toEqual([
-      { x: 0, y: 0, half: 5, across: true },
-      { x: 100, y: 0, half: 3, across: true },
-    ]);
+    expect(bars(uncommitted)).toEqual([{ x: 100, y: 0, half: 3, across: true }]);
 
     const committed = renderSvg(
       renderPendingTrack(view({ committed: straight(0, [100]), live: live(straight(100, [100, 100]), [0, 3, 1]) }), size)

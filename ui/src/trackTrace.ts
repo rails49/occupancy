@@ -55,6 +55,34 @@ export interface TraceView {
   readonly flagged: readonly number[];
 }
 
+/** A bar across the track at a join, end to end. */
+export interface Bar {
+  readonly from: Point;
+  readonly to: Point;
+}
+
+/**
+ * What the live tail `live` draws (#298): each part both of whose joins have σ
+ * under `cap`, as a fit of its own, and a bar across each join where two
+ * parts meet and one of them is drawn, perpendicular to the track and
+ * half-length σ.
+ */
+export function tailMarks(live: FitResult | null, cap: number): { parts: Fit[]; bars: Bar[] } {
+  if (!live) return { parts: [], bars: [] };
+  const { joins } = live;
+  const m = live.fit.parts.length;
+  const starts = poses(live.fit);
+  const drawn = live.fit.parts.map((_, i) => joins[i].sigma < cap && joins[i + 1].sigma < cap);
+  const parts = live.fit.parts.flatMap((part, i) => (drawn[i] ? [{ start: starts[i], parts: [part] }] : []));
+  const bars = joins.slice(1, m).flatMap((j, k) => {
+    if (!drawn[k] && !drawn[k + 1]) return [];
+    const dx = -j.sigma * Math.sin(j.heading);
+    const dy = j.sigma * Math.cos(j.heading);
+    return [{ from: { x: j.x - dx, y: j.y - dy }, to: { x: j.x + dx, y: j.y + dy } }];
+  });
+  return { parts, bars };
+}
+
 export class Trace {
   /** Every click, in track order. */
   clicks: Point[] = [];

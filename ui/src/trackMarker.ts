@@ -2,11 +2,13 @@ import { svg, css } from 'lit';
 import type { SVGTemplateResult, CSSResult } from 'lit';
 import type { Point } from '@rails49/r49';
 import { HIGHLIGHT_CLASS } from './highlight.js';
-import { clicksOff, offsetPoints, trackPath } from './track.js';
+import { samePoint } from './geometry.js';
+import { SAMPLE_PX, clicksOff, offsetPoints, trackPath } from './track.js';
 import type { Track } from './track.js';
-import { TRACK_FIT, poses, sampleFit } from './trackFit.js';
-import type { Fit, Join } from './trackFit.js';
-import type { TraceView } from './trackTrace.js';
+import { sampleFit } from './trackFit.js';
+import type { Fit } from './trackFit.js';
+import { tailMarks, traceOptions } from './trackTrace.js';
+import type { Bar, TraceView } from './trackTrace.js';
 
 /**
  * Track rendering for SVG (#284, #298): the centerline, and under the track
@@ -44,14 +46,13 @@ export const trackMarkerStyles: CSSResult = css`
     opacity: 0.8;
   }
 
-  .track .node,
   .track .click {
     fill: var(--track-ink);
     stroke: rgba(0, 0, 0, 0.75);
   }
 
   .track .click.outlier {
-    fill: #ef4444;
+    fill: var(--sl-color-danger-500);
   }
 `;
 
@@ -64,13 +65,10 @@ export interface TrackSymbolSize {
   readonly dotPx: number;
   /**
    * Whether to draw the rails and the click dots, or the centerline alone. A
-   * node a reveal points at is drawn either way.
+   * click a reveal points at is drawn either way.
    */
   readonly detail: boolean;
 }
-
-/** Spacing, in image pixels, of the points a fitted part is drawn through. */
-const SAMPLE_PX = 2;
 
 function polyline(points: readonly Point[]): string {
   return points.map(p => `${p.x},${p.y}`).join(' ');
@@ -98,14 +96,14 @@ function flagged(track: Track, gauge: number | null): readonly number[] {
   if (gauge === null) return [];
   const cached = offCache.get(track);
   if (cached?.dpt === gauge) return cached.off;
-  const off = clicksOff(track, TRACK_FIT.tolerance * gauge);
+  const off = clicksOff(track, traceOptions(gauge).tolerance);
   offCache.set(track, { dpt: gauge, off });
   return off;
 }
 
 /**
  * One centerline. A click past the tolerance from the line drawn takes the
- * danger ink. `highlighted` are the pixels of nodes a reveal points at (#37).
+ * danger ink. `highlighted` are the pixels of clicks a reveal points at (#37).
  */
 export function renderTrack(
   track: Track,
@@ -114,7 +112,13 @@ export function renderTrack(
 ): SVGTemplateResult {
   const { nodes } = track;
   const gauge = size.dpt;
-  const lit = nodes.filter(n => highlighted.some(p => p.x === n.x && p.y === n.y));
+  const off = size.detail ? flagged(track, gauge) : [];
+  const dots = (track.clicks ?? []).flatMap((p, i) => {
+    const lit = highlighted.some(h => samePoint(h, p));
+    if (!size.detail && !lit) return [];
+    const cls = `click${off.includes(i) ? ' outlier' : ''}${lit ? ` ${HIGHLIGHT_CLASS}` : ''}`;
+    return [renderDot(p, size, cls)];
+  });
   return svg`<g class="track">
     ${
       gauge === null || !size.detail
@@ -128,8 +132,7 @@ export function renderTrack(
           )
     }
     <path class="centerline" d="${trackPath(nodes)}" stroke-width="${size.strokePx}" />
-    ${size.detail ? renderClicks(track.clicks ?? [], size, flagged(track, gauge)) : ''}
-    ${lit.map(n => renderDot(n, size, `node ${HIGHLIGHT_CLASS}`))}
+    ${dots}
   </g>`;
 }
 
@@ -144,39 +147,27 @@ function renderFit(fit: Fit, offset: number, cls: string, size: TrackSymbolSize,
   />`;
 }
 
-/** A bar across the track at `join`, half-length its σ, held to `cap`. */
-function renderBar(join: Join, cap: number, size: TrackSymbolSize): SVGTemplateResult {
-  const h = Math.min(join.sigma, cap);
-  const dx = -h * Math.sin(join.heading);
-  const dy = h * Math.cos(join.heading);
+function renderBar(bar: Bar, size: TrackSymbolSize): SVGTemplateResult {
   return svg`<line
     class="bar"
-    x1="${join.x - dx}"
-    y1="${join.y - dy}"
-    x2="${join.x + dx}"
-    y2="${join.y + dy}"
+    x1="${bar.from.x}"
+    y1="${bar.from.y}"
+    x2="${bar.to.x}"
+    y2="${bar.to.y}"
     stroke-width="${size.strokePx}"
   />`;
 }
 
 /**
  * The line a track chain is tracing (#298). Committed track draws its rails
- * and a solid centerline. The live tail draws a dashed centerline, a part only
- * when both its joins have σ under the bar cap, and a bar across each
- * uncommitted join of a drawn part but the last. Every click is a dot; a
- * flagged one takes the danger ink.
+ * and a solid centerline; the live tail draws what `tailMarks` gives, its
+ * parts as a dashed centerline. Every click is a dot; a flagged one takes the
+ * danger ink.
  */
 export function renderPendingTrack(view: TraceView, size: TrackSymbolSize): SVGTemplateResult {
-  const { committed, live } = view;
+  const { committed } = view;
   const gauge = size.dpt;
-  const cap = gauge === null ? Infinity : TRACK_FIT.barCap * gauge;
-  const parts = live?.fit.parts ?? [];
-  const joins = live?.joins ?? [];
-  const starts = live ? poses(live.fit) : [];
-  const drawn = parts.map((_, i) => joins[i].sigma < cap && joins[i + 1].sigma < cap);
-  // A live tail starts at the last committed join once anything is committed.
-  const firstLoose = committed ? 1 : 0;
-  const barred = joins.filter((_, i) => i >= firstLoose && i < parts.length && (drawn[i] || drawn[i - 1]));
+  const tail = tailMarks(view.live, gauge === null ? Infinity : traceOptions(gauge).barCap);
   return svg`<g class="track track-pending">
     ${
       committed
@@ -186,10 +177,8 @@ export function renderPendingTrack(view: TraceView, size: TrackSymbolSize): SVGT
           ]
         : ''
     }
-    ${parts.map((part, i) =>
-      drawn[i] ? renderFit({ start: starts[i], parts: [part] }, 0, 'centerline tail', size, true) : ''
-    )}
-    ${barred.map(j => renderBar(j, cap, size))}
+    ${tail.parts.map(part => renderFit(part, 0, 'centerline tail', size, true))}
+    ${tail.bars.map(bar => renderBar(bar, size))}
     ${renderClicks(view.clicks, size, view.flagged)}
   </g>`;
 }
