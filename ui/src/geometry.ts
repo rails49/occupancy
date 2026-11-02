@@ -717,7 +717,7 @@ export function dragHandles(hit: HitTarget, scene: HitScene): readonly DragHandl
  * in one gesture takes the identical translation — which is what keeps a
  * coupler's two ends on the *same* pixel, and a coupling is exact coincidence.
  */
-export function dragTo(handle: DragHandle, delta: Point): Point {
+export function dragTo(handle: Pick<DragHandle, 'from'>, delta: Point): Point {
   return { x: Math.round(handle.from.x + delta.x), y: Math.round(handle.from.y + delta.y) };
 }
 

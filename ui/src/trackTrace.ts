@@ -99,10 +99,18 @@ export class Trace {
   /** The whole-line fit of a finished line, with a residual for every click. */
   whole: FitResult | null = null;
 
-  static replay(clicks: readonly Point[], opts: TraceOptions, finished = false): Trace {
+  /** A trace of `clicks`, added one by one. */
+  static replay(clicks: readonly Point[], opts: TraceOptions): Trace {
     const t = new Trace();
     for (const p of clicks) t.add(p, opts);
-    if (finished) t.finish(opts);
+    return t;
+  }
+
+  /** A finished line of `clicks`, fitted whole at once. */
+  static finished(clicks: readonly Point[], opts: TraceOptions): Trace {
+    const t = new Trace();
+    t.clicks = [...clicks];
+    t.finish(opts);
     return t;
   }
 

@@ -58,7 +58,7 @@ export interface Fit {
   readonly parts: readonly Part[];
 }
 
-export interface Bounds {
+interface Bounds {
   /** Shortest part, px. */
   readonly minLength: number;
   /** Tightest arc, px. */
@@ -237,7 +237,7 @@ export function positionsAlong(fit: Fit, points: readonly Point[]): number[] {
   return evaluate(fit, points).s;
 }
 
-/** Huber: a residual past `c` counts linearly, so one bad click cannot bend the line. */
+/** Huber: a residual past `c` counts linearly. */
 function robust(r: number, c: number): number {
   const a = Math.abs(r);
   return a <= c ? r : Math.sign(r) * Math.sqrt(c * (2 * a - c));
@@ -950,8 +950,7 @@ export function fitTrack(points: readonly Point[], opts: FitOptions): FitResult 
 
 /**
  * The fit as stored nodes: one per join, heading along the line. An arc that
- * turns more than 90° is split at its midpoint, since a node pair draws an arc
- * as one cubic, which follows it closely only up to 90°.
+ * turns more than 90° is split at its midpoint.
  */
 export function fitNodes(fit: Fit): TrackNode[] {
   const node = (p: Pose): TrackNode => ({ x: p.x, y: p.y, heading: wrapAngle(p.heading) });

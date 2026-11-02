@@ -168,31 +168,20 @@ export function clicksOff(track: Track, maxPx: number): number[] {
   return clicks.flatMap((p, i) => (nearestOnTrack([track], p, maxPx) ? [] : [i]));
 }
 
-/** A pointer on a line: `t` along `segment` of centerline `line`. */
+/** A pointer on a line: centerline `line`. */
 export interface TrackHit {
   readonly line: number;
-  readonly segment: number;
-  readonly t: number;
 }
 
-/** The point on a line nearest `at` and no farther than `radius`, or null. */
+/** The line nearest `at` and no farther than `radius`, or null. */
 export function hitTrack(tracks: readonly Track[], at: Point, radius: number): TrackHit | null {
-  let best: TrackHit | null = null;
-  let bestD = radius;
-  for (const [line, track] of tracks.entries()) {
-    for (const [segment, s] of segments(track.nodes).entries()) {
+  const near = tracks.flatMap((track, line) =>
+    segments(track.nodes).flatMap(s => {
       const n = Math.max(4, Math.ceil(Math.hypot(s.p1.x - s.p0.x, s.p1.y - s.p0.y) / SAMPLE_PX));
-      for (let k = 0; k <= n; k++) {
-        const p = pointAt(s, k / n);
-        const d = Math.hypot(p.x - at.x, p.y - at.y);
-        if (d <= bestD) {
-          best = { line, segment, t: k / n };
-          bestD = d;
-        }
-      }
-    }
-  }
-  return best;
+      return Array.from({ length: n + 1 }, (_, k) => [{ line }, pointAt(s, k / n)] as const);
+    })
+  );
+  return nearestWithin(near, at, radius);
 }
 
 /** A pointer on a click: click `index` of centerline `line`. */
@@ -203,15 +192,19 @@ export interface ClickHit {
 
 /** The click nearest `at` and no farther than `radius`, or null. */
 export function hitClick(tracks: readonly Track[], at: Point, radius: number): ClickHit | null {
-  let best: ClickHit | null = null;
+  const near = tracks.flatMap((track, line) => (track.clicks ?? []).map((p, index) => [{ line, index }, p] as const));
+  return nearestWithin(near, at, radius);
+}
+
+/** The item whose point is nearest `at` and no farther than `radius`, or null; a tie goes to the later item. */
+function nearestWithin<T>(items: readonly (readonly [T, Point])[], at: Point, radius: number): T | null {
+  let best: T | null = null;
   let bestD = radius;
-  for (const [line, track] of tracks.entries()) {
-    for (const [index, p] of (track.clicks ?? []).entries()) {
-      const d = Math.hypot(p.x - at.x, p.y - at.y);
-      if (d <= bestD) {
-        best = { line, index };
-        bestD = d;
-      }
+  for (const [item, p] of items) {
+    const d = Math.hypot(p.x - at.x, p.y - at.y);
+    if (d <= bestD) {
+      best = item;
+      bestD = d;
     }
   }
   return best;

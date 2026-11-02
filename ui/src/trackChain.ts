@@ -1,5 +1,5 @@
 import type { Centerline, Point } from '@rails49/r49';
-import { DEFAULT_GRAB_RADIUS_SCREEN_PX } from './geometry.js';
+import { DEFAULT_GRAB_RADIUS_SCREEN_PX, samePoint } from './geometry.js';
 import { pixel, NONE } from './chain.js';
 import type { Chain, ChainContext, ChainTool, ChainView, ClickResult } from './chain.js';
 import { hitClick, hitTrack } from './track.js';
@@ -28,8 +28,7 @@ export function refitLine(ctx: ChainContext, clicks: readonly Point[]): Centerli
  * The track tool's click with no chain live (#298, #302). A click on a line's
  * first or last click continues the line as a chain from there; on a click
  * between them it does nothing. A click on a line adds a click there and
- * refits the line; anywhere else a chain starts, even on a sensor: sensors sit
- * on the track being laid.
+ * refits the line; anywhere else a chain starts, even on a sensor.
  */
 export const trackTool: ChainTool = (ctx, at, scale) => {
   const lines = centerlines(ctx);
@@ -54,11 +53,9 @@ async function addClick(ctx: ChainContext, index: number, at: Point): Promise<Cl
   const clicks = lines[index].clicks ?? [];
   if (clicks.length < 2) return NONE;
   const opts = traceOptions(ctx.scene().dpt!);
-  const trace = new Trace();
-  trace.clicks = [...clicks];
-  trace.finish(opts);
+  const trace = Trace.finished(clicks, opts);
   trace.add(at, opts);
-  lines[index] = { nodes: fitNodes(trace.whole!.fit), clicks: trace.clicks };
+  lines[index] = { nodes: fitNodes(trace.committedFit()!), clicks: trace.clicks };
   await ctx.record('add click', { kind: 'layout' }, () => ctx.writeLayout({ centerlines: lines }));
   return NONE;
 }
@@ -212,7 +209,7 @@ export class TrackChain implements Chain {
 }
 
 function samePoints(a: readonly Point[], b: readonly Point[]): boolean {
-  return a.length === b.length && a.every((p, i) => p.x === b[i].x && p.y === b[i].y);
+  return a.length === b.length && a.every((p, i) => samePoint(p, b[i]));
 }
 
 function centerlines(ctx: ChainContext): readonly Centerline[] {

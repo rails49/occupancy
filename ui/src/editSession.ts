@@ -276,8 +276,8 @@ export class EditSession {
    * Starts a drag of whatever is under `at`, or returns null when nothing is.
    * A second drag while one is open is refused. A drag goes on while a chain
    * is live, and ends one still at its start. While a track chain is live
-   * only a click of its line is grabbed, since sensors sit on the track being
-   * laid. Otherwise the track tool grabs a line's click before anything else.
+   * only a click of its line is grabbed. Otherwise the track tool grabs a
+   * line's click before anything else.
    */
   beginDrag(at: Point, scale: number): Drag | null {
     if (this._drag) return null;
@@ -327,37 +327,26 @@ export class EditSession {
    */
   private _grabClick(hit: ClickHit, at: Point): Drag {
     const start = this._centerlines()[hit.line];
-    const from = start.clicks![hit.index];
     const gesture = this.history.beginGesture('move click', { kind: 'layout' });
     const write = (line: Centerline) => {
       const lines = [...this._centerlines()];
       lines[hit.line] = line;
       this._writeLayout({ centerlines: lines });
     };
-    const drag: Drag = {
-      move: to => {
-        if (this._drag !== drag) return;
-        const clicks = [...start.clicks!];
-        clicks[hit.index] = pixel({ x: from.x + to.x - at.x, y: from.y + to.y - at.y });
-        write({ ...start, clicks });
-        this._changed();
-      },
-      end: async () => {
-        if (this._drag !== drag) return;
-        this._drag = null;
-        const clicks = this._centerlines()[hit.line].clicks!;
-        if (!samePoint(clicks[hit.index], from)) write(refitLine(this._context, clicks));
-        await gesture.commit();
-        this._changed();
-      },
-      cancel: async () => {
-        if (this._drag !== drag) return;
-        write(start);
-        await drag.end();
-      },
+    const moved = (to: Point) => {
+      const clicks = [...start.clicks!];
+      clicks[hit.index] = to;
+      return clicks;
     };
-    this._drag = drag;
-    return drag;
+    return this._dragClick(
+      hit,
+      at,
+      to => write({ ...start, clicks: moved(to) }),
+      async to => {
+        write(to ? refitLine(this._context, moved(to)) : start);
+        await gesture.commit();
+      }
+    );
   }
 
   /**
@@ -368,20 +357,41 @@ export class EditSession {
   private _grabTraced(chain: TrackChain, at: Point, scale: number): Drag | null {
     const click = this._tracedClick(chain, at, scale);
     if (!click) return null;
-    const from = this._centerlines()[click.line].clicks![click.index];
+    return this._dragClick(
+      click,
+      at,
+      to => chain.hold(click.index, to),
+      async to => {
+        chain.hold(click.index, null);
+        if (to) await chain.move(click.index, to);
+      }
+    );
+  }
+
+  /**
+   * A drag of `click`, grabbed at `at`. `show` takes where the click is
+   * dragged to on each move; `drop` takes where it was let go, or null when
+   * it is back where it was or the drag was cancelled.
+   */
+  private _dragClick(
+    click: ClickHit,
+    at: Point,
+    show: (to: Point) => void,
+    drop: (to: Point | null) => Promise<void>
+  ): Drag {
+    const from = this._clickAt(click);
     let to = from;
     const drag: Drag = {
       move: p => {
         if (this._drag !== drag) return;
-        to = pixel({ x: from.x + p.x - at.x, y: from.y + p.y - at.y });
-        chain.hold(click.index, to);
+        to = dragTo({ from }, { x: p.x - at.x, y: p.y - at.y });
+        show(to);
         this._changed();
       },
       end: async () => {
         if (this._drag !== drag) return;
         this._drag = null;
-        chain.hold(click.index, null);
-        if (!samePoint(to, from)) await chain.move(click.index, to);
+        await drop(samePoint(to, from) ? null : to);
         this._changed();
       },
       cancel: async () => {
@@ -394,10 +404,14 @@ export class EditSession {
     return drag;
   }
 
+  /** Where click `click.index` of line `click.line` is. */
+  private _clickAt(click: ClickHit): Point {
+    return this._centerlines()[click.line].clicks![click.index];
+  }
+
   /** The menu subject for a line's click, with the pixel it is at. */
   private _clickSubject(click: ClickHit): MenuSubject & { kind: 'track-click' } {
-    const px = this._centerlines()[click.line].clicks![click.index];
-    return { kind: 'track-click', line: click.line, index: click.index, px };
+    return { kind: 'track-click', line: click.line, index: click.index, px: this._clickAt(click) };
   }
 
   /** The click under the pointer of the line `chain` traces, or null. */

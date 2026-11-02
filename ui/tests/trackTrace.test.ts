@@ -132,15 +132,15 @@ describe('Trace edits to committed clicks', () => {
 
 describe('Trace when finished', () => {
   it('is the whole-line fit of its clicks', () => {
-    const t = Trace.replay(clicks, opts, true);
+    const t = Trace.finished(clicks, opts);
     expect(t.committedFit()).toEqual(fitTrack(clicks, opts)?.fit);
     expect(t.live).toBeNull();
   });
 
   it('gives the same line for the same clicks', () => {
-    const a = Trace.replay(clicks, opts, true);
+    const a = Trace.finished(clicks, opts);
     // Deleted, then clicked again on the line: inserted where it projects, so the clicks are the same.
-    const b = Trace.replay(clicks, opts, true);
+    const b = Trace.finished(clicks, opts);
     b.remove(5, opts);
     b.add(clicks[5], opts);
     expect(b.clicks).toEqual(a.clicks);

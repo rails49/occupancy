@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
+  clicksOff,
+  hitClick,
   hitTrack,
   offsetPoints,
   pointAt,
@@ -76,15 +78,50 @@ describe('offsetPoints', () => {
 describe('hitTrack', () => {
   const tracks = [{ nodes: [node(100, 100, 0), node(300, 100, 0)] }];
 
-  it('finds the point on the line nearest the pointer, nodes included', () => {
-    const hit = hitTrack(tracks, { x: 200, y: 105 }, 14);
-    expect(hit).toMatchObject({ line: 0, segment: 0 });
-    expect(hit?.t).toBeCloseTo(0.5, 1);
-    expect(hitTrack(tracks, { x: 100, y: 103 }, 14)).toMatchObject({ line: 0, segment: 0, t: 0 });
+  it('finds the line under the pointer, its ends included', () => {
+    expect(hitTrack(tracks, { x: 200, y: 105 }, 14)).toEqual({ line: 0 });
+    expect(hitTrack(tracks, { x: 100, y: 103 }, 14)).toEqual({ line: 0 });
+  });
+
+  it('takes the nearer of two lines', () => {
+    const two = [...tracks, { nodes: [node(100, 120, 0), node(300, 120, 0)] }];
+    expect(hitTrack(two, { x: 200, y: 112 }, 14)).toEqual({ line: 1 });
   });
 
   it('finds nothing beyond the radius', () => {
     expect(hitTrack(tracks, { x: 200, y: 130 }, 14)).toBeNull();
+  });
+});
+
+describe('hitClick', () => {
+  const nodes = [node(100, 100, 0), node(300, 100, 0)];
+  const tracks: Track[] = [
+    { nodes, clicks: [{ x: 100, y: 100 }, { x: 200, y: 100 }, { x: 300, y: 100 }] },
+    { nodes },
+    { nodes, clicks: [{ x: 200, y: 120 }] },
+  ];
+
+  it('finds the click nearest the pointer, by line and index', () => {
+    expect(hitClick(tracks, { x: 205, y: 104 }, 14)).toEqual({ line: 0, index: 1 });
+    expect(hitClick(tracks, { x: 200, y: 115 }, 14)).toEqual({ line: 2, index: 0 });
+  });
+
+  it('finds nothing beyond the radius, or on a line without clicks', () => {
+    expect(hitClick(tracks, { x: 250, y: 100 }, 14)).toBeNull();
+    expect(hitClick([{ nodes }], { x: 100, y: 100 }, 14)).toBeNull();
+  });
+});
+
+describe('clicksOff', () => {
+  const nodes = [node(100, 100, 0), node(300, 100, 0)];
+
+  it('gives the indices of the clicks farther than the reach from the line', () => {
+    const track: Track = { nodes, clicks: [{ x: 100, y: 100 }, { x: 150, y: 103 }, { x: 200, y: 110 }, { x: 300, y: 95 }] };
+    expect(clicksOff(track, 5)).toEqual([2]);
+  });
+
+  it('gives none for a line without clicks', () => {
+    expect(clicksOff({ nodes }, 5)).toEqual([]);
   });
 });
 
