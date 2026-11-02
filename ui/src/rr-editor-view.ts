@@ -24,7 +24,7 @@ import {
 } from './geometry.js';
 import type { FrameSize, Rect, Size } from './geometry.js';
 import type { PendingCar } from './carMarker.js';
-import type { PendingTrack } from './trackMarker.js';
+import type { TraceView } from './trackTrace.js';
 import { isInsideOpenDialog } from './keyboard.js';
 import { classChoices, rootClass } from './vocabulary.js';
 import type { ClassChoice } from './vocabulary.js';
@@ -183,8 +183,6 @@ function itemsFor(subject: MenuSubject): readonly ContextMenuItem[] {
       return SENSOR_ITEMS;
     case 'car':
       return carItems();
-    case 'track-node':
-      return [{ id: 'delete', label: 'Delete node' }];
     case 'track':
       return [{ id: 'delete', label: 'Delete line' }];
   }
@@ -466,12 +464,11 @@ export class RREditorView extends LitElement {
   /** What the context menu is open on, or null when it is closed. */
   private _menuSubject: MenuSubject | null = null;
   /**
-   * Where the pointer last was, in whole image pixels, while a chain is
-   * live: the rubber band's far end, or the track's next node.
+   * Where the pointer last was, in whole image pixels, while a car chain is
+   * live: the rubber band's far end. Nothing follows the pointer while track
+   * is traced.
    */
   @state() private _cursor: Point | null = null;
-  /** The screen scale `_cursor` was reported at, for the track's straight snap. */
-  private _cursorScale = 1;
   /**
    * The objects a reveal is pointing at, or `null` when none is. Held as ids
    * and pixels and resolved on every render, so a later edit cannot leave the
@@ -1016,9 +1013,8 @@ export class RREditorView extends LitElement {
    * becomes a drag once it leaves the click slop.
    */
   private _onViewerPointerMove(e: CustomEvent<ViewerPointerDetail>) {
-    if (this.session?.chain) {
+    if (this.session?.chain?.tool === 'car') {
       this._cursor = { x: Math.round(e.detail.point.x), y: Math.round(e.detail.point.y) };
-      this._cursorScale = e.detail.imagePxPerScreenPx;
     }
 
     const gesture = this._current(e);
@@ -1357,22 +1353,17 @@ export class RREditorView extends LitElement {
     return to ? { anchor: chain.end, to } : { anchor: chain.end, to: cursor, refused: true };
   }
 
-  /**
-   * The track chain in flight, or null when none is: the nodes a click at the
-   * pointer would make, or the nodes placed so far when that click adds nothing.
-   */
-  private _pendingTrack(): PendingTrack | null {
-    const session = this.session;
-    const chain = session?.chain;
-    if (!session || chain?.tool !== 'track') return null;
-    const cursor = this._cursor;
-    const step = cursor && session.previewTrack(cursor, this._cursorScale);
-    return {
-      start: chain.start,
-      nodes: step?.kind === 'node' ? step.nodes : chain.nodes,
-      cursor,
-      refused: step?.kind === 'too-sharp',
-    };
+  /** What the track chain in flight draws, or null when none is. */
+  private _pendingTrack(): TraceView | null {
+    const chain = this.session?.chain;
+    return chain?.tool === 'track' ? chain.trace : null;
+  }
+
+  /** The stored centerlines, less the one a track chain draws as its trace. */
+  private _tracks() {
+    const chain = this.session?.chain;
+    const line = chain?.tool === 'track' ? chain.line : null;
+    return this.session!.tracks.filter((_, i) => i !== line);
   }
 
   /** Zoom to fit, present only while zoomed. */
@@ -1412,7 +1403,7 @@ export class RREditorView extends LitElement {
                 .sensors=${manifest.layout.sensors}
                 .cars=${currentImage?.labels ?? []}
                 .pendingCar=${this._pendingCar()}
-                .tracks=${this.session.tracks}
+                .tracks=${this._tracks()}
                 .pendingTrack=${this._pendingTrack()}
                 .trackDetail=${this.session.tool === 'track'}
                 .highlight=${this._highlight && this._resolveHighlight(this._highlight)}

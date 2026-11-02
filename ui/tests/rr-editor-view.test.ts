@@ -44,6 +44,16 @@ vi.mock('../src/thumbnail.js', () => ({
   makeThumbnail: (image: Blob) => makeThumbnail(image),
 }));
 
+// The fit runs as it is; the spies count its calls, so a test can show a
+// pointer move runs none.
+const { fitWindow, fitTrack } = vi.hoisted(() => ({ fitWindow: vi.fn(), fitTrack: vi.fn() }));
+vi.mock('../src/trackFit.js', async importOriginal => {
+  const fit = await importOriginal<typeof import('../src/trackFit.js')>();
+  fitWindow.mockImplementation(fit.fitWindow);
+  fitTrack.mockImplementation(fit.fitTrack);
+  return { ...fit, fitWindow, fitTrack };
+});
+
 // Mock ResizeObserver for RRViewer
 global.ResizeObserver = vi.fn().mockImplementation(() => ({
   observe: vi.fn(),
@@ -951,29 +961,34 @@ describe('rr-editor-view', () => {
       await clickAt(el, { x: 300, y: 100 });
     }
 
-    it('previews the arc a click at the pointer would add', async () => {
+    it('draws the traced line from its trace, leaving it out of the stored lines', async () => {
       const el = await mountWithTool('track');
       await laid(el);
-      await moveTo(el, { x: 500, y: 200 });
 
-      const p = pending(el)!;
-      expect(p.nodes.map(n => [n.x, n.y])).to.deep.equal([
-        [100, 100],
-        [300, 100],
-        [500, 200],
+      expect(pending(el)!.clicks).to.deep.equal([
+        { x: 100, y: 100 },
+        { x: 300, y: 100 },
       ]);
-      expect(p.refused).to.equal(false);
-      const chain = el.session!.chain;
-      expect(chain?.tool === 'track' && chain.nodes).to.have.length(2);
+      expect(el.session!.tracks).to.have.length(1);
+      expect(el.shadowRoot!.querySelector('rr-viewer')!.tracks).to.have.length(0);
     });
 
-    it('marks a pointer the next click would be refused at', async () => {
+    it('runs no fit on a pointer move, and draws nothing that follows it', async () => {
       const el = await mountWithTool('track');
       await laid(el);
-      await moveTo(el, { x: 300, y: 400 });
+      const before = pending(el);
+      // The spies see the fit a click runs.
+      expect(fitWindow).toHaveBeenCalled();
+      expect(fitTrack).toHaveBeenCalled();
+      fitWindow.mockClear();
+      fitTrack.mockClear();
 
-      expect(pending(el)!.refused).to.equal(true);
-      expect(pending(el)!.nodes).to.have.length(2);
+      await moveTo(el, { x: 500, y: 200 });
+      await moveTo(el, { x: 600, y: 300 });
+
+      expect(fitWindow).not.toHaveBeenCalled();
+      expect(fitTrack).not.toHaveBeenCalled();
+      expect(pending(el)).to.equal(before);
     });
 
     it('ends the chain on Escape and hands the line to the viewer', async () => {
@@ -986,7 +1001,7 @@ describe('rr-editor-view', () => {
       expect(el.shadowRoot!.querySelector('rr-viewer')!.tracks).to.have.length(1);
     });
 
-    it('opens a delete row on a node and on a line, and deletes the node', async () => {
+    it('opens a delete row on a line, and deletes the line', async () => {
       archive.getManifest().layout.centerlines = [
         {
           nodes: [
@@ -999,32 +1014,10 @@ describe('rr-editor-view', () => {
       const el = await mountWithTool('track');
       expect(el.shadowRoot!.querySelector('rr-viewer')!.trackDetail).to.equal(true);
 
-      await rightClickAt(el, { x: 200, y: 104 });
-      expect(menuItems(el)).to.deep.equal(['delete']);
-
       await rightClickAt(el, { x: 300, y: 100 });
       expect(menuItems(el)).to.deep.equal(['delete']);
       await choose(el, 'delete');
-      expect(el.session!.tracks[0].nodes.map(n => n.x)).to.deep.equal([100, 500]);
-    });
-
-    it('drags a node rather than the view, even right after a click started a chain', async () => {
-      archive.getManifest().layout.centerlines = [
-        {
-          nodes: [
-            { x: 100, y: 100, heading: 0 },
-            { x: 300, y: 100, heading: 0 },
-          ],
-        },
-      ];
-      const el = await mountWithTool('track');
-      await clickAt(el, { x: 600, y: 600 });
-      expect(el.session!.chain).not.toBe(null);
-
-      await drag(el, [{ x: 300, y: 100 }, { x: 320, y: 140 }]);
-
-      expect(el.session!.tracks[0].nodes[1]).to.deep.include({ x: 320, y: 140 });
-      expect(el.shadowRoot!.querySelector('rr-viewer')!.zoom).to.equal(null);
+      expect(el.session!.tracks).to.have.length(0);
     });
 
     it('ends the chain on right-click, opening no menu', async () => {
@@ -1870,7 +1863,7 @@ describe('rr-editor-view', () => {
       expect(el.shadowRoot!.querySelector('rr-thumbnail-bar')!.selectedIndex).to.equal(1);
     });
 
-    it('lights a centerline node an undo moved back, by pixel', async () => {
+    it('lights the centerline nodes an undo brought back, by pixel', async () => {
       calibrate();
       archive.getManifest().layout.centerlines = [
         {
@@ -1881,12 +1874,15 @@ describe('rr-editor-view', () => {
         },
       ];
       const el = await mountWithTool('track');
-      await drag(el, [{ x: 300, y: 100 }, { x: 320, y: 140 }]);
+      await el.session!.delete({ kind: 'track', line: 0, px: { x: 100, y: 100 } });
 
       await el.session!.undo();
       await el.updateComplete;
 
-      expect(highlightOf(el)!.trackNodes).to.deep.equal([{ x: 300, y: 100 }]);
+      expect(highlightOf(el)!.trackNodes).to.deep.equal([
+        { x: 100, y: 100 },
+        { x: 300, y: 100 },
+      ]);
     });
 
     it('resolves a reference point by pixel, and follows it through a renumbering', async () => {

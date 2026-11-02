@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Point } from '@rails49/r49';
-import { fitTrack, sampleFit, type FitResult } from '../src/trackFit.js';
+import { fitNodes, fitTrack, sampleFit, type FitResult } from '../src/trackFit.js';
 import { traceOptions } from '../src/trackTrace.js';
 import { G, clicksAlong, offLine, type Piece } from './trackClicks.js';
 
@@ -199,4 +199,31 @@ describe('fitTrack on the recorded click sets in tests/clickSets', () => {
       });
     });
   }
+});
+
+describe('fitNodes', () => {
+  it('makes each join a node, and splits an arc past 90° at its midpoint', () => {
+    const r = 100;
+    const nodes = fitNodes({
+      start: { x: 0, y: 0, heading: 0 },
+      parts: [
+        { length: 100, curvature: 0 },
+        { length: (r * Math.PI) / 2, curvature: 1 / r },
+        { length: (r * 2 * Math.PI) / 3, curvature: 1 / r },
+      ],
+    });
+    const expected = [
+      [0, 0, 0],
+      [100, 0, 0],
+      [200, 100, Math.PI / 2],
+      [150, 100 + 50 * Math.sqrt(3), (5 * Math.PI) / 6],
+      [50, 100 + 50 * Math.sqrt(3), (-5 * Math.PI) / 6],
+    ];
+    expect(nodes).toHaveLength(expected.length);
+    nodes.forEach((n, i) => {
+      expect(n.x).toBeCloseTo(expected[i][0], 6);
+      expect(n.y).toBeCloseTo(expected[i][1], 6);
+      expect(n.heading).toBeCloseTo(expected[i][2], 6);
+    });
+  });
 });

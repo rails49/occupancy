@@ -40,6 +40,17 @@ export function traceOptions(dpt: number): TraceOptions {
   };
 }
 
+/** What a trace draws: its clicks, the committed line, the live tail and the clicks to flag. */
+export interface TraceView {
+  readonly clicks: readonly Point[];
+  /** Null while nothing is committed. */
+  readonly committed: Fit | null;
+  /** The tail; its first join is the last committed one once something is committed. */
+  readonly live: FitResult | null;
+  /** Indices of the clicks the fit leaves out, or that lie past the tolerance from the tail. */
+  readonly flagged: readonly number[];
+}
+
 export class Trace {
   /** Every click, in track order. */
   clicks: Point[] = [];
@@ -71,6 +82,19 @@ export class Trace {
   outliers(): number[] {
     if (this.finished) return this.whole ? [...this.whole.outliers] : [];
     return this.live ? this.live.outliers.map(i => i + this.firstLive) : [];
+  }
+
+  view(opts: TraceOptions): TraceView {
+    const flagged = new Set(this.outliers());
+    this.live?.residuals.forEach((d, i) => {
+      if (Math.abs(d) > opts.tolerance) flagged.add(i + this.firstLive);
+    });
+    return {
+      clicks: [...this.clicks],
+      committed: this.committedFit(),
+      live: this.live,
+      flagged: [...flagged].sort((a, b) => a - b),
+    };
   }
 
   /** Append while tracing; on a finished line, insert where the click projects onto the line. */

@@ -18,9 +18,9 @@ import { TOOLS } from './tools.js';
 import { grab, pixel, NONE, NO_TRACK_NOTICE } from './chain.js';
 import type { Chain, ChainContext, ChainTool, ChainView, ClickResult } from './chain.js';
 import { carTool } from './carChain.js';
-import { trackHitAt, trackTool, TrackChain } from './trackChain.js';
+import { trackHitAt, trackTool } from './trackChain.js';
 import { nearestOnTrack, SNAP_TRACK_WIDTHS } from './track.js';
-import type { Track, TrackHit, TrackStep, TrackNode } from './track.js';
+import type { Track, TrackHit, TrackNode } from './track.js';
 import type { EditorTool } from './tools.js';
 
 export type { ChainView, ClickResult } from './chain.js';
@@ -65,8 +65,6 @@ export type MenuSubject =
   | { readonly kind: 'car'; readonly id: string }
   | { readonly kind: 'sensor'; readonly id: string }
   | { readonly kind: 'calibration'; readonly index: number; readonly px: Point }
-  /** A centerline node; `px` is where it was, checked like a reference point's. */
-  | { readonly kind: 'track-node'; readonly line: number; readonly node: number; readonly px: Point }
   /** A whole centerline; `px` is where its first node was. */
   | { readonly kind: 'track'; readonly line: number; readonly px: Point };
 
@@ -180,14 +178,6 @@ export class EditSession {
     return this._snap(at);
   }
 
-  /**
-   * What a click at `at` would do to a live track chain, or null when none is
-   * live. A click within the grab radius of the last node adds nothing.
-   */
-  previewTrack(at: Point, scale: number): TrackStep | null {
-    return this._chain instanceof TrackChain ? this._chain.preview(at, scale) : null;
-  }
-
   /** The car with this id on the image on screen, or undefined once it is gone. */
   car(id: string): CarLabel | undefined {
     return this.image?.labels.find(car => car.id === id);
@@ -283,9 +273,8 @@ export class EditSession {
   /**
    * Starts a drag of whatever is under `at`, or returns null when nothing is.
    * A second drag while one is open is refused. A drag goes on while a chain
-   * is live, and ends one still at its start. Under the track tool a node or
-   * heading handle is grabbed first; while a track chain is live nothing else
-   * is, since sensors sit on the track being laid.
+   * is live, and ends one still at its start. While a track chain is live
+   * nothing is grabbed, since sensors sit on the track being laid.
    */
   beginDrag(at: Point, scale: number): Drag | null {
     if (this._drag) return null;
@@ -295,8 +284,6 @@ export class EditSession {
   }
 
   private _grab(at: Point, scale: number): Drag | null {
-    const trackHit = this._trackHit(at, scale);
-    if (trackHit && trackHit.kind !== 'curve') return this._beginTrackDrag(trackHit, at);
     if (this._chain?.tool === 'track') return null;
     const scene = this._scene();
     const hit = hitTest(scene, at, grab(scale));
@@ -341,8 +328,7 @@ export class EditSession {
     const trackHit = this._trackHit(at, scale);
     if (trackHit) {
       const line = this._centerlines()[trackHit.line];
-      if (trackHit.kind === 'curve') return { kind: 'track', line: trackHit.line, px: pointOf(line.nodes[0]) };
-      return { ...trackHit, kind: 'track-node', px: pointOf(line.nodes[trackHit.node]) };
+      return { kind: 'track', line: trackHit.line, px: pointOf(line.nodes[0]) };
     }
     const scene = this._scene();
     const hit = hitTest(scene, at, grab(scale), MENU_HIT_KINDS);
@@ -408,19 +394,6 @@ export class EditSession {
         await this._record('delete sensor', { kind: 'layout' }, () => {
           this._writeLayout({ sensors: this._sensors().filter(sensor => sensor.id !== id) });
         });
-        return;
-      }
-      case 'track-node': {
-        const { line, node } = subject;
-        if (!this._trackNodeIsStillAt(line, node, subject.px)) return;
-        const lines = [...this._centerlines()];
-        const nodes = lines[line].nodes;
-        // A line needs two nodes, so deleting one of the last two deletes the line.
-        if (nodes.length <= 2) lines.splice(line, 1);
-        else lines[line] = { nodes: nodes.filter((_, i) => i !== node) };
-        await this._record('delete centerline node', { kind: 'layout' }, () =>
-          this._writeLayout({ centerlines: lines })
-        );
         return;
       }
       case 'track': {
@@ -632,58 +605,6 @@ export class EditSession {
     return entry;
   }
 
-  /**
-   * A drag of a node, which keeps its heading, or of its heading handle, which
-   * turns it to face the pointer. One entry at the end, like every drag. A
-   * node is never moved onto a neighbour: the format refuses a segment with no
-   * length.
-   */
-  private _beginTrackDrag(hit: TrackHit & { kind: 'node' | 'heading' }, at: Point): Drag {
-    const { line, node } = hit;
-    const from = this._centerlines()[line].nodes[node];
-    const gesture = this.history.beginGesture(
-      hit.kind === 'node' ? 'move centerline node' : 'turn centerline node',
-      { kind: 'layout' }
-    );
-    const write = (moved: TrackNode) => {
-      const lines = [...this._centerlines()];
-      const nodes = [...lines[line].nodes];
-      const neighbours = [nodes[node - 1], nodes[node + 1]];
-      if (neighbours.some(n => n && n.x === moved.x && n.y === moved.y)) return;
-      nodes[node] = moved;
-      lines[line] = { nodes };
-      this._writeLayout({ centerlines: lines });
-    };
-    const drag: Drag = {
-      move: to => {
-        if (this._drag !== drag) return;
-        write(
-          hit.kind === 'node'
-            ? {
-                x: Math.round(from.x + to.x - at.x),
-                y: Math.round(from.y + to.y - at.y),
-                heading: from.heading,
-              }
-            : { x: from.x, y: from.y, heading: Math.atan2(to.y - from.y, to.x - from.x) }
-        );
-        this._changed();
-      },
-      end: async () => {
-        if (this._drag !== drag) return;
-        this._drag = null;
-        await gesture.commit();
-        this._changed();
-      },
-      cancel: async () => {
-        if (this._drag !== drag) return;
-        write(from);
-        await drag.end();
-      },
-    };
-    this._drag = drag;
-    return drag;
-  }
-
   /** Writes an unnamed sensor on the track nearest `px`, or refuses with no track near. */
   private async _placeSensor(px: Point): Promise<ClickResult> {
     const at = this._snap(px);
@@ -857,10 +778,7 @@ export class EditSession {
     return this.archive.getManifest().layout.centerlines ?? [];
   }
 
-  /**
-   * What the track tool's pointer is on: a heading handle, a node or a line.
-   * Null under another tool, or while the tool is gated.
-   */
+  /** The line under the track tool's pointer. Null under another tool, or while the tool is gated. */
   private _trackHit(at: Point, scale: number): TrackHit | null {
     if (this._tool !== 'track' || this._gated('track')) return null;
     return trackHitAt(this._centerlines(), at, scale);

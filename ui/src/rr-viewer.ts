@@ -14,8 +14,8 @@ import {
 } from './carMarker.js';
 import type { CarSymbolSize, CarWarning, PendingCar } from './carMarker.js';
 import { renderTrack, renderPendingTrack, trackMarkerStyles } from './trackMarker.js';
-import type { PendingTrack, TrackSymbolSize } from './trackMarker.js';
-import { HEADING_HANDLE_SCREEN_PX } from './track.js';
+import type { TrackSymbolSize } from './trackMarker.js';
+import type { TraceView } from './trackTrace.js';
 import type { Track } from './track.js';
 import {
   coupledEnds,
@@ -437,11 +437,14 @@ export class RrViewer extends LitElement {
    * the live view.
    */
   @property({ attribute: false }) tracks: readonly Track[] = [];
-  /** The track chain in flight, or `null`. View state, like `pendingCar`. */
-  @property({ attribute: false }) pendingTrack: PendingTrack | null = null;
   /**
-   * Whether centerlines show their rails, node dots and heading handles, or the
-   * centerline alone. The editor sets it while the track tool is chosen.
+   * The line a track chain is tracing, or `null`. View state, like
+   * `pendingCar`. The editor leaves that line out of `tracks`.
+   */
+  @property({ attribute: false }) pendingTrack: TraceView | null = null;
+  /**
+   * Whether centerlines show their rails and click dots, or the centerline
+   * alone. The editor sets it while the track tool is chosen.
    */
   @property({ attribute: false }) trackDetail = false;
   /**
@@ -842,14 +845,13 @@ export class RrViewer extends LitElement {
 
   /**
    * The sizes a track is drawn at: the DPT its rails are spaced by, and
-   * screen-constant strokes and node dots.
+   * screen-constant strokes and click dots.
    */
   private trackSize(): TrackSymbolSize {
     return {
       dpt: this.dpt,
       strokePx: this.symbolSize * TRACK_STROKE_RATIO,
-      nodePx: this.symbolSize * CAR_HANDLE_SIZE_RATIO,
-      handlePx: HEADING_HANDLE_SCREEN_PX * this.imagePxPerScreenPx,
+      dotPx: this.symbolSize * CAR_HANDLE_SIZE_RATIO,
       detail: this.trackDetail,
     };
   }

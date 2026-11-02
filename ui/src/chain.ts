@@ -2,7 +2,7 @@ import type { CarLabel, Centerline, Image, ManifestData, Point, ReferencePoint, 
 import type { HitScene, HitTolerance } from './geometry.js';
 import { DEFAULT_GRAB_RADIUS_SCREEN_PX } from './geometry.js';
 import type { HistoryTarget } from './history.js';
-import type { TrackNode } from './track.js';
+import type { TraceView } from './trackTrace.js';
 
 /**
  * What the car tool and the track tool share (#284): a chain, where each click
@@ -40,16 +40,15 @@ export const NO_TRACK = 'No track here — sensors and cars sit on a track.';
 
 export const NO_TRACK_NOTICE: ClickResult = { kind: 'notice', message: NO_TRACK };
 
-/** A live chain as the editor draws it: the dot the next segment starts from, and a track's nodes. */
+/** A live chain as the editor draws it: the dot the next segment starts from, and a track's trace. */
 export type ChainView =
   | { readonly tool: 'car'; readonly end: Point }
   | {
       readonly tool: 'track';
       readonly end: Point;
-      /** The first click, or the end node the chain continues. */
-      readonly start: Point;
-      /** In the order the chain runs; empty until the second click. */
-      readonly nodes: readonly TrackNode[];
+      /** The centerline the chain writes, which the trace draws in its place; null before the second click. */
+      readonly line: number | null;
+      readonly trace: TraceView;
     };
 
 /** A chain in progress. */

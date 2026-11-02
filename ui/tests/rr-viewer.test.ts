@@ -633,10 +633,15 @@ describe('rr-viewer', () => {
             { x: 100, y: 100, heading: 0 },
             { x: 400, y: 100, heading: 0 },
           ],
+          clicks: [
+            { x: 100, y: 100 },
+            { x: 250, y: 101 },
+            { x: 400, y: 100 },
+          ],
         },
       ];
 
-      it('draws the centerline and both rails, under the cars', async () => {
+      it('draws the centerline, both rails and the clicks, under the cars', async () => {
         const el = await fixture<RrViewer>(html`
           <rr-viewer
             .tracks=${tracks}
@@ -651,7 +656,7 @@ describe('rr-viewer', () => {
           'M 100 100 C 200 100 300 100 400 100'
         );
         expect(track.querySelectorAll('.rail')).to.have.length(2);
-        expect(track.querySelectorAll('.node')).to.have.length(2);
+        expect(track.querySelectorAll('.click')).to.have.length(3);
         const car = el.shadowRoot!.querySelector('.car')!;
         expect(track.compareDocumentPosition(car) & Node.DOCUMENT_POSITION_FOLLOWING).to.not.equal(0);
       });
@@ -662,12 +667,11 @@ describe('rr-viewer', () => {
         `);
         expect(el.shadowRoot!.querySelector('.track .centerline')).to.exist;
         expect(el.shadowRoot!.querySelector('.track .rail')).to.not.exist;
-        expect(el.shadowRoot!.querySelector('.track .node')).to.not.exist;
-        expect(el.shadowRoot!.querySelector('.heading-handle')).to.not.exist;
+        expect(el.shadowRoot!.querySelector('.track .click')).to.not.exist;
         el.trackDetail = true;
         await el.updateComplete;
         expect(el.shadowRoot!.querySelectorAll('.track .rail')).to.have.length(2);
-        expect(el.shadowRoot!.querySelectorAll('.heading-handle')).to.have.length(2);
+        expect(el.shadowRoot!.querySelectorAll('.track .click')).to.have.length(3);
       });
 
       it('draws no rails without a DPT', async () => {
@@ -678,22 +682,16 @@ describe('rr-viewer', () => {
         expect(el.shadowRoot!.querySelector('.track .rail')).to.not.exist;
       });
 
-      it('draws a refused click as a line from the last node to the pointer', async () => {
+      it('draws the line being traced from its trace', async () => {
         const el = await fixture<RrViewer>(html`
           <rr-viewer
-            .pendingTrack=${{
-              start: { x: 100, y: 100 },
-              nodes: tracks[0].nodes,
-              cursor: { x: 400, y: 400 },
-              refused: true,
-            }}
+            .pendingTrack=${{ clicks: tracks[0].clicks, committed: null, live: null, flagged: [1] }}
             .dpt=${90}
             .resolution=${resolution}
           ></rr-viewer>
         `);
-        const line = el.shadowRoot!.querySelector('.track-pending .refused')!;
-        expect(line.getAttribute('x1')).to.equal('400');
-        expect(line.getAttribute('y2')).to.equal('400');
+        expect(el.shadowRoot!.querySelectorAll('.track-pending .click')).to.have.length(3);
+        expect(el.shadowRoot!.querySelectorAll('.track-pending .outlier')).to.have.length(1);
       });
     });
 

@@ -37,26 +37,27 @@ size rule is the session's — `requiredImageSize` answers it, and `addRefusal` 
 message names the file the user picked. `../SPEC.md` § Images states all three rules, why rotating
 in the browser was rejected, and why an image of another size is not something the screen can show.
 
-The **track tool** (#284) traces centerlines as G1 curves: nodes with a heading, a cubic Bézier
-between each pair (`track.ts`). It is a first step and deliberately partial. Each click after the
-second ends a circular arc tangent to the line so far, a click near the tangent line snaps to a
-straight, a turn over 90° in one segment is refused, and a click within the grab radius of the last
-node adds nothing. Right-click or Escape ends a line. Lines are written to `layout.centerlines` like
-a car chain writes cars: the second click writes a new centerline and each later click replaces its
-nodes, one `layout` entry per click, so undo removes a line node by node whether or not the trace is
-still live. A live trace takes every undo, ends at its start, and refuses redo. While a trace is
-live, a click always traces, even on a sensor, and a drag grabs only a node or a heading handle,
-because sensors sit on the track being traced. A trace still at its start ends when a node is
-dragged; one further along keeps going.
+The **track tool** (#284, #298) fits straights and circular arcs, tangent where they meet, to
+clicks along the middle of the track (`trackFit.ts`). A chain's clicks build a trace
+(`trackTrace.ts`): the committed prefix never moves, and only the tail is fitted, from the last
+committed join. Each click after the first writes the line's `clicks` and the `nodes` of the
+whole-line fit of those clicks, one `layout` entry per click; the joins become nodes, and an arc
+turning more than 90° is split at its midpoint (`fitNodes`). So a save in the middle of a trace holds
+a valid line, and other readers keep reading nodes. Stored nodes win on load: nothing refits. A
+click within the grab radius of the last click adds nothing. Right-click, Escape or a tool change
+ends a line and writes nothing. A live trace takes every undo, which removes its last click and
+shows the trace as it was before that click, and ends at its start; redo ends it, then redoes. No
+fit runs on a pointer move, and nothing follows the pointer. While a trace is live, a click always
+traces, even on a sensor, and a drag grabs nothing, because sensors sit on the track being traced.
 
-Under the track tool, the track comes first under the pointer (`track.ts` § `hitTrack`): a
-heading handle, then a node, then a line. Dragging a node moves it and keeps its heading; dragging
-the handle at the end of a node's heading tick turns the node to face the pointer. A click on a line
-inserts a node there, heading along it. A click on an end node continues that line; from the first
-node the trace runs against the stored order and writes back in it. Right-click opens Delete node or
-Delete line, and deleting one of a line's last two nodes deletes the line. Lines and nodes have no
-id, so a menu carries the node's pixel and checks it is still there. Under any other tool the track
-grabs nothing.
+The trace draws in place of its stored line: committed track with its rails, the live tail as a
+dashed centerline, a part of it only when both its joins have σ under the bar cap, and a bar across
+each uncommitted join of a drawn part but the last, half-length σ. Every click is a dot; one the fit
+leaves out or that lies past the tolerance is red. Under the track tool a stored line draws its
+rails, centerline and click dots; under any other tool its centerline alone. Nodes are a function of
+clicks, so nothing edits them: there are no node dots or heading handles, a click on a line does
+nothing, and right-click on a line opens Delete line. Lines have no id, so the menu carries the
+line's first node and checks it is still there. Under any other tool the track grabs nothing.
 
 The picker takes **several files in one pick** (#262), and the pick — not the file — is the unit:
 `addPickedFiles` prepares and judges each file in filename order, hands what survives to

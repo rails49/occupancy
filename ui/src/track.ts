@@ -18,9 +18,10 @@ export interface TrackNode {
   readonly heading: number;
 }
 
-/** A centerline: at least two nodes. */
+/** A centerline: at least two nodes, and the clicks they were fitted from, if any. */
 export interface Track {
   readonly nodes: readonly TrackNode[];
+  readonly clicks?: readonly Point[];
 }
 
 /** One cubic Bézier between two nodes. */
@@ -30,15 +31,6 @@ export interface Segment {
   readonly c1: Point;
   readonly p1: Point;
 }
-
-/**
- * How far off the current tangent line, in screen pixels, a click still makes a
- * straight. The click is moved onto the line.
- */
-export const STRAIGHT_SNAP_SCREEN_PX = 6;
-
-/** The largest turn one segment may make. A cubic follows an arc closely up to here. */
-export const MAX_TURN = Math.PI / 2;
 
 /** Spacing, in image pixels, of the points a curve is drawn through. */
 const SAMPLE_PX = 2;
@@ -122,62 +114,6 @@ export function offsetPoints(nodes: readonly TrackNode[], offset: number): Point
   return points;
 }
 
-/** What a click does to a track chain. */
-export type TrackStep =
-  | { readonly kind: 'node'; readonly nodes: readonly TrackNode[] }
-  /** No farther than `minPx` from the last point placed: nothing. */
-  | { readonly kind: 'too-close' }
-  /** The arc would turn more than {@link MAX_TURN}. */
-  | { readonly kind: 'too-sharp' };
-
-/**
- * What a click at `to` does to a track chain.
- *
- * `start` is the first click and `nodes` the nodes placed since, empty until
- * the second click. The first segment is a straight, so both of its nodes take
- * the chord's heading. Every later click ends a circular arc that leaves the
- * last node along its heading: the new node's heading is the old one mirrored
- * about the chord. A click within `snapPx` of the tangent line, ahead of the
- * last node, is moved onto it and makes a straight.
- */
-export function extendTrack(
-  start: Point,
-  nodes: readonly TrackNode[],
-  to: Point,
-  snapPx: number,
-  minPx: number
-): TrackStep {
-  const last = nodes[nodes.length - 1] ?? start;
-  const dx = to.x - last.x;
-  const dy = to.y - last.y;
-  if (Math.hypot(dx, dy) <= minPx) return { kind: 'too-close' };
-
-  if (nodes.length === 0) {
-    const heading = Math.atan2(dy, dx);
-    return {
-      kind: 'node',
-      nodes: [
-        { x: start.x, y: start.y, heading },
-        { x: to.x, y: to.y, heading },
-      ],
-    };
-  }
-
-  const cos = Math.cos(last.heading);
-  const sin = Math.sin(last.heading);
-  const along = dx * cos + dy * sin;
-  const across = -dx * sin + dy * cos;
-  if (along > 0 && Math.abs(across) <= snapPx) {
-    const node = { x: last.x + along * cos, y: last.y + along * sin, heading: last.heading };
-    return { kind: 'node', nodes: [...nodes, node] };
-  }
-
-  const deviation = wrapAngle(Math.atan2(dy, dx) - last.heading);
-  if (Math.abs(2 * deviation) > MAX_TURN) return { kind: 'too-sharp' };
-  const node = { x: to.x, y: to.y, heading: wrapAngle(last.heading + 2 * deviation) };
-  return { kind: 'node', nodes: [...nodes, node] };
-}
-
 /**
  * How far from a centerline, in track widths, a sensor or a car end still
  * lands on it. Parallel tracks sit farther apart than this, so the nearest
@@ -226,86 +162,29 @@ export function nearestOnTrack(tracks: readonly Track[], at: Point, maxPx: numbe
   return dist(s, t) <= maxPx ? pointAt(s, t) : null;
 }
 
-/** Distance, in screen pixels, from a node to the handle that turns its heading. */
-export const HEADING_HANDLE_SCREEN_PX = 36;
-
-/** What a pointer is on, most specific first. Lines and nodes are indices. */
-export type TrackHit =
-  | { readonly kind: 'heading'; readonly line: number; readonly node: number }
-  | { readonly kind: 'node'; readonly line: number; readonly node: number }
-  | { readonly kind: 'curve'; readonly line: number; readonly segment: number; readonly t: number };
-
-/** Where a node's heading handle is, `length` image pixels along its heading. */
-export function headingHandle(node: TrackNode, length: number): Point {
-  return { x: node.x + length * Math.cos(node.heading), y: node.y + length * Math.sin(node.heading) };
+/** A pointer on a line: `t` along `segment` of centerline `line`. */
+export interface TrackHit {
+  readonly line: number;
+  readonly segment: number;
+  readonly t: number;
 }
 
-/** The candidate nearest `at` and no farther than `radius`, or null. */
-function nearest<T>(candidates: readonly (readonly [T, Point])[], at: Point, radius: number): T | null {
-  let best: T | null = null;
+/** The point on a line nearest `at` and no farther than `radius`, or null. */
+export function hitTrack(tracks: readonly Track[], at: Point, radius: number): TrackHit | null {
+  let best: TrackHit | null = null;
   let bestD = radius;
-  for (const [hit, p] of candidates) {
-    const d = Math.hypot(p.x - at.x, p.y - at.y);
-    if (d <= bestD) {
-      best = hit;
-      bestD = d;
+  for (const [line, track] of tracks.entries()) {
+    for (const [segment, s] of segments(track.nodes).entries()) {
+      const n = Math.max(4, Math.ceil(Math.hypot(s.p1.x - s.p0.x, s.p1.y - s.p0.y) / SAMPLE_PX));
+      for (let k = 0; k <= n; k++) {
+        const p = pointAt(s, k / n);
+        const d = Math.hypot(p.x - at.x, p.y - at.y);
+        if (d <= bestD) {
+          best = { line, segment, t: k / n };
+          bestD = d;
+        }
+      }
     }
   }
   return best;
-}
-
-/**
- * The heading handle, node or curve within `radius` of `at`, in that order of
- * preference, nearest first within each. Handles are tested only when
- * `handleLength` is given, which is when they are drawn.
- */
-export function hitTrack(
-  tracks: readonly Track[],
-  at: Point,
-  radius: number,
-  handleLength: number | null
-): TrackHit | null {
-  const handles =
-    handleLength === null
-      ? []
-      : tracks.flatMap((track, line) =>
-          track.nodes.map(
-            (n, node) => [{ kind: 'heading', line, node } as const, headingHandle(n, handleLength)] as const
-          )
-        );
-  const nodes = tracks.flatMap((track, line) =>
-    track.nodes.map((n, node) => [{ kind: 'node', line, node } as const, n] as const)
-  );
-  const curves = tracks.flatMap((track, line) =>
-    segments(track.nodes).flatMap((s, segment) => {
-      const n = Math.max(4, Math.ceil(Math.hypot(s.p1.x - s.p0.x, s.p1.y - s.p0.y) / SAMPLE_PX));
-      return Array.from({ length: n + 1 }, (_, k) => {
-        const t = k / n;
-        return [{ kind: 'curve', line, segment, t } as const, pointAt(s, t)] as const;
-      });
-    })
-  );
-  return (
-    nearest<TrackHit>(handles, at, radius) ??
-    nearest<TrackHit>(nodes, at, radius) ??
-    nearest<TrackHit>(curves, at, radius)
-  );
-}
-
-/**
- * The nodes with one more, on the curve at `t` along `segment`, heading along
- * it. The curve moves a little, since each half now has its own handles.
- */
-export function insertNode(nodes: readonly TrackNode[], segment: number, t: number): TrackNode[] {
-  const s = segments(nodes)[segment];
-  if (!s) return [...nodes];
-  const p = pointAt(s, t);
-  const v = tangentAt(s, t);
-  const node = { x: p.x, y: p.y, heading: Math.atan2(v.y, v.x) };
-  return [...nodes.slice(0, segment + 1), node, ...nodes.slice(segment + 1)];
-}
-
-/** The same line run the other way. */
-export function reverseNodes(nodes: readonly TrackNode[]): TrackNode[] {
-  return [...nodes].reverse().map(n => ({ x: n.x, y: n.y, heading: wrapAngle(n.heading + Math.PI) }));
 }

@@ -1,5 +1,6 @@
 import type { Point } from '@rails49/r49';
 import { wrapAngle } from './track.js';
+import type { TrackNode } from './track.js';
 
 /**
  * Fit straights and circular arcs, tangent where they meet, to clicks along
@@ -766,6 +767,25 @@ export function fitWindow(points: readonly Point[], start: Pose | null, opts: Fi
 /** Fit a whole line at once, start free. */
 export function fitTrack(points: readonly Point[], opts: FitOptions): FitResult | null {
   return fitWindow(points, null, opts);
+}
+
+/**
+ * The fit as stored nodes: one per join, heading along the line. An arc that
+ * turns more than 90° is split at its midpoint, since a node pair draws an arc
+ * as one cubic, which follows it closely only up to 90°.
+ */
+export function fitNodes(fit: Fit): TrackNode[] {
+  const node = (p: Pose): TrackNode => ({ x: p.x, y: p.y, heading: wrapAngle(p.heading) });
+  const nodes = [node(fit.start)];
+  let pose = fit.start;
+  for (const part of fit.parts) {
+    if (Math.abs(part.length * part.curvature) > Math.PI / 2) {
+      nodes.push(node(advance(pose, part.length / 2, part.curvature)));
+    }
+    pose = advance(pose, part.length, part.curvature);
+    nodes.push(node(pose));
+  }
+  return nodes;
 }
 
 /** Points along the line every `step` px, `offset` px to its left (negative is right). */

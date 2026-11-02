@@ -140,6 +140,7 @@ rr-app                          ← shell: owns the editing session and the view
 > [#262]: https://github.com/rails49/occupancy/issues/262
 > [#265]: https://github.com/rails49/occupancy/issues/265
 > [#284]: https://github.com/rails49/occupancy/issues/284
+> [#298]: https://github.com/rails49/occupancy/issues/298
 
 ## State and data flow
 
@@ -402,8 +403,8 @@ image pixel coordinates.
 | `cars` | `readonly CarLabel[]` | Car spans to draw: a chord inside its width rectangle. Per **image**, so switching images swaps the whole list; empty in the live view |
 | `pendingCar` | `PendingCar \| null` | The **rubber band** — `{ anchor, to }` for the chain in flight. The one thing here that is not in the manifest; empty in the live view |
 | `tracks` | `readonly Track[]` | The layout's centerlines ([#284]), drawn under everything else. Per layout, so the same on every image; empty in the live view |
-| `pendingTrack` | `PendingTrack \| null` | The track chain in flight, with the node a click at the pointer would add |
-| `trackDetail` | `boolean` | Whether centerlines show their rails, node dots and heading handles, or the centerline alone. The editor sets it while the track tool is chosen |
+| `pendingTrack` | `TraceView \| null` | The line a track chain is tracing ([#298]): its clicks, committed track and live tail. The editor leaves that line out of `tracks` |
+| `trackDetail` | `boolean` | Whether centerlines show their rails and click dots, or the centerline alone. The editor sets it while the track tool is chosen |
 | `highlight` | `ViewerHighlight \| null` | The objects a reveal is pointing at — `{ cars, sensors, calibration, trackNodes }`, ids for the first two, **indices** for the third and pixels for the fourth. Already resolved by `rr-editor-view`; the viewer draws it and decides nothing. `null` in the live view |
 | `zoom` | `Rect \| null` | The region of the **authored frame** on screen ([#44]). `null` is fit — the absence of a zoom, which is exactly what this element drew before the property existed. View state the editor owns; never in the manifest and never in the history. `null` in the live view |
 | `zoomPreview` | `Rect \| null` | The rect being dragged out — zoom's counterpart to `pendingCar`. Drawn in the overlay with a screen-constant stroke, never as an HTML box on the glass |
@@ -744,21 +745,20 @@ both; each tool module supplies what differs.
 | `ChainView`, `ChainContext`, `ClickResult` | What the editor draws of a chain; what a tool reads and writes through the session, including `snap`; what a click asks the editor for |
 | `NO_TRACK`, `NO_TRACK_NOTICE` | Why a sensor or car end was refused: no centerline within `SNAP_TRACK_WIDTHS` |
 | `carTool`, `ALREADY_LABELED` | A free car end continues a chain, a coupling is refused with `ALREADY_LABELED`, a click on a car's body splits it, and empty image starts a chain |
-| `trackTool`, `TrackChain`, `trackHitAt`, `TURN_TOO_SHARP` | An end node continues its line, a click on a line inserts a node, a middle node or heading handle does nothing, and anywhere else starts a chain. `TrackChain.preview` is what a click would add |
+| `trackTool`, `TrackChain`, `trackHitAt` | A click on a line does nothing, and anywhere else starts a chain ([#298]). Each click adds to the chain's trace (`trackTrace.ts`) and writes the line's clicks with the nodes of their whole-line fit (`trackFit.ts` § `fitTrack`, `fitNodes`) |
 
 ---
 
 ### `trackMarker.ts`
 
-A centerline's SVG ([#284]). The exports must be used together.
+A centerline's SVG ([#284], [#298]). The exports must be used together.
 
 | Export | Type | Description |
 |---|---|---|
-| `renderTrack(track, size, highlighted?)` | `(Track, TrackSymbolSize, Point[]?) => SVGTemplateResult` | The centerline as one cubic per segment, and with `size.detail` the two rails at ±G/2, a dot per node and the heading handles. No rails when `size.dpt` is `null`. A node at a pixel in `highlighted` is drawn either way and takes `highlight.ts`'s class |
-| `renderPendingTrack(pending, size)` | `(PendingTrack, TrackSymbolSize) => SVGTemplateResult` | The track chain in flight. A click that would be refused shows as a red line from the last node to the pointer |
-| `TrackSymbolSize` | `{ dpt, strokePx, nodePx, handlePx, detail }` | The DPT the rails are spaced by, screen-constant stroke and dot sizes, how far out a heading handle is drawn, and whether to draw the rails, dots and handles or the centerline alone |
-| `PendingTrack` | `{ start, nodes, cursor, refused }` | The chain's first click, its nodes including the pointer's, the pointer, and whether a click there is refused |
-| `trackMarkerStyles` | `CSSResult` | The green ink and the refused line's red |
+| `renderTrack(track, size, highlighted?)` | `(Track, TrackSymbolSize, Point[]?) => SVGTemplateResult` | The centerline as one cubic per segment, and with `size.detail` the two rails at ±G/2 and a dot per click. No rails when `size.dpt` is `null`. A node at a pixel in `highlighted` is drawn as a dot and takes `highlight.ts`'s class |
+| `renderPendingTrack(view, size)` | `(TraceView, TrackSymbolSize) => SVGTemplateResult` | The line a track chain is tracing. Committed track draws rails and a solid centerline; the live tail a dashed centerline, a part only when both its joins have σ under `TRACK_FIT.barCap`, with a bar across each uncommitted join but the last, half-length σ. A dot per click; a flagged one is red |
+| `TrackSymbolSize` | `{ dpt, strokePx, dotPx, detail }` | The DPT the rails are spaced by, screen-constant stroke and dot sizes, and whether to draw the rails and dots or the centerline alone |
+| `trackMarkerStyles` | `CSSResult` | The green ink and a flagged click's red |
 
 ### `track.ts`
 
@@ -773,11 +773,8 @@ heading, with length `d / (3 cos²(φ/4))`.
 | `pointAt`, `tangentAt` | A point on a segment, and the derivative there |
 | `trackPath(nodes)` | An SVG path, one `C` per segment |
 | `offsetPoints(nodes, offset)` | Sampled points `offset` px to the right of the line; negative is left |
-| `extendTrack(start, nodes, to, snapPx, minPx)` | What a click at `to` does to a track chain: the new nodes, `too-close` to the last point, or `too-sharp` |
-| `hitTrack(tracks, at, radius, handleLength)` | The heading handle, node or line under the pointer, in that order of preference |
+| `hitTrack(tracks, at, radius)` | The line under the pointer: the nearest point on it within `radius`, or null |
 | `nearestOnTrack(tracks, at, maxPx)`, `SNAP_TRACK_WIDTHS` | The point on any centerline nearest `at` within `maxPx`, or null; and the reach sensors and car ends snap within, 1.5 track widths |
-| `headingHandle(node, length)`, `insertNode(nodes, segment, t)`, `reverseNodes(nodes)` | Where a heading handle sits; a node added on the curve; the line run the other way |
-| `STRAIGHT_SNAP_SCREEN_PX`, `MAX_TURN`, `HEADING_HANDLE_SCREEN_PX` | The straight snap's tolerance, the largest turn one segment may make (90°), and how far a heading handle sits from its node |
 
 ### `carMarker.ts`
 
