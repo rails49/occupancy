@@ -4,7 +4,7 @@ import { pixel, NONE } from './chain.js';
 import type { Chain, ChainContext, ChainTool, ChainView, ClickResult } from './chain.js';
 import { hitTrack } from './track.js';
 import type { Track, TrackHit } from './track.js';
-import { fitNodes, fitTrack } from './trackFit.js';
+import { fitNodes } from './trackFit.js';
 import { Trace, traceOptions } from './trackTrace.js';
 import type { TraceOptions, TraceView } from './trackTrace.js';
 
@@ -71,7 +71,7 @@ export class TrackChain implements Chain {
     this._trace.add(p, this._opts);
     this._view = this._trace.view(this._opts);
     const clicks = [...this._trace.clicks];
-    const whole = fitTrack(clicks, this._opts)!;
+    const whole = this._trace.lineFit(this._opts)!;
     const lines = [...centerlines(this._ctx)];
     const index = this._index ?? lines.length;
     lines[index] = { nodes: fitNodes(whole.fit), clicks };

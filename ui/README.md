@@ -745,7 +745,7 @@ both; each tool module supplies what differs.
 | `ChainView`, `ChainContext`, `ClickResult` | What the editor draws of a chain; what a tool reads and writes through the session, including `snap`; what a click asks the editor for |
 | `NO_TRACK`, `NO_TRACK_NOTICE` | Why a sensor or car end was refused: no centerline within `SNAP_TRACK_WIDTHS` |
 | `carTool`, `ALREADY_LABELED` | A free car end continues a chain, a coupling is refused with `ALREADY_LABELED`, a click on a car's body splits it, and empty image starts a chain |
-| `trackTool`, `TrackChain`, `trackHitAt` | A click on a line does nothing, and anywhere else starts a chain ([#298]). Each click adds to the chain's trace (`trackTrace.ts`) and writes the line's clicks with the nodes of their whole-line fit (`trackFit.ts` § `fitTrack`, `fitNodes`) |
+| `trackTool`, `TrackChain`, `trackHitAt` | A click on a line does nothing, and anywhere else starts a chain ([#298]). Each click adds to the chain's trace (`trackTrace.ts`) and writes the line's clicks with the nodes of their whole-line fit: the trace's committed line and tail refit as one (`Trace.lineFit`, `fitNodes`) |
 
 ---
 
