@@ -80,7 +80,7 @@ describe('renderPendingTrack', () => {
   const ahead: Fit = { start: { x: 300, y: 0, heading: 0 }, parts: [{ length: 200, curvature: 0 }] };
 
   function view(over: Partial<TraceView>): TraceView {
-    return { clicks, fit: null, projection: null, ...over };
+    return { clicks, partStarts: [], fit: null, projection: null, ...over };
   }
 
   it('draws the rails and the centerline of the fit, solid, and a dot per click', () => {
@@ -109,12 +109,20 @@ describe('renderPendingTrack', () => {
     expect(el.querySelectorAll('.centerline')).toHaveLength(1);
   });
 
-  it('draws a dot per click, none marked, and no node dots or handles', () => {
+  it('draws a dot per click, none marked with no part after the first, and no node dots or handles', () => {
     const el = renderSvg(renderPendingTrack(view({ fit: straight([300]), projection: ahead }), size));
     const dots = [...el.querySelectorAll('.click')];
     expect(dots).toHaveLength(clicks.length);
     expect(dots.every(d => d.getAttribute('class') === 'click')).toBe(true);
     expect(el.querySelectorAll('.node, .heading, .heading-handle')).toHaveLength(0);
+  });
+
+  it('marks the first click of each part after the first, and no other', () => {
+    const el = renderSvg(renderPendingTrack(view({ fit: straight([100, 100, 100]), partStarts: [2, 4] }), size));
+    const dots = [...el.querySelectorAll('.click')];
+    expect(dots.map(d => d.classList.contains('part-start'))).toEqual([false, false, true, false, true, false, false]);
+    expect(dots[2].getAttribute('cx')).toBe('100');
+    expect(dots[4].getAttribute('cx')).toBe('200');
   });
 
   it('draws the first click alone before the second', () => {

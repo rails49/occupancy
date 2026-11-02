@@ -8,6 +8,7 @@ const tracing: TraceView = {
     { x: 0, y: 0 },
     { x: 100, y: 0 },
   ],
+  partStarts: [],
   fit: { start: { x: 0, y: 0, heading: 0 }, parts: [{ length: 100, curvature: 0 }] },
   projection: { start: { x: 100, y: 0, heading: 0 }, parts: [{ length: 200, curvature: 0 }] },
 };
@@ -22,7 +23,7 @@ describe('trackHint', () => {
   });
 
   it('asks for the next click and says how to end while tracing, from the first click on', () => {
-    expect(trackHint({ clicks: [{ x: 0, y: 0 }], fit: null, projection: null }, false)).toBe(TRACING);
+    expect(trackHint({ clicks: [{ x: 0, y: 0 }], partStarts: [], fit: null, projection: null }, false)).toBe(TRACING);
     expect(trackHint(tracing, false)).toBe(TRACING);
   });
 

@@ -96,8 +96,9 @@ release. Right-click on a traced click other than the last opens Delete click an
 the chain goes on; deleting one of a line's last two clicks, or the line, ends the chain. The trace
 draws in place of its stored line, which `rr-editor-view` leaves out of the viewer's `tracks`.
 `renderPendingTrack` draws the rails and the centerline from the one fit, the projection ahead of
-it as a dashed centerline, and a dot per click; `renderTrack` draws a stored line from its nodes
-and a dot per click. No click is marked, on the traced line or on a stored one.
+it as a dashed centerline, and a dot per click, white (`part-start`) on the first click of each
+part after the first, from `TraceView.partStarts`; `renderTrack` draws a stored line from its
+nodes and a dot per click, all plain, since a stored line has no part record.
 
 A refusal is the one thing the tool says no to. `EditSession.refused` is set by a refused click,
 drag or delete, which writes nothing and puts a dragged click back, and cleared by the next click

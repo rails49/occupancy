@@ -221,7 +221,7 @@ The line is a function of its clicks, in their order: take the clicks one by one
 * A click the line could reach only with an arc tighter than the minimum radius is refused: nothing is added, and the hint says to click farther ahead or end the line.
 * Right-click or Escape ends the line, and ending changes nothing. The projection stays where it is until the next click or the release of a drag; nothing follows the pointer.
 * A click into the next curve that is still within the tolerance continues the part, so a part ends at its last click: click the end of a straight before clicking into the curve.
-* While tracing, every part is drawn with its rails and centerline, every click is a dot, and the projection is drawn ahead of the line for the projection length as a dashed centerline. No click is ever marked.
+* While tracing, every part is drawn with its rails and centerline, every click is a dot, the first click of each part after the first is a white dot, and the projection is drawn ahead of the line for the projection length as a dashed centerline. A mark says which part a click belongs to, never that something is wrong.
 * While the track tool is selected, a line above the photograph says what to do next: while tracing, click ahead and how to end; after a refused click or edit, why and what to do, until the next click or edit or the end of the line; otherwise, how to start a line or go on with one.
 
 **What a click writes.** Every click writes the line's clicks and the nodes of the line as drawn, as one history entry. A refused click writes nothing. A save in the middle of a trace holds a valid line, and every other reader reads nodes as before. Undo takes back the last click, or the last edit of a click, and shows the line as it was before it.

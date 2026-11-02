@@ -16,9 +16,11 @@ export function traceOptions(dpt: number): TraceOptions {
   return { tolerance: TRACK_FIT.tolerance * dpt, minRadius: TRACK_FIT.minRadius * dpt, projection: TRACK_FIT.projection * dpt };
 }
 
-/** What a trace draws: its clicks, the line and the projection ahead of it. */
+/** What a trace draws: its clicks, which of them start a part, the line and the projection ahead of it. */
 export interface TraceView {
   readonly clicks: readonly Point[];
+  /** Index of the first click of each part after the first: the clicks drawn marked. */
+  readonly partStarts: readonly number[];
   /** Null before the second click. */
   readonly fit: Fit | null;
   /** The current part carried on past the last click; null before the second click. */
@@ -57,7 +59,12 @@ export class Trace {
   }
 
   view(opts: TraceOptions): TraceView {
-    return { clicks: [...this.clicks], fit: this.fit(), projection: this.line ? projection(this.line, opts.projection) : null };
+    return {
+      clicks: [...this.clicks],
+      partStarts: this.line?.firstClick.slice(1) ?? [],
+      fit: this.fit(),
+      projection: this.line ? projection(this.line, opts.projection) : null,
+    };
   }
 
   /** Puts a click on the end of the line, or says why it adds nothing. */

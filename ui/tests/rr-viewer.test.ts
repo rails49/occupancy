@@ -686,7 +686,7 @@ describe('rr-viewer', () => {
       it('draws the line being traced from its trace', async () => {
         const el = await fixture<RrViewer>(html`
           <rr-viewer
-            .pendingTrack=${{ clicks: tracks[0].clicks, fit: null, projection: null }}
+            .pendingTrack=${{ clicks: tracks[0].clicks, partStarts: [], fit: null, projection: null }}
             .dpt=${90}
             .resolution=${resolution}
           ></rr-viewer>

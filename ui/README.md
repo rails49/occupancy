@@ -766,7 +766,7 @@ A centerline's SVG ([#284], [#311]). The exports must be used together.
 | Export | Type | Description |
 |---|---|---|
 | `renderTrack(track, size, highlighted?)` | `(Track, TrackSymbolSize, Point[]?) => SVGTemplateResult` | The centerline as one cubic per node pair, and with `size.detail` the two rails at ±G/2 and a dot per click. No rails when `size.dpt` is `null`. A click at a pixel in `highlighted` takes `highlight.ts`'s class, and is drawn without `size.detail` too |
-| `renderPendingTrack(view, size)` | `(TraceView, TrackSymbolSize) => SVGTemplateResult` | The line a track chain is tracing: the rails and a solid centerline from its fit, the projection ahead of it as a dashed centerline, and a dot per click. No click is marked |
+| `renderPendingTrack(view, size)` | `(TraceView, TrackSymbolSize) => SVGTemplateResult` | The line a track chain is tracing: the rails and a solid centerline from its fit, the projection ahead of it as a dashed centerline, and a dot per click, white on the first click of each part after the first |
 | `TrackSymbolSize` | `{ dpt, strokePx, dotPx, detail }` | The DPT the rails are spaced by, screen-constant stroke and dot sizes, and whether to draw the rails and dots or the centerline alone |
 | `trackMarkerStyles` | `CSSResult` | The green ink |
 
@@ -816,7 +816,7 @@ clicks and is refused when a click then does not go on it.
 |---|---|
 | `Trace` | `clicks` and `line`; `add`, `move` and `remove` return the `Step` kind, an edit `refused` when a click of the rebuilt line would add nothing or need an arc tighter than the minimum; `fit`, `view`, `clone`; `Trace.replay(clicks, opts)` builds a trace click by click, and `Trace.rebuilt(clicks, opts)` is that trace or null when it keeps fewer clicks |
 | `traceOptions(dpt)`, `TraceOptions` | `TRACK_FIT` in image pixels; the type is `FitOptions` |
-| `TraceView` | What the overlay draws: the clicks, the fit and the projection ahead of it |
+| `TraceView` | What the overlay draws: the clicks, which of them start a part after the first (`partStarts`), the fit and the projection ahead of it |
 
 ### `trackHint.ts`
 

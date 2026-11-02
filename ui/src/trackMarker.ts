@@ -12,7 +12,9 @@ import type { TraceView } from './trackTrace.js';
 /**
  * Track rendering for SVG (#284, #311): the centerline, and under the track
  * tool the two rails half a gauge to either side, a dot at each click and,
- * ahead of the line being traced, the projection as a dashed centerline.
+ * ahead of the line being traced, the projection as a dashed centerline. On
+ * the line being traced the first click of each part after the first is a
+ * white dot.
  *
  * A module rather than a custom element, like the other markers. Its exports
  * must be used together: `trackMarkerStyles` in the host's `static styles`,
@@ -49,6 +51,10 @@ export const trackMarkerStyles: CSSResult = css`
   .track .click {
     fill: var(--track-ink);
     stroke: rgba(0, 0, 0, 0.75);
+  }
+
+  .track .part-start {
+    fill: #fff;
   }
 `;
 
@@ -124,7 +130,8 @@ function renderFit(fit: Fit, offset: number, cls: string, size: TrackSymbolSize,
 
 /**
  * The line a track chain is tracing (#311): its rails and centerline from the
- * fit, the projection ahead of it dashed, and a dot per click.
+ * fit, the projection ahead of it dashed, and a dot per click, white on the
+ * first click of each part after the first.
  */
 export function renderPendingTrack(view: TraceView, size: TrackSymbolSize): SVGTemplateResult {
   const { fit, projection } = view;
@@ -139,6 +146,6 @@ export function renderPendingTrack(view: TraceView, size: TrackSymbolSize): SVGT
         : ''
     }
     ${projection ? renderFit(projection, 0, 'projection', size, true) : ''}
-    ${view.clicks.map(p => renderDot(p, size, 'click'))}
+    ${view.clicks.map((p, i) => renderDot(p, size, view.partStarts.includes(i) ? 'click part-start' : 'click'))}
   </g>`;
 }

@@ -20,10 +20,11 @@ describe('Trace while tracing', () => {
   it('shows the first click alone, then the line of its clicks with the projection ahead', () => {
     const t = new Trace();
     expect(t.add(clicks[0], opts)).toBe('added');
-    expect(t.view(opts)).toEqual({ clicks: [clicks[0]], fit: null, projection: null });
+    expect(t.view(opts)).toEqual({ clicks: [clicks[0]], partStarts: [], fit: null, projection: null });
     expect(t.add(clicks[1], opts)).toBe('added');
     const view = t.view(opts);
     expect(view.clicks).toEqual(clicks.slice(0, 2));
+    expect(view.partStarts).toEqual([]);
     expect(view.fit?.parts).toEqual([{ length: expect.closeTo(10 * G, 6), curvature: 0 }]);
     expect(view.projection?.parts).toEqual([{ length: 20 * G, curvature: 0 }]);
     expect(view.projection?.start.x).toBeCloseTo(clicks[1].x, 6);
@@ -42,6 +43,7 @@ describe('Trace while tracing', () => {
     const t = Trace.replay(clicks, opts);
     expect(t.line?.fit.parts).toHaveLength(3);
     expect(t.line?.firstClick).toEqual([0, 3, 8]);
+    expect(t.view(opts).partStarts).toEqual([3, 8]);
     expect(Math.max(...distances(t.line!, t.clicks))).toBeLessThanOrEqual(opts.tolerance);
   });
 
@@ -97,7 +99,7 @@ describe('Trace edits', () => {
   it('has no line once fewer than two clicks are left', () => {
     const t = Trace.replay(clicks.slice(0, 2), opts);
     expect(t.remove(1, opts)).toBe('added');
-    expect(t.view(opts)).toEqual({ clicks: [clicks[0]], fit: null, projection: null });
+    expect(t.view(opts)).toEqual({ clicks: [clicks[0]], partStarts: [], fit: null, projection: null });
   });
 
   it('leaves a clone where it was', () => {
