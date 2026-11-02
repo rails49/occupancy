@@ -170,4 +170,10 @@ describe('rr-settings-dialog', () => {
       expect(seen).toEqual([]);
     });
   });
+
+  it('links to the source of the AGPL detector', async () => {
+    const el = await open([]);
+    const link = el.shadowRoot!.querySelector<HTMLAnchorElement>('a[href="https://github.com/rails49/detector"]');
+    expect(link).not.toBeNull();
+  });
 });
