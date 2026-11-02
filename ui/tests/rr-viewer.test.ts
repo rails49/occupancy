@@ -5,6 +5,7 @@ import { RrViewer } from '../src/rr-viewer.js';
 import type {
   ViewerPointerDetail,
   ViewerContextMenuDetail,
+  ViewerWheelDetail,
   ViewerPointerEventName,
 } from '../src/rr-viewer.js';
 import { HIGHLIGHT_CLASS } from '../src/highlight.js';
@@ -946,6 +947,20 @@ describe('rr-viewer', () => {
 
       expect(seen.length).to.equal(1);
       expect(seen[0].point).to.deep.equal({ x: 200, y: 200 });
+      expect(event.defaultPrevented).to.be.false;
+    });
+
+    it('reports the wheel in image pixels, leaving the page scroll to the consumer', () => {
+      const seen: ViewerWheelDetail[] = [];
+      el.addEventListener('rr-wheel', e => {
+        seen.push(e.detail);
+      });
+      const event = new WheelEvent('wheel', { clientX: 140, clientY: 110, deltaY: -100, bubbles: true, cancelable: true });
+      svg.dispatchEvent(event);
+
+      expect(seen.length).to.equal(1);
+      expect(seen[0].point).to.deep.equal({ x: 200, y: 200 });
+      expect(seen[0].originalEvent.deltaY).to.equal(-100);
       expect(event.defaultPrevented).to.be.false;
     });
 

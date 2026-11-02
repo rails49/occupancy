@@ -959,6 +959,51 @@ export function panZoomRect(from: Rect, delta: Point, frame: FrameSize): Rect {
   return clampZoomRect({ ...from, x: from.x - delta.x, y: from.y - delta.y }, frame);
 }
 
+/** Wheel travel, in pixels, that scales the zoom rect by e. */
+const WHEEL_PX_PER_E = 500;
+/** One line of a line-mode wheel delta (`WheelEvent.DOM_DELTA_LINE`), in pixels. */
+const WHEEL_LINE_PX = 16;
+
+/**
+ * How much one wheel event scales the zoom rect: below 1 zooms in, above 1
+ * out. Exponential in the travel, so a turn one way and back cancels.
+ */
+export function wheelZoomFactor(deltaY: number, deltaMode: number): number {
+  const px = deltaMode === 1 ? deltaY * WHEEL_LINE_PX : deltaY;
+  return Math.exp(px / WHEEL_PX_PER_E);
+}
+
+/**
+ * The zoom after a wheel event at `at`: the current rect, or the whole frame
+ * at fit, scaled by `factor` about `at`, so the point under the pointer stays
+ * under it. Stops at {@link capZoomRect}'s limit, and is `null` (fit) once the
+ * rect would cover the frame on either axis, as {@link zoomRectFromDrag} is.
+ */
+export function wheelZoomRect(
+  zoom: Rect | null,
+  at: Point,
+  factor: number,
+  frame: FrameSize,
+  viewport: Size
+): Rect | null {
+  const from = zoom ?? { x: 0, y: 0, width: frame.width, height: frame.height };
+  const scaled = scaleRectAbout(from, at, factor);
+  const capped = capZoomRect(scaled, viewport);
+  const rect = capped === scaled ? scaled : scaleRectAbout(from, at, (factor * capped.width) / scaled.width);
+  if (rect.width >= frame.width || rect.height >= frame.height) return null;
+  return clampZoomRect(rect, frame);
+}
+
+/** `rect` scaled by `factor` about `at`. */
+function scaleRectAbout(rect: Rect, at: Point, factor: number): Rect {
+  return {
+    x: at.x + (rect.x - at.x) * factor,
+    y: at.y + (rect.y - at.y) * factor,
+    width: rect.width * factor,
+    height: rect.height * factor,
+  };
+}
+
 /**
  * The CSS transform that puts a zoom rect on screen: `translate(x, y)` then
  * `scale(scale)`, about an origin at the top-left of the viewport.

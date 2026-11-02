@@ -416,9 +416,10 @@ image pixel coordinates.
 | `resolution` | `{ width, height }` | `camera.resolution` — the frame every coordinate is **authored** in. Not the viewBox: the viewBox is the media's own size, and this is scaled onto it |
 
 **Emits:** `rr-pointer-down`, `rr-pointer-move`, `rr-pointer-up`, `rr-pointer-cancel`
-(`ViewerPointerDetail`), `rr-pointer-contextmenu` (`ViewerContextMenuDetail`), `rr-media-frame`
+(`ViewerPointerDetail`), `rr-pointer-contextmenu` (`ViewerContextMenuDetail`), `rr-wheel`
+(`ViewerWheelDetail`, without `preventDefault`), `rr-media-frame`
 (`ViewerMediaFrameDetail`, once per media load) and `rr-viewport` (`ViewerViewportDetail`, whenever
-the measured viewport changes size). All seven fire in both `src` and `stream` mode. They are declared in `HTMLElementEventMap`, so a listener anywhere up
+the measured viewport changes size). All eight fire in both `src` and `stream` mode. They are declared in `HTMLElementEventMap`, so a listener anywhere up
 the tree gets the detail typed without a cast.
 
 | Detail field | Type | Description |
@@ -1054,7 +1055,7 @@ per pick, however many of its files were refused ([#262]). `rr-app` owns the toa
   approximate. It **blocks nothing**, like a below-minimum DPT, and it is cleared when another image
   is selected: the next image reports its own size when it decodes, and one that never decodes must
   not inherit this verdict.
-* **Zoom** ([#44]). Two actions and a pan, over one nullable `Rect` of the **authored frame** handed
+* **Zoom** ([#44]). Three actions and a pan, over one nullable `Rect` of the **authored frame** handed
   to `rr-viewer`. `null` is fit. Nothing here writes to the manifest, so nothing here records a
   history entry — zoom is view state, which `../SPEC.md` § Undo and redo already named.
 
@@ -1062,6 +1063,7 @@ per pick, however many of its files were refused ([#262]). `rr-app` owns the toa
   |---|---|---|
   | Plain primary drag from **empty image** | zoom to the rect drawn | pan |
   | **Shift** + primary drag, anywhere | zoom to the rect drawn | zoom to the rect drawn |
+  | Mouse **wheel** | toward the screen zooms in about the pointer | in or out about the pointer; out to fit at most |
   | Primary drag on an **object** | moves it (unchanged) | moves it (unchanged) |
   | Right-click | menu / end chain (unchanged) | unchanged |
 

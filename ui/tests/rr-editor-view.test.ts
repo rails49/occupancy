@@ -1968,7 +1968,7 @@ describe('rr-editor-view', () => {
 
       const zoomOf = (el: RREditorView) => el.shadowRoot!.querySelector('rr-viewer')!.zoom;
 
-      /** Zooms to a rect by drawing it, which is the only way the editor zooms. */
+      /** Zooms to a rect by drawing it. */
       async function zoomTo(el: RREditorView, rect: Rect) {
         await drag(el, [
           { x: rect.x, y: rect.y },
@@ -2063,7 +2063,7 @@ describe('rr-editor-view', () => {
       await el.updateComplete;
     }
 
-    /** Zooms to a rect by drawing it, which is the only way the editor zooms. */
+    /** Zooms to a rect by drawing it. */
     async function zoomTo(el: RREditorView, rect: Rect) {
       await viewDrag(el, [
         { x: rect.x, y: rect.y },
@@ -2078,6 +2078,44 @@ describe('rr-editor-view', () => {
       );
       await el.updateComplete;
     }
+
+    /** A wheel turn over `at`, as the viewer reports it. A negative `deltaY` zooms in. */
+    function wheel(el: RREditorView, at: Point, deltaY: number) {
+      const originalEvent = new WheelEvent('wheel', { deltaY, cancelable: true });
+      viewerOf(el).dispatchEvent(
+        new CustomEvent('rr-wheel', {
+          detail: { point: at, imagePxPerScreenPx: 1, originalEvent },
+          bubbles: true,
+          composed: true,
+        })
+      );
+      return originalEvent;
+    }
+
+    it('zooms in about the pointer when the wheel turns toward the screen', async () => {
+      widen();
+      const el = await mount();
+
+      const event = wheel(el, { x: 250, y: 500 }, -100);
+      await el.updateComplete;
+
+      const rect = zoomOf(el)!;
+      expect(rect.width).to.be.below(1000);
+      expect((250 - rect.x) / rect.width).to.be.closeTo(0.25, 1e-9);
+      expect((500 - rect.y) / rect.height).to.be.closeTo(0.5, 1e-9);
+      expect(event.defaultPrevented).to.be.true;
+    });
+
+    it('zooms back out to fit when the wheel turns away', async () => {
+      widen();
+      const el = await mount();
+      await zoomTo(el, { x: 400, y: 400, width: 200, height: 200 });
+
+      wheel(el, { x: 500, y: 500 }, 2000);
+      await el.updateComplete;
+
+      expect(zoomOf(el)).to.be.null;
+    });
 
     it('is unzoomed until a gesture zooms it', async () => {
       widen();

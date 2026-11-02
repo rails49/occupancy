@@ -19,6 +19,8 @@ import {
   rectBetween,
   revealZoom,
   samePoint,
+  wheelZoomFactor,
+  wheelZoomRect,
   zoomRectFromDrag,
   CLICK_SLOP_SCREEN_PX,
 } from './geometry.js';
@@ -39,6 +41,7 @@ import type {
   ViewerHighlight,
   ViewerMediaFrameDetail,
   ViewerPointerDetail,
+  ViewerWheelDetail,
   ViewerViewportDetail,
 } from './rr-viewer.js';
 import type { CalibrationCommitDetail, RRCalibrationDialog } from './rr-calibration-dialog.js';
@@ -427,7 +430,8 @@ function revokeImageUrls(urls: ImageUrls) {
  * Takes `session`. Emits `rr-notify` (`NotifyDetail`) when a click is refused.
  *
  * It owns the zoom (#44): a drag on empty image draws a rect to zoom to, or
- * pans once zoomed, and a Shift-drag draws a rect wherever it begins. Zoom
+ * pans once zoomed, a Shift-drag draws a rect wherever it begins, and the
+ * wheel zooms in or out about the pointer (`geometry.ts` § `wheelZoomRect`). Zoom
  * writes nothing, survives an image change and a live chain, and a reveal pans
  * to keep what an undo changed on screen.
  *
@@ -1092,6 +1096,16 @@ export class RREditorView extends LitElement {
     this._zoom = zoomRectFromDrag(gesture.origin, detail.point, frame, this._viewport);
   }
 
+  /** The wheel zooms about the pointer: toward the screen in, away out to fit. */
+  private _onViewerWheel(e: CustomEvent<ViewerWheelDetail>) {
+    const { point, originalEvent } = e.detail;
+    originalEvent.preventDefault();
+    const frame = this._frame();
+    if (!frame) return;
+    const factor = wheelZoomFactor(originalEvent.deltaY, originalEvent.deltaMode);
+    this._zoom = wheelZoomRect(this._zoom, point, factor, frame, this._viewport);
+  }
+
   /**
    * The end of a press: the end of a drag, or a click. A gesture that dragged
    * never falls through to the click path, even if it ended back inside the
@@ -1417,6 +1431,7 @@ export class RREditorView extends LitElement {
                 @rr-pointer-up=${this._onViewerPointerUp}
                 @rr-pointer-cancel=${this._onViewerPointerCancel}
                 @rr-pointer-contextmenu=${this._onViewerContextMenu}
+                @rr-wheel=${this._onViewerWheel}
                 @rr-media-frame=${this._onMediaFrame}
                 @rr-viewport=${this._onViewport}
               ></rr-viewer>

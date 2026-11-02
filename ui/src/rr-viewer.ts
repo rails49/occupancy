@@ -194,6 +194,12 @@ export interface ViewerPointerDetail {
   readonly originalEvent: PointerEvent;
 }
 
+/** A wheel turn over the image, in image pixels like {@link ViewerPointerDetail}. */
+export interface ViewerWheelDetail extends Omit<ViewerPointerDetail, 'originalEvent'> {
+  /** The event this came from, for `deltaY`, `deltaMode` and `preventDefault`. */
+  readonly originalEvent: WheelEvent;
+}
+
 /** The four events a pointer gesture goes through, start to finish. */
 export type ViewerPointerEventName =
   | 'rr-pointer-down'
@@ -328,6 +334,7 @@ export interface ViewerContextMenuDetail extends Omit<ViewerPointerDetail, 'orig
  * @fires rr-pointer-up - Gesture finished. Detail: {@link ViewerPointerDetail}
  * @fires rr-pointer-cancel - Gesture abandoned by the browser. Detail: {@link ViewerPointerDetail}
  * @fires rr-pointer-contextmenu - Right-click. Detail: {@link ViewerContextMenuDetail}
+ * @fires rr-wheel - Mouse wheel over the image. Detail: {@link ViewerWheelDetail}
  * @fires rr-media-frame - Media loaded, with its size against the archive's. Detail: {@link ViewerMediaFrameDetail}
  * @fires rr-viewport - The viewport was measured at a new size. Detail: {@link ViewerViewportDetail}
  */
@@ -742,7 +749,7 @@ export class RrViewer extends LitElement {
   }
 
   /**
-   * Converts, then dispatches. All five events go through here, so there is one
+   * Converts, then dispatches. Every event goes through here, so there is one
    * place the detail is assembled and one place the conversion can be missed.
    *
    * @returns `false` when there was no transform to convert with, and so
@@ -750,6 +757,7 @@ export class RrViewer extends LitElement {
    */
   private reportGesture(name: ViewerPointerEventName, originalEvent: PointerEvent): boolean;
   private reportGesture(name: 'rr-pointer-contextmenu', originalEvent: MouseEvent): boolean;
+  private reportGesture(name: 'rr-wheel', originalEvent: WheelEvent): boolean;
   private reportGesture(name: string, originalEvent: PointerEvent | MouseEvent): boolean {
     const converted = this.toImagePoint(originalEvent.clientX, originalEvent.clientY);
     if (!converted) return false;
@@ -798,6 +806,11 @@ export class RrViewer extends LitElement {
 
   private onContextMenu(e: MouseEvent) {
     this.reportGesture('rr-pointer-contextmenu', e);
+  }
+
+  /** Reported without `preventDefault`: whether the wheel zooms is the consumer's call. */
+  private onWheel(e: WheelEvent) {
+    this.reportGesture('rr-wheel', e);
   }
 
   /**
@@ -932,6 +945,7 @@ export class RrViewer extends LitElement {
           @pointerup=${this.onPointerUp}
           @pointercancel=${this.onPointerCancel}
           @contextmenu=${this.onContextMenu}
+          @wheel=${this.onWheel}
         >
           <g class="frame" transform="scale(${fit.sx}, ${fit.sy})">
             <!-- Track under everything: cars stand on it. -->
@@ -1024,6 +1038,7 @@ declare global {
     'rr-pointer-up': CustomEvent<ViewerPointerDetail>;
     'rr-pointer-cancel': CustomEvent<ViewerPointerDetail>;
     'rr-pointer-contextmenu': CustomEvent<ViewerContextMenuDetail>;
+    'rr-wheel': CustomEvent<ViewerWheelDetail>;
     'rr-media-frame': CustomEvent<ViewerMediaFrameDetail>;
     'rr-viewport': CustomEvent<ViewerViewportDetail>;
   }

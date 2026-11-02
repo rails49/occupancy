@@ -24,6 +24,8 @@ import {
   capZoomRect,
   clampZoomRect,
   panZoomRect,
+  wheelZoomFactor,
+  wheelZoomRect,
   rectBetween,
   revealZoom,
   zoomRectFromDrag,
@@ -1288,6 +1290,65 @@ describe('zoom (#44)', () => {
       // A twelve-car consist undone at once: there is no pan that shows it, so
       // the honest answer is the view that shows everything.
       expect(revealZoom(zoom, { x: 0, y: 0, width: 900, height: 20 }, frame)).to.be.null;
+    });
+  });
+});
+
+describe('wheel zoom', () => {
+  const frame = { width: 1000, height: 1000 };
+  const viewport = { width: 800, height: 800 };
+
+  describe('wheelZoomRect', () => {
+    it('zooms in from fit about the pointer', () => {
+      expect(wheelZoomRect(null, { x: 250, y: 500 }, 0.5, frame, viewport)).to.deep.equal({
+        x: 125,
+        y: 250,
+        width: 500,
+        height: 500,
+      });
+    });
+
+    it('keeps the point under the pointer where it was in the rect', () => {
+      const rect = { x: 200, y: 300, width: 400, height: 400 };
+      const at = { x: 300, y: 600 };
+      const next = wheelZoomRect(rect, at, 0.8, frame, viewport)!;
+      expect((at.x - next.x) / next.width).to.be.closeTo((at.x - rect.x) / rect.width, 1e-12);
+      expect((at.y - next.y) / next.height).to.be.closeTo((at.y - rect.y) / rect.height, 1e-12);
+    });
+
+    it('gives the zoom up once the rect would cover the frame on either axis', () => {
+      expect(wheelZoomRect({ x: 400, y: 400, width: 200, height: 200 }, { x: 500, y: 500 }, 10, frame, viewport)).to
+        .be.null;
+      expect(wheelZoomRect(null, { x: 500, y: 500 }, 1.2, frame, viewport)).to.be.null;
+    });
+
+    it('stops at the zoom cap, still about the pointer', () => {
+      const min = 800 / MAX_ZOOM_SCREEN_PX_PER_FRAME_PX;
+      const next = wheelZoomRect({ x: 400, y: 400, width: 100, height: 100 }, { x: 450, y: 450 }, 0.25, frame, viewport)!;
+      expect(next.width).to.be.closeTo(min, 1e-9);
+      expect(next.x).to.be.closeTo(450 - min / 2, 1e-9);
+    });
+
+    it('keeps the rect inside the frame', () => {
+      expect(
+        wheelZoomRect({ x: 800, y: 800, width: 200, height: 200 }, { x: 900, y: 900 }, 2, frame, viewport)
+      ).to.deep.equal({ x: 600, y: 600, width: 400, height: 400 });
+    });
+  });
+
+  describe('wheelZoomFactor', () => {
+    it('zooms in on a turn toward the screen and out on a turn away', () => {
+      expect(wheelZoomFactor(-100, 0)).to.be.below(1);
+      expect(wheelZoomFactor(100, 0)).to.be.above(1);
+      expect(wheelZoomFactor(0, 0)).to.equal(1);
+    });
+
+    it('returns to the same rect after a turn one way and back', () => {
+      expect(wheelZoomFactor(-100, 0) * wheelZoomFactor(100, 0)).to.be.closeTo(1, 1e-12);
+    });
+
+    it('counts a line of a line-mode wheel as 16 pixels', () => {
+      expect(wheelZoomFactor(3, 1)).to.be.closeTo(wheelZoomFactor(48, 0), 1e-12);
     });
   });
 });
