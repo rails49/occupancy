@@ -194,8 +194,10 @@ describe('a loop of one radius', () => {
 
 /**
  * A click set as the prototype's copy key wrote it, `{ gauge, lines }` with
- * each click `[x, y]` in image pixels, plus what the rule makes of each line:
- * how many parts, and how many of the clicks go on it.
+ * each click `[x, y]` in image pixels in the order made, plus what the rule
+ * makes of each line: how many parts, and how many of the clicks go on it.
+ * A new set is a file dropped into tests/clickSets: the suite finds it, and
+ * `note` says where its clicks came from.
  */
 interface ClickSet {
   readonly note?: string;

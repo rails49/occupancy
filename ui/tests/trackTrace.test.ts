@@ -114,23 +114,11 @@ describe('Trace edits', () => {
   });
 });
 
-describe('Trace on the real clicks in clickSets/real-ceiling-2026-10-29b.json', () => {
-  const set = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'clickSets/real-ceiling-2026-10-29b.json'), 'utf8')) as {
-    gauge: number;
-    lines: [number, number][][];
-    clickOrder: (number[] | null)[];
-  };
-  const real = traceOptions(set.gauge);
-
-  it('adds nothing for the two clicks back along the second line, in the order they were made', () => {
-    const line2 = set.lines[1].map(([x, y]) => ({ x, y }));
-    const order = set.clickOrder[1]!;
-    const t = Trace.replay(
-      order.slice(0, -2).map(k => line2[k]),
-      real
-    );
+describe('Trace on clicks back along the line', () => {
+  it('adds nothing for two clicks between earlier clicks, made after the far end', () => {
+    const t = Trace.replay(clicks, opts);
     const before = t.view(opts);
-    expect(order.slice(-2).map(k => t.add(line2[k], real))).toEqual(['ignored', 'ignored']);
+    expect([along(PIECES, 72), along(PIECES, 25)].map(p => t.add(p, opts))).toEqual(['ignored', 'ignored']);
     expect(t.view(opts)).toEqual(before);
   });
 });
