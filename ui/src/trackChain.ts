@@ -121,10 +121,9 @@ export class TrackChain implements Chain {
    * the trace as it is; null puts the click back.
    */
   hold(index: number, to: Point | null) {
-    const view = this._trace.view(this._opts);
-    const clicks = [...view.clicks];
+    const clicks = [...this._trace.clicks];
     if (to) clicks[this._traced(index)] = to;
-    this._view = { ...view, clicks };
+    this._view = { ...this._view, clicks };
   }
 
   /** Moves click `index`, in stored order, to `to`, and builds the line again from its clicks (`Trace.move`). */

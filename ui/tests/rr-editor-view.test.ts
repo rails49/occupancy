@@ -978,7 +978,7 @@ describe('rr-editor-view', () => {
       const hint = () => el.shadowRoot!.querySelector('.track-hint')?.textContent?.trim();
       expect(hint()).to.match(/^Click along the middle of a track/);
       await laid(el);
-      expect(hint()).to.match(/^Click on along the track/);
+      expect(hint()).to.match(/^Click on along the middle of the track/);
 
       el.session!.selectTool('sensor');
       await el.updateComplete;
@@ -1000,10 +1000,10 @@ describe('rr-editor-view', () => {
         },
       ];
       const el = await mountWithTool('track');
-      expect(el.shadowRoot!.querySelector('.track-hint')?.textContent?.trim()).to.match(/^Red points lie off their line/);
+      expect(el.shadowRoot!.querySelector('.track-hint')?.textContent?.trim()).to.match(/^Red points lie off the line/);
     });
 
-    it('extends the line with a Shift-click behind its last click', async () => {
+    it('extends the line with a Shift-click like a plain click: Shift is the zoom rect\'s', async () => {
       const el = await mountWithTool('track');
       await laid(el);
       const at = { x: 200, y: 100 };

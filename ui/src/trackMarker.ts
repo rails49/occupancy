@@ -50,7 +50,7 @@ export const trackMarkerStyles: CSSResult = css`
     stroke: rgba(0, 0, 0, 0.75);
   }
 
-  .track .click.outlier {
+  .track .click.red {
     fill: var(--sl-color-danger-500);
   }
 `;
@@ -84,7 +84,7 @@ function renderDot(p: Point, size: TrackSymbolSize, cls: string): SVGTemplateRes
 }
 
 function renderClicks(clicks: readonly Point[], size: TrackSymbolSize, red: readonly number[] = []) {
-  return clicks.map((p, i) => renderDot(p, size, red.includes(i) ? 'click outlier' : 'click'));
+  return clicks.map((p, i) => renderDot(p, size, red.includes(i) ? 'click red' : 'click'));
 }
 
 /** The flagged clicks of each track drawn, kept until the track is written again. */
@@ -115,7 +115,7 @@ export function renderTrack(
   const dots = (track.clicks ?? []).flatMap((p, i) => {
     const lit = highlighted.some(h => samePoint(h, p));
     if (!size.detail && !lit) return [];
-    const cls = `click${off.includes(i) ? ' outlier' : ''}${lit ? ` ${HIGHLIGHT_CLASS}` : ''}`;
+    const cls = `click${off.includes(i) ? ' red' : ''}${lit ? ` ${HIGHLIGHT_CLASS}` : ''}`;
     return [renderDot(p, size, cls)];
   });
   return svg`<g class="track">

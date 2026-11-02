@@ -248,7 +248,7 @@ interface LiveGesture {
   readonly originClient: Point;
   /** Image pixels per screen pixel at the press. */
   readonly scale: number;
-  /** Shift held at the press: a zoom rect wherever the drag begins, and a track click that extends its line. */
+  /** Shift held at the press: a zoom rect wherever the drag begins. A click reads it not at all. */
   readonly shiftKey: boolean;
   /** The zoom rect the press started on — what a pan's travel is applied to. */
   readonly zoomAt: Rect | null;
@@ -1140,7 +1140,7 @@ export class RREditorView extends LitElement {
     if (gesture.dragging || !this.session) return;
     if (!isClick(gesture.origin, e.detail.point, this._slop(gesture))) return;
 
-    const result = await this.session.click(gesture.origin, gesture.scale, gesture.shiftKey);
+    const result = await this.session.click(gesture.origin, gesture.scale);
     const live = this.session.chain;
     this._cursor = live && { ...live.end };
     await this._answer(result);

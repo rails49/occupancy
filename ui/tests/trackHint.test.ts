@@ -14,28 +14,26 @@ function tracing(red: readonly number[] = []): TraceView {
   };
 }
 
+const START = /^Click along the middle of a track to trace it\. Click a line's end point to go on from it\.$/;
+const NEXT = /^Click on along the middle of the track\. Right-click or Esc ends the line\.$/;
+const RED = /^Red points lie off the line\. Drag each onto the middle of the track, or delete it\.$/;
+
 describe('trackHint', () => {
-  it('says how to start or go on a line with no trace, or how to fix red clicks on a stored line', () => {
-    expect(trackHint(null, false)).toMatch(/^Click along the middle of a track/);
-    expect(trackHint(null, true)).toMatch(/^Red points lie off their line/);
+  it('says how to start a line or go on with one when nothing is traced', () => {
+    expect(trackHint(null, false)).toMatch(START);
   });
 
-  it('asks for the next click after the first', () => {
-    const one: TraceView = { clicks: [{ x: 0, y: 0 }], fit: null, red: [] };
-    expect(trackHint(one, false)).toMatch(/^Click farther along/);
+  it('asks for the next click and says how to end while tracing, from the first click on', () => {
+    expect(trackHint({ clicks: [{ x: 0, y: 0 }], fit: null, red: [] }, false)).toMatch(NEXT);
+    expect(trackHint(tracing(), false)).toMatch(NEXT);
   });
 
-  it('says how to go on and how to end the line when nothing needs fixing', () => {
-    const hint = trackHint(tracing(), false);
-    expect(hint).toMatch(/^Click on along the track/);
-    expect(hint).toMatch(/Right-click or Esc ends the line/);
-  });
-
-  it('asks for red clicks to be moved or deleted', () => {
-    expect(trackHint(tracing([1]), false)).toMatch(/^Red points lie off the line/);
+  it('asks for red clicks to be moved or deleted, on the traced line or on a stored one', () => {
+    expect(trackHint(tracing([1]), false)).toMatch(RED);
+    expect(trackHint(null, true)).toMatch(RED);
   });
 
   it('ignores red clicks on stored lines while a line is traced', () => {
-    expect(trackHint(tracing(), true)).toMatch(/^Click on along the track/);
+    expect(trackHint(tracing(), true)).toMatch(NEXT);
   });
 });

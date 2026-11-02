@@ -692,7 +692,7 @@ describe('rr-viewer', () => {
           ></rr-viewer>
         `);
         expect(el.shadowRoot!.querySelectorAll('.track-pending .click')).to.have.length(3);
-        expect(el.shadowRoot!.querySelectorAll('.track-pending .outlier')).to.have.length(1);
+        expect(el.shadowRoot!.querySelectorAll('.track-pending .red')).to.have.length(1);
       });
     });
 

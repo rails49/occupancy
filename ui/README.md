@@ -145,6 +145,7 @@ rr-app                          ← shell: owns the editing session and the view
 > [#298]: https://github.com/rails49/occupancy/issues/298
 > [#302]: https://github.com/rails49/occupancy/issues/302
 > [#303]: https://github.com/rails49/occupancy/issues/303
+> [#307]: https://github.com/rails49/occupancy/issues/307
 
 ## State and data flow
 
@@ -750,7 +751,7 @@ both; each tool module supplies what differs.
 | `ChainView`, `ChainContext`, `ClickResult` | What the editor draws of a chain; what a tool reads and writes through the session, including `snap`; what a click asks the editor for |
 | `NO_TRACK`, `NO_TRACK_NOTICE` | Why a sensor or car end was refused: no centerline within `SNAP_TRACK_WIDTHS` |
 | `carTool`, `ALREADY_LABELED` | A free car end continues a chain, a coupling is refused with `ALREADY_LABELED`, a click on a car's body splits it, and empty image starts a chain |
-| `trackTool`, `TrackChain` | A click on a line's first or last click continues it as a chain, on a click between does nothing, on the line adds a click in track order and refits ([#302]), and anywhere else starts a chain ([#298]). Each click adds to the chain's trace (`trackTrace.ts`), between clicks where `Trace.insertion` puts it unless Shift is held (`extend`'s `append`), and writes the line's clicks with the nodes of their whole-line fit (`trackFit.ts` § `fitTrack`, `fitNodes`). A chain from a first click traces backwards and writes back in stored order. `hold`, `move` and `remove` take a click of the traced line, by stored index, while the chain is live: a drag draws it held, and a move or delete uncommits the trace back to the part before it and writes one entry ([#303]). `atStart()` is true once every entry the chain wrote is undone |
+| `trackTool`, `TrackChain` | A click on a line's first or last click continues it as a chain; on a click between them, or on the line, it does nothing ([#307]); anywhere else it starts a chain ([#298]). Each click goes on the end of the chain's trace (`trackTrace.ts`) and writes the line's clicks with the nodes of the line as drawn (`fitNodes`). A chain from a first click traces backwards and writes back in stored order, its nodes turned round. `hold`, `move` and `remove` take a click of the traced line, by stored index, while the chain is live: a drag draws it held, and a move or delete builds the line again from its clicks and writes one entry ([#303]). `atStart()` is true once every entry the chain wrote is undone |
 | `trackHitAt`, `clickHitAt`, `refitLine` | The line or the click under the track tool's pointer, within the grab radius; a line with given clicks and the nodes of their whole-line fit |
 
 ---
@@ -1048,8 +1049,6 @@ per pick, however many of its files were refused ([#262]). `rr-app` owns the toa
     viewer, so closing a menu over empty image does not place a point.
 * **Track hint** (`.track-hint`, [#298]). Under the DPT bar while the track tool is selected and DPT
   resolves: `trackHint`'s sentence for the line being traced, or for the stored lines.
-* **Pointer input, Shift.** A click with Shift held goes to `session.click` with `append`, so a
-  track click extends its line rather than going between clicks.
 * **DPT readout** (`.dpt-bar`). `calibrationFit()`'s DPT to one decimal, or "Not calibrated" with a
   warning style when it is `null` — a real v4 state, reported rather than blocked on, and now with the click
   that fixes it. Two further states:

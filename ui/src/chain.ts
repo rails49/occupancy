@@ -59,10 +59,9 @@ export interface Chain {
   atStart(): boolean;
   /**
    * Writes the segment a click at `at` adds, or says why it adds none. A click
-   * within the grab radius of the last dot adds nothing. `append`, Shift held,
-   * keeps a track click from going between clicks.
+   * within the grab radius of the last dot adds nothing.
    */
-  extend(at: Point, scale: number, append?: boolean): Promise<ClickResult>;
+  extend(at: Point, scale: number): Promise<ClickResult>;
   /** Brings the chain in step with the manifest. False once it cannot go on. */
   settle(): boolean;
 }
