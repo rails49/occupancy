@@ -8,6 +8,8 @@ import type { Point } from '@rails49/r49';
  * join before it have σ under `commitSigma`. Editing
  * a committed click uncommits every part from the one before it to the end,
  * and the tail is traced again from there.
+ * A click near the line and behind its last click goes between clicks, in
+ * track order (`insertion`).
  * Finishing fits the whole line from its clicks at once, and every later
  * edit does the same, so a finished line depends on its clicks alone. Pure.
  */
@@ -18,6 +20,7 @@ import {
   nearestParts,
   poses,
   positionsAlong,
+  projectOnto,
   type Fit,
   type FitOptions,
   type FitResult,
@@ -33,6 +36,8 @@ export interface TraceOptions extends FitOptions {
   readonly commitMargin: number;
   /** A join whose σ, px, is at or past this is a guess: its parts are not drawn and never commit. */
   readonly barCap: number;
+  /** A click this near the line, px, behind its last click, goes between clicks. */
+  readonly insertReach: number;
 }
 
 /** `TRACK_FIT` in image pixels, for a layout whose DPT (a gauge in pixels) is `dpt`. */
@@ -45,6 +50,7 @@ export function traceOptions(dpt: number): TraceOptions {
     commitSigma: g.commitSigma * dpt,
     commitMargin: g.commitMargin,
     barCap: g.barCap * dpt,
+    insertReach: g.insertReach * dpt,
     bounds: { minLength: g.minLength * dpt, minRadius: g.minRadius * dpt, maxSweep: g.maxSweep },
   };
 }
@@ -128,6 +134,28 @@ export class Trace {
     return this.origin ? { start: this.origin, parts: this.committed } : null;
   }
 
+  /** The line fitted so far while tracing, committed and live, drawn or not; null before it has two clicks. */
+  private tracedFit(): Fit | null {
+    if (!this.live) return null;
+    if (!this.origin) return this.live.fit;
+    return { start: this.origin, parts: [...this.committed, ...this.live.fit.parts] };
+  }
+
+  /**
+   * Where a click at `p` goes while tracing: the index it takes in track
+   * order when it lies within `insertReach` of the line and falls past the
+   * first click and behind the last; null when it extends the line.
+   */
+  insertion(p: Point, opts: TraceOptions): number | null {
+    const fit = this.finished ? null : this.tracedFit();
+    if (!fit) return null;
+    const at = projectOnto(fit, p);
+    if (at.d > opts.insertReach) return null;
+    const along = positionsAlong(fit, this.clicks);
+    if (at.s <= along[0] || at.s >= along[along.length - 1]) return null;
+    return along.findIndex(s => s > at.s);
+  }
+
   /** The click indices the current fit leaves out. */
   outliers(): number[] {
     if (this.finished) return this.whole ? [...this.whole.outliers] : [];
@@ -164,6 +192,18 @@ export class Trace {
     this.clicks.push(p);
     this.refitLive(opts);
     this.commit(opts);
+  }
+
+  /**
+   * Inserts `p` as click `i` while tracing. Among the committed clicks it
+   * uncommits the trace back to the part before it, as a move does.
+   */
+  insert(i: number, p: Point, opts: TraceOptions) {
+    const fit = this.committedFit();
+    const part = fit && i < this.firstLive ? nearestParts(fit, [p])[0] : -1;
+    this.clicks.splice(i, 0, p);
+    if (part >= 0) this.firstLive++;
+    this.afterEdit(part, opts);
   }
 
   move(i: number, p: Point, opts: TraceOptions) {

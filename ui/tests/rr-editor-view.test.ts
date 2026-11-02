@@ -973,6 +973,48 @@ describe('rr-editor-view', () => {
       expect(el.shadowRoot!.querySelector('rr-viewer')!.tracks).to.have.length(0);
     });
 
+    it('shows what to do next under the track tool alone', async () => {
+      const el = await mountWithTool('track');
+      const hint = () => el.shadowRoot!.querySelector('.track-hint')?.textContent?.trim();
+      expect(hint()).to.match(/^Click along the middle of a track/);
+      await laid(el);
+      expect(hint()).to.match(/^The dashed end can still move/);
+
+      el.session!.selectTool('sensor');
+      await el.updateComplete;
+      expect(hint()).to.equal(undefined);
+    });
+
+    it('asks for the red clicks of a stored line to be fixed', async () => {
+      archive.getManifest().layout.centerlines = [
+        {
+          nodes: [
+            { x: 0, y: 100, heading: 0 },
+            { x: 1000, y: 100, heading: 0 },
+          ],
+          clicks: [
+            { x: 0, y: 100 },
+            { x: 500, y: 160 },
+            { x: 1000, y: 100 },
+          ],
+        },
+      ];
+      const el = await mountWithTool('track');
+      expect(el.shadowRoot!.querySelector('.track-hint')?.textContent?.trim()).to.match(/^Red points lie off their line/);
+    });
+
+    it('extends the line with a Shift-click behind its last click', async () => {
+      const el = await mountWithTool('track');
+      await laid(el);
+      const at = { x: 200, y: 100 };
+      gesture(el, 'rr-pointer-down', at, 1, { shiftKey: true });
+      gesture(el, 'rr-pointer-up', at, 1, { shiftKey: true });
+      await flush();
+      await el.updateComplete;
+
+      expect(pending(el)!.clicks).to.deep.equal([{ x: 100, y: 100 }, { x: 300, y: 100 }, at]);
+    });
+
     it('runs no fit on a pointer move, and draws nothing that follows it', async () => {
       const el = await mountWithTool('track');
       await laid(el);

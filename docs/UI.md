@@ -55,11 +55,17 @@ The chain keeps the trace from before each entry it wrote, so an undo restores i
 and the chain ends only once every entry it wrote is undone; stored clicks that match neither are
 replayed (`TrackChain.settle`). A chain continued from a line's first click traces the clicks
 backwards and writes them back in stored order. While a trace is live a click always traces, even on
-a sensor, and a drag grabs only a click of the traced line. A drag of a click holds the dot
+a sensor: near the line and behind its last click it goes between clicks (`Trace.insertion`,
+`Trace.insert`), otherwise it extends the line, and Shift, which `rr-editor-view` passes through
+`EditSession.click` to `Chain.extend`, always extends. A drag grabs only a click of the traced line. A drag of a click holds the dot
 (`TrackChain.hold`, or the stored click for a finished line) and leaves the fit as it is until
 release. Right-click on a traced click other than the last opens Delete click and the chain goes
 on; deleting one of a line's last two clicks deletes the line and ends the chain. The trace draws
 in place of its stored line, which `rr-editor-view` leaves out of the viewer's `tracks`.
+
+`trackHint` words the track tool's hint from the trace's view, or with no line traced from whether
+a stored line has red clicks (`flaggedClicks`, the renderer's own cached check). `rr-editor-view`
+shows it under the DPT bar while the track tool is selected and DPT resolves.
 
 Lines and clicks have no id, so a menu carries the line's first node or the click's pixel and checks
 it is still there, and the reveal after an undo lights the changed clicks by pixel. Under any other

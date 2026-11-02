@@ -222,12 +222,12 @@ export class EditSession {
    * A click at `at`. A live chain takes it as its next segment. Otherwise the
    * car or track tool looks first (`carChain.ts`, `trackChain.ts`), then an
    * object under the pointer is edited whatever the tool, and empty image runs
-   * the tool.
+   * the tool. `append`, Shift held, makes a track click extend its line.
    */
-  async click(at: Point, scale: number): Promise<ClickResult> {
+  async click(at: Point, scale: number, append = false): Promise<ClickResult> {
     const px = pixel(at);
 
-    if (this._chain) return this._chain.extend(at, scale);
+    if (this._chain) return this._chain.extend(at, scale, append);
 
     const chainTool = CHAIN_TOOLS[this._tool];
     const chainHit = chainTool && !this._gated(this._tool) ? chainTool(this._context, at, scale) : null;

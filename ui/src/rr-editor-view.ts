@@ -27,6 +27,8 @@ import {
 import type { FrameSize, Rect, Size } from './geometry.js';
 import type { PendingCar } from './carMarker.js';
 import type { TraceView } from './trackTrace.js';
+import { flaggedClicks } from './trackMarker.js';
+import { trackHint } from './trackHint.js';
 import { isInsideOpenDialog } from './keyboard.js';
 import { classChoices, rootClass } from './vocabulary.js';
 import type { ClassChoice } from './vocabulary.js';
@@ -246,7 +248,7 @@ interface LiveGesture {
   readonly originClient: Point;
   /** Image pixels per screen pixel at the press. */
   readonly scale: number;
-  /** Shift held at the press: a zoom rect wherever the drag begins. */
+  /** Shift held at the press: a zoom rect wherever the drag begins, and a track click that extends its line. */
   readonly shiftKey: boolean;
   /** The zoom rect the press started on — what a pan's travel is applied to. */
   readonly zoomAt: Rect | null;
@@ -590,6 +592,15 @@ export class RREditorView extends LitElement {
       margin-left: 1.5rem;
     }
 
+    .track-hint {
+      flex-shrink: 0;
+      padding: 0.5rem 1rem;
+      font-size: var(--sl-font-size-small);
+      background: var(--sl-color-neutral-100);
+      color: var(--sl-color-neutral-700);
+      border-bottom: 1px solid var(--sl-color-neutral-200);
+    }
+
     /* Directly above the thumbnail bar, whose badges are the same flag read for
        every other image. */
     .complete-bar {
@@ -615,6 +626,7 @@ export class RREditorView extends LitElement {
     @media (max-height: ${TURN_HEIGHT_PX}px) {
       .dpt-bar,
       .frame-warning,
+      .track-hint,
       .complete-bar {
         padding: 0.3rem 1rem;
       }
@@ -1128,7 +1140,7 @@ export class RREditorView extends LitElement {
     if (gesture.dragging || !this.session) return;
     if (!isClick(gesture.origin, e.detail.point, this._slop(gesture))) return;
 
-    const result = await this.session.click(gesture.origin, gesture.scale);
+    const result = await this.session.click(gesture.origin, gesture.scale, gesture.shiftKey);
     const live = this.session.chain;
     this._cursor = live && { ...live.end };
     await this._answer(result);
@@ -1382,6 +1394,14 @@ export class RREditorView extends LitElement {
     return this.session!.tracks.filter((_, i) => i !== line);
   }
 
+  /** What to do next with the track tool, while it is the tool and DPT resolves (`trackHint`). */
+  private _renderTrackHint(manifest: ManifestData) {
+    const dpt = getDPT(manifest);
+    if (this.session?.tool !== 'track' || dpt === null) return '';
+    const offLine = this._tracks().some(t => flaggedClicks(t, dpt).length > 0);
+    return html`<div class="track-hint">${trackHint(this._pendingTrack(), offLine, dpt)}</div>`;
+  }
+
   /** Zoom to fit, present only while zoomed. */
   private _renderFitControl() {
     if (this._zoom === null) return '';
@@ -1410,6 +1430,8 @@ export class RREditorView extends LitElement {
             ${this._renderDpt(manifest)}
 
             ${this._renderFrameMismatch()}
+
+            ${this._renderTrackHint(manifest)}
 
             <div class="viewer-wrap">
               <rr-viewer

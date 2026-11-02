@@ -123,14 +123,18 @@ export class TrackChain implements Chain {
 
   /**
    * Adds a click to the trace and writes the line's clicks with the nodes of
-   * their whole-line fit. The second click of a new line writes a new
-   * centerline.
+   * their whole-line fit. A click near the line and behind its last click
+   * goes between clicks, in track order (`Trace.insertion`); with `append` it
+   * extends the line wherever it is. The second click of a new line writes a
+   * new centerline.
    */
-  async extend(at: Point, scale: number): Promise<ClickResult> {
+  async extend(at: Point, scale: number, append = false): Promise<ClickResult> {
     const p = pixel(at);
     const last = this._trace.clicks[this._trace.clicks.length - 1];
     if (Math.hypot(p.x - last.x, p.y - last.y) <= DEFAULT_GRAB_RADIUS_SCREEN_PX * scale) return NONE;
-    await this._write(this._index === null ? 'place centerline' : 'extend centerline', t => t.add(p, this._opts));
+    const i = append ? null : this._trace.insertion(p, this._opts);
+    if (i !== null) await this._write('add click', t => t.insert(i, p, this._opts));
+    else await this._write(this._index === null ? 'place centerline' : 'extend centerline', t => t.add(p, this._opts));
     return NONE;
   }
 

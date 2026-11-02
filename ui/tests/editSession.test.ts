@@ -2073,6 +2073,36 @@ describe('EditSession track tool (#284, #298)', () => {
     expect(line(s).clicks).toHaveLength(3);
   });
 
+  it('puts a click near the line and behind its last click between clicks, as one entry; Shift-click extends', async () => {
+    const s = session({ tool: 'track', rows: false });
+    const at = laidAlong(s, [{ straight: 20 }]);
+    const [first, last] = [at[0], at[at.length - 1]];
+    const between = { x: Math.round((first.x + last.x) / 2), y: Math.round((first.y + last.y) / 2) };
+    await clicks(s, first, last);
+
+    await s.click(between, SCALE);
+    expect(line(s).clicks).toEqual([first, between, last]);
+    expect(s.history.undoLabel).toBe('add click');
+    await s.undo();
+    expect(trackChain(s)?.clicks).toEqual([first, last]);
+
+    await s.click(between, SCALE, true);
+    expect(line(s).clicks).toEqual([first, last, between]);
+    expect(s.history.undoLabel).toBe('extend centerline');
+  });
+
+  it('puts a click between clicks in stored order on a line continued from its first click', async () => {
+    const s = session({ tool: 'track', rows: false });
+    const at = laidAlong(s, [{ straight: 20 }]);
+    const [first, last] = [at[0], at[at.length - 1]];
+    const between = { x: Math.round((first.x + last.x) / 2), y: Math.round((first.y + last.y) / 2) };
+    await clicks(s, first, last);
+    s.endChain();
+
+    await clicks(s, first, between);
+    expect(line(s).clicks).toEqual([first, between, last]);
+  });
+
   it('saves a valid line mid-trace, and loads it as written with no refit', async () => {
     const s = session({ tool: 'track', rows: false });
     await clicks(s, ...laidAlong(s, [{ straight: 10 }, { radius: 30, turn: 45 }]));

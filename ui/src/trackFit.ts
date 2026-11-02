@@ -43,6 +43,8 @@ export const TRACK_FIT = {
   reach: 20,
   /** Longest σ bar drawn at a join. */
   barCap: 4,
+  /** A click this near the line being traced, behind its last click, goes between clicks. */
+  insertReach: 4,
   minLength: 1,
   minRadius: 10,
   maxSweep: Math.PI,
@@ -249,6 +251,12 @@ export function nearestParts(fit: Fit, points: readonly Point[]): number[] {
 /** Arc length along the line of the nearest point to each point. */
 export function positionsAlong(fit: Fit, points: readonly Point[]): number[] {
   return evaluate(fit, points).s;
+}
+
+/** Where `point` lies along `fit`, as `positionsAlong` gives it, and how far from it, px. */
+export function projectOnto(fit: Fit, point: Point): { s: number; d: number } {
+  const e = evaluate(fit, [point]);
+  return { s: e.s[0], d: Math.abs(e.d[0]) };
 }
 
 /** Huber: a residual past `c` counts linearly. */

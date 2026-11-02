@@ -750,7 +750,7 @@ both; each tool module supplies what differs.
 | `ChainView`, `ChainContext`, `ClickResult` | What the editor draws of a chain; what a tool reads and writes through the session, including `snap`; what a click asks the editor for |
 | `NO_TRACK`, `NO_TRACK_NOTICE` | Why a sensor or car end was refused: no centerline within `SNAP_TRACK_WIDTHS` |
 | `carTool`, `ALREADY_LABELED` | A free car end continues a chain, a coupling is refused with `ALREADY_LABELED`, a click on a car's body splits it, and empty image starts a chain |
-| `trackTool`, `TrackChain` | A click on a line's first or last click continues it as a chain, on a click between does nothing, on the line adds a click in track order and refits ([#302]), and anywhere else starts a chain ([#298]). Each click adds to the chain's trace (`trackTrace.ts`) and writes the line's clicks with the nodes of their whole-line fit (`trackFit.ts` § `fitTrack`, `fitNodes`). A chain from a first click traces backwards and writes back in stored order. `hold`, `move` and `remove` take a click of the traced line, by stored index, while the chain is live: a drag draws it held, and a move or delete uncommits the trace back to the part before it and writes one entry ([#303]). `atStart()` is true once every entry the chain wrote is undone |
+| `trackTool`, `TrackChain` | A click on a line's first or last click continues it as a chain, on a click between does nothing, on the line adds a click in track order and refits ([#302]), and anywhere else starts a chain ([#298]). Each click adds to the chain's trace (`trackTrace.ts`), between clicks where `Trace.insertion` puts it unless Shift is held (`extend`'s `append`), and writes the line's clicks with the nodes of their whole-line fit (`trackFit.ts` § `fitTrack`, `fitNodes`). A chain from a first click traces backwards and writes back in stored order. `hold`, `move` and `remove` take a click of the traced line, by stored index, while the chain is live: a drag draws it held, and a move or delete uncommits the trace back to the part before it and writes one entry ([#303]). `atStart()` is true once every entry the chain wrote is undone |
 | `trackHitAt`, `clickHitAt`, `refitLine` | The line or the click under the track tool's pointer, within the grab radius; a line with given clicks and the nodes of their whole-line fit |
 
 ---
@@ -763,6 +763,7 @@ A centerline's SVG ([#284], [#298]). The exports must be used together.
 |---|---|---|
 | `renderTrack(track, size, highlighted?)` | `(Track, TrackSymbolSize, Point[]?) => SVGTemplateResult` | The centerline as one cubic per segment, and with `size.detail` the two rails at ±G/2 and a dot per click, red past `TRACK_FIT.tolerance` from the line. No rails and no red when `size.dpt` is `null`. A click at a pixel in `highlighted` takes `highlight.ts`'s class, and is drawn without `size.detail` too |
 | `renderPendingTrack(view, size)` | `(TraceView, TrackSymbolSize) => SVGTemplateResult` | The line a track chain is tracing. Committed track draws rails and a solid centerline; the uncommitted end draws `tailMarks`' parts as a dashed centerline, and its bars. A dot per click; a flagged one takes the danger token |
+| `flaggedClicks(track, dpt)` | `(Track, number \| null) => readonly number[]` | The indices of the clicks `renderTrack` draws red, cached per line until it is written again; none when `dpt` is `null` |
 | `TrackSymbolSize` | `{ dpt, strokePx, dotPx, detail }` | The DPT the rails are spaced by, screen-constant stroke and dot sizes, and whether to draw the rails and dots or the centerline alone |
 | `trackMarkerStyles` | `CSSResult` | The green ink, and `--sl-color-danger-500` for a flagged click |
 
@@ -796,6 +797,7 @@ click sets in `tests/clickSets/`. A fit is a start pose and a length and a curva
 | `fitWindow(points, start, opts)` | The same from a fixed start pose, for the uncommitted end of a trace |
 | `fitNodes(fit)` | The fit as stored nodes: one per join, and one at the middle of an arc that turns more than 90° |
 | `sampleFit(fit, step, offset)` | Points along the line, or beside it at `offset`, for drawing |
+| `positionsAlong(fit, points)`, `nearestParts(fit, points)`, `projectOnto(fit, point)` | Where points lie along a fit, the part nearest each, and one point's place along the fit with its distance from it |
 
 ### `trackTrace.ts`
 
@@ -806,10 +808,16 @@ clicks alone.
 
 | Export | Description |
 |---|---|
-| `Trace` | `add`, `move`, `remove`, `finish`, `clone`; `Trace.replay(clicks, opts)`, which rebuilds a trace click by click, and `Trace.finished(clicks, opts)`, a finished line |
+| `Trace` | `add`, `insertion`, `insert`, `move`, `remove`, `finish`, `clone`. `insertion(p, opts)` is the index a click takes between clicks while tracing, when it lies within `insertReach` of the line, past the first click and behind the last; null when it extends the line; `Trace.replay(clicks, opts)`, which rebuilds a trace click by click, and `Trace.finished(clicks, opts)`, a finished line |
 | `traceOptions(dpt)` | `TRACK_FIT` in image pixels |
 | `TraceView` | What the overlay draws: the clicks, the committed line, the uncommitted end and the clicks to flag red |
 | `tailMarks(live, cap)` | What the uncommitted end draws: each part whose two joins have σ under `cap`, and a bar across each join between two parts where one is drawn, half-length σ |
+
+### `trackHint.ts`
+
+| Export | Description |
+|---|---|
+| `trackHint(trace, offLine, dpt)` | The track tool's hint, one sentence on what to do next, from the traced line's `TraceView`, or with none from whether a stored line has red clicks. Tested in `tests/trackHint.test.ts` |
 
 ### `carMarker.ts`
 
@@ -1038,6 +1046,10 @@ per pick, however many of its files were refused ([#262]). `rr-app` owns the toa
     report button 0.
   * The press that **dismisses** the menu is swallowed by `rr-context-menu` and never reaches the
     viewer, so closing a menu over empty image does not place a point.
+* **Track hint** (`.track-hint`, [#298]). Under the DPT bar while the track tool is selected and DPT
+  resolves: `trackHint`'s sentence for the line being traced, or for the stored lines.
+* **Pointer input, Shift.** A click with Shift held goes to `session.click` with `append`, so a
+  track click extends its line rather than going between clicks.
 * **DPT readout** (`.dpt-bar`). `calibrationFit()`'s DPT to one decimal, or "Not calibrated" with a
   warning style when it is `null` — a real v4 state, reported rather than blocked on, and now with the click
   that fixes it. Two further states:

@@ -91,8 +91,8 @@ function renderClicks(clicks: readonly Point[], size: TrackSymbolSize, flagged: 
 /** The flagged clicks of each track drawn, kept until the track is written again. */
 const offCache = new WeakMap<Track, { readonly dpt: number; readonly off: readonly number[] }>();
 
-/** The clicks of `track` past the tolerance from its line, which `gauge` sets. */
-function flagged(track: Track, gauge: number | null): readonly number[] {
+/** The clicks of `track` past the tolerance from its line, which `gauge` sets; none without one. */
+export function flaggedClicks(track: Track, gauge: number | null): readonly number[] {
   if (gauge === null) return [];
   const cached = offCache.get(track);
   if (cached?.dpt === gauge) return cached.off;
@@ -112,7 +112,7 @@ export function renderTrack(
 ): SVGTemplateResult {
   const { nodes } = track;
   const gauge = size.dpt;
-  const off = size.detail ? flagged(track, gauge) : [];
+  const off = size.detail ? flaggedClicks(track, gauge) : [];
   const dots = (track.clicks ?? []).flatMap((p, i) => {
     const lit = highlighted.some(h => samePoint(h, p));
     if (!size.detail && !lit) return [];
