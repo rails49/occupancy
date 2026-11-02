@@ -4,7 +4,8 @@ import { pixel, NONE } from './chain.js';
 import type { Chain, ChainContext, ChainTool, ChainView, ClickResult } from './chain.js';
 import { hitClick, hitTrack, wrapAngle } from './track.js';
 import type { ClickHit, Track, TrackHit, TrackNode } from './track.js';
-import { fitNodes } from './trackFit.js';
+import { TRACK_FIT, fitNodes } from './trackFit.js';
+import type { Step } from './trackFit.js';
 import { Trace, traceOptions } from './trackTrace.js';
 import type { TraceOptions, TraceView } from './trackTrace.js';
 
@@ -18,17 +19,25 @@ export function clickHitAt(tracks: readonly Track[], at: Point, scale: number): 
   return hitClick(tracks, at, DEFAULT_GRAB_RADIUS_SCREEN_PX * scale);
 }
 
-/** A line of `clicks` and the nodes of their line, in stored order: an edit with no chain live. */
-export function refitLine(ctx: ChainContext, clicks: readonly Point[]): Centerline {
+/**
+ * A line of `clicks` and the nodes of their line, in stored order: an edit
+ * with no chain live. Null, and the edit is refused, when a click does not go
+ * on the line.
+ */
+export function refitLine(ctx: ChainContext, clicks: readonly Point[]): Centerline | null {
   const t = Trace.replay(clicks, traceOptions(ctx.scene().dpt!));
+  if (t.clicks.length !== clicks.length) {
+    ctx.refuse();
+    return null;
+  }
   return { nodes: fitNodes(t.fit()!), clicks: t.clicks };
 }
 
 /**
  * The track tool's click with no chain live (#298, #302, #311). A click on a
  * line's first or last click continues the line as a chain from there; on a
- * click between them, or on the line, it does nothing. Anywhere else a chain
- * starts, even on a sensor.
+ * click between them, or within the start distance of any line, it does
+ * nothing. Anywhere else a chain starts, even on a sensor.
  */
 export const trackTool: ChainTool = (ctx, at, scale) => {
   const lines = centerlines(ctx);
@@ -38,7 +47,7 @@ export const trackTool: ChainTool = (ctx, at, scale) => {
     if (click.index !== 0 && click.index !== last) return { kind: 'edit', run: async () => NONE };
     return { kind: 'chain', chain: TrackChain.continuing(ctx, click.line, click.index === 0) };
   }
-  if (trackHitAt(lines, at, scale)) return { kind: 'edit', run: async () => NONE };
+  if (hitTrack(lines, at, TRACK_FIT.startDistance * ctx.scene().dpt!)) return { kind: 'edit', run: async () => NONE };
   return { kind: 'chain', chain: TrackChain.starting(ctx, pixel(at)) };
 };
 
@@ -112,7 +121,7 @@ export class TrackChain implements Chain {
     const p = pixel(at);
     const last = this._trace.clicks[this._trace.clicks.length - 1];
     if (Math.hypot(p.x - last.x, p.y - last.y) <= DEFAULT_GRAB_RADIUS_SCREEN_PX * scale) return NONE;
-    await this._write(this._index === null ? 'place centerline' : 'extend centerline', t => t.add(p, this._opts) === 'added');
+    await this._write(this._index === null ? 'place centerline' : 'extend centerline', t => t.add(p, this._opts));
     return NONE;
   }
 
@@ -131,23 +140,25 @@ export class TrackChain implements Chain {
    * from its clicks (`Trace.move`). A move the line refuses writes nothing.
    */
   async move(index: number, to: Point) {
-    await this._write('move click', t => t.move(this._traced(index), to, this._opts));
+    await this._write('move click', t => (t.move(this._traced(index), to, this._opts) ? 'added' : 'refused'));
   }
 
   /** Deletes click `index`, in stored order, the same way. */
   async remove(index: number) {
-    await this._write('delete click', t => t.remove(this._traced(index), this._opts));
+    await this._write('delete click', t => (t.remove(this._traced(index), this._opts) ? 'added' : 'refused'));
   }
 
   /**
    * Changes the trace, keeping it as it was for an undo, and writes the
    * line's clicks with the nodes of the line as drawn, as one entry. The
    * second click of a new line writes a new centerline. A change the trace
-   * does not take writes nothing.
+   * does not take writes nothing; one it refuses says so.
    */
-  private async _write(label: string, change: (trace: Trace) => boolean) {
+  private async _write(label: string, change: (trace: Trace) => Step['kind']) {
     const before = this._trace.clone();
-    if (!change(this._trace)) return;
+    const step = change(this._trace);
+    if (step === 'refused') this._ctx.refuse();
+    if (step !== 'added') return;
     this._before.push(before);
     this._view = this._trace.view(this._opts);
     const lines = [...centerlines(this._ctx)];

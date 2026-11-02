@@ -115,6 +115,8 @@ export class EditSession {
   /** The car or track chain in progress. */
   private _chain: Chain | null = null;
   private _drag: Drag | null = null;
+  /** Whether the last click or edit under the track tool was refused. */
+  private _refused = false;
   private readonly _listeners = new Set<SessionListener>();
   private readonly _context: ChainContext = {
     manifest: () => this.archive.getManifest(),
@@ -122,6 +124,7 @@ export class EditSession {
     scene: () => this._scene(),
     snap: at => this._snap(at),
     record: (label, target, mutate) => this._record(label, target, mutate),
+    refuse: () => this._refuse(),
     writeLayout: changes => this._writeLayout(changes),
     writeImage: (filename, changes) => this._writeImage(filename, changes),
   };
@@ -173,6 +176,15 @@ export class EditSession {
   }
 
   /**
+   * Whether the last click or edit under the track tool was refused: it
+   * needed an arc tighter than the minimum, and the hint says so until the
+   * next click or edit, or the line ends (`trackHint`).
+   */
+  get refused(): boolean {
+    return this._refused;
+  }
+
+  /**
    * Where a click at `at` would put the next car of a live car chain: the
    * nearest track, or null when none is near.
    */
@@ -195,6 +207,7 @@ export class EditSession {
     if (tool === this._tool) return;
     this._tool = tool;
     this._chain = null;
+    this._refused = false;
     this._changed();
   }
 
@@ -211,10 +224,11 @@ export class EditSession {
     return true;
   }
 
-  /** Ends a live chain. What it wrote stays; a chain still at its first click wrote nothing. */
+  /** Ends a live chain, and the last refusal with it. What it wrote stays; a chain still at its first click wrote nothing. */
   endChain() {
     if (!this._chain) return;
     this._chain = null;
+    this._refused = false;
     this._changed();
   }
 
@@ -226,6 +240,7 @@ export class EditSession {
    */
   async click(at: Point, scale: number): Promise<ClickResult> {
     const px = pixel(at);
+    this._attempt();
 
     if (this._chain) return this._chain.extend(at, scale);
 
@@ -330,7 +345,7 @@ export class EditSession {
   /**
    * A drag of a click on a line. The click follows the pointer and the line
    * stays as it is; on release the whole line refits from its clicks, as one
-   * entry.
+   * entry. A refit the line refuses puts the click back and writes nothing.
    */
   private _grabClick(hit: ClickHit, at: Point): Drag {
     const start = this._centerlines()[hit.line];
@@ -350,7 +365,7 @@ export class EditSession {
       at,
       to => write({ ...start, clicks: moved(to) }),
       async to => {
-        write(to ? refitLine(this._context, moved(to)) : start);
+        write((to && refitLine(this._context, moved(to))) || start);
         await gesture.commit();
       }
     );
@@ -398,6 +413,7 @@ export class EditSession {
       end: async () => {
         if (this._drag !== drag) return;
         this._drag = null;
+        this._attempt();
         await drop(samePoint(to, from) ? null : to);
         this._changed();
       },
@@ -495,8 +511,9 @@ export class EditSession {
     });
   }
 
-  /** Deletes a menu's subject, if it is still there. */
+  /** Deletes a menu's subject, if it is still there. A refused delete writes nothing. */
   async delete(subject: MenuSubject) {
+    this._attempt();
     switch (subject.kind) {
       case 'calibration': {
         const { index } = subject;
@@ -519,30 +536,29 @@ export class EditSession {
       case 'track': {
         const { line } = subject;
         if (!this._trackNodeIsStillAt(line, 0, subject.px)) return;
-        const lines = this._centerlines().filter((_, i) => i !== line);
-        await this._record('delete centerline', { kind: 'layout' }, () =>
-          this._writeLayout({ centerlines: lines })
-        );
+        await this._deleteLine(line);
         return;
       }
       case 'track-click': {
         // A line keeps at least two clicks, so deleting one of the last two
-        // deletes the line, and ends a chain tracing it.
+        // deletes the line.
         const { line, index } = subject;
-        const clicks = this._centerlines()[line]?.clicks;
-        const click = clicks?.[index];
-        if (!click || !samePoint(click, subject.px)) return;
+        const clicks = this._clickIsStillAt(subject);
+        if (!clicks) return;
+        if (clicks.length <= 2) {
+          await this._deleteLine(line);
+          return;
+        }
         const chain = this._chain instanceof TrackChain && this._chain.line === line ? this._chain : null;
-        if (chain && clicks.length > 2) {
+        if (chain) {
           await chain.remove(index);
           return;
         }
-        if (chain) this._chain = null;
+        const refit = refitLine(this._context, clicks.filter((_, i) => i !== index));
+        if (!refit) return;
         const lines = [...this._centerlines()];
-        if (clicks.length <= 2) lines.splice(line, 1);
-        else lines[line] = refitLine(this._context, clicks.filter((_, i) => i !== index));
-        const label = clicks.length <= 2 ? 'delete centerline' : 'delete click';
-        await this._record(label, { kind: 'layout' }, () => this._writeLayout({ centerlines: lines }));
+        lines[line] = refit;
+        await this._record('delete click', { kind: 'layout' }, () => this._writeLayout({ centerlines: lines }));
         return;
       }
       case 'car': {
@@ -559,6 +575,19 @@ export class EditSession {
         return;
       }
     }
+  }
+
+  /** Deletes the line a click's menu was opened on, if the click is still there. */
+  async deleteLine(subject: MenuSubject & { kind: 'track-click' }) {
+    if (!this._clickIsStillAt(subject)) return;
+    await this._deleteLine(subject.line);
+  }
+
+  /** Deletes line `line` as one entry, and ends a chain tracing it. */
+  private async _deleteLine(line: number) {
+    if (this._chain instanceof TrackChain && this._chain.line === line) this._chain = null;
+    const lines = this._centerlines().filter((_, i) => i !== line);
+    await this._record('delete centerline', { kind: 'layout' }, () => this._writeLayout({ centerlines: lines }));
   }
 
   /** Sets a car's class, the full dotted class. Does nothing if the car is gone. */
@@ -826,6 +855,19 @@ export class EditSession {
     if (movedLabels && image) this._writeImage(image.filename, { labels });
   }
 
+  /** The click or edit was refused: the hint says why until the next one. */
+  private _refuse() {
+    this._refused = true;
+    this._changed();
+  }
+
+  /** A click or an edit begins: the last refusal is over. */
+  private _attempt() {
+    if (!this._refused) return;
+    this._refused = false;
+    this._changed();
+  }
+
   /** Runs a write through the history, then tells the listeners. */
   private async _record(
     label: string,
@@ -946,6 +988,13 @@ export class EditSession {
   private _trackNodeIsStillAt(line: number, node: number, px: Point): boolean {
     const n = this._centerlines()[line]?.nodes[node];
     return n !== undefined && n.x === px.x && n.y === px.y;
+  }
+
+  /** The clicks of a click subject's line, if the click is still at its pixel: clicks have no id. */
+  private _clickIsStillAt(subject: MenuSubject & { kind: 'track-click' }): readonly Point[] | null {
+    const clicks = this._centerlines()[subject.line]?.clicks;
+    const click = clicks?.[subject.index];
+    return click && samePoint(click, subject.px) ? clicks : null;
   }
 
   /** Whether the point at `index` is still at `px`: points have no id. */

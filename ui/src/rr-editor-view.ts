@@ -190,7 +190,10 @@ function itemsFor(subject: MenuSubject): readonly ContextMenuItem[] {
     case 'track':
       return [{ id: 'delete', label: 'Delete line' }];
     case 'track-click':
-      return [{ id: 'delete', label: 'Delete click' }];
+      return [
+        { id: 'delete', label: 'Delete click' },
+        { id: 'delete-line', label: 'Delete line' },
+      ];
   }
 }
 
@@ -1228,6 +1231,9 @@ export class RREditorView extends LitElement {
       case 'delete':
         await this.session.delete(subject);
         return;
+      case 'delete-line':
+        if (subject.kind === 'track-click') await this.session.deleteLine(subject);
+        return;
       case 'name':
         if (subject.kind === 'sensor') await this._openSensorName(subject.id);
         return;
@@ -1397,7 +1403,7 @@ export class RREditorView extends LitElement {
   private _renderTrackHint(manifest: ManifestData) {
     const dpt = getDPT(manifest);
     if (this.session?.tool !== 'track' || dpt === null) return '';
-    return html`<div class="track-hint">${trackHint(this._pendingTrack(), false)}</div>`;
+    return html`<div class="track-hint">${trackHint(this._pendingTrack(), this.session.refused)}</div>`;
   }
 
   /** Zoom to fit, present only while zoomed. */

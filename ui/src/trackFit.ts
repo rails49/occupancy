@@ -24,6 +24,8 @@ export const TRACK_FIT = {
   minRadius: 15,
   /** How far ahead of the last click the projection is drawn. */
   projection: 20,
+  /** How far a click must be from every centerline to start a line. */
+  startDistance: 1,
 } as const;
 
 export interface FitOptions {

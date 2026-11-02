@@ -1048,14 +1048,43 @@ describe('rr-editor-view', () => {
       await pressEscape(el);
 
       await rightClickAt(el, { x: 300, y: 100 });
-      expect(menuItems(el)).to.deep.equal(['delete']);
-      const label = menuOf(el).shadowRoot!.querySelector('sl-menu-item[data-id="delete"]')!.textContent;
-      expect(label!.trim()).to.equal('Delete click');
+      expect(menuItems(el)).to.deep.equal(['delete', 'delete-line']);
+      const label = (id: string) =>
+        menuOf(el).shadowRoot!.querySelector(`sl-menu-item[data-id="${id}"]`)!.textContent!.trim();
+      expect(label('delete')).to.equal('Delete click');
+      expect(label('delete-line')).to.equal('Delete line');
       await choose(el, 'delete');
       expect(el.session!.tracks[0].clicks).to.deep.equal([
         { x: 100, y: 100 },
         { x: 500, y: 100 },
       ]);
+    });
+
+    it('opens Delete line on a click of a line too, and deletes the line', async () => {
+      const el = await mountWithTool('track');
+      await clickAt(el, { x: 100, y: 100 });
+      await clickAt(el, { x: 300, y: 100 });
+      await clickAt(el, { x: 500, y: 100 });
+      await pressEscape(el);
+
+      await rightClickAt(el, { x: 300, y: 100 });
+      await choose(el, 'delete-line');
+      expect(el.session!.tracks).to.have.length(0);
+    });
+
+    it('says why a click was refused, until the next click', async () => {
+      const el = await mountWithTool('track');
+      const hint = () => el.shadowRoot!.querySelector('.track-hint')?.textContent?.trim();
+      await clickAt(el, { x: 100, y: 100 });
+      await clickAt(el, { x: 997, y: 100 });
+
+      // Ahead of the straight, at a right angle to it within 11 G: a radius of 7.5 G.
+      await clickAt(el, { x: 1087, y: 997 });
+      expect(hint()).to.match(/^Needs an arc tighter than 15 G/);
+      expect(el.session!.tracks[0].clicks).to.have.length(2);
+
+      await clickAt(el, { x: 1894, y: 100 });
+      expect(hint()).to.match(/^Click ahead on the track centre/);
     });
 
     it('ends the chain on right-click, opening no menu', async () => {

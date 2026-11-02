@@ -83,6 +83,8 @@ export interface ChainContext {
   snap(at: Point): Point | null;
   /** Runs a write through the history, then tells the listeners. */
   record(label: string, target: HistoryTarget, mutate: () => void): Promise<void>;
+  /** Says the click or edit was refused: the hint says why until the next one. */
+  refuse(): void;
   writeLayout(changes: {
     calibrationPoints?: readonly ReferencePoint[];
     sensors?: readonly Sensor[];

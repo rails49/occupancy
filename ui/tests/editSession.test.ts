@@ -9,7 +9,7 @@ import { fitNodes } from '../src/trackFit.js';
 import { Trace, traceOptions } from '../src/trackTrace.js';
 import type { TraceView } from '../src/trackTrace.js';
 import { G, along, clicksAt, offLine, positionsAlong, type Piece } from './trackClicks.js';
-import type { Reveal } from '../src/editSession.js';
+import type { MenuSubject, Reveal } from '../src/editSession.js';
 import { TOOLS } from '../src/tools.js';
 import type { EditorTool } from '../src/tools.js';
 import { classChoices, rootClass } from '../src/vocabulary.js';
@@ -2703,5 +2703,233 @@ describe('EditSession track edits while tracing (#303)', () => {
     const moved = at.map((p, i) => (i === 3 ? to : p));
     expect(line(s).clicks).toEqual(moved);
     expect(trackChain(s)).toEqual({ line: 0, clicks: [...moved].reverse() });
+  });
+});
+
+describe('EditSession editor on the projection rule (#313)', () => {
+  /** Clicks where the curvature of `pieces` changes and every 10 G between, at this session's DPT, in whole pixels. */
+  function laidAlong(s: EditSession, pieces: readonly Piece[]): Point[] {
+    const k = getDPT(s.archive.getManifest())! / G;
+    return clicksAt(pieces, positionsAlong(pieces), { noise: 0 }).map(p => ({ x: Math.round(p.x * k), y: Math.round(p.y * k) }));
+  }
+
+  function line(s: EditSession, index = 0): Centerline {
+    return s.archive.getManifest().layout.centerlines![index];
+  }
+
+  /** `p` moved `gauges` across the line its neighbours give, in whole pixels. */
+  function across(s: EditSession, at: readonly Point[], i: number, gauges: number): Point {
+    const k = getDPT(s.archive.getManifest())! / G;
+    const p = offLine(at[i], at[i - 1], at[i + 1], gauges * k);
+    return { x: Math.round(p.x), y: Math.round(p.y) };
+  }
+
+  /** A traced and finished line along a straight and an arc, and its clicks. */
+  async function finished(): Promise<{ s: EditSession; at: Point[] }> {
+    const s = session({ tool: 'track', rows: false });
+    const at = laidAlong(s, [{ straight: 20 }, { radius: 30, turn: 60 }]);
+    await clicks(s, ...at);
+    s.endChain();
+    return { s, at };
+  }
+
+  describe('starting a line', () => {
+    it('starts nothing within a gauge of a line, off its clicks, and a line farther away', async () => {
+      const { s, at } = await finished();
+      const entries = s.history.size;
+
+      // Half a gauge off the straight, between its second and third clicks: 45 px, past the grab radius.
+      await clicks(s, across(s, at, 1, 0.5));
+      expect(trackChain(s)).toBeNull();
+      expect(s.history.size).toBe(entries);
+
+      const far = across(s, at, 1, 1.5);
+      await clicks(s, far);
+      expect(trackChain(s)).toEqual({ line: null, clicks: [far] });
+    });
+
+    it('continues a finished line from either end, with the projection drawn from that end at once', async () => {
+      const { s, at } = await finished();
+      const dpt = getDPT(s.archive.getManifest())!;
+      const last = at[at.length - 1];
+      const entries = s.history.size;
+
+      await clicks(s, last);
+      let chain = s.chain;
+      expect(chain?.tool === 'track' && chain.trace.projection).toMatchObject({
+        start: { x: expect.closeTo(last.x, 0), y: expect.closeTo(last.y, 0) },
+        parts: [{ length: 20 * dpt }],
+      });
+      s.endChain();
+
+      await clicks(s, at[0]);
+      chain = s.chain;
+      expect(chain?.tool === 'track' && chain.trace.projection).toMatchObject({
+        start: { x: expect.closeTo(at[0].x, 0), y: expect.closeTo(at[0].y, 0), heading: expect.closeTo(0.3 - Math.PI, 1) },
+        parts: [{ length: 20 * dpt }],
+      });
+      expect(s.history.size).toBe(entries);
+    });
+  });
+
+  describe('a refused click', () => {
+    it('writes no entry, and the hint says why until the next click', async () => {
+      const s = session({ tool: 'track', rows: false });
+      const dpt = getDPT(s.archive.getManifest())!;
+      await clicks(s, { x: 100, y: 100 }, { x: 100 + Math.round(10 * dpt), y: 100 });
+      expect(s.refused).toBe(false);
+      const heard: boolean[] = [];
+      s.subscribe(() => heard.push(s.refused));
+
+      // Ahead of the straight, at a right angle to it within 11 G: a radius of 7.5 G.
+      await clicks(s, { x: 100 + Math.round(11 * dpt), y: 100 + Math.round(10 * dpt) });
+      expect(s.refused).toBe(true);
+      expect(heard).toEqual([true]);
+      expect(s.history.size).toBe(1);
+      expect(trackChain(s)?.clicks).toHaveLength(2);
+
+      await clicks(s, { x: 100 + Math.round(20 * dpt), y: 100 });
+      expect(s.refused).toBe(false);
+      expect(heard.at(-1)).toBe(false);
+      expect(s.history.size).toBe(2);
+
+      await s.undo();
+      expect(trackChain(s)?.clicks).toHaveLength(2);
+      expect(s.history.canUndo).toBe(true);
+    });
+
+    it('is over once the line is ended', async () => {
+      const s = session({ tool: 'track', rows: false });
+      const dpt = getDPT(s.archive.getManifest())!;
+      await clicks(s, { x: 100, y: 100 }, { x: 100 + Math.round(10 * dpt), y: 100 });
+      await clicks(s, { x: 100 + Math.round(11 * dpt), y: 100 + Math.round(10 * dpt) });
+      expect(s.refused).toBe(true);
+
+      s.endChain();
+
+      expect(s.refused).toBe(false);
+    });
+  });
+
+  describe('a refused edit', () => {
+    const PIECES: readonly Piece[] = [{ straight: 20 }, { radius: 30, turn: 90 }, { straight: 20 }];
+    /** The fourth click 4 G across, 10 G on from the straight's end: a 13 G arc, which the fifth click then cannot follow. */
+    function tooTight(s: EditSession): Point {
+      const k = getDPT(s.archive.getManifest())! / G;
+      const p = along([{ straight: 20 }, { radius: 13, turn: 90 }], 30);
+      return { x: Math.round(p.x * k), y: Math.round(p.y * k) };
+    }
+
+    it('leaves a dragged click of a finished line where it was, writes nothing, and the hint says why', async () => {
+      const s = session({ tool: 'track', rows: false });
+      const at = laidAlong(s, PIECES);
+      await clicks(s, ...at);
+      s.endChain();
+      const before = structuredClone(line(s));
+      const entries = s.history.size;
+
+      expect(await drag(s, [at[3], tooTight(s)])).toBe(true);
+
+      expect(line(s)).toEqual(before);
+      expect(s.history.size).toBe(entries);
+      expect(s.refused).toBe(true);
+    });
+
+    it('leaves a dragged click of the line being traced where it was, and keeps the chain', async () => {
+      const s = session({ tool: 'track', rows: false });
+      const at = laidAlong(s, PIECES);
+      await clicks(s, ...at);
+      const before = { line: structuredClone(line(s)), trace: structuredClone(s.chain) };
+      const entries = s.history.size;
+
+      expect(await drag(s, [at[3], tooTight(s)])).toBe(true);
+
+      expect({ line: line(s), trace: s.chain }).toEqual(before);
+      expect(s.history.size).toBe(entries);
+      expect(s.refused).toBe(true);
+    });
+
+    /**
+     * A straight into a 16 G arc, clicked every 8 G. Without the click where the
+     * curve starts, the first click into it bends a wide arc from the
+     * straight's last click, and the next needs an arc of 8 G from where that
+     * one ends.
+     */
+    function tight(s: EditSession): Point[] {
+      const k = getDPT(s.archive.getManifest())! / G;
+      return clicksAt([{ straight: 20 }, { radius: 16, turn: 90 }], [0, 10, 20, 28, 36, 44], { noise: 0 }).map(p => ({
+        x: Math.round(p.x * k),
+        y: Math.round(p.y * k),
+      }));
+    }
+
+    it('keeps a click of a finished line whose delete is refused, writes nothing, and the hint says why', async () => {
+      const s = session({ tool: 'track', rows: false });
+      const at = tight(s);
+      await clicks(s, ...at);
+      s.endChain();
+      expect(line(s).clicks).toHaveLength(6);
+      const before = structuredClone(line(s));
+      const entries = s.history.size;
+
+      await s.delete(s.rightClick(at[2], SCALE)!);
+
+      expect(line(s)).toEqual(before);
+      expect(s.history.size).toBe(entries);
+      expect(s.refused).toBe(true);
+    });
+
+    it('keeps a click of the line being traced whose delete is refused, and the chain', async () => {
+      const s = session({ tool: 'track', rows: false });
+      const at = tight(s);
+      await clicks(s, ...at);
+      const before = { line: structuredClone(line(s)), trace: structuredClone(s.chain) };
+      const entries = s.history.size;
+
+      await s.delete(s.rightClick(at[2], SCALE)!);
+
+      expect({ line: line(s), trace: s.chain }).toEqual(before);
+      expect(s.history.size).toBe(entries);
+      expect(s.refused).toBe(true);
+    });
+  });
+
+  describe('Delete line on a click', () => {
+    it('deletes the line the click is on, as one entry undo restores', async () => {
+      const { s, at } = await finished();
+      await clicks(s, { x: 3000, y: 100 }, { x: 3500, y: 100 });
+      s.endChain();
+      const before = structuredClone(s.tracks);
+      const entries = s.history.size;
+
+      await s.deleteLine(s.rightClick(at[3], SCALE) as MenuSubject & { kind: 'track-click' });
+
+      expect(s.tracks).toEqual([before[1]]);
+      expect(s.history.size).toBe(entries + 1);
+      expect(s.history.undoLabel).toBe('delete centerline');
+      await s.undo();
+      expect(s.tracks).toEqual(before);
+    });
+
+    it('deletes the line being traced and ends the chain', async () => {
+      const s = session({ tool: 'track', rows: false });
+      const at = laidAlong(s, [{ straight: 20 }, { radius: 30, turn: 60 }]);
+      await clicks(s, ...at);
+
+      await s.deleteLine(s.rightClick(at[3], SCALE) as MenuSubject & { kind: 'track-click' });
+
+      expect(s.tracks).toHaveLength(0);
+      expect(trackChain(s)).toBeNull();
+      await clicks(s, at[0]);
+      expect(trackChain(s)).toEqual({ line: null, clicks: [at[0]] });
+    });
+
+    it('does nothing for a click that has moved since the menu opened', async () => {
+      const { s, at } = await finished();
+      const entries = s.history.size;
+      await s.deleteLine({ kind: 'track-click', line: 0, index: 3, px: at[4] });
+      expect(s.tracks).toHaveLength(1);
+      expect(s.history.size).toBe(entries);
+    });
   });
 });

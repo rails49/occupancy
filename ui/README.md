@@ -146,6 +146,7 @@ rr-app                          ← shell: owns the editing session and the view
 > [#302]: https://github.com/rails49/occupancy/issues/302
 > [#303]: https://github.com/rails49/occupancy/issues/303
 > [#307]: https://github.com/rails49/occupancy/issues/307
+> [#313]: https://github.com/rails49/occupancy/issues/313
 
 ## State and data flow
 
@@ -751,8 +752,8 @@ both; each tool module supplies what differs.
 | `ChainView`, `ChainContext`, `ClickResult` | What the editor draws of a chain; what a tool reads and writes through the session, including `snap`; what a click asks the editor for |
 | `NO_TRACK`, `NO_TRACK_NOTICE` | Why a sensor or car end was refused: no centerline within `SNAP_TRACK_WIDTHS` |
 | `carTool`, `ALREADY_LABELED` | A free car end continues a chain, a coupling is refused with `ALREADY_LABELED`, a click on a car's body splits it, and empty image starts a chain |
-| `trackTool`, `TrackChain` | A click on a line's first or last click continues it as a chain; on a click between them, or on the line, it does nothing ([#307]); anywhere else it starts a chain ([#298]). Each click goes on the end of the chain's trace (`trackTrace.ts`) and writes the line's clicks with the nodes of the line as drawn (`fitNodes`). A chain from a first click traces backwards and writes back in stored order, its nodes turned round. `hold`, `move` and `remove` take a click of the traced line, by stored index, while the chain is live: a drag draws it held, and a move or delete builds the line again from its clicks and writes one entry ([#303]). `atStart()` is true once every entry the chain wrote is undone |
-| `trackHitAt`, `clickHitAt`, `refitLine` | The line or the click under the track tool's pointer, within the grab radius; a line with given clicks and the nodes of their fit, folded in stored order: an edit with no chain live |
+| `trackTool`, `TrackChain` | A click on a line's first or last click continues it as a chain; on a click between them, or within `TRACK_FIT.startDistance` of any line, it does nothing ([#313]); anywhere else it starts a chain ([#298]). Each click goes on the end of the chain's trace (`trackTrace.ts`) and writes the line's clicks with the nodes of the line as drawn (`fitNodes`). A chain from a first click traces backwards and writes back in stored order, its nodes turned round. `hold`, `move` and `remove` take a click of the traced line, by stored index, while the chain is live: a drag draws it held, and a move or delete builds the line again from its clicks and writes one entry ([#303]). `atStart()` is true once every entry the chain wrote is undone |
+| `trackHitAt`, `clickHitAt`, `refitLine` | The line or the click under the track tool's pointer, within the grab radius; a line with given clicks and the nodes of their fit, folded in stored order: an edit with no chain live. Null, and the session's `refused`, when a click does not go on the line |
 
 ---
 
@@ -818,7 +819,7 @@ click extends it, and a move or delete builds it again from the clicks.
 
 | Export | Description |
 |---|---|
-| `trackHint(trace, offLine)` | The track tool's hint, one of three sentences: with red clicks on the traced line, or with none traced on a stored line (`offLine`), move or delete them; while tracing, click on and how to end; otherwise how to start a line or go on with one. Tested in `tests/trackHint.test.ts` |
+| `trackHint(trace, refused)` | The track tool's hint, one of three sentences: with the last click or edit refused, why and what to do; while tracing, click ahead and how to end; otherwise how to start a line or go on with one. Tested in `tests/trackHint.test.ts` |
 
 ### `carMarker.ts`
 
@@ -1047,8 +1048,8 @@ per pick, however many of its files were refused ([#262]). `rr-app` owns the toa
     report button 0.
   * The press that **dismisses** the menu is swallowed by `rr-context-menu` and never reaches the
     viewer, so closing a menu over empty image does not place a point.
-* **Track hint** (`.track-hint`, [#298]). Under the DPT bar while the track tool is selected and DPT
-  resolves: `trackHint`'s sentence for the line being traced, or for the stored lines.
+* **Track hint** (`.track-hint`, [#298], [#313]). Under the DPT bar while the track tool is selected and DPT
+  resolves: `trackHint`'s sentence for the line being traced, or the session's `refused`.
 * **DPT readout** (`.dpt-bar`). `calibrationFit()`'s DPT to one decimal, or "Not calibrated" with a
   warning style when it is `null` — a real v4 state, reported rather than blocked on, and now with the click
   that fixes it. Two further states:
@@ -1139,11 +1140,12 @@ it gets the objects the entry changed.
 | `car(id)`, `sensor(id)` | The car on the image on screen, or the sensor, with this id; undefined once it is gone |
 | `selectTool`, `selectImage`, `endChain` | Changes to the editing state, none of them recorded |
 | `tracks` | The layout's centerlines ([#284]) |
+| `refused` | Whether the last click or edit under the track tool was refused: it needed an arc tighter than the minimum, and the hint says so until the next click or edit ([#313]) |
 | `previewCar(point)` | Where a click would put the next car of a live car chain: the nearest track, or null when none is near |
 | `click(point, scale)` | Writes, or returns what the editor must ask for: a reference point's world position, a sensor's name, or a notice |
-| `beginDrag(point, scale)` | A `Drag` (`move`, `end`, `cancel`) on what is under the point, or null. Under the track tool a click comes first; its line refits on `end` ([#302]). While a track chain is live only a click of its line is grabbed, and the chain takes the move on `end` ([#303]); a chain still at its start gives way to a drag of another line's click, and ends |
-| `rightClick(point, scale)` | Ends a live chain, or returns the `MenuSubject` a menu acts on. Under the track tool a click is `track-click` (Delete click) and the rest of a line `track` (Delete line). While a track chain is live a click of its line other than the last is `track-click` and the chain goes on ([#303]) |
-| `placeReferencePoint`, `editReferencePoint`, `nameSensor`, `delete`, `reclassifyCar`, `setComplete` | The answers to a dialog, a menu row or the checkbox |
+| `beginDrag(point, scale)` | A `Drag` (`move`, `end`, `cancel`) on what is under the point, or null. Under the track tool a click comes first; its line refits on `end` ([#302]), or the click springs back and `refused` says why. While a track chain is live only a click of its line is grabbed, and the chain takes the move on `end` ([#303]); a chain still at its start gives way to a drag of another line's click, and ends |
+| `rightClick(point, scale)` | Ends a live chain, or returns the `MenuSubject` a menu acts on. Under the track tool a click is `track-click` (Delete click, Delete line) and the rest of a line `track` (Delete line). While a track chain is live a click of its line other than the last is `track-click` and the chain goes on ([#303]) |
+| `placeReferencePoint`, `editReferencePoint`, `nameSensor`, `delete`, `deleteLine`, `reclassifyCar`, `setComplete` | The answers to a dialog, a menu row or the checkbox. `deleteLine` takes a `track-click` subject and deletes its line; a `delete` the line refuses writes nothing and sets `refused` |
 | `editLayout`, `setCameraHeight` | The settings dialog's edits, one `layout` entry each |
 | `addImage`, `deleteImage`, `reorderImages` | The image list. Deleting the image on screen shows its neighbour. `addImage` may set `camera.resolution` (`SPEC.md` § Images, [#254]) |
 | `addImages(images)` | A whole pick (`AddedImage[]`: `filename`, `bytes`, `size?`) as **one** entry, "add images", in the order given, showing the first ([#262]). A `filename` the archive already holds, or an earlier image of the same pick took, is stored under a generated `img_<id>` keeping its extension ([#256]) |

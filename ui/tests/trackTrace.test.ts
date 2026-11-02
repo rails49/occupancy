@@ -10,9 +10,9 @@ const PIECES = [{ straight: 20 }, { radius: 30, turn: 90 }, { straight: 20 }];
 const clicks = clicksAt(PIECES, [0, 10, 20, 30, 40, 50, 60, 67.1, 77, 87.1], { noise: 0 });
 
 describe('traceOptions', () => {
-  it('converts the three constants through DPT', () => {
+  it("converts the fit's three constants through DPT", () => {
     expect(opts).toEqual({ tolerance: 0.5 * G, minRadius: 15 * G, projection: 20 * G });
-    expect(TRACK_FIT).toEqual({ tolerance: 0.5, minRadius: 15, projection: 20 });
+    expect(TRACK_FIT).toEqual({ tolerance: 0.5, minRadius: 15, projection: 20, startDistance: 1 });
   });
 });
 
