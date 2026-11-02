@@ -83,6 +83,7 @@ describe('Trace on a long line clicked every 2 G', () => {
       t.add(p, opts);
       const loose = t.live?.joins.slice(1, -1) ?? [];
       expect(loose.every(j => j.sigma > opts.commitSigma)).toBe(true);
+      for (const j of t.committedJoins) expect(j.sigma).toBeLessThan(opts.barCap);
     }
     expect(t.committed.length).toBeGreaterThanOrEqual(8);
     expect(t.live?.fit.parts.length).toBeLessThanOrEqual(2);

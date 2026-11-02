@@ -41,6 +41,20 @@ describe('renderTrack', () => {
     expect(el.querySelectorAll('.node, .heading, .heading-handle, .bar')).toHaveLength(0);
   });
 
+  it('draws a click past the tolerance from the line red, and the others not', () => {
+    // The tolerance is 0.25 G, 2.5 px here: 1 px off is in, 20 px off is out.
+    const off: Track = { ...track, clicks: [...track.clicks!.slice(0, 2), { x: 350, y: 120 }, track.clicks![3]] };
+    const el = renderSvg(renderTrack(off, size));
+    const red = [...el.querySelectorAll('.click')].map(c => c.classList.contains('outlier'));
+    expect(red).toEqual([false, false, true, false]);
+  });
+
+  it('flags no click with no gauge to measure the tolerance in', () => {
+    const off: Track = { ...track, clicks: [...track.clicks!.slice(0, 2), { x: 350, y: 120 }, track.clicks![3]] };
+    const el = renderSvg(renderTrack(off, { ...size, dpt: null }));
+    expect(el.querySelectorAll('.click.outlier')).toHaveLength(0);
+  });
+
   it('draws the centerline alone without the detail', () => {
     const el = renderSvg(renderTrack(track, { ...size, detail: false }));
     expect(el.querySelectorAll('.centerline')).toHaveLength(1);

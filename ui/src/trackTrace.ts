@@ -4,9 +4,9 @@ import type { Point } from '@rails49/r49';
  * One track traced click by click (#298). While tracing, the prefix is
  * committed and never moves; only the tail is fitted, from the last
  * committed join, and a join is committed, with every join before it, once
- * its position uncertainty is under `commitSigma`. Editing a committed click
- * uncommits every part from the one before it to the end, and the tail is
- * traced again from there.
+ * its position uncertainty is under `commitSigma`, unless one of those is a
+ * guess, at the bar cap. Editing a committed click uncommits every part from
+ * the one before it to the end, and the tail is traced again from there.
  * Finishing fits the whole line from its clicks at once, and every later
  * edit does the same, so a finished line depends on its clicks alone. Pure.
  */
@@ -29,6 +29,8 @@ import {
 export interface TraceOptions extends FitOptions {
   /** A join whose position σ is under this, px, is committed. */
   readonly commitSigma: number;
+  /** A join whose σ, px, is at or past this is a guess: its parts are not drawn and never commit. */
+  readonly barCap: number;
 }
 
 /** `TRACK_FIT` in image pixels, for a layout whose DPT (a gauge in pixels) is `dpt`. */
@@ -38,6 +40,7 @@ export function traceOptions(dpt: number): TraceOptions {
     tolerance: g.tolerance * dpt,
     noise: g.noise * dpt,
     commitSigma: g.commitSigma * dpt,
+    barCap: g.barCap * dpt,
     bounds: { minLength: g.minLength * dpt, minRadius: g.minRadius * dpt, maxSweep: g.maxSweep },
   };
 }
@@ -106,10 +109,9 @@ export class Trace {
    */
   lineFit(opts: TraceOptions): FitResult | null {
     if (this.finished) return this.whole;
-    const live = this.live;
-    if (!live) return null;
-    const fit = { start: this.origin ?? live.fit.start, parts: [...this.committed, ...live.fit.parts] };
-    return refitTrack(fit, this.clicks, opts);
+    const start = this.origin ?? this.live?.fit.start;
+    if (!start) return null;
+    return refitTrack({ start, parts: [...this.committed, ...(this.live?.fit.parts ?? [])] }, this.clicks, opts);
   }
 
   /** Append while tracing; on a finished line, insert where the click projects onto the line. */
@@ -185,15 +187,15 @@ export class Trace {
   }
 
   /**
-   * Commit the live parts up to the last join whose σ is under the threshold,
-   * with the joins before it whatever their σ, and again on the refit tail.
+   * Commit the live parts up to the last join whose σ is under the commit σ,
+   * with the joins before it, but never past a join at the bar cap.
    */
   private commit(opts: TraceOptions) {
     const live = this.live;
     if (!live) return;
     const m = live.fit.parts.length;
     let j = 0;
-    for (let i = 1; i < m; i++) if (live.joins[i].sigma <= opts.commitSigma) j = i;
+    for (let i = 1; i < m && live.joins[i].sigma < opts.barCap; i++) if (live.joins[i].sigma <= opts.commitSigma) j = i;
     if (j === 0) return;
     if (!this.origin) {
       this.origin = live.fit.start;
@@ -204,7 +206,6 @@ export class Trace {
     const k = live.partOf.findIndex(p => p >= j);
     this.firstLive += k < 0 ? live.partOf.length : k;
     this.refitLive(opts);
-    if (k !== 0) this.commit(opts);
   }
 
   /** The committed part nearest click `i`, or -1 when the click is live or the line is finished. */
