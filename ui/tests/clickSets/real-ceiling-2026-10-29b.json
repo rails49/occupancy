@@ -1,0 +1,66 @@
+{
+  "note": "Real clicks from the archive ceiling-2026-10-29b-t (2026-11-02): a long straight into a curve of about 200°, a click every 3-30 G. The last click hid the live tail (two arcs, join σ 5.9 G past the bar cap) (#298).",
+  "gauge": 32.54,
+  "lines": [
+    [
+      [
+        4347,
+        2950
+      ],
+      [
+        2328,
+        4198
+      ],
+      [
+        2317,
+        4203
+      ],
+      [
+        2304,
+        4212
+      ],
+      [
+        2288,
+        4222
+      ],
+      [
+        2217,
+        4263
+      ],
+      [
+        2121,
+        4312
+      ],
+      [
+        1847,
+        4398
+      ],
+      [
+        961,
+        4205
+      ],
+      [
+        486,
+        3446
+      ],
+      [
+        695,
+        2562
+      ],
+      [
+        1013,
+        2240
+      ],
+      [
+        1485,
+        2055
+      ]
+    ]
+  ],
+  "parts": [
+    3
+  ],
+  "worst": [
+    0.15
+  ]
+}
