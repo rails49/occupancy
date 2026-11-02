@@ -1,5 +1,7 @@
 # Track centerlines are stored
 
+*Superseded by [ADR 0024](0024-centerlines-store-fitted-nodes-and-their-clicks.md).*
+
 Supersedes [ADR 0010](0010-track-is-not-stored.md).
 
 Each archive stores its track centerlines as polylines in image pixels, an optional field of the `.r49` format. The classifier needs them: a patch is placed on the track and turned to its direction, and its training labels come from where cars stand along it. A car belongs to the centerline nearest its span midpoint, which keeps a car on the next track from reading as occupied.

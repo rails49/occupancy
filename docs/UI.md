@@ -49,7 +49,8 @@ ends a line and writes nothing. A live trace takes every undo, which removes its
 shows the trace as it was before that click, and ends at its start; redo ends it, then redoes. No
 fit runs on a pointer move, and nothing follows the pointer. While a trace is live, a click always
 traces, even on a sensor, and a drag grabs only a click of the line being traced, because sensors sit
-on the track being traced.
+on the track being traced. The fit's constants are `TRACK_FIT`, in gauges, converted through DPT
+when a fit runs; `../SPEC.md` § Track centerlines lists them.
 
 While a trace is live its clicks can be edited (#303). A drag of a click moves the dot and leaves the
 trace as it is; on release the trace takes the move, "move click". Right-click on a click other than
@@ -194,6 +195,10 @@ before it, which is worse than having no undo. Rules, from entries being scoped 
 
 ## Chaining (#33)
 
+The car tool and the track tool share the chain (`chain.ts`, #284): `EditSession` runs click, undo,
+redo, right-click and drags the same way for both. The rules below are the car's; the track
+tool's are under [What the editor builds](#what-the-editor-builds).
+
 * Every click after the first is simultaneously the end of the current car and the start of the
   next: the same pixel is written as one car's `p1` and handed on as the next one's `p0`, so the
   coincidence a coupling is derived from is exact by construction — chaining records no train.
@@ -272,7 +277,8 @@ rails49/detector's [`SPEC.md` § Parameters live in `config.yaml`](https://githu
   the session demotes a live tool back to calibration after every change — because DPT can vanish
   through an **undo**, which no disabled button can stop.
 * The **sensor** tool is gated with the car tool, one step beyond `SPEC.md` § Labeling Workflow — a
-  sensor point needs no DPT to draw, but #31 asked for both. `needsDpt` is per tool in
+  sensor point needs no DPT to draw, but #31 asked for both. The **track** tool is gated because the
+  fit's constants are in gauges. `needsDpt` is per tool in
   `tools.ts` if that is revisited.
 * Sensors are **per layout**, carry **no provenance** (no model can propose where a human wants an
   answer), and their snowflake ids live in a namespace never compared with label ids. A sensor is

@@ -118,12 +118,28 @@ The largest drift accepted, as a fraction of a track width. See [ADR 0020](docs/
 **Proposal**:
 A car label suggested by the detector for a person to accept, correct or reject. See [SPEC § Assisted Labeling](SPEC.md#assisted-labeling).
 
+### Track
+
 **Track**:
 The rails cars run on.
 _Avoid_: using it for a sensor or a block
 
 **Centerline**:
-The line along the middle of a track, drawn once per archive and shared by all its images.
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
+
+**Click**:
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
+
+**Join**:
+Where two fitted parts of a centerline meet, each part a straight or a circular arc, with one heading on both sides. See [SPEC § Track centerlines](SPEC.md#track-centerlines).
+_Avoid_: knot, breakpoint
+
+**Node**:
+A point of a stored centerline with the direction the track runs there. Each join is stored as a node. See rails49/r49's [FORMAT § Node](https://github.com/rails49/r49/blob/main/FORMAT.md#node).
+_Avoid_: control point, vertex
+
+**Chain**:
+A run of clicks under the car tool or the track tool, each one going on from the last: the next car of a train, or more of a centerline. See [docs/UI.md § Chaining](docs/UI.md#chaining-33).
 
 ### Occupancy
 

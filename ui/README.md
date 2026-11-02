@@ -67,7 +67,7 @@ rr-app                          ← shell: owns the editing session and the view
         └── rr-viewer           ← SAME component, zoomed to the finding
 ```
 
-> **The editor authors calibration points, sensors and cars.** v3's point-marker
+> **The editor authors calibration points, track, sensors and cars.** v3's point-marker
 > placement and two-point calibration dragging were removed in the v4 reduction
 > ([#19]); v4 stores neither. [#27] added the provisioning — `rr-viewer`
 > reporting pointer gestures in image pixels, and `geometry.ts` holding the
@@ -101,7 +101,9 @@ rr-app                          ← shell: owns the editing session and the view
 > looking at. [#44] added **zoom**: a drag on empty image draws a rect to zoom
 > to and pans once zoomed, Shift-drags anywhere, and one transform above both
 > the media and the overlay keeps every screen-pixel tolerance and world-pixel
-> size correct with no arithmetic changed.
+> size correct with no arithmetic changed. [#284] added the **track tool**, and
+> sensors and car ends now land on the nearest centerline. [#298] made it fit
+> straights and arcs to the clicks, with the clicks as the only handles.
 >
 > [#19]: https://github.com/rails49/occupancy/issues/19
 > [#27]: https://github.com/rails49/occupancy/issues/27
@@ -781,6 +783,32 @@ heading, with length `d / (3 cos²(φ/4))`.
 | `clicksOff(track, maxPx)` | The indices of a line's clicks farther than `maxPx` from its nodes |
 | `nearestOnTrack(tracks, at, maxPx)`, `SNAP_TRACK_WIDTHS` | The point on any centerline nearest `at` within `maxPx`, or null; and the reach sensors and car ends snap within, 1.5 track widths |
 
+### `trackFit.ts`
+
+Fits straights and circular arcs, tangent where they meet, to points that run in order along the
+track ([#298]): pure functions, tested in `tests/trackFit.test.ts` against synthetic lines and the
+click sets in `tests/clickSets/`. A fit is a start pose and a length and a curvature per part.
+
+| Export | Description |
+|---|---|
+| `fitTrack(points, opts)` | The whole line, start free: the fit, each point's distance from it, the joins with their position σ, and the points left out as outliers. Null with fewer than two points |
+| `fitWindow(points, start, opts)` | The same from a fixed start pose, for the live tail |
+| `fitNodes(fit)` | The fit as stored nodes: one per join, and one at the middle of an arc that turns more than 90° |
+| `sampleFit(fit, step, offset)` | Points along the line, or beside it at `offset`, for drawing |
+
+### `trackTrace.ts`
+
+One line traced click by click ([#298]), tested in `tests/trackTrace.test.ts`. While tracing, the
+committed prefix never moves and only the tail is fitted, from the last committed join. Finishing
+fits the whole line from its clicks, and so does every later edit, so a finished line depends on its
+clicks alone.
+
+| Export | Description |
+|---|---|
+| `Trace` | `add`, `move`, `remove`, `finish`, and `Trace.replay(clicks, opts, finished?)`, which rebuilds a trace from its clicks |
+| `traceOptions(dpt)` | `TRACK_FIT` in image pixels |
+| `TraceView` | What the overlay draws: the clicks, the committed line, the live tail and the clicks to flag red |
+
 ### `carMarker.ts`
 
 The car's own SVG, with the same shape and the same rules as the two markers above. **The exports
@@ -1093,10 +1121,10 @@ it gets the objects the entry changed.
 | Member | Description |
 |---|---|
 | `archive`, `history` | The archive and its undo stack |
-| `image`, `imageIndex`, `tool`, `calibrated`, `chain` | What is on screen, the tool, whether DPT resolves, and the chain in progress as a `ChainView`: the dot its next segment starts from, and a track chain's start and nodes |
+| `image`, `imageIndex`, `tool`, `calibrated`, `chain` | What is on screen, the tool, whether DPT resolves, and the chain in progress as a `ChainView`: the dot its next segment starts from, and a track chain's line and trace |
 | `car(id)`, `sensor(id)` | The car on the image on screen, or the sensor, with this id; undefined once it is gone |
 | `selectTool`, `selectImage`, `endChain` | Changes to the editing state, none of them recorded |
-| `tracks`, `previewTrack(point, scale)` | The layout's centerlines, and what a click would add to a live track chain ([#284]) |
+| `tracks` | The layout's centerlines ([#284]) |
 | `previewCar(point)` | Where a click would put the next car of a live car chain: the nearest track, or null when none is near |
 | `click(point, scale)` | Writes, or returns what the editor must ask for: a reference point's world position, a sensor's name, or a notice |
 | `beginDrag(point, scale)` | A `Drag` (`move`, `end`, `cancel`) on what is under the point, or null. Under the track tool a click comes first; its line refits on `end` ([#302]). While a track chain is live only a click of its line is grabbed, and the chain takes the move on `end` ([#303]) |
@@ -1186,8 +1214,8 @@ screen-pixel grab radius. The hit-test scene is the layout's reference points an
   * Drag and delete reuse the calibration paths unchanged — that is the point of `dragHandles` and of
     the menu knowing nothing about its subject. Both are one `layout` entry.
 * **Car authoring** ([#32]). **Two clicks on the visible car ends**, and the straight chord between
-  them: no snapping, because v4 stores no track to snap to, and the photograph is what shows the
-  labeler where the car actually is. The first click takes an **anchor** and writes nothing; the
+  them. Each end lands on the nearest centerline within `SNAP_TRACK_WIDTHS`, and a click with none
+  near is refused with `NO_TRACK` ([#284]). The first click takes an **anchor** and writes nothing; the
   second writes `{ id, class: 'stock', provenance: 'human', p0, p1 }` into that image's `labels` as
   **one `history.record` entry targeting `{ kind: 'image', filename }`**. The `id` is a `make_id`
   snowflake from its own node id — label ids and sensor ids are separate namespaces — and
