@@ -7,8 +7,8 @@ import { SAMPLE_PX, clicksOff, offsetPoints, trackPath } from './track.js';
 import type { Track } from './track.js';
 import { sampleFit } from './trackFit.js';
 import type { Fit } from './trackFit.js';
-import { tailMarks, traceOptions } from './trackTrace.js';
-import type { Bar, TraceView } from './trackTrace.js';
+import { traceOptions } from './trackTrace.js';
+import type { TraceView } from './trackTrace.js';
 
 /**
  * Track rendering for SVG (#284, #298): the centerline, and under the track
@@ -35,8 +35,7 @@ export const trackMarkerStyles: CSSResult = css`
   }
 
   .track .centerline,
-  .track .rail,
-  .track .bar {
+  .track .rail {
     stroke: var(--track-ink);
     stroke-linecap: round;
     stroke-linejoin: round;
@@ -84,8 +83,8 @@ function renderDot(p: Point, size: TrackSymbolSize, cls: string): SVGTemplateRes
   />`;
 }
 
-function renderClicks(clicks: readonly Point[], size: TrackSymbolSize, flagged: readonly number[] = []) {
-  return clicks.map((p, i) => renderDot(p, size, flagged.includes(i) ? 'click outlier' : 'click'));
+function renderClicks(clicks: readonly Point[], size: TrackSymbolSize, red: readonly number[] = []) {
+  return clicks.map((p, i) => renderDot(p, size, red.includes(i) ? 'click outlier' : 'click'));
 }
 
 /** The flagged clicks of each track drawn, kept until the track is written again. */
@@ -137,48 +136,30 @@ export function renderTrack(
 }
 
 /** A fitted line `offset` image pixels to its left, as an SVG polyline. */
-function renderFit(fit: Fit, offset: number, cls: string, size: TrackSymbolSize, dashed = false) {
-  const stroke = size.strokePx;
+function renderFit(fit: Fit, offset: number, cls: string, size: TrackSymbolSize) {
   return svg`<polyline
     class="${cls}"
     points="${polyline(sampleFit(fit, SAMPLE_PX, offset))}"
-    stroke-width="${stroke}"
-    stroke-dasharray="${dashed ? `${stroke * 4} ${stroke * 3}` : 'none'}"
-  />`;
-}
-
-function renderBar(bar: Bar, size: TrackSymbolSize): SVGTemplateResult {
-  return svg`<line
-    class="bar"
-    x1="${bar.from.x}"
-    y1="${bar.from.y}"
-    x2="${bar.to.x}"
-    y2="${bar.to.y}"
     stroke-width="${size.strokePx}"
   />`;
 }
 
 /**
- * The line a track chain is tracing (#298). Committed track draws its rails
- * and a solid centerline; the live tail draws what `tailMarks` gives, its
- * parts as a dashed centerline. Every click is a dot; a flagged one takes the
- * danger ink.
+ * The line a track chain is tracing (#298): its rails and centerline from the
+ * fit, and a dot per click, red for one past the tolerance.
  */
 export function renderPendingTrack(view: TraceView, size: TrackSymbolSize): SVGTemplateResult {
-  const { committed } = view;
+  const { fit } = view;
   const gauge = size.dpt;
-  const tail = tailMarks(view.live, gauge === null ? Infinity : traceOptions(gauge).barCap);
   return svg`<g class="track track-pending">
     ${
-      committed
+      fit
         ? [
-            ...(gauge === null ? [] : [gauge / 2, -gauge / 2].map(o => renderFit(committed, o, 'rail', size))),
-            renderFit(committed, 0, 'centerline', size),
+            ...(gauge === null ? [] : [gauge / 2, -gauge / 2].map(o => renderFit(fit, o, 'rail', size))),
+            renderFit(fit, 0, 'centerline', size),
           ]
         : ''
     }
-    ${tail.parts.map(part => renderFit(part, 0, 'centerline tail', size, true))}
-    ${tail.bars.map(bar => renderBar(bar, size))}
-    ${renderClicks(view.clicks, size, view.flagged)}
+    ${renderClicks(view.clicks, size, view.red)}
   </g>`;
 }

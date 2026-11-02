@@ -58,6 +58,20 @@ export interface Line {
 /** A part shorter than this cannot be told from none; a solver floor, not a fact about track. */
 const MIN_LENGTH = 1;
 
+/**
+ * The most a part may turn. Past a full turn a part passes over itself and
+ * the solve can wander along it without end; at a full turn it comes back
+ * to its start pose, a curl that costs the fit nothing and that the solve
+ * finds. Short of one by 60° a curl moves the parts after it, and the fit
+ * pays for it. A solver cap, not a fact about track.
+ */
+const MAX_SWEEP = (5 * Math.PI) / 3;
+
+/** The longest a part of curvature `k` may be. */
+function maxLength(k: number): number {
+  return Math.abs(k) < 1e-12 ? Infinity : MAX_SWEEP / Math.abs(k);
+}
+
 function advance(p: Pose, s: number, k: number): Pose {
   if (Math.abs(k) < 1e-12) {
     return { x: p.x + s * Math.cos(p.heading), y: p.y + s * Math.sin(p.heading), heading: p.heading };
@@ -231,8 +245,9 @@ function unpack(v: readonly number[], m: Model): Fit {
   const start = m.start ?? { x: v[0], y: v[1], heading: v[2] };
   const parts: Part[] = [];
   for (let i = 0; i < m.parts; i++) {
-    const length = MIN_LENGTH + v[j++] ** 2;
-    const curvature = Math.tanh(v[j++]) / m.minRadius;
+    const curvature = Math.tanh(v[j + 1]) / m.minRadius;
+    const length = Math.min(MIN_LENGTH + v[j] ** 2, maxLength(curvature));
+    j += 2;
     parts.push({ length, curvature });
   }
   return { start, parts };
@@ -389,10 +404,24 @@ function normal(jac: number[][]): number[][] {
   return a;
 }
 
+/**
+ * `v` with each length parameter brought down to its part's cap, so a step
+ * past the cap does not leave the parameter where its gradient says nothing.
+ */
+function capped(v: readonly number[], m: Model): number[] {
+  const w = [...v];
+  let j = m.start ? 0 : 3;
+  for (let i = 0; i < m.parts; i++, j += 2) {
+    const cap = maxLength(Math.tanh(w[j + 1]) / m.minRadius);
+    if (cap < Infinity) w[j] = Math.min(w[j], Math.sqrt(Math.max(0, cap - MIN_LENGTH)));
+  }
+  return w;
+}
+
 /** Levenberg-Marquardt from `start`: the least squares of `points` over the model's parameters. */
 function refit(start: Fit, points: readonly Point[], m: Model): Fit {
   const f = (v: readonly number[]) => residuals(unpack(v, m), points, m.start);
-  let v = pack(start, m);
+  let v = capped(pack(start, m), m);
   let r = f(v);
   let cost = sumSq(r);
   let lambda = 1e-3;
@@ -404,7 +433,7 @@ function refit(start: Fit, points: readonly Point[], m: Model): Fit {
     while (lambda < 1e10) {
       const damped = a.map((row, i) => row.map((x, j) => (i === j ? x * (1 + lambda) : x)));
       const delta = solve(damped, g.map(x => -x));
-      const w = v.map((x, i) => x + delta[i]);
+      const w = capped(v.map((x, i) => x + delta[i]), m);
       const rw = f(w);
       const cw = sumSq(rw);
       if (cw < cost) {
@@ -537,12 +566,21 @@ class Window {
     return ks.filter((k, i) => ks.indexOf(k) === i);
   }
 
-  /** Where part `q` is cut for click `j` to start its second half, or null if it cannot be. */
+  /**
+   * Where part `q` is cut for click `j` to start its second half, or null if
+   * it cannot be: at click `j`'s nearest point, or, when that is the part's
+   * end (a click past it gives a second half of no length, which the solve
+   * cannot grow), at the nearest point of the last click before it that
+   * lies on the part; failing both, halfway.
+   */
   private cut(q: number, j: number, e: Evaluation): number | null {
     const part = this.parts[q];
     if (j <= this.first[q] || part.length < 2 * MIN_LENGTH) return null;
-    const k = j - this.first[this.from];
-    return clamp(e.part[k] === q - this.from ? e.u[k] : part.length / 2, MIN_LENGTH, part.length - MIN_LENGTH);
+    const hi = part.length - MIN_LENGTH;
+    for (let k = j - this.first[this.from]; k >= 0; k--) {
+      if (e.on[k] === q - this.from && e.u[k] <= hi) return Math.max(MIN_LENGTH, e.u[k]);
+    }
+    return part.length / 2;
   }
 
   /** Split part `q` at `u` along it; click `j` starts the second half, bending at `curvature`. */

@@ -2,8 +2,8 @@ import type { Centerline, Point } from '@rails49/r49';
 import { DEFAULT_GRAB_RADIUS_SCREEN_PX, samePoint } from './geometry.js';
 import { pixel, NONE } from './chain.js';
 import type { Chain, ChainContext, ChainTool, ChainView, ClickResult } from './chain.js';
-import { hitClick, hitTrack } from './track.js';
-import type { ClickHit, Track, TrackHit } from './track.js';
+import { hitClick, hitTrack, wrapAngle } from './track.js';
+import type { ClickHit, Track, TrackHit, TrackNode } from './track.js';
 import { fitNodes, fitTrack } from './trackFit.js';
 import { Trace, traceOptions } from './trackTrace.js';
 import type { TraceOptions, TraceView } from './trackTrace.js';
@@ -18,17 +18,17 @@ export function clickHitAt(tracks: readonly Track[], at: Point, scale: number): 
   return hitClick(tracks, at, DEFAULT_GRAB_RADIUS_SCREEN_PX * scale);
 }
 
-/** A line with `clicks` and the nodes of their whole-line fit. */
+/** A line with `clicks` and the nodes of their fit, in stored order: an edit with no chain live. */
 export function refitLine(ctx: ChainContext, clicks: readonly Point[]): Centerline {
   const opts = traceOptions(ctx.scene().dpt!);
   return { nodes: fitNodes(fitTrack(clicks, opts)!.fit), clicks: [...clicks] };
 }
 
 /**
- * The track tool's click with no chain live (#298, #302). A click on a line's
- * first or last click continues the line as a chain from there; on a click
- * between them it does nothing. A click on a line adds a click there and
- * refits the line; anywhere else a chain starts, even on a sensor.
+ * The track tool's click with no chain live (#298, #302, #307). A click on a
+ * line's first or last click continues the line as a chain from there; on a
+ * click between them, or on the line, it does nothing. Anywhere else a chain
+ * starts, even on a sensor.
  */
 export const trackTool: ChainTool = (ctx, at, scale) => {
   const lines = centerlines(ctx);
@@ -38,37 +38,19 @@ export const trackTool: ChainTool = (ctx, at, scale) => {
     if (click.index !== 0 && click.index !== last) return { kind: 'edit', run: async () => NONE };
     return { kind: 'chain', chain: TrackChain.continuing(ctx, click.line, click.index === 0) };
   }
-  const hit = trackHitAt(lines, at, scale);
-  if (hit) return { kind: 'edit', run: () => addClick(ctx, hit.line, pixel(at)) };
+  if (trackHitAt(lines, at, scale)) return { kind: 'edit', run: async () => NONE };
   return { kind: 'chain', chain: TrackChain.starting(ctx, pixel(at)) };
 };
 
 /**
- * Adds a click at `at` to line `index`, in track order by where it projects
- * onto the line fitted to its clicks, and refits the line. A line without
- * clicks cannot be refit, and takes none.
- */
-async function addClick(ctx: ChainContext, index: number, at: Point): Promise<ClickResult> {
-  const lines = [...centerlines(ctx)];
-  const clicks = lines[index].clicks ?? [];
-  if (clicks.length < 2) return NONE;
-  const opts = traceOptions(ctx.scene().dpt!);
-  const trace = Trace.finished(clicks, opts);
-  trace.add(at, opts);
-  lines[index] = { nodes: fitNodes(trace.committedFit()!), clicks: trace.clicks };
-  await ctx.record('add click', { kind: 'layout' }, () => ctx.writeLayout({ centerlines: lines }));
-  return NONE;
-}
-
-/**
  * A chain of track: one centerline, traced click by click. The line in
- * `layout.centerlines` holds the clicks and the nodes of the whole-line fit;
+ * `layout.centerlines` holds the clicks and the nodes of the line as drawn;
  * the chain holds the trace, which is what it draws, and replays it from the
- * stored clicks whenever they change under it, as an undo does. The trace
- * before each entry it writes, a click or a move or delete of a click (#303),
- * is kept, so an undo takes it back rather than replaying every click. A
- * chain continued from a line's first click traces its clicks backwards and
- * writes them back in stored order.
+ * stored clicks whenever they change under it, as an undo does. The trace before
+ * each entry it writes, a click or a move or delete of a click (#303), is
+ * kept, so an undo takes it back rather than replaying every click. A chain
+ * continued from a line's first click traces its clicks backwards and writes
+ * them back in stored order.
  */
 export class TrackChain implements Chain {
   readonly tool = 'track';
@@ -122,19 +104,15 @@ export class TrackChain implements Chain {
   }
 
   /**
-   * Adds a click to the trace and writes the line's clicks with the nodes of
-   * their whole-line fit. A click near the line and behind its last click
-   * goes between clicks, in track order (`Trace.insertion`); with `append` it
-   * extends the line wherever it is. The second click of a new line writes a
-   * new centerline.
+   * Adds a click on the end of the trace and writes the line's clicks with
+   * the nodes of their fit. The second click of a new line writes a new
+   * centerline.
    */
-  async extend(at: Point, scale: number, append = false): Promise<ClickResult> {
+  async extend(at: Point, scale: number): Promise<ClickResult> {
     const p = pixel(at);
     const last = this._trace.clicks[this._trace.clicks.length - 1];
     if (Math.hypot(p.x - last.x, p.y - last.y) <= DEFAULT_GRAB_RADIUS_SCREEN_PX * scale) return NONE;
-    const i = append ? null : this._trace.insertion(p, this._opts);
-    if (i !== null) await this._write('add click', t => t.insert(i, p, this._opts));
-    else await this._write(this._index === null ? 'place centerline' : 'extend centerline', t => t.add(p, this._opts));
+    await this._write(this._index === null ? 'place centerline' : 'extend centerline', t => t.add(p, this._opts));
     return NONE;
   }
 
@@ -149,10 +127,7 @@ export class TrackChain implements Chain {
     this._view = { ...view, clicks };
   }
 
-  /**
-   * Moves click `index`, in stored order, to `to`. A committed click
-   * uncommits the trace back to the part before it (`Trace.move`).
-   */
+  /** Moves click `index`, in stored order, to `to`, and builds the line again from its clicks (`Trace.move`). */
   async move(index: number, to: Point) {
     await this._write('move click', t => t.move(this._traced(index), to, this._opts));
   }
@@ -164,8 +139,8 @@ export class TrackChain implements Chain {
 
   /**
    * Changes the trace, keeping it as it was for an undo, and writes the
-   * line's clicks with the nodes of their whole-line fit (`refitLine`) as one
-   * entry. The second click of a new line writes a new centerline.
+   * line's clicks with the nodes of the line as drawn, as one entry. The
+   * second click of a new line writes a new centerline.
    */
   private async _write(label: string, change: (trace: Trace) => void) {
     this._before.push(this._trace.clone());
@@ -173,9 +148,15 @@ export class TrackChain implements Chain {
     this._view = this._trace.view(this._opts);
     const lines = [...centerlines(this._ctx)];
     const index = this._index ?? lines.length;
-    lines[index] = refitLine(this._ctx, this._order(this._trace.clicks));
+    lines[index] = this._stored();
     this._index = index;
     await this._ctx.record(label, { kind: 'layout' }, () => this._ctx.writeLayout({ centerlines: lines }));
+  }
+
+  /** The line as drawn, clicks and nodes in stored order: a reversed chain turns the nodes round. */
+  private _stored(): Centerline {
+    const nodes = fitNodes(this._trace.fit()!);
+    return { nodes: this._reversed ? turned(nodes) : nodes, clicks: this._order(this._trace.clicks) };
   }
 
   /** A stored click index as a trace index. */
@@ -210,6 +191,11 @@ export class TrackChain implements Chain {
   private _order(clicks: readonly Point[]): Point[] {
     return this._reversed ? [...clicks].reverse() : [...clicks];
   }
+}
+
+/** `nodes` run the other way: last first, each heading turned round. */
+function turned(nodes: readonly TrackNode[]): TrackNode[] {
+  return [...nodes].reverse().map(n => ({ ...n, heading: wrapAngle(n.heading + Math.PI) }));
 }
 
 function samePoints(a: readonly Point[], b: readonly Point[]): boolean {

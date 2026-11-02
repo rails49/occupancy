@@ -4,8 +4,9 @@ import type { ReferencePoint, CarLabel, Centerline, ManifestData, Point, Sensor 
 import { EditSession } from '../src/editSession.js';
 import { ALREADY_LABELED } from '../src/carChain.js';
 import { NO_TRACK } from '../src/chain.js';
-import { TRACK_FIT, fitNodes, fitTrack, poses } from '../src/trackFit.js';
-import { traceOptions } from '../src/trackTrace.js';
+import { wrapAngle } from '../src/track.js';
+import { fitNodes, fitTrack } from '../src/trackFit.js';
+import { Trace, traceOptions } from '../src/trackTrace.js';
 import type { TraceView } from '../src/trackTrace.js';
 import { G, along, clicksAlong, offLine, type Piece } from './trackClicks.js';
 import type { Reveal } from '../src/editSession.js';
@@ -2035,10 +2036,6 @@ describe('EditSession track tool (#284, #298)', () => {
       if (chain?.tool !== 'track') throw new Error('no track chain');
       if (chain.line !== null) after.push(structuredClone({ line: line(s), trace: chain.trace }));
     }
-    // A join commits before the end, so an undo has one to take back.
-    const first = after.findIndex(a => (a.trace as { committed: unknown }).committed !== null);
-    expect(first).toBeGreaterThan(0);
-
     for (let n = after.length - 2; n >= 0; n--) {
       await s.undo();
       const chain = s.chain;
@@ -2073,7 +2070,7 @@ describe('EditSession track tool (#284, #298)', () => {
     expect(line(s).clicks).toHaveLength(3);
   });
 
-  it('puts a click near the line and behind its last click between clicks, as one entry; Shift-click extends', async () => {
+  it('puts every click on the end of the line, a click behind its last click too', async () => {
     const s = session({ tool: 'track', rows: false });
     const at = laidAlong(s, [{ straight: 20 }]);
     const [first, last] = [at[0], at[at.length - 1]];
@@ -2081,26 +2078,8 @@ describe('EditSession track tool (#284, #298)', () => {
     await clicks(s, first, last);
 
     await s.click(between, SCALE);
-    expect(line(s).clicks).toEqual([first, between, last]);
-    expect(s.history.undoLabel).toBe('add click');
-    await s.undo();
-    expect(trackChain(s)?.clicks).toEqual([first, last]);
-
-    await s.click(between, SCALE, true);
     expect(line(s).clicks).toEqual([first, last, between]);
     expect(s.history.undoLabel).toBe('extend centerline');
-  });
-
-  it('puts a click between clicks in stored order on a line continued from its first click', async () => {
-    const s = session({ tool: 'track', rows: false });
-    const at = laidAlong(s, [{ straight: 20 }]);
-    const [first, last] = [at[0], at[at.length - 1]];
-    const between = { x: Math.round((first.x + last.x) / 2), y: Math.round((first.y + last.y) / 2) };
-    await clicks(s, first, last);
-    s.endChain();
-
-    await clicks(s, first, between);
-    expect(line(s).clicks).toEqual([first, between, last]);
   });
 
   it('saves a valid line mid-trace, and loads it as written with no refit', async () => {
@@ -2378,18 +2357,16 @@ describe('EditSession finished track lines (#302)', () => {
     expect(s.tracks).toHaveLength(0);
     expect(s.history.undoLabel).toBe('delete centerline');
   });
-  it('adds a click on the line in track order, and refits the whole line, as one entry', async () => {
+  it('does nothing for a click on the line between clicks', async () => {
     const { s, at } = await finished();
     const entries = s.history.size;
+    const before = structuredClone(line(s));
     // Off the middle of two clicks, toward the line's outside: still on the line.
-    const added = { x: Math.round((at[4].x + at[5].x) / 2) + 2, y: Math.round((at[4].y + at[5].y) / 2) - 3 };
-    expect(await s.click(added, SCALE)).toEqual({ kind: 'none' });
-    const expected = [...at.slice(0, 5), added, ...at.slice(5)];
+    const on = { x: Math.round((at[4].x + at[5].x) / 2) + 2, y: Math.round((at[4].y + at[5].y) / 2) - 3 };
+    expect(await s.click(on, SCALE)).toEqual({ kind: 'none' });
     expect(trackChain(s)).toBeNull();
-    expect(s.history.size).toBe(entries + 1);
-    expect(s.history.undoLabel).toBe('add click');
-    expect(line(s).clicks).toEqual(expected);
-    expect(line(s).nodes).toEqual(fitOf(s, expected));
+    expect(s.history.size).toBe(entries);
+    expect(line(s)).toEqual(before);
   });
 
   it('does nothing for a click on a click between the ends', async () => {
@@ -2436,7 +2413,10 @@ describe('EditSession finished track lines (#302)', () => {
     const stored = [...[...before].reverse(), ...at];
     expect(trackChain(s)?.clicks).toEqual([...stored].reverse());
     expect(line(s).clicks).toEqual(stored);
-    expectFitOf(s, line(s).nodes, stored);
+    // The nodes are the line as drawn, traced backwards, turned round.
+    const drawn = fitNodes(Trace.replay([...stored].reverse(), traceOptions(getDPT(s.archive.getManifest())!)).fit()!);
+    expect(line(s).nodes).toEqual([...drawn].reverse().map(n => ({ ...n, heading: wrapAngle(n.heading + Math.PI) })));
+    expect(line(s).nodes).not.toEqual(fitOf(s, stored));
     expect(s.chain?.end).toEqual(before[1]);
   });
 
@@ -2533,9 +2513,15 @@ describe('EditSession track edits while tracing (#303)', () => {
     return { x: Math.round(p.x), y: Math.round(p.y) };
   }
 
+  /** The line a trace of `at` draws, at this session's DPT. */
+  function fitOf(s: EditSession, at: readonly Point[]) {
+    return Trace.replay(at, traceOptions(getDPT(s.archive.getManifest())!)).fit();
+  }
+
   /**
-   * A live trace along five pieces, four of them committed, and the middle
-   * click of committed part 2, the second straight.
+   * A live trace along five pieces, five parts, and the middle click of
+   * part 2, the second straight: a click added while the window was parts
+   * 1 and 2, so the start and part 0 were out of it.
    */
   async function tracing(): Promise<{ s: EditSession; at: Point[]; onPart2: number }> {
     const s = session({ tool: 'track', rows: false });
@@ -2547,16 +2533,13 @@ describe('EditSession track edits while tracing (#303)', () => {
       { straight: 20 },
     ]);
     await clicks(s, ...at);
-    const trace = traceOf(s);
-    expect(trace.committed?.parts).toHaveLength(4);
-    const [, , a, b] = poses(trace.committed!);
-    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-    const d = at.map(p => Math.hypot(p.x - mid.x, p.y - mid.y));
-    const onPart2 = d.indexOf(Math.min(...d));
+    expect(traceOf(s).fit?.parts).toHaveLength(5);
+    const { firstClick } = Trace.replay(at, traceOptions(getDPT(s.archive.getManifest())!)).line!;
+    const onPart2 = Math.floor((firstClick[2] + firstClick[3]) / 2);
     return { s, at, onPart2 };
   }
 
-  it('refits from the part before a dragged committed click, on release, as one entry', async () => {
+  it('builds the line again from the moved clicks when a click is dragged, on release, as one entry', async () => {
     const { s, at, onPart2 } = await tracing();
     const before = traceOf(s);
     const entries = s.history.size;
@@ -2566,42 +2549,25 @@ describe('EditSession track edits while tracing (#303)', () => {
     expect(d).not.toBeNull();
     d.move(to);
     expect(traceOf(s).clicks[onPart2]).toEqual(to);
-    expect(traceOf(s).committed).toEqual(before.committed);
+    expect(traceOf(s).fit).toEqual(before.fit);
     expect(s.history.size).toBe(entries);
     await d.end();
 
     const moved = at.map((p, i) => (i === onPart2 ? to : p));
     const after = traceOf(s);
     expect(after.clicks).toEqual(moved);
-    expect(after.committed?.start).toEqual(before.committed?.start);
-    expect(after.committed?.parts[0]).toEqual(before.committed?.parts[0]);
-    expect(after.committed?.parts[1]).not.toEqual(before.committed?.parts[1]);
+    expect(after.fit).toEqual(fitOf(s, moved));
+    // The straight before the edit stays; the edited straight moves.
+    expect(after.fit?.start).toEqual(before.fit?.start);
+    expect(after.fit?.parts[0]).toEqual(before.fit?.parts[0]);
+    expect(after.fit?.parts[2]).not.toEqual(before.fit?.parts[2]);
     expect(s.history.size).toBe(entries + 1);
     expect(s.history.undoLabel).toBe('move click');
     expect(line(s).clicks).toEqual(moved);
     expectFitOf(s, line(s).nodes, moved);
   });
 
-  it('uncommits a join the edit leaves loose, which draws its bar again', async () => {
-    const { s, at } = await tracing();
-    const before = traceOf(s);
-    const dpt = getDPT(s.archive.getManifest())!;
-    const commitSigma = TRACK_FIT.commitSigma * dpt;
-    // The click at the join of the arc and the second straight.
-    const join = poses(before.committed!)[2];
-    const d = at.map(p => Math.hypot(p.x - join.x, p.y - join.y));
-    const i = d.indexOf(Math.min(...d));
-    expect(await drag(s, [at[i], across(s, at, i, 0.5)])).toBe(true);
-
-    const after = traceOf(s);
-    expect(after.committed?.parts.length ?? 0).toBeLessThan(before.committed!.parts.length);
-    const loose = after.live!.joins
-      .slice(1, -1)
-      .filter(j => (j.sigma > commitSigma || j.margin < TRACK_FIT.commitMargin) && j.sigma < TRACK_FIT.barCap * dpt);
-    expect(loose.length).toBeGreaterThan(0);
-  });
-
-  it('opens Delete click on a traced click, which refits from the part before it and keeps the chain', async () => {
+  it('opens Delete click on a traced click, which builds the line again from the rest and keeps the chain', async () => {
     const { s, at, onPart2 } = await tracing();
     const before = traceOf(s);
     const entries = s.history.size;
@@ -2614,9 +2580,9 @@ describe('EditSession track edits while tracing (#303)', () => {
     const left = at.filter((_, i) => i !== onPart2);
     const after = traceOf(s);
     expect(after.clicks).toEqual(left);
-    expect(after.committed?.start).toEqual(before.committed?.start);
-    expect(after.committed?.parts[0]).toEqual(before.committed?.parts[0]);
-    expect(after.committed?.parts[1]).not.toEqual(before.committed?.parts[1]);
+    expect(after.fit).toEqual(fitOf(s, left));
+    expect(after.fit?.start).toEqual(before.fit?.start);
+    expect(after.fit?.parts[0]).toEqual(before.fit?.parts[0]);
     expect(s.history.size).toBe(entries + 1);
     expect(s.history.undoLabel).toBe('delete click');
     expect(line(s).clicks).toEqual(left);
@@ -2648,7 +2614,7 @@ describe('EditSession track edits while tracing (#303)', () => {
     expect(line(s).clicks).toEqual(at.slice(0, -1));
   });
 
-  it('appends the next click after an edit, committing joins in order and never moving them', async () => {
+  it('appends the next click after an edit, moving nothing before the last two parts', async () => {
     const { s, at, onPart2 } = await tracing();
     await s.delete(s.rightClick(at[onPart2], SCALE)!);
     const left = at.filter((_, i) => i !== onPart2);
@@ -2664,9 +2630,9 @@ describe('EditSession track edits while tracing (#303)', () => {
       await clicks(s, p);
       const now = traceOf(s);
       expect(now.clicks).toEqual([...left, ...next.slice(0, k + 1)]);
-      const n = shown.committed?.parts.length ?? 0;
-      expect(now.committed?.start).toEqual(shown.committed?.start);
-      expect(now.committed?.parts.slice(0, n)).toEqual(shown.committed?.parts);
+      const n = Math.max(0, (shown.fit?.parts.length ?? 0) - 2);
+      expect(now.fit?.start).toEqual(shown.fit?.start);
+      expect(now.fit?.parts.slice(0, n)).toEqual(shown.fit?.parts.slice(0, n));
       shown = now;
     }
     expect(s.history.undoLabel).toBe('extend centerline');

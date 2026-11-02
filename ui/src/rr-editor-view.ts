@@ -1399,7 +1399,7 @@ export class RREditorView extends LitElement {
     const dpt = getDPT(manifest);
     if (this.session?.tool !== 'track' || dpt === null) return '';
     const offLine = this._tracks().some(t => flaggedClicks(t, dpt).length > 0);
-    return html`<div class="track-hint">${trackHint(this._pendingTrack(), offLine, dpt)}</div>`;
+    return html`<div class="track-hint">${trackHint(this._pendingTrack(), offLine)}</div>`;
   }
 
   /** Zoom to fit, present only while zoomed. */
