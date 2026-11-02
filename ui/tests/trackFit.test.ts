@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Point } from '@rails49/r49';
-import { fitNodes, fitTrack, reverseFit, sampleFit, type FitResult } from '../src/trackFit.js';
+import { fitNodes, fitTrack, sampleFit, type FitResult } from '../src/trackFit.js';
 import { traceOptions } from '../src/trackTrace.js';
 import { G, TEN_PARTS, clicksAlong, offLine, type Piece } from './trackClicks.js';
 
@@ -246,23 +246,6 @@ describe('fitNodes', () => {
       expect(n.x).toBeCloseTo(expected[i][0], 6);
       expect(n.y).toBeCloseTo(expected[i][1], 6);
       expect(n.heading).toBeCloseTo(expected[i][2], 6);
-    });
-  });
-
-  it('gives the nodes in the other order, heading the other way, for the line reversed', () => {
-    const nodes = fitNodes(reverseFit(line));
-    const expected = [
-      [50, 100 + 50 * Math.sqrt(3), Math.PI / 6],
-      [150, 100 + 50 * Math.sqrt(3), -Math.PI / 6],
-      [200, 100, -Math.PI / 2],
-      [100, 0, Math.PI],
-      [0, 0, Math.PI],
-    ];
-    expect(nodes).toHaveLength(expected.length);
-    nodes.forEach((n, i) => {
-      expect(n.x).toBeCloseTo(expected[i][0], 6);
-      expect(n.y).toBeCloseTo(expected[i][1], 6);
-      expect(Math.cos(n.heading - expected[i][2])).toBeCloseTo(1, 6);
     });
   });
 });

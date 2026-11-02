@@ -17,7 +17,6 @@ import {
   nearestParts,
   poses,
   positionsAlong,
-  refitTrack,
   type Fit,
   type FitOptions,
   type FitResult,
@@ -105,18 +104,6 @@ export class Trace {
       live: this.live,
       flagged: [...flagged].sort((a, b) => a - b),
     };
-  }
-
-  /**
-   * The whole line fitted to every click, what each click writes: the
-   * committed line and the tail refit as one, or the finished line. No click
-   * is left out; the Huber loss limits what a bad one does.
-   */
-  lineFit(opts: TraceOptions): FitResult | null {
-    if (this.finished) return this.whole;
-    const start = this.origin ?? this.live?.fit.start;
-    if (!start) return null;
-    return refitTrack({ start, parts: [...this.committed, ...(this.live?.fit.parts ?? [])] }, this.clicks, opts);
   }
 
   /** Append while tracing; on a finished line, insert where the click projects onto the line. */

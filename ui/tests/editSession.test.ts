@@ -2246,18 +2246,10 @@ describe('EditSession track lines without clicks (#284, #298, #302)', () => {
 });
 
 
-/**
- * Expects `nodes` to be the whole-line fit of `at`. A chain writes its trace's
- * line refit as one, which lands within 0.1 G of the line `fitTrack` gives.
- */
+/** Expects `nodes` to be the whole-line fit of `at`. */
 function expectFitOf(s: EditSession, nodes: readonly Centerline['nodes'][number][], at: readonly Point[]) {
   const dpt = getDPT(s.archive.getManifest())!;
-  const expected = fitNodes(fitTrack(at, traceOptions(dpt))!.fit);
-  expect(nodes).toHaveLength(expected.length);
-  nodes.forEach((n, i) => {
-    expect(Math.hypot(n.x - expected[i].x, n.y - expected[i].y)).toBeLessThan(0.1 * dpt);
-    expect(Math.cos(n.heading - expected[i].heading)).toBeGreaterThan(Math.cos(0.01));
-  });
+  expect(nodes).toEqual(fitNodes(fitTrack(at, traceOptions(dpt))!.fit));
 }
 
 describe('EditSession finished track lines (#302)', () => {

@@ -46,12 +46,12 @@ vi.mock('../src/thumbnail.js', () => ({
 
 // The fit runs as it is; the spies count its calls, so a test can show a
 // pointer move runs none.
-const { fitWindow, refitTrack } = vi.hoisted(() => ({ fitWindow: vi.fn(), refitTrack: vi.fn() }));
+const { fitWindow, fitTrack } = vi.hoisted(() => ({ fitWindow: vi.fn(), fitTrack: vi.fn() }));
 vi.mock('../src/trackFit.js', async importOriginal => {
   const fit = await importOriginal<typeof import('../src/trackFit.js')>();
   fitWindow.mockImplementation(fit.fitWindow);
-  refitTrack.mockImplementation(fit.refitTrack);
-  return { ...fit, fitWindow, refitTrack };
+  fitTrack.mockImplementation(fit.fitTrack);
+  return { ...fit, fitWindow, fitTrack };
 });
 
 // Mock ResizeObserver for RRViewer
@@ -979,15 +979,15 @@ describe('rr-editor-view', () => {
       const before = pending(el);
       // The spies see the fit a click runs.
       expect(fitWindow).toHaveBeenCalled();
-      expect(refitTrack).toHaveBeenCalled();
+      expect(fitTrack).toHaveBeenCalled();
       fitWindow.mockClear();
-      refitTrack.mockClear();
+      fitTrack.mockClear();
 
       await moveTo(el, { x: 500, y: 200 });
       await moveTo(el, { x: 600, y: 300 });
 
       expect(fitWindow).not.toHaveBeenCalled();
-      expect(refitTrack).not.toHaveBeenCalled();
+      expect(fitTrack).not.toHaveBeenCalled();
       expect(pending(el)).to.equal(before);
     });
 

@@ -949,24 +949,6 @@ export function fitTrack(points: readonly Point[], opts: FitOptions): FitResult 
 }
 
 /**
- * Refit a whole line from `fit`, a line close to the points, start free and
- * every part kept. Costs one refit where `fitTrack` segments and refits.
- */
-export function refitTrack(fit: Fit, points: readonly Point[], opts: FitOptions): FitResult {
-  const m: Model = { start: null, free: freeOf(fit), bounds: opts.bounds };
-  return result(refit(fit, points, m, opts), points, null, opts);
-}
-
-/** The same line run from its end to its start. */
-export function reverseFit(fit: Fit): Fit {
-  const end = poses(fit)[fit.parts.length];
-  return {
-    start: { x: end.x, y: end.y, heading: end.heading + Math.PI },
-    parts: fit.parts.map(p => ({ length: p.length, curvature: -p.curvature })).reverse(),
-  };
-}
-
-/**
  * The fit as stored nodes: one per join, heading along the line. An arc that
  * turns more than 90° is split at its midpoint, since a node pair draws an arc
  * as one cubic, which follows it closely only up to 90°.
