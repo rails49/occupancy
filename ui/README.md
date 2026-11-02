@@ -137,6 +137,7 @@ rr-app                          ← shell: owns the editing session and the view
 > [#260]: https://github.com/rails49/occupancy/issues/260
 > [#262]: https://github.com/rails49/occupancy/issues/262
 > [#265]: https://github.com/rails49/occupancy/issues/265
+> [#274]: https://github.com/rails49/occupancy/issues/274
 
 ## State and data flow
 
@@ -301,6 +302,8 @@ At or below look's `TURN_HEIGHT_PX` the rail lies down as a strip along the top 
 
 Layout metadata, in a medium `look-dialog` with a single "Layout" tab: name, scale (from `VALID_SCALES`),
 camera height, description, and contact. It is also the **required-metadata gate** ([#139]).
+Below the tabs, a line links to [rails49/detector](https://github.com/rails49/detector), the source
+of the AGPL-3.0 model and runtime the site serves ([#274]).
 
 | Property | Type | Description |
 |---|---|---|

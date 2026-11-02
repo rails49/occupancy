@@ -45,6 +45,9 @@ type LayoutFields = Pick<Layout, 'name' | 'scale' | 'description' | 'contact'> &
  * because a single-plane calibration leaves the fit residual blind to it
  * (`SPEC.md` § Camera height).
  *
+ * Below the tabs, a line links to rails49/detector, the source of the AGPL-3.0
+ * model and runtime the site serves (rails49/detector ADR 0015).
+ *
  * @fires rr-layout-change - When a layout field (name, scale, description, contact) changes. Detail: { layout: Partial<Layout> }
  * @fires rr-camera-height-change - When the camera height changes. Detail: { camera_height_mm: number | undefined }
  */
@@ -149,6 +152,12 @@ export class RRSettingsDialog extends LitElement {
 
     .required li + li {
       margin-top: 0.35rem;
+    }
+
+    .source {
+      margin: 0;
+      font-size: var(--sl-font-size-small);
+      color: var(--sl-color-neutral-600);
     }
   `,
   ];
@@ -269,7 +278,12 @@ export class RRSettingsDialog extends LitElement {
             </div>
           </sl-tab-panel>
         </sl-tab-group>
-        
+
+        <p class="source">
+          The detector's model and runtime are AGPL-3.0. Their source is in
+          <a href="https://github.com/rails49/detector">rails49/detector</a>.
+        </p>
+
         <sl-button
           slot="footer"
           variant="primary"
