@@ -56,6 +56,20 @@ export function along(pieces: readonly Piece[], s: number): Point {
   return { x: x * G, y: y * G };
 }
 
+/** Ten parts, 330 G: clicked every 2 G, 166 clicks. */
+export const TEN_PARTS: readonly Piece[] = [
+  { straight: 35 },
+  { radius: 20, turn: 90 },
+  { straight: 30 },
+  { radius: 30, turn: -60 },
+  { straight: 40 },
+  { radius: 40, turn: 45 },
+  { radius: 15, turn: -120 },
+  { straight: 35 },
+  { radius: 25, turn: 72 },
+  { straight: 33 },
+];
+
 /** Total length of the pieces, gauges. */
 export function lengthOf(pieces: readonly Piece[]): number {
   return pieces.reduce(

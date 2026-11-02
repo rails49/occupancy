@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { Point } from '@rails49/r49';
 import { fitNodes, fitTrack, reverseFit, sampleFit, type FitResult } from '../src/trackFit.js';
 import { traceOptions } from '../src/trackTrace.js';
-import { G, clicksAlong, offLine, type Piece } from './trackClicks.js';
+import { G, TEN_PARTS, clicksAlong, offLine, type Piece } from './trackClicks.js';
 
 const opts = traceOptions(G);
 const TOLERANCE = 0.25 * G;
@@ -145,6 +145,26 @@ describe('fitTrack on the sparse and dense cases that once collapsed the solver'
     const res = fit(clicksAlong([{ radius: 32, turn: 360 }], { spacing: 1.5 }));
     expectSound(res);
     for (const r of radii(res)) expect(Math.abs(r / 32 - 1)).toBeLessThan(0.05);
+  });
+});
+
+describe('fitTrack on a long line clicked every 2 G', () => {
+  const line = clicksAlong(TEN_PARTS, { spacing: 2, seed: 7 });
+
+  it('fits every prefix from 20 clicks on within the tolerance', () => {
+    for (let n = 20; n <= line.length; n++) {
+      expect(fit(line.slice(0, n)).worst, `${n} clicks`).toBeLessThanOrEqual(TOLERANCE);
+    }
+  }, 30_000);
+
+  // A finished line refits whole on every edit. Timed with room for a slow machine.
+  it('fits the whole line, 166 clicks, in under 400 ms', () => {
+    const times = [0, 1, 2].map(() => {
+      const t0 = performance.now();
+      fit(line);
+      return performance.now() - t0;
+    });
+    expect(Math.min(...times)).toBeLessThan(400);
   });
 });
 

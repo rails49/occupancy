@@ -12,12 +12,13 @@ import type { TrackNode } from './track.js';
  *
  * Parts are chosen by dynamic programming over the points (squared error
  * over σ² plus ln n per parameter, docs/research/track-fitting-methods.md),
- * refit jointly by Levenberg-Marquardt within bounds, split once where points
- * are out of tolerance, then merged or straightened while that lowers the
- * cost. A line still out of tolerance after the split is returned as it is,
- * so points nothing fits cost two segmentations and at most two refits of
- * at most 100 steps. Each join's position uncertainty comes from the inverse
- * of the normal matrix the refit forms.
+ * chained part by part, refit jointly by Levenberg-Marquardt within bounds,
+ * split once where points are out of tolerance, then merged or straightened
+ * while that lowers the cost. A line still out of tolerance after the split
+ * is returned as it is, so points nothing fits cost two segmentations, a
+ * small refit per part and at most two whole refits of at most 100 steps.
+ * Each join's position uncertainty comes from the inverse of the normal
+ * matrix the refit forms.
  *
  * A run may leave out one interior point that no straight or arc through
  * its neighbours reaches (an outlier). Such a point is reported and never
@@ -122,6 +123,9 @@ interface Projection {
   s: number;
   /** Distance, negative to the right. */
   d: number;
+  /** The nearest point. */
+  x: number;
+  y: number;
 }
 
 /** Nearest point on a part from `start`, its arc length `s` held in [lo, hi]. */
@@ -142,13 +146,20 @@ function project(q: Point, start: Pose, k: number, lo: number, hi: number): Proj
   const vy = q.y - f.y;
   // The whole distance, signed by side: past a part's end it is not all across the track.
   const dist = Math.hypot(vx, vy);
-  return { s, d: Math.cos(f.heading) * vy - Math.sin(f.heading) * vx < 0 ? -dist : dist };
+  return { s, d: Math.cos(f.heading) * vy - Math.sin(f.heading) * vx < 0 ? -dist : dist, x: f.x, y: f.y };
 }
 
 interface Evaluation {
   d: number[];
   s: number[];
   part: number[];
+  /** What each point's nearest point lies on: a part, or the line extended, -1 before it and m past it. */
+  on: number[];
+  /** How far along that part, or along the line extended. */
+  u: number[];
+  /** Each point's nearest point. */
+  x: number[];
+  y: number[];
   total: number;
 }
 
@@ -165,13 +176,14 @@ function evaluate(fit: Fit, points: readonly Point[]): Evaluation {
   for (const p of fit.parts) offsets.push(offsets[offsets.length - 1] + p.length);
   const total = offsets[m];
   const mids = fit.parts.map((p, i) => advance(ps[i], p.length / 2, p.curvature));
-  const out: Evaluation = { d: [], s: [], part: [], total };
+  const out: Evaluation = { d: [], s: [], part: [], on: [], u: [], x: [], y: [], total };
   let hint = 0;
   for (const [k, q] of points.entries()) {
     const first = k === 0;
     const last = k === points.length - 1;
-    let best: Projection = first ? project(q, ps[0], 0, -Infinity, 0) : { s: 0, d: Infinity };
+    let best: Projection = first ? project(q, ps[0], 0, -Infinity, 0) : { s: 0, d: Infinity, x: 0, y: 0 };
     let bestPart = first ? -1 : m;
+    let u = 0;
     const from = last && !first ? m - 1 : 0;
     const to = first && !last ? 1 : m;
     // The part the point before matched goes first; a part whose midpoint is further than the
@@ -186,22 +198,31 @@ function evaluate(fit: Fit, points: readonly Point[]): Evaluation {
       const pr = project(q, ps[i], part.curvature, 0, part.length);
       // Equal distances go to the lower part, as a scan in order would.
       if (Math.abs(pr.d) < Math.abs(best.d) || (Math.abs(pr.d) === Math.abs(best.d) && i < bestPart)) {
-        best = { s: offsets[i] + pr.s, d: pr.d };
+        best = { ...pr, s: offsets[i] + pr.s };
         bestPart = i;
+        u = pr.s;
       }
     }
+    let on = bestPart;
+    if (on < 0) u = best.s;
     bestPart = Math.max(0, Math.min(m - 1, bestPart));
     if (last) {
       const end = project(q, ps[m], 0, 0, Infinity);
       if (Math.abs(end.d) < Math.abs(best.d)) {
-        best = { s: total + end.s, d: end.d };
+        best = { ...end, s: total + end.s };
         bestPart = m - 1;
+        on = m;
+        u = end.s;
       }
     }
     hint = bestPart;
     out.d.push(best.d);
     out.s.push(best.s);
     out.part.push(bestPart);
+    out.on.push(on);
+    out.u.push(u);
+    out.x.push(best.x);
+    out.y.push(best.y);
   }
   return out;
 }
@@ -317,24 +338,150 @@ function jacobian(v: readonly number[], h: readonly number[], r0: readonly numbe
   });
 }
 
+/**
+ * How the point `u` along an arc from a pose at heading 0 moves per unit of
+ * curvature `k`: along the heading, then to its left.
+ */
+function bend(u: number, k: number): [number, number] {
+  const x = k * u;
+  if (Math.abs(x) < 1e-2) return [(-u * u * u * k) / 3, (u * u) / 2 - (u * u * x * x) / 8];
+  return [(x * Math.cos(x) - Math.sin(x)) / (k * k), (x * Math.sin(x) - 1 + Math.cos(x)) / (k * k)];
+}
+
+/**
+ * The residuals' Jacobian, one column per packed parameter. A change of the
+ * line moves each point's nearest point on it, and the distance changes by
+ * that move toward the point. The end residuals are differenced.
+ */
+function residualJacobian(v: readonly number[], m: Model, points: readonly Point[], opts: FitOptions): number[][] {
+  const fit = unpack(v, m);
+  const parts = fit.parts;
+  const n = parts.length;
+  const ps = poses(fit);
+  const e = evaluate(fit, points);
+  const c = 2 * opts.noise;
+  const off = m.start ? 0 : 3;
+  // Each part's packed columns, and how its length and curvature move with them.
+  const lengthAt: number[] = [];
+  const curveAt: number[] = [];
+  const dLength: number[] = [];
+  const dCurve: number[] = [];
+  /** Curvature per unit of length, where the sweep bound holds the curvature. */
+  const held: number[] = [];
+  let j = off;
+  for (let i = 0; i < n; i++) {
+    const vl = v[j];
+    lengthAt.push(j++);
+    dLength.push(2 * vl);
+    held.push(0);
+    if (m.free[i]) {
+      const t = Math.tanh(v[j]);
+      curveAt.push(j++);
+      const k = t / m.bounds.minRadius;
+      if (Math.abs(k) * parts[i].length > m.bounds.maxSweep) {
+        dCurve.push(0);
+        held[i] = -parts[i].curvature / parts[i].length;
+      } else dCurve.push((1 - t * t) / m.bounds.minRadius);
+    } else {
+      curveAt.push(-1);
+      dCurve.push(0);
+    }
+  }
+  // Where each part ends, and how that end moves per unit of the part's curvature.
+  const ends = parts.map((p, i) => {
+    const h = ps[i].heading;
+    const [a, b] = bend(p.length, p.curvature);
+    return { x: a * Math.cos(h) - b * Math.sin(h), y: a * Math.sin(h) + b * Math.cos(h) };
+  });
+  const cols = v.map(() => new Array<number>(points.length).fill(0));
+  for (const [k, q] of points.entries()) {
+    const d = e.d[k];
+    const fx = e.x[k];
+    const fy = e.y[k];
+    const on = e.on[k];
+    // The unit vector toward the point, signed as the distance: the left normal when the point is on the line.
+    let gx: number;
+    let gy: number;
+    if (Math.abs(d) > 1e-9) {
+      gx = (q.x - fx) / d;
+      gy = (q.y - fy) / d;
+    } else {
+      const p = Math.max(0, Math.min(n - 1, on));
+      const h = on >= n ? ps[n].heading : ps[p].heading + (on < 0 ? 0 : parts[p].curvature * e.u[k]);
+      gx = -Math.sin(h);
+      gy = Math.cos(h);
+    }
+    const w = Math.abs(d) <= c ? -1 : -Math.sqrt(c / (2 * Math.abs(d) - c));
+    /** The residual's change for a move (mx, my) of the nearest point. */
+    const by = (mx: number, my: number) => w * (gx * mx + gy * my);
+    /** The residual's change for a turn about (ox, oy). */
+    const turn = (ox: number, oy: number) => by(-(fy - oy), fx - ox);
+    if (!m.start) {
+      cols[0][k] = by(1, 0);
+      cols[1][k] = by(0, 1);
+      cols[2][k] = turn(ps[0].x, ps[0].y);
+    }
+    const upstream = Math.min(on, n);
+    for (let i = 0; i < upstream; i++) {
+      const end = ps[i + 1];
+      const spin = turn(end.x, end.y);
+      const dl = by(Math.cos(end.heading), Math.sin(end.heading)) + parts[i].curvature * spin;
+      const dk = by(ends[i].x, ends[i].y) + parts[i].length * spin;
+      cols[lengthAt[i]][k] = (dl + held[i] * dk) * dLength[i];
+      if (curveAt[i] >= 0) cols[curveAt[i]][k] = dk * dCurve[i];
+    }
+    if (on >= 0 && on < n) {
+      const p = parts[on];
+      const u = e.u[k];
+      const h0 = ps[on].heading;
+      const [a, b] = bend(u, p.curvature);
+      const dk = by(a * Math.cos(h0) - b * Math.sin(h0), a * Math.sin(h0) + b * Math.cos(h0));
+      // Only a point past the part's end follows its length.
+      const h = h0 + p.curvature * u;
+      const dl = u >= p.length ? by(Math.cos(h), Math.sin(h)) : 0;
+      cols[lengthAt[on]][k] = (dl + held[on] * dk) * dLength[on];
+      if (curveAt[on] >= 0) cols[curveAt[on]][k] = dk * dCurve[on];
+    }
+  }
+  // The end residuals depend on the first and last points alone.
+  const few = points.length === 1 ? points : [points[0], points[points.length - 1]];
+  const endsOf = (w: readonly number[]) => residuals(unpack(w, m), few, m.start, opts).slice(few.length);
+  const r0 = endsOf(v);
+  const h = steps(m);
+  return cols.map((col, i) => {
+    const w = [...v];
+    w[i] += h[i];
+    return [...col, ...endsOf(w).map((x, r) => (x - r0[r]) / h[i])];
+  });
+}
+
 /** JᵀJ from the columns of J, with a small ridge. */
 function normal(jac: number[][]): number[][] {
   const n = jac.length;
-  return Array.from({ length: n }, (_, i) =>
-    Array.from({ length: n }, (_, j) => jac[i].reduce((s, x, k) => s + x * jac[j][k], 0) + (i === j ? 1e-9 : 0))
-  );
+  const a = Array.from({ length: n }, () => new Array<number>(n).fill(0));
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j <= i; j++) {
+      const ci = jac[i];
+      const cj = jac[j];
+      let s = 0;
+      for (let k = 0; k < ci.length; k++) s += ci[k] * cj[k];
+      a[i][j] = s;
+      a[j][i] = s;
+    }
+    a[i][i] += 1e-9;
+  }
+  return a;
 }
 
-/** Levenberg-Marquardt from `start`, with a numerical Jacobian. */
+/** Levenberg-Marquardt from `start`. */
 function refit(start: Fit, points: readonly Point[], m: Model, opts: FitOptions): Fit {
   const f = (v: readonly number[]) => residuals(unpack(v, m), points, m.start, opts);
   let v = pack(start, m);
-  const h = steps(m);
   let r = f(v);
   let cost = sumSq(r);
   let lambda = 1e-3;
   for (let iter = 0; iter < 100; iter++) {
-    const jac = jacobian(v, h, r, f);
+    const jac = residualJacobian(v, m, points, opts);
     const a = normal(jac);
     const g = jac.map(col => col.reduce((s, x, k) => s + x * r[k], 0));
     let improved = false;
@@ -350,7 +497,7 @@ function refit(start: Fit, points: readonly Point[], m: Model, opts: FitOptions)
         r = rw;
         cost = cw;
         lambda = Math.max(1e-9, lambda / 3);
-        improved = gain > 1e-9 * (cost + 1e-9);
+        improved = gain > 1e-6 * (cost + 1e-9);
         break;
       }
       lambda *= 4;
@@ -368,8 +515,7 @@ function joinsOf(fit: Fit, points: readonly Point[], m: Model, opts: FitOptions)
   const v = pack(fit, m);
   const h = steps(m);
   const base = unpack(v, m);
-  const r0 = residuals(base, points, m.start, opts);
-  const cov = inverse(normal(jacobian(v, h, r0, w => residuals(unpack(w, m), points, m.start, opts))));
+  const cov = inverse(normal(residualJacobian(v, m, points, opts)));
   const flat = (ps: Pose[]) => ps.flatMap(p => [p.x, p.y]);
   const p0 = poses(base);
   const pj = jacobian(v, h, flat(p0), w => flat(poses(unpack(w, m))));
@@ -613,19 +759,25 @@ function segment(points: readonly Point[], opts: FitOptions, lenient = false): G
   best[0] = [0, 0];
   // Two points fit any straight exactly, which says nothing about the track.
   for (let to = 3; to <= n; to++) {
-    for (let from = 0; from <= to - 3; from++) {
+    // Runs grow back from `to`. Once one of six or more points fits neither a straight nor an
+    // arc, a longer one would not either, and the search stops; lenient costs rule nothing out.
+    for (let from = to - 3; from >= 0; from--) {
       const run = points.slice(from, to);
+      let fits = lenient || run.length < 6;
       for (const arc of [false, true]) {
         const before = arc || from === 0 ? Math.min(...best[from]) : best[from][1];
-        if (before === Infinity) continue;
+        if (before === Infinity && fits) continue;
         const r = runCost(run, arc, opts, perParam, lenient);
+        fits ||= r.cost < Infinity;
         const c = before + r.cost;
         const k = arc ? 1 : 0;
-        if (c < best[to][k]) {
+        // Ties go to the longer run, as a search from the front would.
+        if (c <= best[to][k] && c < Infinity) {
           best[to][k] = c;
           choice[to][k] = { from, to, arc, drop: r.drop < 0 ? -1 : from + r.drop };
         }
       }
+      if (!fits) break;
     }
   }
   if (Math.min(...best[n]) === Infinity) {
@@ -644,8 +796,13 @@ function segment(points: readonly Point[], opts: FitOptions, lenient = false): G
   return groups;
 }
 
-/** A first G1 line from the groups' independent fits, from `start` when it is fixed. */
-function chain(points: readonly Point[], groups: readonly Group[], start: Pose | null): Fit {
+/**
+ * A first G1 line, from `start` when it is fixed. Each part starts from its
+ * group's independent fit and is then refit, with the part before it, to
+ * their groups' points from where the line before them ends, so the line
+ * follows the points however many parts it has.
+ */
+function chain(points: readonly Point[], groups: readonly Group[], start: Pose | null, opts: FitOptions): Fit {
   const off = start ? 1 : 0;
   const s = chords(start ? [start, ...points] : points);
   const parts: Part[] = groups.map((g, i) => {
@@ -656,7 +813,16 @@ function chain(points: readonly Point[], groups: readonly Group[], start: Pose |
     return { length: Math.max(1, hi - lo), curvature: circle ? circle.k : 0 };
   });
   const first = points.slice(groups[0].from, groups[0].to);
-  return { start: start ?? startPose(first, fitLine(first), groups[0].arc ? fitCircle(first) : null), parts };
+  const origin = start ?? startPose(first, fitLine(first), groups[0].arc ? fitCircle(first) : null);
+  for (let i = 0; i < parts.length; i++) {
+    const a = Math.max(0, i - 1);
+    const from = poses({ start: origin, parts: parts.slice(0, a) })[a];
+    // A fixed start may point a little off the points, so every part may bend, as in the refit after.
+    const m: Model = { start: from, free: groups.slice(a, i + 1).map(g => g.arc || start !== null), bounds: opts.bounds };
+    const fitted = refit({ start: from, parts: parts.slice(a, i + 1) }, points.slice(groups[a].from, groups[i].to), m, opts);
+    parts.splice(a, fitted.parts.length, ...fitted.parts);
+  }
+  return { start: origin, parts };
 }
 
 const freeOf = (fit: Fit) => fit.parts.map(p => p.curvature !== 0);
@@ -763,7 +929,7 @@ export function fitWindow(points: readonly Point[], start: Pose | null, opts: Fi
   // A run never drops its first point, so every run bound is kept.
   const at = (i: number) => index.get(i) as number;
   const groups = all.map(g => ({ ...g, from: at(g.from), to: g.to === points.length ? inliers.length : at(g.to) }));
-  const first = chain(inliers, groups, start);
+  const first = chain(inliers, groups, start, opts);
   // A fixed start may point a little off the points, so every part may bend at first.
   const free = start ? first.parts.map(() => true) : freeOf(first);
   const res = result(refit(first, inliers, { start, free, bounds: opts.bounds }, opts), inliers, start, opts);

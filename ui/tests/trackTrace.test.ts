@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fitTrack, nearestParts } from '../src/trackFit.js';
 import { Trace, traceOptions } from '../src/trackTrace.js';
-import { G, clicksAlong, offLine } from './trackClicks.js';
+import { G, TEN_PARTS, clicksAlong, offLine } from './trackClicks.js';
 
 const opts = traceOptions(G);
 const clicks = clicksAlong([{ straight: 20 }, { radius: 30, turn: 90 }, { straight: 20 }]);
@@ -59,22 +59,7 @@ describe('Trace while tracing', () => {
 });
 
 describe('Trace on a long line clicked every 2 G', () => {
-  // Ten parts, 330 G: a click every 2 G is 166 clicks.
-  const line = clicksAlong(
-    [
-      { straight: 35 },
-      { radius: 20, turn: 90 },
-      { straight: 30 },
-      { radius: 30, turn: -60 },
-      { straight: 40 },
-      { radius: 40, turn: 45 },
-      { radius: 15, turn: -120 },
-      { straight: 35 },
-      { radius: 25, turn: 72 },
-      { straight: 33 },
-    ],
-    { spacing: 2, seed: 7 }
-  );
+  const line = clicksAlong(TEN_PARTS, { spacing: 2, seed: 7 });
 
   it('leaves no join under the commit σ uncommitted, and commits all but its last part or two', () => {
     expect(line).toHaveLength(166);
