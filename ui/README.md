@@ -755,7 +755,7 @@ both; each tool module supplies what differs.
 | `NO_TRACK`, `NO_TRACK_NOTICE` | Why a sensor or car end was refused: no centerline within `SNAP_TRACK_WIDTHS` |
 | `carTool`, `ALREADY_LABELED` | A free car end continues a chain, a coupling is refused with `ALREADY_LABELED`, a click on a car's body splits it, and empty image starts a chain |
 | `trackTool`, `TrackChain` | A click on a line's first or last click continues it as a chain; on a click between them, or within `TRACK_FIT.startDistance` of any line, it does nothing ([#313]); anywhere else it starts a chain ([#298]). Each click goes on the end of the chain's trace (`trackTrace.ts`) and writes the line's clicks with the nodes of the line as drawn (`fitNodes`). A chain from a first click traces backwards and writes back in stored order, its nodes turned round. `hold`, `move` and `remove` take a click of the traced line, by stored index, while the chain is live: a drag draws it held, and a move or delete builds the line again from its clicks and writes one entry ([#303]). `atStart()` is true once every entry the chain wrote is undone |
-| `trackHitAt`, `clickHitAt`, `refitLine` | The line or the click under the track tool's pointer, within the grab radius; a line with given clicks and the nodes of their fit, traced in stored order: an edit with no chain live. Null, and the session's `refused`, when a click does not go on the line |
+| `trackHitAt`, `clickHitAt`, `refitLine` | The line or the click under the track tool's pointer, within the grab radius; a line with given clicks and the nodes of their fit, traced in stored order (`Trace.rebuilt`): an edit with no chain live. Null, and the session's `refused`, when a click of the rebuilt line would add nothing or need an arc tighter than the minimum; the hint shows the refusal sentence for both |
 
 ---
 
@@ -791,8 +791,10 @@ heading, with length `d / (3 cos²(φ/4))`.
 
 Straights and circular arcs, tangent at every join, traced along clicks that run in order along
 the track by the projection rule ([#311]): pure functions, tested in `tests/trackFit.test.ts`
-against synthetic lines and the click sets in `tests/clickSets/`. A fit is a start pose and a
-length and a curvature per part; a `Line` is a fit and the first click of each part.
+against synthetic lines and the click sets in `tests/clickSets/`, the rule's regression suite.
+Today there is one set, synthetic; a set recorded in the editor is a drop-in file with `gauge`,
+`lines`, `parts` and a `note`. A fit is a start pose and a length and a curvature per part; a
+`Line` is a fit and the first click of each part.
 
 | Export | Description |
 |---|---|
@@ -812,7 +814,7 @@ clicks and is refused when a click then does not go on it.
 
 | Export | Description |
 |---|---|
-| `Trace` | `clicks` and `line`; `add` returns the `Step` kind, `move` and `remove` whether the edit was taken; `fit`, `view`, `clone`; `Trace.replay(clicks, opts)` builds a trace click by click |
+| `Trace` | `clicks` and `line`; `add`, `move` and `remove` return the `Step` kind, an edit `refused` when a click of the rebuilt line would add nothing or need an arc tighter than the minimum; `fit`, `view`, `clone`; `Trace.replay(clicks, opts)` builds a trace click by click, and `Trace.rebuilt(clicks, opts)` is that trace or null when it keeps fewer clicks |
 | `traceOptions(dpt)`, `TraceOptions` | `TRACK_FIT` in image pixels; the type is `FitOptions` |
 | `TraceView` | What the overlay draws: the clicks, the fit and the projection ahead of it |
 

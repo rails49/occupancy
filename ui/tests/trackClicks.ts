@@ -56,20 +56,6 @@ export function along(pieces: readonly Piece[], s: number): Point {
   return { x: x * G, y: y * G };
 }
 
-/** Ten parts, 330 G: clicked every 2 G, 166 clicks. */
-export const TEN_PARTS: readonly Piece[] = [
-  { straight: 35 },
-  { radius: 20, turn: 90 },
-  { straight: 30 },
-  { radius: 30, turn: -60 },
-  { straight: 40 },
-  { radius: 40, turn: 45 },
-  { radius: 15, turn: -120 },
-  { straight: 35 },
-  { radius: 25, turn: 72 },
-  { straight: 33 },
-];
-
 /** Total length of the pieces, gauges. */
 export function lengthOf(pieces: readonly Piece[]): number {
   return pieces.reduce(
@@ -113,6 +99,36 @@ export function clicksAlong(pieces: readonly Piece[], { spacing = 3, ...lay }: L
     Array.from({ length: n + 1 }, (_, i) => (total * i) / n),
     lay
   );
+}
+
+/** `p` laid at `G` scaled to `dpt` pixels a gauge, in whole pixels. */
+function atDpt(p: Point, dpt: number): Point {
+  const k = dpt / G;
+  return { x: Math.round(p.x * k), y: Math.round(p.y * k) };
+}
+
+/** Clicks where the curvature of `pieces` changes and about every 10 G between, with no noise, at `dpt` in whole pixels. */
+export function laidAlong(pieces: readonly Piece[], dpt = G): Point[] {
+  return clicksAt(pieces, positionsAlong(pieces), { noise: 0 }).map(p => atDpt(p, dpt));
+}
+
+/**
+ * For a line along a straight of 20 G into an arc: the fourth click 4 G
+ * across, 10 G on from the straight's end. A 13 G arc, which the fifth click
+ * then cannot follow, so moving the fourth click here is refused.
+ */
+export function tooTight(dpt = G): Point {
+  return atDpt(along([{ straight: 20 }, { radius: 13, turn: 90 }], 30), dpt);
+}
+
+/**
+ * A straight of 20 G into a 16 G arc, clicked every 8 G. Without the click
+ * where the curve starts, the third, the first click into it bends a wide arc
+ * from the straight's last click, and the next needs an arc of 8 G from where
+ * that one ends, so deleting the third click is refused.
+ */
+export function tightClicks(dpt = G): Point[] {
+  return clicksAt([{ straight: 20 }, { radius: 16, turn: 90 }], [0, 10, 20, 28, 36, 44], { noise: 0 }).map(p => atDpt(p, dpt));
 }
 
 /** `p` moved `gauges` to the left of the direction from `before` to `after`. */

@@ -228,8 +228,8 @@ The line is a function of its clicks, in their order: take the clicks one by one
 
 **Editing.** Clicks are the only handles: nodes have no handles and headings cannot be turned. A drag of a click rebuilds the line on release, never while it moves.
 
-* Moving or deleting a click builds the line again from the edited clicks by the same rule, from the first click. The parts before the part of the edited click are unchanged. While a line is being traced from its first click the clicks run backwards, as the trace does; with no line being traced they run in stored order, so a line last built backwards can come out different.
-* An edit whose rebuilt line would need an arc tighter than the minimum radius is refused: the click springs back, nothing is written, and the hint says why.
+* Moving or deleting a click builds the line again from the edited clicks by the same rule, from the first click. The parts before the part of the edited click are unchanged, unless the edit moves a click across the tolerance of the part before it: the replay decides again which part each click joins. While a line is being traced from its first click the clicks run backwards, as the trace does; with no line being traced they run in stored order, so a line last built backwards can come out different.
+* An edit is refused when a click of the rebuilt line would add nothing or need an arc tighter than the minimum: the click springs back, nothing is written, and the hint shows the refusal sentence.
 * A click on either end of a finished line continues it, with the projection shown at once from that end. A click on the line, on a click between the ends, or within the start distance of any line elsewhere does nothing. The menu on a click offers Delete click and Delete line; on the rest of a line, Delete line. Deleting one of a line's last two clicks deletes the line.
 * An archive's lines are drawn as stored, with no refit on load. A line stored without clicks is drawn, takes sensors and cars, and can be deleted, but cannot be edited.
 

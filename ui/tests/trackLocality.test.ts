@@ -4,8 +4,11 @@ import { Trace, traceOptions } from '../src/trackTrace.js';
 
 /**
  * The line is a function of its clicks in order, each click going on the
- * end of the line as it stands (SPEC § Track centerlines). These checks hold
- * for every recorded click set, in track order.
+ * end of the line as it stands (SPEC § Track centerlines). An edit changes no
+ * part before the edited click's unless it moves a click across the
+ * tolerance of the part before it, since the replay decides again which part
+ * each click joins; the edits here stay within it. These checks hold for
+ * every click set, in track order.
  */
 interface ClickSet {
   readonly gauge: number;
@@ -49,25 +52,25 @@ for (const [file, set] of Object.entries(sets)) {
       expect(t.view(opts)).toEqual(before);
     });
 
-    it(`${name}: moving a click gives the line of the moved clicks, and changes no part before the click's`, () => {
+    it(`${name}: moving a click within its part's tolerance gives the line of the moved clicks, and changes no part before the click's`, () => {
       const t = Trace.replay(clicks, opts);
       const i = Math.floor(t.clicks.length / 2);
       const moved = t.clicks.map((p, k) => (k === i ? { x: p.x + set.gauge / 4, y: p.y } : p));
       const before = t.line!;
       const part = before.firstClick.filter(first => first <= i).length - 1;
-      if (!t.move(i, moved[i], opts)) return;
+      if (t.move(i, moved[i], opts) === 'refused') return;
       expect(t.clicks).toEqual(moved);
       expect(t.view(opts)).toEqual(Trace.replay(moved, opts).view(opts));
       expect(t.line?.fit.parts.slice(0, part)).toEqual(before.fit.parts.slice(0, part));
     });
 
-    it(`${name}: deleting a click gives the line of the remaining clicks, and changes no part before the click's`, () => {
+    it(`${name}: deleting a click that leaves the others on their parts gives the line of the remaining clicks, and changes no part before the click's`, () => {
       const t = Trace.replay(clicks, opts);
       const i = Math.floor(t.clicks.length / 2);
       const left = t.clicks.filter((_, k) => k !== i);
       const before = t.line!;
       const part = before.firstClick.filter(first => first <= i).length - 1;
-      if (!t.remove(i, opts)) return;
+      if (t.remove(i, opts) === 'refused') return;
       expect(t.clicks).toEqual(left);
       expect(t.view(opts)).toEqual(Trace.replay(left, opts).view(opts));
       expect(t.line?.fit.parts.slice(0, part)).toEqual(before.fit.parts.slice(0, part));

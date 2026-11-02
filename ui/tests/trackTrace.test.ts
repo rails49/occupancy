@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { TRACK_FIT, distances } from '../src/trackFit.js';
 import { Trace, traceOptions } from '../src/trackTrace.js';
-import { G, along, clicksAt } from './trackClicks.js';
+import { G, along, clicksAt, tightClicks, tooTight } from './trackClicks.js';
 
 const opts = traceOptions(G);
 const PIECES = [{ straight: 20 }, { radius: 30, turn: 90 }, { straight: 20 }];
@@ -67,14 +67,14 @@ describe('Trace edits', () => {
   it('builds the line again from the moved clicks', () => {
     const t = Trace.replay(clicks, opts);
     const moved = clicks.map((p, i) => (i === 5 ? { x: p.x + 3, y: p.y - 4 } : p));
-    expect(t.move(5, moved[5], opts)).toBe(true);
+    expect(t.move(5, moved[5], opts)).toBe('added');
     expect(t.clicks).toEqual(moved);
     expect(t.view(opts)).toEqual(Trace.replay(moved, opts).view(opts));
   });
 
   it('builds the line again from the remaining clicks', () => {
     const t = Trace.replay(clicks, opts);
-    expect(t.remove(5, opts)).toBe(true);
+    expect(t.remove(5, opts)).toBe('added');
     expect(t.clicks).toEqual(clicks.filter((_, i) => i !== 5));
     expect(t.view(opts)).toEqual(Trace.replay(t.clicks, opts).view(opts));
   });
@@ -82,26 +82,21 @@ describe('Trace edits', () => {
   it('refuses a move that leaves a click off the line, and keeps the line', () => {
     const t = Trace.replay(clicks, opts);
     const before = t.view(opts);
-    // The fourth click 4 G across, 10 G on from the straight's end: a 13 G arc, which the fifth click then cannot follow.
-    const across = along([{ straight: 20 }, { radius: 13, turn: 90 }], 30);
-    expect(t.move(3, across, opts)).toBe(false);
+    expect(t.move(3, tooTight(), opts)).toBe('refused');
     expect(t.view(opts)).toEqual(before);
   });
 
   it('refuses a delete the same way', () => {
-    const tight = clicksAt([{ straight: 20 }, { radius: 16, turn: 90 }], [0, 10, 20, 28, 36, 44], { noise: 0 });
-    const t = Trace.replay(tight, opts);
+    const t = Trace.replay(tightClicks(), opts);
     expect(t.clicks).toHaveLength(6);
     const before = t.view(opts);
-    // Without the click where the curve starts, the first click into it bends a wide arc from the straight's
-    // last click, and the next needs an arc of 8 G from where that one ends.
-    expect(t.remove(2, opts)).toBe(false);
+    expect(t.remove(2, opts)).toBe('refused');
     expect(t.view(opts)).toEqual(before);
   });
 
   it('has no line once fewer than two clicks are left', () => {
     const t = Trace.replay(clicks.slice(0, 2), opts);
-    expect(t.remove(1, opts)).toBe(true);
+    expect(t.remove(1, opts)).toBe('added');
     expect(t.view(opts)).toEqual({ clicks: [clicks[0]], fit: null, projection: null });
   });
 

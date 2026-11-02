@@ -60,16 +60,20 @@ nodes follows closely.
 
 `trackTrace.ts` holds a chain's trace: the clicks and their line. `Trace.add` puts a click on the
 end and says what `extend` made of it. `Trace.move` and `Trace.remove` build the line again from
-the edited clicks, from the first, and refuse the edit, changing nothing, when a click then does
-not go on the line. `Trace.view` is what the overlay draws: the clicks, the fit and the projection.
-`tests/trackLocality.test.ts` holds, on every click set, that a click changes nothing but the
-current part and that an edit leaves the parts before the edited click's part as they were.
+the edited clicks, from the first (`Trace.rebuilt`, which `refitLine` uses too), and refuse the
+edit, changing nothing, when a click of the rebuilt line would add nothing or need an arc tighter
+than the minimum; the hint shows the refusal sentence for both. `Trace.view` is what the overlay
+draws: the clicks, the fit and the projection. `tests/trackLocality.test.ts` holds, on every click
+set, that a click changes nothing but the current part and that an edit leaves the parts before the
+edited click's part as they were, unless the edit moves a click across the tolerance of the part
+before it: the replay decides again which part each click joins.
 
-The recorded click sets in `tests/clickSets/` are the rule's regression suite
-(`tests/trackFit.test.ts`). A set is a `gauge` and `lines` of clicks in track order, with the part
-count the rule gives each line (`parts`) and how many of its clicks go on the line (`kept`). The
-test replays every line and holds the counts and that every kept click is within the tolerance. A
-new file in the directory is picked up as it is.
+The click sets in `tests/clickSets/` are the rule's regression suite (`tests/trackFit.test.ts`).
+Today there is one set, synthetic. A set is a `gauge`, `lines` of clicks in track order, the part
+count the rule gives each line (`parts`) and a `note` saying where the clicks came from. The test
+replays every line and holds that the replay keeps every click, gives the part count, and that
+every click is within the tolerance. A set recorded in the editor is a drop-in file in the
+directory.
 
 Every entry a track chain writes, a click or a move or delete of a click, writes the line's `clicks`
 in stored order and the `nodes` of the line as the chain drew it, as one `layout` entry. A click or

@@ -21,12 +21,13 @@ export function clickHitAt(tracks: readonly Track[], at: Point, scale: number): 
 
 /**
  * A line of `clicks` and the nodes of their line, in stored order: an edit
- * with no chain live. Null, and the edit is refused, when a click does not go
- * on the line.
+ * with no chain live. Null, and the edit is refused, when a click of the
+ * rebuilt line would add nothing or need an arc tighter than the minimum
+ * (`Trace.rebuilt`).
  */
 export function refitLine(ctx: ChainContext, clicks: readonly Point[]): Centerline | null {
-  const t = Trace.replay(clicks, traceOptions(ctx.scene().dpt!));
-  if (t.clicks.length !== clicks.length) {
+  const t = Trace.rebuilt(clicks, traceOptions(ctx.scene().dpt!));
+  if (!t) {
     ctx.refuse();
     return null;
   }
@@ -140,12 +141,12 @@ export class TrackChain implements Chain {
    * from its clicks (`Trace.move`). A move the line refuses writes nothing.
    */
   async move(index: number, to: Point) {
-    await this._write('move click', t => (t.move(this._traced(index), to, this._opts) ? 'added' : 'refused'));
+    await this._write('move click', t => t.move(this._traced(index), to, this._opts));
   }
 
   /** Deletes click `index`, in stored order, the same way. */
   async remove(index: number) {
-    await this._write('delete click', t => (t.remove(this._traced(index), this._opts) ? 'added' : 'refused'));
+    await this._write('delete click', t => t.remove(this._traced(index), this._opts));
   }
 
   /**
