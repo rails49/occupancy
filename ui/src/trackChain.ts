@@ -4,7 +4,7 @@ import { pixel, NONE } from './chain.js';
 import type { Chain, ChainContext, ChainTool, ChainView, ClickResult } from './chain.js';
 import { hitClick, hitTrack } from './track.js';
 import type { ClickHit, Track, TrackHit } from './track.js';
-import { fitNodes, fitTrack } from './trackFit.js';
+import { fitNodes, fitTrack, reverseFit } from './trackFit.js';
 import { Trace, traceOptions } from './trackTrace.js';
 import type { TraceOptions, TraceView } from './trackTrace.js';
 
@@ -163,8 +163,8 @@ export class TrackChain implements Chain {
 
   /**
    * Changes the trace, keeping it as it was for an undo, and writes the
-   * line's clicks with the nodes of their whole-line fit as one entry. The
-   * second click of a new line writes a new centerline.
+   * line's clicks with the nodes of their whole-line fit (`Trace.lineFit`) as
+   * one entry. The second click of a new line writes a new centerline.
    */
   private async _write(label: string, change: (trace: Trace) => void) {
     this._before.push(copy(this._trace));
@@ -172,7 +172,8 @@ export class TrackChain implements Chain {
     this._view = this._trace.view(this._opts);
     const lines = [...centerlines(this._ctx)];
     const index = this._index ?? lines.length;
-    lines[index] = refitLine(this._ctx, this._order(this._trace.clicks));
+    const fit = this._trace.lineFit(this._opts)!.fit;
+    lines[index] = { nodes: fitNodes(this._reversed ? reverseFit(fit) : fit), clicks: this._order(this._trace.clicks) };
     this._index = index;
     await this._ctx.record(label, { kind: 'layout' }, () => this._ctx.writeLayout({ centerlines: lines }));
   }

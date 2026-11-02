@@ -164,21 +164,33 @@ function evaluate(fit: Fit, points: readonly Point[]): Evaluation {
   const offsets = [0];
   for (const p of fit.parts) offsets.push(offsets[offsets.length - 1] + p.length);
   const total = offsets[m];
+  const mids = fit.parts.map((p, i) => advance(ps[i], p.length / 2, p.curvature));
   const out: Evaluation = { d: [], s: [], part: [], total };
+  let hint = 0;
   for (const [k, q] of points.entries()) {
     const first = k === 0;
     const last = k === points.length - 1;
     let best: Projection = first ? project(q, ps[0], 0, -Infinity, 0) : { s: 0, d: Infinity };
-    let bestPart = 0;
+    let bestPart = first ? -1 : m;
     const from = last && !first ? m - 1 : 0;
     const to = first && !last ? 1 : m;
-    for (let i = from; i < to; i++) {
-      const pr = project(q, ps[i], fit.parts[i].curvature, 0, fit.parts[i].length);
-      if (Math.abs(pr.d) < Math.abs(best.d)) {
+    // The part the point before matched goes first; a part whose midpoint is further than the
+    // best distance so far plus half its length cannot be nearer, and is skipped.
+    const h = Math.min(to - 1, Math.max(from, hint));
+    for (let j = from - 1; j < to; j++) {
+      const i = j < from ? h : j;
+      if (j === h) continue;
+      const part = fit.parts[i];
+      const reach = Math.abs(best.d) + part.length / 2;
+      if ((q.x - mids[i].x) ** 2 + (q.y - mids[i].y) ** 2 > reach * reach) continue;
+      const pr = project(q, ps[i], part.curvature, 0, part.length);
+      // Equal distances go to the lower part, as a scan in order would.
+      if (Math.abs(pr.d) < Math.abs(best.d) || (Math.abs(pr.d) === Math.abs(best.d) && i < bestPart)) {
         best = { s: offsets[i] + pr.s, d: pr.d };
         bestPart = i;
       }
     }
+    bestPart = Math.max(0, Math.min(m - 1, bestPart));
     if (last) {
       const end = project(q, ps[m], 0, 0, Infinity);
       if (Math.abs(end.d) < Math.abs(best.d)) {
@@ -186,6 +198,7 @@ function evaluate(fit: Fit, points: readonly Point[]): Evaluation {
         bestPart = m - 1;
       }
     }
+    hint = bestPart;
     out.d.push(best.d);
     out.s.push(best.s);
     out.part.push(bestPart);
@@ -767,6 +780,24 @@ export function fitWindow(points: readonly Point[], start: Pose | null, opts: Fi
 /** Fit a whole line at once, start free. */
 export function fitTrack(points: readonly Point[], opts: FitOptions): FitResult | null {
   return fitWindow(points, null, opts);
+}
+
+/**
+ * Refit a whole line from `fit`, a line close to the points, start free and
+ * every part kept. Costs one refit where `fitTrack` segments and refits.
+ */
+export function refitTrack(fit: Fit, points: readonly Point[], opts: FitOptions): FitResult {
+  const m: Model = { start: null, free: freeOf(fit), bounds: opts.bounds };
+  return result(refit(fit, points, m, opts), points, null, opts);
+}
+
+/** The same line run from its end to its start. */
+export function reverseFit(fit: Fit): Fit {
+  const end = poses(fit)[fit.parts.length];
+  return {
+    start: { x: end.x, y: end.y, heading: end.heading + Math.PI },
+    parts: fit.parts.map(p => ({ length: p.length, curvature: -p.curvature })).reverse(),
+  };
 }
 
 /**

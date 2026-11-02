@@ -2246,6 +2246,20 @@ describe('EditSession track lines without clicks (#284, #298, #302)', () => {
 });
 
 
+/**
+ * Expects `nodes` to be the whole-line fit of `at`. A chain writes its trace's
+ * line refit as one, which lands within 0.1 G of the line `fitTrack` gives.
+ */
+function expectFitOf(s: EditSession, nodes: readonly Centerline['nodes'][number][], at: readonly Point[]) {
+  const dpt = getDPT(s.archive.getManifest())!;
+  const expected = fitNodes(fitTrack(at, traceOptions(dpt))!.fit);
+  expect(nodes).toHaveLength(expected.length);
+  nodes.forEach((n, i) => {
+    expect(Math.hypot(n.x - expected[i].x, n.y - expected[i].y)).toBeLessThan(0.1 * dpt);
+    expect(Math.cos(n.heading - expected[i].heading)).toBeGreaterThan(Math.cos(0.01));
+  });
+}
+
 describe('EditSession finished track lines (#302)', () => {
   /** Synthetic clicks along `pieces`, at this session's DPT, in whole pixels. */
   function laidAlong(s: EditSession, pieces: readonly Piece[]): Point[] {
@@ -2366,7 +2380,7 @@ describe('EditSession finished track lines (#302)', () => {
     expect(s.history.undoLabel).toBe('extend centerline');
     expect(s.tracks).toHaveLength(1);
     expect(line(s).clicks).toEqual([...at, ...next]);
-    expect(line(s).nodes).toEqual(fitOf(s, [...at, ...next]));
+    expectFitOf(s, line(s).nodes, [...at, ...next]);
   });
 
   it('continues the line from its first click, writing back in stored order', async () => {
@@ -2384,7 +2398,7 @@ describe('EditSession finished track lines (#302)', () => {
     const stored = [...[...before].reverse(), ...at];
     expect(trackChain(s)?.clicks).toEqual([...stored].reverse());
     expect(line(s).clicks).toEqual(stored);
-    expect(line(s).nodes).toEqual(fitOf(s, stored));
+    expectFitOf(s, line(s).nodes, stored);
     expect(s.chain?.end).toEqual(before[1]);
   });
 
@@ -2468,10 +2482,6 @@ describe('EditSession track edits while tracing (#303)', () => {
     return s.archive.getManifest().layout.centerlines![0];
   }
 
-  function fitOf(s: EditSession, at: readonly Point[]) {
-    return fitNodes(fitTrack(at, traceOptions(getDPT(s.archive.getManifest())!))!.fit);
-  }
-
   function traceOf(s: EditSession): TraceView {
     const chain = s.chain;
     if (chain?.tool !== 'track') throw new Error('no track chain');
@@ -2531,7 +2541,7 @@ describe('EditSession track edits while tracing (#303)', () => {
     expect(s.history.size).toBe(entries + 1);
     expect(s.history.undoLabel).toBe('move click');
     expect(line(s).clicks).toEqual(moved);
-    expect(line(s).nodes).toEqual(fitOf(s, moved));
+    expectFitOf(s, line(s).nodes, moved);
   });
 
   it('uncommits a join the edit leaves loose, which draws its bar again', async () => {
@@ -2570,7 +2580,7 @@ describe('EditSession track edits while tracing (#303)', () => {
     expect(s.history.size).toBe(entries + 1);
     expect(s.history.undoLabel).toBe('delete click');
     expect(line(s).clicks).toEqual(left);
-    expect(line(s).nodes).toEqual(fitOf(s, left));
+    expectFitOf(s, line(s).nodes, left);
   });
 
   it('still ends the chain on a right-click off its clicks, or on its last click', async () => {

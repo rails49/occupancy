@@ -41,7 +41,8 @@ The **track tool** (#284, #298) fits straights and circular arcs, tangent where 
 clicks along the middle of the track (`trackFit.ts`). A chain's clicks build a trace
 (`trackTrace.ts`): the committed prefix never moves, and only the tail is fitted, from the last
 committed join. Each click after the first writes the line's `clicks` and the `nodes` of the
-whole-line fit of those clicks, one `layout` entry per click; the joins become nodes, and an arc
+whole-line fit of those clicks, the committed line and the tail refit as one (`Trace.lineFit`),
+one `layout` entry per click; the joins become nodes, and an arc
 turning more than 90° is split at its midpoint (`fitNodes`). So a save in the middle of a trace holds
 a valid line, and other readers keep reading nodes. Stored nodes win on load: nothing refits. A
 click within the grab radius of the last click adds nothing. Right-click, Escape or a tool change

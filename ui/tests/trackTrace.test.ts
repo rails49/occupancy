@@ -25,7 +25,7 @@ function traced(points: readonly Point[]) {
 }
 
 describe('Trace while tracing', () => {
-  it('commits joins in order, each once its σ is under the commit σ, and never moves them', () => {
+  it('commits up to a join once its σ is under the commit σ, and never moves what it committed', () => {
     const { after } = traced(clicks);
     let before = after[0];
     for (const now of after.slice(1)) {
@@ -35,7 +35,7 @@ describe('Trace while tracing', () => {
         expect(now.fit?.start).toEqual(before.fit.start);
         expect(now.fit?.parts.slice(0, n)).toEqual(before.fit.parts);
       }
-      for (const j of now.joins.slice(1)) expect(j.sigma).toBeLessThanOrEqual(opts.commitSigma);
+      if (now.joins.length > 1) expect(now.joins[now.joins.length - 1].sigma).toBeLessThanOrEqual(opts.commitSigma);
       before = now;
     }
     // The straight and the arc commit before the line ends.
@@ -55,6 +55,60 @@ describe('Trace while tracing', () => {
     expect(k).toBeGreaterThan(0);
     const undone = Trace.replay(clicks.slice(0, k), opts);
     expect(undone.committedFit()).toBeNull();
+  });
+});
+
+describe('Trace on a long line clicked every 2 G', () => {
+  // Ten parts, 330 G: a click every 2 G is 166 clicks.
+  const line = clicksAlong(
+    [
+      { straight: 35 },
+      { radius: 20, turn: 90 },
+      { straight: 30 },
+      { radius: 30, turn: -60 },
+      { straight: 40 },
+      { radius: 40, turn: 45 },
+      { radius: 15, turn: -120 },
+      { straight: 35 },
+      { radius: 25, turn: 72 },
+      { straight: 33 },
+    ],
+    { spacing: 2, seed: 7 }
+  );
+
+  it('leaves no join under the commit σ uncommitted, and commits all but its last part or two', () => {
+    expect(line).toHaveLength(166);
+    const t = new Trace();
+    for (const p of line) {
+      t.add(p, opts);
+      const loose = t.live?.joins.slice(1, -1) ?? [];
+      expect(loose.every(j => j.sigma > opts.commitSigma)).toBe(true);
+      for (const j of t.committedJoins) expect(j.sigma).toBeLessThan(opts.barCap);
+    }
+    expect(t.committed.length).toBeGreaterThanOrEqual(8);
+    expect(t.live?.fit.parts.length).toBeLessThanOrEqual(2);
+  });
+
+  it('takes under 100 ms a click to trace it and to fit the whole line', () => {
+    /** The least of three timings of `f`, so a pause of the test runner does not count. */
+    const timed = (f: () => void) =>
+      Math.min(
+        ...[0, 1, 2].map(() => {
+          const t0 = performance.now();
+          f();
+          return performance.now() - t0;
+        })
+      );
+    const t = new Trace();
+    for (const p of line) {
+      const t0 = performance.now();
+      t.add(p, opts);
+      expect(performance.now() - t0).toBeLessThan(100);
+      expect(timed(() => t.lineFit(opts))).toBeLessThan(100);
+    }
+    const res = t.lineFit(opts);
+    expect(res?.fit.parts).toHaveLength(10);
+    expect(res?.worst).toBeLessThanOrEqual(opts.tolerance);
   });
 });
 
