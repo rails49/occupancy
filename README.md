@@ -103,8 +103,7 @@ rest of the project. There is no CLA.
 The code in this repository is MIT. See [LICENSE](LICENSE).
 
 The deployed site also serves `@rails49/detector`, its model weights and
-browser runtime, which are AGPL-3.0 because the weights are fine-tuned from an
-Ultralytics YOLO checkpoint. Their source is
+browser runtime, under AGPL-3.0. Their source is
 [rails49/detector](https://github.com/rails49/detector). Why only that part is
 AGPL: [rails49/detector ADR 0015](https://github.com/rails49/detector/blob/main/docs/adr/0015-only-the-yolo-detector-is-agpl.md).
 

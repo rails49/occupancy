@@ -46,8 +46,7 @@ type LayoutFields = Pick<Layout, 'name' | 'scale' | 'description' | 'contact'> &
  * (`SPEC.md` § Camera height).
  *
  * Below the tabs, a line links to rails49/detector, the source of the AGPL-3.0
- * model and runtime the site serves (rails49/detector ADR 0015). It is a link,
- * not a fetch.
+ * model and runtime the site serves (rails49/detector ADR 0015).
  *
  * @fires rr-layout-change - When a layout field (name, scale, description, contact) changes. Detail: { layout: Partial<Layout> }
  * @fires rr-camera-height-change - When the camera height changes. Detail: { camera_height_mm: number | undefined }
