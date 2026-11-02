@@ -798,7 +798,7 @@ part; a `Line` is a fit and the first click of each part.
 | `TRACK_FIT` | The fit's constants in gauges: the tolerance and the tightest arc. `FitOptions` is the same in pixels |
 | `extend(line, clicks, opts)` | The line of `clicks` given the line of all but the last: the last part is extended to the new click and the window, the last two parts, is solved, split while a click is past the tolerance and merged while within it. Null with fewer than two clicks |
 | `fitTrack(clicks, opts)` | `extend` folded over the clicks in order |
-| `fitNodes(fit)` | The fit as stored nodes: the start, each part's end, and one at the middle of an arc that turns more than 90° |
+| `fitNodes(fit)` | The fit as stored nodes: the start, each part's end, and an arc split into equal pieces of at most 90° |
 | `sampleFit(fit, step, offset)` | Points along the line, or beside it at `offset`, for drawing |
 | `distances(fit, points)`, `nearestParts(fit, points)`, `poses(fit)` | Each point's signed distance from the line, the part nearest each, and the pose at the start of each part and the end of the line |
 

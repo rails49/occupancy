@@ -83,7 +83,7 @@ function renderDot(p: Point, size: TrackSymbolSize, cls: string): SVGTemplateRes
   />`;
 }
 
-function renderClicks(clicks: readonly Point[], size: TrackSymbolSize, red: readonly number[] = []) {
+function renderClicks(clicks: readonly Point[], size: TrackSymbolSize, red: readonly number[]) {
   return clicks.map((p, i) => renderDot(p, size, red.includes(i) ? 'click red' : 'click'));
 }
 

@@ -413,7 +413,10 @@ function capped(v: readonly number[], m: Model): number[] {
   let j = m.start ? 0 : 3;
   for (let i = 0; i < m.parts; i++, j += 2) {
     const cap = maxLength(Math.tanh(w[j + 1]) / m.minRadius);
-    if (cap < Infinity) w[j] = Math.min(w[j], Math.sqrt(Math.max(0, cap - MIN_LENGTH)));
+    if (cap < Infinity) {
+      const lim = Math.sqrt(Math.max(0, cap - MIN_LENGTH));
+      w[j] = clamp(w[j], -lim, lim);
+    }
   }
   return w;
 }
@@ -543,6 +546,24 @@ class Window {
     return evaluate(this.sub(), this.points());
   }
 
+  /**
+   * Gives part `q` the clicks up to `j`, which lies nearest it: the solve may
+   * have moved the part's end past clicks the next part owned. Each later
+   * part keeps at least one click after the one before, and a part left with
+   * none is merged into the one before it.
+   */
+  private own(q: number, j: number) {
+    for (let r = q + 1; r < this.first.length; r++) this.first[r] = Math.max(this.first[r], (r === q + 1 ? j : this.first[r - 1]) + 1);
+    while (this.first.length > q + 1 && this.first[this.first.length - 1] >= this.clicks.length) {
+      const i = this.parts.length - 2;
+      const a = this.parts[i];
+      const b = this.parts[i + 1];
+      const length = a.length + b.length;
+      this.parts.splice(i, 2, { length, curvature: (a.curvature * a.length + b.curvature * b.length) / length });
+      this.first.pop();
+    }
+  }
+
   /** The window's click farthest from the line, as a click index, with its distance. */
   private worst(e: Evaluation): { click: number; distance: number } {
     let j = 0;
@@ -577,7 +598,8 @@ class Window {
     const part = this.parts[q];
     if (j <= this.first[q] || part.length < 2 * MIN_LENGTH) return null;
     const hi = part.length - MIN_LENGTH;
-    for (let k = j - this.first[this.from]; k >= 0; k--) {
+    const base = this.first[this.from];
+    for (let k = j - base; k >= this.first[q] - base; k--) {
       if (e.on[k] === q - this.from && e.u[k] <= hi) return Math.max(MIN_LENGTH, e.u[k]);
     }
     return part.length / 2;
@@ -602,9 +624,13 @@ class Window {
       const { click, distance } = this.worst(e);
       if (distance <= this.opts.tolerance) return;
       const q = this.from + e.part[click - this.first[this.from]];
+      this.own(q, click);
       // At a part's first click the part before it is the one that misses, and it splits at its last click.
       let at = { q, j: click, u: this.cut(q, click, e) };
-      if (at.u === null && q > this.from) at = { q: q - 1, j: click - 1, u: this.cut(q - 1, click - 1, e) };
+      if (at.u === null && q > this.from) {
+        const j = Math.min(click, this.first[q]) - 1;
+        at = { q: q - 1, j, u: this.cut(q - 1, j, e) };
+      }
       if (at.u === null) return;
       const before = { parts: this.parts, first: this.first, start: this.start };
       let best: { parts: Part[]; first: number[]; start: Pose; d: number } | null = null;
@@ -695,17 +721,17 @@ export function fitTrack(clicks: readonly Point[], opts: FitOptions): Line | nul
 }
 
 /**
- * The fit as stored nodes: one per join, heading along the line. An arc that
- * turns more than 90° is split at its midpoint.
+ * The fit as stored nodes: one per join, heading along the line. An arc is
+ * split into equal pieces of at most 90°, which a Bézier between nodes
+ * follows closely.
  */
 export function fitNodes(fit: Fit): TrackNode[] {
   const node = (p: Pose): TrackNode => ({ x: p.x, y: p.y, heading: wrapAngle(p.heading) });
   const nodes = [node(fit.start)];
   let pose = fit.start;
   for (const part of fit.parts) {
-    if (Math.abs(part.length * part.curvature) > Math.PI / 2) {
-      nodes.push(node(advance(pose, part.length / 2, part.curvature)));
-    }
+    const pieces = Math.max(1, Math.ceil(Math.abs(part.length * part.curvature) / (Math.PI / 2) - 1e-9));
+    for (let i = 1; i < pieces; i++) nodes.push(node(advance(pose, (part.length * i) / pieces, part.curvature)));
     pose = advance(pose, part.length, part.curvature);
     nodes.push(node(pose));
   }

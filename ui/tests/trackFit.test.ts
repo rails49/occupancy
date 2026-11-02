@@ -245,6 +245,56 @@ describe('fitTrack on the recorded click sets in tests/clickSets', () => {
   }
 });
 
+describe('extend when the solve has moved a part’s end past the next part’s first click', () => {
+  // The ninth click lay nearest the first part, which the second part's first
+  // click had been given; the split went in behind that click, and the line
+  // had a part with no clicks at all.
+  it('gives the clicks up to the red one to the part they lie on, so every part starts after the one before', () => {
+    const clicks = clicksAlong([{ straight: 20 }, { radius: 30, turn: 90 }], { spacing: 3, noise: 0.2, seed: 2 });
+    let line: Line | null = null;
+    for (let n = 2; n <= clicks.length; n++) {
+      line = extend(line, clicks.slice(0, n), opts)!;
+      const { firstClick } = line;
+      for (let q = 1; q < firstClick.length; q++) {
+        expect(firstClick[q], `${n} clicks, part ${q}`).toBeGreaterThan(firstClick[q - 1]);
+        expect(firstClick[q], `${n} clicks, part ${q}`).toBeLessThan(n);
+      }
+    }
+  });
+});
+
+describe('extend on every recorded click set', () => {
+  const sets = import.meta.glob<ClickSet>('./clickSets/*.json', { eager: true, import: 'default' });
+  /** The most a part may turn, `trackFit.ts`'s `MAX_SWEEP`. */
+  const MAX_SWEEP = (5 * Math.PI) / 3;
+
+  for (const [file, set] of Object.entries(sets)) {
+    set.lines.forEach((raw, i) => {
+      // A part's clicks run from its first click to the next part's first, so
+      // the first clicks rise with the parts; a split that cut a part at a
+      // click of the part before it, or at a click the next part owned,
+      // broke that. And a step past the sweep cap is brought back to it
+      // whichever way the squared length parameter went.
+      it(`${file} line ${i + 1}: keeps each part's first click after the one before, and each part within the sweep cap`, () => {
+        const clicks = raw.map(([x, y]) => ({ x, y }));
+        const o = traceOptions(set.gauge);
+        let line: Line | null = null;
+        for (let n = 2; n <= clicks.length; n++) {
+          line = extend(line, clicks.slice(0, n), o)!;
+          const { firstClick, fit } = line;
+          expect(firstClick[0], `${n} clicks`).toBe(0);
+          expect(firstClick, `${n} clicks`).toHaveLength(fit.parts.length);
+          for (let q = 1; q < firstClick.length; q++) {
+            expect(firstClick[q], `${n} clicks, part ${q}`).toBeGreaterThan(firstClick[q - 1]);
+            expect(firstClick[q], `${n} clicks, part ${q}`).toBeLessThan(n);
+          }
+          for (const p of fit.parts) expect(Math.abs(p.length * p.curvature), `${n} clicks`).toBeLessThanOrEqual(MAX_SWEEP + 1e-9);
+        }
+      });
+    });
+  }
+});
+
 describe('fitNodes', () => {
   const r = 100;
   const line = {
@@ -256,7 +306,7 @@ describe('fitNodes', () => {
     ],
   };
 
-  it('makes each join a node, and splits an arc past 90° at its midpoint', () => {
+  it('makes each join a node, and splits an arc past 90° in two', () => {
     const nodes = fitNodes(line);
     const expected = [
       [0, 0, 0],
@@ -270,6 +320,19 @@ describe('fitNodes', () => {
       expect(n.x).toBeCloseTo(expected[i][0], 6);
       expect(n.y).toBeCloseTo(expected[i][1], 6);
       expect(n.heading).toBeCloseTo(expected[i][2], 6);
+    });
+  });
+
+  // A Bézier between two nodes follows an arc closely only while it turns
+  // 90° or less; a 300° part stored as two 150° segments lay 0.2 G off it.
+  it('splits an arc of 300° into four pieces, every node on the arc', () => {
+    const sweep = (5 * Math.PI) / 3;
+    const nodes = fitNodes({ start: { x: 0, y: 0, heading: 0 }, parts: [{ length: r * sweep, curvature: 1 / r }] });
+    expect(nodes).toHaveLength(5);
+    nodes.forEach((n, i) => {
+      // The circle's centre is (0, r).
+      expect(Math.hypot(n.x, n.y - r)).toBeCloseTo(r, 6);
+      expect(Math.cos(n.heading - (i * sweep) / 4)).toBeCloseTo(1, 6);
     });
   });
 });

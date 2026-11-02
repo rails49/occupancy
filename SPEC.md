@@ -226,7 +226,7 @@ The line is a function of its clicks, in their order ([#298](https://github.com/
 
 **Editing.** Clicks are the only handles: nodes have no handles and headings cannot be turned. A drag of a click refits on release, never while it moves.
 
-* Moving or deleting click *i* builds the line again from the edited clicks, the way it was built: in their stored order, or backwards while the line is being traced from its first click. Nothing that was out of the window when click *i* was added moves; track after it is rebuilt by the same solve and changes only where the edit reaches.
+* Moving or deleting click *i* builds the line again from the edited clicks by the same fold. While a line is being traced from its first click the fold runs backwards, as the trace does; with no line being traced it runs in stored order, so a line last built backwards can come out different. Within one order, nothing that was out of the window when click *i* was added moves; track after it is rebuilt by the same solve and changes only where the edit reaches.
 * A click on either end of a finished line continues it; a click on the line, or on a click between the ends, does nothing. The menu on a click deletes the click; on the rest of a line, the line. Deleting one of a line's last two clicks deletes the line.
 * An archive's lines are drawn as stored, with no refit on load. A line stored without clicks is drawn, takes sensors and cars, and can be deleted, but cannot be edited.
 

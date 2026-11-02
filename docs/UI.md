@@ -55,11 +55,12 @@ keeps an arc from winding round without end.
 
 Every entry a track chain writes, a click or a move or delete of a click, writes the line's `clicks`
 in stored order and the `nodes` of the line as the chain drew it, as one `layout` entry. The trace
-is drawing state and is never stored. `fitNodes` makes a node of each part's end and adds one at
-the middle of an arc that turns more than 90°. A chain continued from a line's first click folds
-the clicks backwards and turns the nodes round for storage; an edit of that line later with no
-chain live (`refitLine`, a drag on release) folds the clicks in stored order, which can give
-another line. No fit runs on load or on a pointer move, and nothing follows the pointer.
+is drawing state and is never stored. `fitNodes` makes a node of each part's end and splits an arc
+into equal pieces of at most 90°, which a Bézier between nodes follows closely. A chain continued
+from a line's first click folds the clicks backwards and turns the nodes round for storage; an edit
+of that line later with no chain live (`refitLine`, a drag on release) folds the clicks in stored
+order, which can give another line. No fit runs on load or on a pointer move, and nothing follows
+the pointer.
 
 The chain keeps the trace from before each entry it wrote, so an undo restores it without a replay,
 and the chain ends only once every entry it wrote is undone; stored clicks that match neither are
