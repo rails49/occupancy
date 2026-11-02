@@ -2740,21 +2740,18 @@ describe('EditSession editor on the projection rule (#313)', () => {
 
     it('continues a finished line from either end, with the projection drawn from that end at once', async () => {
       const { s, at } = await finished();
-      const dpt = getDPT(s.archive.getManifest())!;
       const last = at[at.length - 1];
       const entries = s.history.size;
 
       await clicks(s, last);
-      expect(pendingTrack(s)?.projection).toMatchObject({
+      expect(pendingTrack(s)?.ahead).toMatchObject({
         start: { x: expect.closeTo(last.x, 0), y: expect.closeTo(last.y, 0) },
-        parts: [{ length: 20 * dpt }],
       });
       s.endChain();
 
       await clicks(s, at[0]);
-      expect(pendingTrack(s)?.projection).toMatchObject({
+      expect(pendingTrack(s)?.ahead).toMatchObject({
         start: { x: expect.closeTo(at[0].x, 0), y: expect.closeTo(at[0].y, 0), heading: expect.closeTo(0.3 - Math.PI, 1) },
-        parts: [{ length: 20 * dpt }],
       });
       expect(s.history.size).toBe(entries);
     });

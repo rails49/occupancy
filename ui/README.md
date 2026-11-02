@@ -411,7 +411,7 @@ image pixel coordinates.
 | `cars` | `readonly CarLabel[]` | Car spans to draw: a chord inside its width rectangle. Per **image**, so switching images swaps the whole list; empty in the live view |
 | `pendingCar` | `PendingCar \| null` | The **rubber band** — `{ anchor, to }` for the chain in flight. The one thing here that is not in the manifest; empty in the live view |
 | `tracks` | `readonly Track[]` | The layout's centerlines ([#284]), drawn under everything else. Per layout, so the same on every image; empty in the live view |
-| `pendingTrack` | `TraceView \| null` | The line a track chain is tracing ([#311]): its clicks, its fit and the projection ahead of it. The editor leaves that line out of `tracks` |
+| `pendingTrack` | `TraceView \| null` | The line a track chain is tracing ([#311]): its clicks, its fit and where it goes on from. The editor leaves that line out of `tracks` |
 | `trackDetail` | `boolean` | Whether centerlines show their rails and click dots, or the centerline alone. The editor sets it while the track tool is chosen |
 | `highlight` | `ViewerHighlight \| null` | The objects a reveal is pointing at — `{ cars, sensors, calibration, trackClicks }`, ids for the first two, **indices** for the third and pixels for the fourth. Already resolved by `rr-editor-view`; the viewer draws it and decides nothing. `null` in the live view |
 | `zoom` | `Rect \| null` | The region of the **authored frame** on screen ([#44]). `null` is fit — the absence of a zoom, which is exactly what this element drew before the property existed. View state the editor owns; never in the manifest and never in the history. `null` in the live view |
@@ -766,7 +766,7 @@ A centerline's SVG ([#284], [#311]). The exports must be used together.
 | Export | Type | Description |
 |---|---|---|
 | `renderTrack(track, size, highlighted?)` | `(Track, TrackSymbolSize, Point[]?) => SVGTemplateResult` | The centerline as one cubic per node pair, and with `size.detail` the two rails at ±G/2 and a dot per click. No rails when `size.dpt` is `null`. A click at a pixel in `highlighted` takes `highlight.ts`'s class, and is drawn without `size.detail` too |
-| `renderPendingTrack(view, size)` | `(TraceView, TrackSymbolSize) => SVGTemplateResult` | The line a track chain is tracing: the rails and a solid centerline from its fit, the projection ahead of it as a dashed centerline, and a dot per click, white on the first click of each part after the first |
+| `renderPendingTrack(view, size, image)` | `(TraceView, TrackSymbolSize, ImageSize) => SVGTemplateResult` | The line a track chain is tracing: the rails and a solid centerline from its fit, the projection ahead of it as a dashed centerline to the edge of the image, after an arc the tangent at its end as a dotted line to the edge, and a dot per click, white on the first click of each part after the first. `image` is the image's pixel size |
 | `TrackSymbolSize` | `{ dpt, strokePx, dotPx, detail }` | The DPT the rails are spaced by, screen-constant stroke and dot sizes, and whether to draw the rails and dots or the centerline alone |
 | `trackMarkerStyles` | `CSSResult` | The green ink |
 
@@ -798,9 +798,9 @@ Today there is one set, synthetic; a set recorded in the editor is a drop-in fil
 
 | Export | Description |
 |---|---|
-| `TRACK_FIT` | The rule's constants in gauges: the tolerance (0.5), the minimum radius (15), the projection length (20) and the start distance (1). `FitOptions` is the first three in pixels |
+| `TRACK_FIT` | The rule's constants in gauges: the tolerance (0.5), the minimum radius (15) and the start distance (1). `FitOptions` is the first two in pixels |
 | `extend(line, clicks, p, opts)` | The line of `clicks` with `p` on the end, given the line of `clicks` (null before the second), as a `Step`: `added` with the line, `ignored` for a click not ahead of the end of the current part, or `refused` for one that needs a radius under the minimum. A click within the tolerance of the projection continues the current part, refit over its clicks; one beyond it starts a new part at the join, bent to the one arc through the click |
-| `projection(line, length)` | The current part carried on `length` px past the end of the line |
+| `ahead(line)` | Where the line goes on from: its end and the current part's curvature, an `Ahead` |
 | `fitNodes(fit)` | The fit as stored nodes: the start, each part's end, and an arc cut into equal pieces of at most 90° |
 | `sampleFit(fit, step, offset)` | Points along the line, or beside it at `offset`, for drawing |
 | `distances(line, clicks)`, `poses(fit)` | How far each click lies from its part, and the pose at the start of each part and the end of the line |
@@ -816,7 +816,7 @@ clicks and is refused when a click then does not go on it.
 |---|---|
 | `Trace` | `clicks` and `line`; `add`, `move` and `remove` return the `Step` kind, an edit `refused` when a click of the rebuilt line would add nothing or need an arc tighter than the minimum; `fit`, `view`, `clone`; `Trace.replay(clicks, opts)` builds a trace click by click, and `Trace.rebuilt(clicks, opts)` is that trace or null when it keeps fewer clicks |
 | `traceOptions(dpt)`, `TraceOptions` | `TRACK_FIT` in image pixels; the type is `FitOptions` |
-| `TraceView` | What the overlay draws: the clicks, which of them start a part after the first (`partStarts`), the fit and the projection ahead of it |
+| `TraceView` | What the overlay draws: the clicks, which of them start a part after the first (`partStarts`), the fit and `ahead`, where the line goes on from |
 
 ### `trackHint.ts`
 

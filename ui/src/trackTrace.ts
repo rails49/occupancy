@@ -7,24 +7,24 @@ import type { Point } from '@rails49/r49';
  * again from its clicks, the way it was built, so the line is a function of
  * its clicks alone. Pure.
  */
-import { TRACK_FIT, extend, projection, type Fit, type FitOptions, type Line, type Step } from './trackFit.js';
+import { TRACK_FIT, ahead, extend, type Ahead, type Fit, type FitOptions, type Line, type Step } from './trackFit.js';
 
 export type TraceOptions = FitOptions;
 
-/** `TRACK_FIT` in image pixels, for a layout whose DPT (a gauge in pixels) is `dpt`. */
+/** `TRACK_FIT`'s tolerance and minimum radius in image pixels, for a layout whose DPT (a gauge in pixels) is `dpt`. */
 export function traceOptions(dpt: number): TraceOptions {
-  return { tolerance: TRACK_FIT.tolerance * dpt, minRadius: TRACK_FIT.minRadius * dpt, projection: TRACK_FIT.projection * dpt };
+  return { tolerance: TRACK_FIT.tolerance * dpt, minRadius: TRACK_FIT.minRadius * dpt };
 }
 
-/** What a trace draws: its clicks, which of them start a part, the line and the projection ahead of it. */
+/** What a trace draws: its clicks, which of them start a part, the line, and where it goes on from. */
 export interface TraceView {
   readonly clicks: readonly Point[];
   /** Index of the first click of each part after the first: the clicks drawn marked. */
   readonly partStarts: readonly number[];
   /** Null before the second click. */
   readonly fit: Fit | null;
-  /** The current part carried on past the last click; null before the second click. */
-  readonly projection: Fit | null;
+  /** The end of the line and the current part's curvature, where the projection and the tangent start; null before the second click. */
+  readonly ahead: Ahead | null;
 }
 
 export class Trace {
@@ -58,12 +58,12 @@ export class Trace {
     return this.line?.fit ?? null;
   }
 
-  view(opts: TraceOptions): TraceView {
+  view(): TraceView {
     return {
       clicks: [...this.clicks],
       partStarts: this.line?.firstClick.slice(1) ?? [],
       fit: this.fit(),
-      projection: this.line ? projection(this.line, opts.projection) : null,
+      ahead: this.line ? ahead(this.line) : null,
     };
   }
 

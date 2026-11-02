@@ -950,7 +950,7 @@ export class RrViewer extends LitElement {
           <g class="frame" transform="scale(${fit.sx}, ${fit.sy})">
             <!-- Track under everything: cars stand on it. -->
             ${this.tracks.map(t => renderTrack(t, trackSize, this.highlight?.trackClicks ?? []))}
-            ${this.pendingTrack ? renderPendingTrack(this.pendingTrack, trackSize) : ''}
+            ${this.pendingTrack ? renderPendingTrack(this.pendingTrack, trackSize, viewBoxSize) : ''}
 
             <!-- Cars first: their width rectangles are the only area fills here,
                  so drawing them underneath keeps a crosshair or a sensor placed

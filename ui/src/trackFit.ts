@@ -22,8 +22,6 @@ export const TRACK_FIT = {
   tolerance: 0.5,
   /** Tightest arc track comes in. */
   minRadius: 15,
-  /** How far ahead of the last click the projection is drawn. */
-  projection: 20,
   /** How far a click must be from every centerline to start a line. */
   startDistance: 1,
 } as const;
@@ -33,8 +31,6 @@ export interface FitOptions {
   readonly tolerance: number;
   /** Tightest arc, px. */
   readonly minRadius: number;
-  /** How far ahead of the last click the projection is drawn, px. */
-  readonly projection: number;
 }
 
 export interface Pose {
@@ -229,11 +225,16 @@ export function poses(fit: Fit): Pose[] {
   return out;
 }
 
-/** The current part carried on `length` px past the end of the line. */
-export function projection(line: Line, length: number): Fit {
+/** Where the line goes on from: its end, and the curvature of the current part. */
+export interface Ahead {
+  readonly start: Pose;
+  readonly curvature: number;
+}
+
+/** The end of the line and the current part's curvature, from which the projection and the tangent run. */
+export function ahead(line: Line): Ahead {
   const { parts } = line.fit;
-  const end = poses(line.fit)[parts.length];
-  return { start: end, parts: [{ length, curvature: parts[parts.length - 1].curvature }] };
+  return { start: poses(line.fit)[parts.length], curvature: parts[parts.length - 1].curvature };
 }
 
 /**

@@ -10,7 +10,7 @@ const tracing: TraceView = {
   ],
   partStarts: [],
   fit: { start: { x: 0, y: 0, heading: 0 }, parts: [{ length: 100, curvature: 0 }] },
-  projection: { start: { x: 100, y: 0, heading: 0 }, parts: [{ length: 200, curvature: 0 }] },
+  ahead: { start: { x: 100, y: 0, heading: 0 }, curvature: 0 },
 };
 
 const IDLE = "Click at least a gauge from any track to start a line, or on a line's end to go on.";
@@ -23,7 +23,7 @@ describe('trackHint', () => {
   });
 
   it('asks for the next click and says how to end while tracing, from the first click on', () => {
-    expect(trackHint({ clicks: [{ x: 0, y: 0 }], partStarts: [], fit: null, projection: null }, false)).toBe(TRACING);
+    expect(trackHint({ clicks: [{ x: 0, y: 0 }], partStarts: [], fit: null, ahead: null }, false)).toBe(TRACING);
     expect(trackHint(tracing, false)).toBe(TRACING);
   });
 

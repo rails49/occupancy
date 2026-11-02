@@ -51,10 +51,10 @@ the farthest click. A click beyond the tolerance starts a new part at the end of
 with the heading there, bent to the one arc through the click. A click whose foot is not ahead of
 the end of the current part is ignored. A click that gives a radius under the minimum, as the third
 click, in a refit or at a join, is refused, and the line stays as it was. The constants are
-`TRACK_FIT`, in gauges: tolerance 0.5 G, minimum radius 15 G, projection length 20 G, start
-distance 1 G. `traceOptions` converts the first three through DPT when a fit runs, and `trackTool`
-the start distance; none is stored. `projection` is the current part carried on for the projection
-length past the end of the line: drawing state, never stored. `fitNodes` makes a node of the start
+`TRACK_FIT`, in gauges: tolerance 0.5 G, minimum radius 15 G, start distance 1 G. `traceOptions`
+converts the first two through DPT when a fit runs, and `trackTool` the start distance; none is
+stored. `ahead` is the end of the line and the current part's curvature, from which the renderer
+runs the projection and the tangent to the edge of the image: drawing state, never stored. `fitNodes` makes a node of the start
 and of each part's end, and cuts an arc into equal pieces of at most 90°, which a Bézier between
 nodes follows closely.
 
@@ -63,7 +63,7 @@ end and says what `extend` made of it. `Trace.move` and `Trace.remove` build the
 the edited clicks, from the first (`Trace.rebuilt`, which `refitLine` uses too), and refuse the
 edit, changing nothing, when a click of the rebuilt line would add nothing or need an arc tighter
 than the minimum; the hint shows the refusal sentence for both. `Trace.view` is what the overlay
-draws: the clicks, the fit and the projection. `tests/trackLocality.test.ts` holds, on every click
+draws: the clicks, the fit and where the line goes on from. `tests/trackLocality.test.ts` holds, on every click
 set, that a click changes nothing but the current part and that an edit leaves the parts before the
 edited click's part as they were, unless the edit moves a click across the tolerance of the part
 before it: the replay decides again which part each click joins.
@@ -96,8 +96,10 @@ release. Right-click on a traced click other than the last opens Delete click an
 the chain goes on; deleting one of a line's last two clicks, or the line, ends the chain. The trace
 draws in place of its stored line, which `rr-editor-view` leaves out of the viewer's `tracks`.
 `renderPendingTrack` draws the rails and the centerline from the one fit, the projection ahead of
-it as a dashed centerline, and a dot per click, white (`part-start`) on the first click of each
-part after the first, from `TraceView.partStarts`; `renderTrack` draws a stored line from its
+it as a dashed centerline to the edge of the image, after an arc the tangent at its end as a
+dotted line to the edge (`toEdge` samples either until it leaves the image, an arc for a full turn
+at most), and a dot per click, white (`part-start`) on the first click of each part after the
+first, from `TraceView.partStarts`; `renderTrack` draws a stored line from its
 nodes and a dot per click, all plain, since a stored line has no part record.
 
 A refusal is the one thing the tool says no to. `EditSession.refused` is set by a refused click,

@@ -6,15 +6,17 @@ import { samePoint } from './geometry.js';
 import { SAMPLE_PX, offsetPoints, trackPath } from './track.js';
 import type { Track } from './track.js';
 import { sampleFit } from './trackFit.js';
-import type { Fit } from './trackFit.js';
+import type { Fit, Pose } from './trackFit.js';
 import type { TraceView } from './trackTrace.js';
 
 /**
  * Track rendering for SVG (#284, #311): the centerline, and under the track
  * tool the two rails half a gauge to either side, a dot at each click and,
- * ahead of the line being traced, the projection as a dashed centerline. On
- * the line being traced the first click of each part after the first is a
- * white dot.
+ * ahead of the line being traced, the projection as a dashed centerline to
+ * the edge of the image and, when the current part is an arc, the tangent
+ * at its end as a dotted line to the edge: where a straight next part would
+ * run. On the line being traced the first click of each part after the
+ * first is a white dot.
  *
  * A module rather than a custom element, like the other markers. Its exports
  * must be used together: `trackMarkerStyles` in the host's `static styles`,
@@ -38,7 +40,8 @@ export const trackMarkerStyles: CSSResult = css`
 
   .track .centerline,
   .track .rail,
-  .track .projection {
+  .track .projection,
+  .track .tangent {
     stroke: var(--track-ink);
     stroke-linecap: round;
     stroke-linejoin: round;
@@ -118,24 +121,48 @@ export function renderTrack(
   </g>`;
 }
 
-/** A fitted line `offset` image pixels to its left, as an SVG polyline. */
-function renderFit(fit: Fit, offset: number, cls: string, size: TrackSymbolSize, dashed = false) {
+/** An SVG polyline through `points`, dashed as `dash` says. */
+function renderPolyline(points: readonly Point[], cls: string, size: TrackSymbolSize, dash: string | null = null) {
   return svg`<polyline
     class="${cls}"
-    points="${polyline(sampleFit(fit, SAMPLE_PX, offset))}"
+    points="${polyline(points)}"
     stroke-width="${size.strokePx}"
-    stroke-dasharray="${dashed ? `${4 * size.strokePx} ${4 * size.strokePx}` : nothing}"
+    stroke-dasharray="${dash ?? nothing}"
   />`;
+}
+
+/** A fitted line `offset` image pixels to its left, as an SVG polyline. */
+function renderFit(fit: Fit, offset: number, cls: string, size: TrackSymbolSize) {
+  return renderPolyline(sampleFit(fit, SAMPLE_PX, offset), cls, size);
+}
+
+/** The image's own pixel size, which the projection and the tangent run to the edge of. */
+export interface ImageSize {
+  readonly width: number;
+  readonly height: number;
+}
+
+/**
+ * Points from `start` along the straight, or the circle of `curvature`,
+ * until it leaves the image: a full turn at most, or the image's diagonal.
+ */
+function toEdge(start: Pose, curvature: number, image: ImageSize): Point[] {
+  const length = curvature === 0 ? Math.hypot(image.width, image.height) : (2 * Math.PI) / Math.abs(curvature);
+  const points = sampleFit({ start, parts: [{ length, curvature }] }, SAMPLE_PX, 0);
+  const out = points.findIndex(p => p.x < 0 || p.y < 0 || p.x > image.width || p.y > image.height);
+  return out < 0 ? points : points.slice(0, out);
 }
 
 /**
  * The line a track chain is tracing (#311): its rails and centerline from the
- * fit, the projection ahead of it dashed, and a dot per click, white on the
- * first click of each part after the first.
+ * fit; the projection ahead of it dashed, to the edge of the image; when the
+ * current part is an arc, the tangent at its end dotted, to the edge; and a
+ * dot per click, white on the first click of each part after the first.
  */
-export function renderPendingTrack(view: TraceView, size: TrackSymbolSize): SVGTemplateResult {
-  const { fit, projection } = view;
+export function renderPendingTrack(view: TraceView, size: TrackSymbolSize, image: ImageSize): SVGTemplateResult {
+  const { fit, ahead } = view;
   const gauge = size.dpt;
+  const dash = 4 * size.strokePx;
   return svg`<g class="track track-pending">
     ${
       fit
@@ -145,7 +172,8 @@ export function renderPendingTrack(view: TraceView, size: TrackSymbolSize): SVGT
           ]
         : ''
     }
-    ${projection ? renderFit(projection, 0, 'projection', size, true) : ''}
+    ${ahead ? renderPolyline(toEdge(ahead.start, ahead.curvature, image), 'projection', size, `${dash} ${dash}`) : ''}
+    ${ahead && ahead.curvature !== 0 ? renderPolyline(toEdge(ahead.start, 0, image), 'tangent', size, `0 ${dash}`) : ''}
     ${view.clicks.map((p, i) => renderDot(p, size, view.partStarts.includes(i) ? 'click part-start' : 'click'))}
   </g>`;
 }

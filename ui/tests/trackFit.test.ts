@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Point } from '@rails49/r49';
-import { distances, extend, fitNodes, projection, type Line } from '../src/trackFit.js';
+import { ahead, distances, extend, fitNodes, type Line } from '../src/trackFit.js';
 import { Trace, traceOptions } from '../src/trackTrace.js';
 import { G, along, clicksAlong, clicksAt, type Piece } from './trackClicks.js';
 
@@ -48,11 +48,11 @@ describe('the first clicks of a line', () => {
     const heading = Math.atan2(400, 300);
     expect(line.fit.start).toEqual({ x: 100, y: 100, heading });
     expect(line.fit.parts).toEqual([{ length: 500, curvature: 0 }]);
-    const ahead = projection(line, 20 * G);
-    expect(ahead.start.x).toBeCloseTo(400, 6);
-    expect(ahead.start.y).toBeCloseTo(500, 6);
-    expect(ahead.start.heading).toBe(heading);
-    expect(ahead.parts).toEqual([{ length: 20 * G, curvature: 0 }]);
+    const on = ahead(line);
+    expect(on.start.x).toBeCloseTo(400, 6);
+    expect(on.start.y).toBeCloseTo(500, 6);
+    expect(on.start.heading).toBe(heading);
+    expect(on.curvature).toBe(0);
   });
 
   it('make one arc through three clicks, which the projection follows', () => {
@@ -62,7 +62,7 @@ describe('the first clicks of a line', () => {
     expect(1 / part.curvature / G).toBeCloseTo(30, 6);
     expect(part.length / G).toBeCloseTo(40, 6);
     expect(line.fit.start.heading).toBeCloseTo(0.3, 6);
-    expect(projection(line, 20 * G).parts[0].curvature).toBe(part.curvature);
+    expect(ahead(line).curvature).toBe(part.curvature);
   });
 });
 
@@ -97,7 +97,7 @@ describe('a click beyond the tolerance', () => {
     expect(radii(line)[1]).toBeCloseTo(30, 0);
     expect(line.fit.parts[1].length / G).toBeCloseTo(6, 2);
     expect(line.firstClick).toEqual([0, straight.length]);
-    expect(projection(line, 20 * G).parts[0].curvature).toBe(line.fit.parts[1].curvature);
+    expect(ahead(line).curvature).toBe(line.fit.parts[1].curvature);
   });
 
   // Clicks where the curvature changes and about 10 G apart, as the rule

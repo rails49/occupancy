@@ -146,6 +146,9 @@ _Avoid_: part boundary, break
 The part being traced, carried on past its last click and drawn ahead of it, where the next click is expected. See [SPEC § Track centerlines](SPEC.md#track-centerlines).
 _Avoid_: preview, extension
 
+**Tangent**:
+The straight leaving the end of the part being traced with its heading, drawn ahead of an arc: where a straight next part would run. See [SPEC § Track centerlines](SPEC.md#track-centerlines).
+
 **Tolerance**:
 How far a click may lie from the projection and still continue its part. See [SPEC § Track centerlines](SPEC.md#track-centerlines).
 

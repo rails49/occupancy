@@ -42,14 +42,14 @@ for (const [file, set] of Object.entries(sets)) {
     });
 
     it(`${name}: replaying the clicks gives the same line`, () => {
-      expect(Trace.replay(clicks, opts).view(opts)).toEqual(Trace.replay(clicks, opts).view(opts));
+      expect(Trace.replay(clicks, opts).view()).toEqual(Trace.replay(clicks, opts).view());
     });
 
     it(`${name}: repeating the last click adds nothing`, () => {
       const t = Trace.replay(clicks, opts);
-      const before = t.view(opts);
+      const before = t.view();
       expect(t.add(t.clicks[t.clicks.length - 1], opts)).toBe('ignored');
-      expect(t.view(opts)).toEqual(before);
+      expect(t.view()).toEqual(before);
     });
 
     it(`${name}: moving a click within its part's tolerance gives the line of the moved clicks, and changes no part before the click's`, () => {
@@ -60,7 +60,7 @@ for (const [file, set] of Object.entries(sets)) {
       const part = before.firstClick.filter(first => first <= i).length - 1;
       if (t.move(i, moved[i], opts) === 'refused') return;
       expect(t.clicks).toEqual(moved);
-      expect(t.view(opts)).toEqual(Trace.replay(moved, opts).view(opts));
+      expect(t.view()).toEqual(Trace.replay(moved, opts).view());
       expect(t.line?.fit.parts.slice(0, part)).toEqual(before.fit.parts.slice(0, part));
     });
 
@@ -72,7 +72,7 @@ for (const [file, set] of Object.entries(sets)) {
       const part = before.firstClick.filter(first => first <= i).length - 1;
       if (t.remove(i, opts) === 'refused') return;
       expect(t.clicks).toEqual(left);
-      expect(t.view(opts)).toEqual(Trace.replay(left, opts).view(opts));
+      expect(t.view()).toEqual(Trace.replay(left, opts).view());
       expect(t.line?.fit.parts.slice(0, part)).toEqual(before.fit.parts.slice(0, part));
     });
   });

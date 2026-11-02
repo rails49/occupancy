@@ -95,7 +95,7 @@ export class TrackChain implements Chain {
     this._reversed = reversed;
     this._base = index === null ? 0 : clicks.length;
     this._trace = Trace.replay(this._order(clicks), this._opts);
-    this._view = this._trace.view(this._opts);
+    this._view = this._trace.view();
   }
 
   /** The line's index, or null before the second click writes it. */
@@ -161,7 +161,7 @@ export class TrackChain implements Chain {
     if (step === 'refused') this._ctx.refuse();
     if (step !== 'added') return;
     this._before.push(before);
-    this._view = this._trace.view(this._opts);
+    this._view = this._trace.view();
     const lines = [...centerlines(this._ctx)];
     const index = this._index ?? lines.length;
     lines[index] = this._stored();
@@ -199,7 +199,7 @@ export class TrackChain implements Chain {
       this._before = [];
       this._trace = Trace.replay(clicks, this._opts);
     }
-    this._view = this._trace.view(this._opts);
+    this._view = this._trace.view();
     return true;
   }
 
