@@ -454,7 +454,7 @@ describe('rr-editor-view', () => {
    * those rows land on them.
    */
   function layRows() {
-    archive.getManifest().layout.centerlines = Array.from({ length: 8 }, (_, i) => ({
+    archive.getManifest().layout.tracks = Array.from({ length: 8 }, (_, i) => ({
       nodes: [
         { x: -1000, y: 100 * (i + 1), heading: 0 },
         { x: 3000, y: 100 * (i + 1), heading: 0 },
@@ -1022,7 +1022,7 @@ describe('rr-editor-view', () => {
     });
 
     it('opens a delete row on a line, and deletes the line', async () => {
-      archive.getManifest().layout.centerlines = [
+      archive.getManifest().layout.tracks = [
         {
           nodes: [
             { x: 100, y: 100, heading: 0 },
@@ -1932,7 +1932,7 @@ describe('rr-editor-view', () => {
 
     it('lights the clicks an undo brought back, by pixel', async () => {
       calibrate();
-      archive.getManifest().layout.centerlines = [
+      archive.getManifest().layout.tracks = [
         {
           nodes: [
             { x: 100, y: 100, heading: 0 },

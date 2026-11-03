@@ -1,4 +1,5 @@
-import type { CarLabel, Centerline, Image, ManifestData, Point, ReferencePoint, Sensor, WorldPoint } from '@rails49/r49';
+import type { CarLabel, Image, ManifestData, Point, ReferencePoint, Sensor, WorldPoint } from '@rails49/r49';
+import type { Track } from './track.js';
 import type { HitScene, HitTolerance } from './geometry.js';
 import { DEFAULT_GRAB_RADIUS_SCREEN_PX } from './geometry.js';
 import type { HistoryTarget } from './history.js';
@@ -35,7 +36,7 @@ export type ClickResult =
 
 export const NONE: ClickResult = { kind: 'none' };
 
-/** Why a sensor or car end was refused: no centerline is near enough to land on. */
+/** Why a sensor or car end was refused: no track is near enough to land on. */
 export const NO_TRACK = 'No track here — sensors and cars sit on a track.';
 
 export const NO_TRACK_NOTICE: ClickResult = { kind: 'notice', message: NO_TRACK };
@@ -46,7 +47,7 @@ export type ChainView =
   | {
       readonly tool: 'track';
       readonly end: Point;
-      /** The centerline the chain writes, which the trace draws in its place; null before the second click. */
+      /** The track the chain writes, which the trace draws in its place; null before the second click. */
       readonly line: number | null;
       readonly trace: TraceView;
     };
@@ -79,7 +80,7 @@ export interface ChainContext {
   /** The image on screen. */
   image(): Image | undefined;
   scene(): HitScene;
-  /** `at` on the nearest centerline, in whole pixels, or null when none is near enough. */
+  /** `at` on the nearest track, in whole pixels, or null when none is near enough. */
   snap(at: Point): Point | null;
   /** Runs a write through the history, then tells the listeners. */
   record(label: string, target: HistoryTarget, mutate: () => void): Promise<void>;
@@ -88,7 +89,7 @@ export interface ChainContext {
   writeLayout(changes: {
     calibrationPoints?: readonly ReferencePoint[];
     sensors?: readonly Sensor[];
-    centerlines?: readonly Centerline[];
+    tracks?: readonly Track[];
   }): void;
   writeImage(filename: string, changes: { labels?: readonly CarLabel[] }): void;
 }

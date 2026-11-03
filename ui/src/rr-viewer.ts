@@ -245,7 +245,7 @@ export interface ViewerHighlight {
   readonly cars: readonly string[];
   readonly sensors: readonly string[];
   readonly calibration: readonly number[];
-  /** Centerline clicks, by pixel. */
+  /** Track clicks, by pixel. */
   readonly trackClicks: readonly Point[];
 }
 
@@ -440,7 +440,7 @@ export class RrViewer extends LitElement {
    */
   @property({ attribute: false }) pendingCar: PendingCar | null = null;
   /**
-   * Centerlines (#284). Per layout, so the same on every image. Empty in
+   * Tracks (#284). Per layout, so the same on every image. Empty in
    * the live view.
    */
   @property({ attribute: false }) tracks: readonly Track[] = [];
@@ -450,7 +450,7 @@ export class RrViewer extends LitElement {
    */
   @property({ attribute: false }) pendingTrack: TraceView | null = null;
   /**
-   * Whether centerlines show their rails and click dots, or the centerline
+   * Whether tracks show their rails and click dots, or the centerline
    * alone. The editor sets it while the track tool is chosen.
    */
   @property({ attribute: false }) trackDetail = false;

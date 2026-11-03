@@ -1,28 +1,16 @@
-import type { Point } from '@rails49/r49';
+import type { Point, Track, TrackNode } from '@rails49/r49';
+
+export type { Track, TrackNode };
 
 /**
- * Track centerlines as G1 curves (#284): the arithmetic, kept out of the
- * components so jsdom can test it.
+ * Tracks as G1 curves (#284): the arithmetic, kept out of the components so
+ * jsdom can test it.
  *
- * A centerline is a list of nodes, each a position and a heading. Between two
+ * A track is a list of nodes, each a position and a heading. Between two
  * nodes the curve is a cubic Bézier whose handles leave each node along its
  * heading. Two segments that meet at a node share its heading, so the line has
  * no kink anywhere. Equal headings along the chord make a straight.
  */
-
-/** A point on a centerline and the direction the track runs there. */
-export interface TrackNode {
-  readonly x: number;
-  readonly y: number;
-  /** Radians, `atan2(dy, dx)` in image pixels, pointing the way the nodes run. */
-  readonly heading: number;
-}
-
-/** A centerline: at least two nodes, and the clicks they were fitted from, if any. */
-export interface Track {
-  readonly nodes: readonly TrackNode[];
-  readonly clicks?: readonly Point[];
-}
 
 /** One cubic Bézier between two nodes. */
 export interface Segment {
@@ -115,7 +103,7 @@ export function offsetPoints(nodes: readonly TrackNode[], offset: number): Point
 }
 
 /**
- * How far from a centerline, in track widths, a sensor or a car end still
+ * How far from a track, in track widths, a sensor or a car end still
  * lands on it. Parallel tracks sit farther apart than this, so the nearest
  * track is the one under the pointer.
  */
@@ -162,7 +150,7 @@ export function nearestOnTrack(tracks: readonly Track[], at: Point, maxPx: numbe
   return dist(s, t) <= maxPx ? pointAt(s, t) : null;
 }
 
-/** A pointer on a line: centerline `line`. */
+/** A pointer on a line: track `line`. */
 export interface TrackHit {
   readonly line: number;
 }
@@ -178,7 +166,7 @@ export function hitTrack(tracks: readonly Track[], at: Point, radius: number): T
   return nearestWithin(near, at, radius);
 }
 
-/** A pointer on a click: click `index` of centerline `line`. */
+/** A pointer on a click: click `index` of track `line`. */
 export interface ClickHit {
   readonly line: number;
   readonly index: number;

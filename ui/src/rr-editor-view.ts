@@ -862,7 +862,7 @@ export class RREditorView extends LitElement {
     return points;
   }
 
-  /** Whether some centerline has a click at `px`. */
+  /** Whether some track has a click at `px`. */
   private _trackClickIsAt(px: Point): boolean {
     return this.session?.tracks.some(track => track.clicks?.some(click => samePoint(click, px))) ?? false;
   }
@@ -1392,7 +1392,7 @@ export class RREditorView extends LitElement {
     return chain?.tool === 'track' ? chain.trace : null;
   }
 
-  /** The stored centerlines, less the one a track chain draws as its trace. */
+  /** The stored tracks, less the one a track chain draws as its trace. */
   private _tracks() {
     const chain = this.session?.chain;
     const line = chain?.tool === 'track' ? chain.line : null;

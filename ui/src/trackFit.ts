@@ -22,7 +22,7 @@ export const TRACK_FIT = {
   tolerance: 0.5,
   /** Tightest arc track comes in. */
   minRadius: 15,
-  /** How far a click must be from every centerline to start a line. */
+  /** How far a click must be from every track to start a line. */
   startDistance: 1,
 } as const;
 

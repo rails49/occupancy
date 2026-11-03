@@ -1,4 +1,4 @@
-import type { Centerline, Point } from '@rails49/r49';
+import type { Point } from '@rails49/r49';
 import { DEFAULT_GRAB_RADIUS_SCREEN_PX, samePoint } from './geometry.js';
 import { pixel, NONE } from './chain.js';
 import type { Chain, ChainContext, ChainTool, ChainView, ClickResult } from './chain.js';
@@ -25,7 +25,7 @@ export function clickHitAt(tracks: readonly Track[], at: Point, scale: number): 
  * rebuilt line would add nothing or need an arc tighter than the minimum
  * (`Trace.rebuilt`).
  */
-export function refitLine(ctx: ChainContext, clicks: readonly Point[]): Centerline | null {
+export function refitLine(ctx: ChainContext, clicks: readonly Point[]): Track | null {
   const t = Trace.rebuilt(clicks, traceOptions(ctx.scene().dpt!));
   if (!t) {
     ctx.refuse();
@@ -41,7 +41,7 @@ export function refitLine(ctx: ChainContext, clicks: readonly Point[]): Centerli
  * nothing. Anywhere else a chain starts, even on a sensor.
  */
 export const trackTool: ChainTool = (ctx, at, scale) => {
-  const lines = centerlines(ctx);
+  const lines = tracks(ctx);
   const click = clickHitAt(lines, at, scale);
   if (click) {
     const last = lines[click.line].clicks!.length - 1;
@@ -53,8 +53,8 @@ export const trackTool: ChainTool = (ctx, at, scale) => {
 };
 
 /**
- * A chain of track: one centerline, traced click by click. The line in
- * `layout.centerlines` holds the clicks and the nodes of the line as drawn;
+ * A chain of track: one track, traced click by click. The line in
+ * `layout.tracks` holds the clicks and the nodes of the line as drawn;
  * the chain holds the trace, which is what it draws, and replays it from the
  * stored clicks whenever they change under it, as an undo does. The trace before
  * each entry it writes, a click or a move or delete of a click (#303), is
@@ -84,7 +84,7 @@ export class TrackChain implements Chain {
 
   /** Line `index` going on from its last click, or with `fromFirst` its first. */
   static continuing(ctx: ChainContext, index: number, fromFirst: boolean): TrackChain {
-    return new TrackChain(ctx, centerlines(ctx)[index].clicks!, index, fromFirst);
+    return new TrackChain(ctx, tracks(ctx)[index].clicks!, index, fromFirst);
   }
 
   private constructor(ctx: ChainContext, clicks: readonly Point[], index: number | null, reversed: boolean) {
@@ -116,13 +116,13 @@ export class TrackChain implements Chain {
   /**
    * Puts a click on the end of the trace and writes the line's clicks with
    * the nodes of their line. The second click of a new line writes a new
-   * centerline. A click that adds nothing, or is refused, writes nothing.
+   * track. A click that adds nothing, or is refused, writes nothing.
    */
   async extend(at: Point, scale: number): Promise<ClickResult> {
     const p = pixel(at);
     const last = this._trace.clicks[this._trace.clicks.length - 1];
     if (Math.hypot(p.x - last.x, p.y - last.y) <= DEFAULT_GRAB_RADIUS_SCREEN_PX * scale) return NONE;
-    await this._write(this._index === null ? 'place centerline' : 'extend centerline', t => t.add(p, this._opts));
+    await this._write(this._index === null ? 'place track' : 'extend track', t => t.add(p, this._opts));
     return NONE;
   }
 
@@ -152,7 +152,7 @@ export class TrackChain implements Chain {
   /**
    * Changes the trace, keeping it as it was for an undo, and writes the
    * line's clicks with the nodes of the line as drawn, as one entry. The
-   * second click of a new line writes a new centerline. A change the trace
+   * second click of a new line writes a new track. A change the trace
    * does not take writes nothing; one it refuses says so.
    */
   private async _write(label: string, change: (trace: Trace) => Step['kind']) {
@@ -162,15 +162,15 @@ export class TrackChain implements Chain {
     if (step !== 'added') return;
     this._before.push(before);
     this._view = this._trace.view();
-    const lines = [...centerlines(this._ctx)];
+    const lines = [...tracks(this._ctx)];
     const index = this._index ?? lines.length;
     lines[index] = this._stored();
     this._index = index;
-    await this._ctx.record(label, { kind: 'layout' }, () => this._ctx.writeLayout({ centerlines: lines }));
+    await this._ctx.record(label, { kind: 'layout' }, () => this._ctx.writeLayout({ tracks: lines }));
   }
 
   /** The line as drawn, clicks and nodes in stored order: a reversed chain turns the nodes round. */
-  private _stored(): Centerline {
+  private _stored(): Track {
     const nodes = fitNodes(this._trace.fit()!);
     return { nodes: this._reversed ? turned(nodes) : nodes, clicks: this._order(this._trace.clicks) };
   }
@@ -186,7 +186,7 @@ export class TrackChain implements Chain {
    * that is gone ends the chain. Track outlives an image change.
    */
   settle(): boolean {
-    const line = this._index === null ? undefined : centerlines(this._ctx)[this._index];
+    const line = this._index === null ? undefined : tracks(this._ctx)[this._index];
     if (!line) {
       if (this._base > 0) return false;
       this._index = null;
@@ -218,6 +218,6 @@ function samePoints(a: readonly Point[], b: readonly Point[]): boolean {
   return a.length === b.length && a.every((p, i) => samePoint(p, b[i]));
 }
 
-function centerlines(ctx: ChainContext): readonly Centerline[] {
-  return ctx.manifest().layout.centerlines ?? [];
+function tracks(ctx: ChainContext): readonly Track[] {
+  return ctx.manifest().layout.tracks ?? [];
 }

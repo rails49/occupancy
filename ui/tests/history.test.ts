@@ -329,17 +329,17 @@ describe('EditHistory highlights', () => {
     ];
     const a = { x: 0, y: 0 };
     const b = { x: 100, y: 0 };
-    manifest.layout = { ...manifest.layout, centerlines: [{ nodes, clicks: [a, b] }] };
+    manifest.layout = { ...manifest.layout, tracks: [{ nodes, clicks: [a, b] }] };
 
-    await history.record('extend centerline', { kind: 'layout' }, () => {
+    await history.record('extend track', { kind: 'layout' }, () => {
       const more = [...nodes, { x: 200, y: 50, heading: 0.5 }];
-      manifest.layout = { ...manifest.layout, centerlines: [{ nodes: more, clicks: [a, b, { x: 200, y: 50 }] }] };
+      manifest.layout = { ...manifest.layout, tracks: [{ nodes: more, clicks: [a, b, { x: 200, y: 50 }] }] };
     });
     expect(history.undoEntry?.highlights).toEqual([{ kind: 'track-click', px: { x: 200, y: 50 } }]);
 
     await history.record('move click', { kind: 'layout' }, () => {
-      const line = manifest.layout.centerlines![0];
-      manifest.layout = { ...manifest.layout, centerlines: [{ ...line, clicks: [a, { x: 100, y: 5 }, line.clicks![2]] }] };
+      const line = manifest.layout.tracks![0];
+      manifest.layout = { ...manifest.layout, tracks: [{ ...line, clicks: [a, { x: 100, y: 5 }, line.clicks![2]] }] };
     });
     expect(history.undoEntry?.highlights).toEqual([
       { kind: 'track-click', px: { x: 100, y: 0 } },

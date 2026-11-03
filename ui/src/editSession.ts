@@ -2,7 +2,6 @@ import { getDPT, make_id } from '@rails49/r49';
 import type {
   ReferencePoint,
   CarLabel,
-  Centerline,
   Image,
   Layout,
   Point,
@@ -65,9 +64,9 @@ export type MenuSubject =
   | { readonly kind: 'car'; readonly id: string }
   | { readonly kind: 'sensor'; readonly id: string }
   | { readonly kind: 'calibration'; readonly index: number; readonly px: Point }
-  /** A whole centerline; `px` is where its first node was. */
+  /** A whole track; `px` is where its first node was. */
   | { readonly kind: 'track'; readonly line: number; readonly px: Point }
-  /** Click `index` of a centerline; `px` is where it was. */
+  /** Click `index` of a track; `px` is where it was. */
   | { readonly kind: 'track-click'; readonly line: number; readonly index: number; readonly px: Point };
 
 /**
@@ -170,9 +169,9 @@ export class EditSession {
     return this._chain?.view() ?? null;
   }
 
-  /** The layout's centerlines, the one a track chain is laying included. */
+  /** The layout's tracks, the one a track chain is laying included. */
   get tracks(): readonly Track[] {
-    return this._centerlines();
+    return this._tracks();
   }
 
   /**
@@ -348,12 +347,12 @@ export class EditSession {
    * entry. A refit the line refuses puts the click back and writes nothing.
    */
   private _grabClick(hit: ClickHit, at: Point): Drag {
-    const start = this._centerlines()[hit.line];
+    const start = this._tracks()[hit.line];
     const gesture = this.history.beginGesture('move click', { kind: 'layout' });
-    const write = (line: Centerline) => {
-      const lines = [...this._centerlines()];
+    const write = (line: Track) => {
+      const lines = [...this._tracks()];
       lines[hit.line] = line;
-      this._writeLayout({ centerlines: lines });
+      this._writeLayout({ tracks: lines });
     };
     const moved = (to: Point) => {
       const clicks = [...start.clicks!];
@@ -429,7 +428,7 @@ export class EditSession {
 
   /** Where click `click.index` of line `click.line` is. */
   private _clickAt(click: ClickHit): Point {
-    return this._centerlines()[click.line].clicks![click.index];
+    return this._tracks()[click.line].clicks![click.index];
   }
 
   /** The menu subject for a line's click, with the pixel it is at. */
@@ -463,7 +462,7 @@ export class EditSession {
     if (click) return this._clickSubject(click);
     const trackHit = this._trackHit(at, scale);
     if (trackHit) {
-      const line = this._centerlines()[trackHit.line];
+      const line = this._tracks()[trackHit.line];
       return { kind: 'track', line: trackHit.line, px: pointOf(line.nodes[0]) };
     }
     const scene = this._scene();
@@ -556,9 +555,9 @@ export class EditSession {
         }
         const refit = refitLine(this._context, clicks.filter((_, i) => i !== index));
         if (!refit) return;
-        const lines = [...this._centerlines()];
+        const lines = [...this._tracks()];
         lines[line] = refit;
-        await this._record('delete click', { kind: 'layout' }, () => this._writeLayout({ centerlines: lines }));
+        await this._record('delete click', { kind: 'layout' }, () => this._writeLayout({ tracks: lines }));
         return;
       }
       case 'car': {
@@ -586,8 +585,8 @@ export class EditSession {
   /** Deletes line `line` as one entry, and ends a chain tracing it. */
   private async _deleteLine(line: number) {
     if (this._chain instanceof TrackChain && this._chain.line === line) this._chain = null;
-    const lines = this._centerlines().filter((_, i) => i !== line);
-    await this._record('delete centerline', { kind: 'layout' }, () => this._writeLayout({ centerlines: lines }));
+    const lines = this._tracks().filter((_, i) => i !== line);
+    await this._record('delete track', { kind: 'layout' }, () => this._writeLayout({ tracks: lines }));
   }
 
   /** Sets a car's class, the full dotted class. Does nothing if the car is gone. */
@@ -883,7 +882,7 @@ export class EditSession {
   private _writeLayout(changes: {
     calibrationPoints?: readonly ReferencePoint[];
     sensors?: readonly Sensor[];
-    centerlines?: readonly Centerline[];
+    tracks?: readonly Track[];
   }) {
     const manifest = this.archive.getManifest();
     manifest.layout = {
@@ -892,7 +891,7 @@ export class EditSession {
         ? { calibration: { ...manifest.layout.calibration, points: [...changes.calibrationPoints] } }
         : {}),
       ...(changes.sensors ? { sensors: [...changes.sensors] } : {}),
-      ...(changes.centerlines ? { centerlines: [...changes.centerlines] } : {}),
+      ...(changes.tracks ? { tracks: [...changes.tracks] } : {}),
     };
   }
 
@@ -956,43 +955,43 @@ export class EditSession {
     return this.archive.getManifest().layout.sensors;
   }
 
-  private _centerlines(): readonly Centerline[] {
-    return this.archive.getManifest().layout.centerlines ?? [];
+  private _tracks(): readonly Track[] {
+    return this.archive.getManifest().layout.tracks ?? [];
   }
 
   /** The click under the track tool's pointer. Null under another tool, or while the tool is gated. */
   private _clickHit(at: Point, scale: number): ClickHit | null {
     if (this._tool !== 'track' || this._gated('track')) return null;
-    return clickHitAt(this._centerlines(), at, scale);
+    return clickHitAt(this._tracks(), at, scale);
   }
 
   /** The line under the track tool's pointer. Null under another tool, or while the tool is gated. */
   private _trackHit(at: Point, scale: number): TrackHit | null {
     if (this._tool !== 'track' || this._gated('track')) return null;
-    return trackHitAt(this._centerlines(), at, scale);
+    return trackHitAt(this._tracks(), at, scale);
   }
 
   /**
-   * `at` on the nearest centerline within {@link SNAP_TRACK_WIDTHS} track
+   * `at` on the nearest track within {@link SNAP_TRACK_WIDTHS} track
    * widths, in whole pixels, or null when none is that near. With no DPT there
    * is no track width, and `at` is kept.
    */
   private _snap(at: Point): Point | null {
     const dpt = getDPT(this.archive.getManifest());
     if (dpt === null) return pixel(at);
-    const on = nearestOnTrack(this._centerlines(), at, SNAP_TRACK_WIDTHS * trackWidthPx(dpt));
+    const on = nearestOnTrack(this._tracks(), at, SNAP_TRACK_WIDTHS * trackWidthPx(dpt));
     return on && pixel(on);
   }
 
   /** Whether node `node` of line `line` is still at `px`: lines and nodes have no id. */
   private _trackNodeIsStillAt(line: number, node: number, px: Point): boolean {
-    const n = this._centerlines()[line]?.nodes[node];
+    const n = this._tracks()[line]?.nodes[node];
     return n !== undefined && n.x === px.x && n.y === px.y;
   }
 
   /** The clicks of a click subject's line, if the click is still at its pixel: clicks have no id. */
   private _clickIsStillAt(subject: MenuSubject & { kind: 'track-click' }): readonly Point[] | null {
-    const clicks = this._centerlines()[subject.line]?.clicks;
+    const clicks = this._tracks()[subject.line]?.clicks;
     const click = clicks?.[subject.index];
     return click && samePoint(click, subject.px) ? clicks : null;
   }

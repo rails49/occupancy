@@ -1,4 +1,4 @@
-import type { Camera, Centerline, R49Archive, ReferencePoint, Image, Layout, Point } from '@rails49/r49';
+import type { Camera, Track, R49Archive, ReferencePoint, Image, Layout, Point } from '@rails49/r49';
 
 /**
  * Undo/redo for the editor, as scoped snapshots of the manifest.
@@ -63,7 +63,7 @@ export type HistoryHighlight =
   | { readonly kind: 'car'; readonly id: string }
   | { readonly kind: 'sensor'; readonly id: string }
   | { readonly kind: 'calibration'; readonly px: Point }
-  /** A centerline's click, by pixel like a calibration point: clicks have no id. */
+  /** A track's click, by pixel like a calibration point: clicks have no id. */
   | { readonly kind: 'track-click'; readonly px: Point };
 
 /**
@@ -155,7 +155,7 @@ export function changedObjects(
         ...changedPoints(b?.calibration.points ?? [], a?.calibration.points ?? []).map(
           px => ({ kind: 'calibration', px }) as const
         ),
-        ...changedClicks(b?.centerlines ?? [], a?.centerlines ?? []).map(
+        ...changedClicks(b?.tracks ?? [], a?.tracks ?? []).map(
           px => ({ kind: 'track-click', px }) as const
         ),
       ];
@@ -164,8 +164,8 @@ export function changedObjects(
 }
 
 /** The pixels of the clicks one side has and the other does not, by value like {@link changedPoints}. */
-function changedClicks(before: readonly Centerline[], after: readonly Centerline[]): Point[] {
-  const clicks = (lines: readonly Centerline[]) => lines.flatMap(line => line.clicks ?? []);
+function changedClicks(before: readonly Track[], after: readonly Track[]): Point[] {
+  const clicks = (lines: readonly Track[]) => lines.flatMap(line => line.clicks ?? []);
   const key = (p: Point) => `${p.x},${p.y}`;
   const b = new Set(clicks(before).map(key));
   const a = new Set(clicks(after).map(key));

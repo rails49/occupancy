@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { R49Archive, MANIFEST_VERSION, getDPT } from '@rails49/r49';
-import type { ReferencePoint, CarLabel, Centerline, ManifestData, Point, Sensor } from '@rails49/r49';
+import type { ReferencePoint, CarLabel, Track, ManifestData, Point, Sensor } from '@rails49/r49';
 import { EditSession } from '../src/editSession.js';
 import { ALREADY_LABELED } from '../src/carChain.js';
 import { NO_TRACK } from '../src/chain.js';
@@ -33,7 +33,7 @@ type HumanCar = Extract<CarLabel, { provenance: 'human' }>;
  * and sensors placed on those rows land where they are clicked. DPT 89.7 puts
  * the snap reach at 134 px, so every row between is near one of them.
  */
-const ROWS: readonly Centerline[] = Array.from({ length: 8 }, (_, i) => ({
+const ROWS: readonly Track[] = Array.from({ length: 8 }, (_, i) => ({
   nodes: [
     { x: -1000, y: 100 * (i + 1), heading: 0 },
     { x: 3000, y: 100 * (i + 1), heading: 0 },
@@ -48,7 +48,7 @@ function manifest(filenames: readonly string[], calibrated: boolean, rows = true
       scale: 'N',
       calibration: { points: calibrated ? structuredClone([...CALIBRATION]) : [] },
       sensors: [],
-      ...(rows ? { centerlines: structuredClone([...ROWS]) } : {}),
+      ...(rows ? { tracks: structuredClone([...ROWS]) } : {}),
     },
     camera: { resolution: { width: 2000, height: 2000 } },
     images: filenames.map(filename => ({ filename, labeled_complete: false, labels: [] })),
@@ -933,7 +933,7 @@ describe('EditSession', () => {
       it('couples a chain drawn along a diagonal track, pixel for pixel', async () => {
         const s = session({ tool: 'car', rows: false });
         const heading = Math.atan2(80, 140);
-        s.archive.getManifest().layout.centerlines = [
+        s.archive.getManifest().layout.tracks = [
           {
             nodes: [
               { x: 0, y: 0, heading },
@@ -1980,8 +1980,8 @@ describe('EditSession track tool (#284, #298)', () => {
     return { x: p.x * k, y: p.y * k };
   }
 
-  function line(s: EditSession, index = 0): Centerline {
-    return s.archive.getManifest().layout.centerlines![index];
+  function line(s: EditSession, index = 0): Track {
+    return s.archive.getManifest().layout.tracks![index];
   }
 
   it('writes the clicks and the fitted nodes of a straight, one layout entry per click', async () => {
@@ -1997,7 +1997,7 @@ describe('EditSession track tool (#284, #298)', () => {
       expect(s.history.size).toBe(i + 1);
       expect(line(s).clicks).toEqual(at.slice(0, i + 2));
     }
-    expect(s.history.undoLabel).toBe('extend centerline');
+    expect(s.history.undoLabel).toBe('extend track');
 
     const nodes = line(s).nodes;
     expect(nodes).toHaveLength(2);
@@ -2034,7 +2034,7 @@ describe('EditSession track tool (#284, #298)', () => {
   it('takes undo click by click while tracing, and draws the line as it was', async () => {
     const s = session({ tool: 'track', rows: false });
     const at = laidAlong([{ straight: 20 }, { radius: 30, turn: 90 }, { straight: 20 }], dptOf(s));
-    const after: { line: Centerline; trace: unknown }[] = [];
+    const after: { line: Track; trace: unknown }[] = [];
     for (const p of at) {
       await clicks(s, p);
       const chain = s.chain;
@@ -2105,7 +2105,7 @@ describe('EditSession track tool (#284, #298)', () => {
     await clicks(s, ...laidAlong([{ straight: 10 }, { radius: 30, turn: 45 }], dptOf(s)));
     const written = structuredClone(line(s));
     // Nodes no fit of these clicks would give: what is stored is what loads.
-    s.archive.getManifest().layout.centerlines![0] = {
+    s.archive.getManifest().layout.tracks![0] = {
       ...written,
       nodes: [written.nodes[0], { x: 1, y: 2, heading: 3 }],
     };
@@ -2114,6 +2114,35 @@ describe('EditSession track tool (#284, #298)', () => {
 
     expect(reopened.tracks).toEqual([{ ...written, nodes: [written.nodes[0], { x: 1, y: 2, heading: 3 }] }]);
     expect(trackChain(s)).not.toBeNull();
+  });
+
+  it('opens a file with straight marks and saves them kept beside a line traced after', async () => {
+    const s = session({ rows: false });
+    const marked = {
+      nodes: [
+        { x: 100, y: 100, heading: 0 },
+        { x: 900, y: 100, heading: 0 },
+      ],
+      clicks: [{ x: 100, y: 100, straight: true }, { x: 500, y: 100 }, { x: 900, y: 100 }],
+    };
+    s.archive.getManifest().layout.tracks = [structuredClone(marked)];
+    const opened = new EditSession(await R49Archive.load(await s.archive.export()));
+    opened.selectTool('track');
+
+    await clicks(opened, { x: 100, y: 600 }, { x: 300, y: 600 });
+    opened.endChain();
+    const saved = await R49Archive.load(await opened.archive.export());
+
+    expect(saved.getManifest().layout.tracks).toHaveLength(2);
+    expect(saved.getManifest().layout.tracks![0]).toEqual(marked);
+  });
+
+  it('refuses a layout holding centerlines', () => {
+    const m = manifest(['img1.jpg'], true, false);
+    const old = { ...m, layout: { ...m.layout, centerlines: structuredClone([...ROWS]) } };
+    expect(() => new R49Archive().setManifest(old as ManifestData)).toThrow(
+      expect.objectContaining({ rule: 'manifest/unknown-key' }),
+    );
   });
 
   it('is gated on DPT', async () => {
@@ -2145,7 +2174,7 @@ describe('EditSession track tool (#284, #298)', () => {
     await clicks(s, { x: 100, y: 100 });
     s.endChain();
     expect(s.tracks).toHaveLength(0);
-    expect('centerlines' in s.archive.getManifest().layout).toBe(false);
+    expect('tracks' in s.archive.getManifest().layout).toBe(false);
   });
 
   it('starts the line again after undoing back to the start', async () => {
@@ -2218,7 +2247,7 @@ describe('EditSession track lines without clicks (#284, #298, #302)', () => {
   /** A calibrated session with the track tool and one straight line of three nodes, no clicks. */
   function withLine(): EditSession {
     const s = session({ tool: 'track', rows: false });
-    s.archive.getManifest().layout.centerlines = [
+    s.archive.getManifest().layout.tracks = [
       {
         nodes: [
           { x: 100, y: 100, heading: 0 },
@@ -2253,7 +2282,7 @@ describe('EditSession track lines without clicks (#284, #298, #302)', () => {
     const s = withLine();
     await s.delete({ kind: 'track', line: 0, px: { x: 100, y: 100 } });
     expect(s.tracks).toHaveLength(0);
-    expect(s.history.undoLabel).toBe('delete centerline');
+    expect(s.history.undoLabel).toBe('delete track');
   });
 
   it('lands a sensor', async () => {
@@ -2274,14 +2303,14 @@ describe('EditSession track lines without clicks (#284, #298, #302)', () => {
 
 
 /** Expects `nodes` to be the whole-line fit of `at`. */
-function expectFitOf(s: EditSession, nodes: readonly Centerline['nodes'][number][], at: readonly Point[]) {
+function expectFitOf(s: EditSession, nodes: readonly Track['nodes'][number][], at: readonly Point[]) {
   const dpt = getDPT(s.archive.getManifest())!;
   expect(nodes).toEqual(fitNodes(Trace.replay(at, traceOptions(dpt)).fit()!));
 }
 
 describe('EditSession finished track lines (#302)', () => {
-  function line(s: EditSession, index = 0): Centerline {
-    return s.archive.getManifest().layout.centerlines![index];
+  function line(s: EditSession, index = 0): Track {
+    return s.archive.getManifest().layout.tracks![index];
   }
 
   /** The nodes a fresh whole-line fit of `at` gives, at this session's DPT. */
@@ -2367,7 +2396,7 @@ describe('EditSession finished track lines (#302)', () => {
     s.endChain();
     await s.delete({ kind: 'track-click', line: 0, index: 1, px: { x: 400, y: 100 } });
     expect(s.tracks).toHaveLength(0);
-    expect(s.history.undoLabel).toBe('delete centerline');
+    expect(s.history.undoLabel).toBe('delete track');
   });
   it('does nothing for a click on the line between clicks', async () => {
     const { s } = await finished();
@@ -2406,7 +2435,7 @@ describe('EditSession finished track lines (#302)', () => {
     await clicks(s, ...next);
 
     expect(s.history.size).toBe(entries + next.length);
-    expect(s.history.undoLabel).toBe('extend centerline');
+    expect(s.history.undoLabel).toBe('extend track');
     expect(s.tracks).toHaveLength(1);
     expect(line(s).clicks).toEqual([...at, ...next]);
     expectFitOf(s, line(s).nodes, [...at, ...next]);
@@ -2449,7 +2478,7 @@ describe('EditSession finished track lines (#302)', () => {
     const { s, at } = await finished();
     // Stored nodes no fit of these clicks gives: an older fit, or a hand edit.
     const stale = line(s).nodes.map(n => ({ ...n, y: n.y + 30 }));
-    s.archive.getManifest().layout.centerlines![0] = { nodes: stale, clicks: at };
+    s.archive.getManifest().layout.tracks![0] = { nodes: stale, clicks: at };
     const reopened = new EditSession(await R49Archive.load(await s.archive.export()));
     reopened.selectTool('track');
     expect(reopened.tracks[0].nodes).toEqual(stale);
@@ -2504,8 +2533,8 @@ describe('EditSession finished track lines (#302)', () => {
 });
 
 describe('EditSession track edits while tracing (#303)', () => {
-  function line(s: EditSession): Centerline {
-    return s.archive.getManifest().layout.centerlines![0];
+  function line(s: EditSession): Track {
+    return s.archive.getManifest().layout.tracks![0];
   }
 
   function traceOf(s: EditSession): TraceView {
@@ -2646,7 +2675,7 @@ describe('EditSession track edits while tracing (#303)', () => {
       expect(now.fit?.parts.slice(0, n)).toEqual(shown.fit?.parts.slice(0, n));
       shown = now;
     }
-    expect(s.history.undoLabel).toBe('extend centerline');
+    expect(s.history.undoLabel).toBe('extend track');
     expect(line(s).clicks).toEqual([...left, ...next]);
   });
 
@@ -2672,7 +2701,7 @@ describe('EditSession track edits while tracing (#303)', () => {
     await s.delete(s.rightClick({ x: 100, y: 100 }, SCALE)!);
     expect(s.tracks).toHaveLength(0);
     expect(trackChain(s)).toBeNull();
-    expect(s.history.undoLabel).toBe('delete centerline');
+    expect(s.history.undoLabel).toBe('delete track');
   });
 
   it('puts a dragged click back and writes nothing when the drag is cancelled', async () => {
@@ -2703,8 +2732,8 @@ describe('EditSession track edits while tracing (#303)', () => {
 });
 
 describe('EditSession editor on the projection rule (#313)', () => {
-  function line(s: EditSession, index = 0): Centerline {
-    return s.archive.getManifest().layout.centerlines![index];
+  function line(s: EditSession, index = 0): Track {
+    return s.archive.getManifest().layout.tracks![index];
   }
 
   /** `p` moved `gauges` across the line its neighbours give, in whole pixels. */
@@ -2870,7 +2899,7 @@ describe('EditSession editor on the projection rule (#313)', () => {
 
       expect(s.tracks).toEqual([before[1]]);
       expect(s.history.size).toBe(entries + 1);
-      expect(s.history.undoLabel).toBe('delete centerline');
+      expect(s.history.undoLabel).toBe('delete track');
       await s.undo();
       expect(s.tracks).toEqual(before);
     });

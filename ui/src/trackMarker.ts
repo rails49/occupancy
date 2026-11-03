@@ -20,7 +20,7 @@ import type { TraceView } from './trackTrace.js';
  *
  * A module rather than a custom element, like the other markers. Its exports
  * must be used together: `trackMarkerStyles` in the host's `static styles`,
- * `renderTrack` once per stored centerline and `renderPendingTrack` for the
+ * `renderTrack` once per stored track and `renderPendingTrack` for the
  * line a track chain is tracing.
  *
  * The rails are what the person compares with the photograph. They are drawn
@@ -90,7 +90,7 @@ function renderDot(p: Point, size: TrackSymbolSize, cls: string): SVGTemplateRes
 }
 
 /**
- * One centerline. `highlighted` are the pixels of clicks a reveal points at (#37).
+ * One track. `highlighted` are the pixels of clicks a reveal points at (#37).
  */
 export function renderTrack(
   track: Track,
