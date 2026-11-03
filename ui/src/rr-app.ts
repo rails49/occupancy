@@ -10,7 +10,7 @@ import { revealTarget, type HistoryEntry } from './history.js';
 import { openArchive, supportsFileSystemAccess, writeArchive, type FileBinding } from './persistence.js';
 // Shared with the diagnostics queue, which binds bare keys to `window` too —
 // see `keyboard.ts` for why the rule has one home.
-import { isTypingTarget } from './keyboard.js';
+import { isInsideOpenDialog, isTypingTarget } from './keyboard.js';
 import { GATE_REASON, TOOLS } from './tools.js';
 import './rr-editor-view.js';
 import type { NotifyDetail } from './rr-editor-view.js';
@@ -155,18 +155,30 @@ export class RRApp extends LitElement {
   };
 
   /**
-   * Cmd/Ctrl+Z and Cmd+Shift+Z / Ctrl+Y, editor view only.
+   * Cmd/Ctrl+Z and Cmd+Shift+Z / Ctrl+Y, and Cmd/Ctrl+S and Cmd/Ctrl+Shift+S
+   * for Save and Save As, editor view only.
    *
    * The rail's Undo and Redo are not a duplicate of this: they carry the
    * disabled state, which is the only honest signal that the stack has a
    * bottom, and touch devices have no Cmd+Z at all.
+   *
+   * Save cancels the browser's Save Page everywhere in the editor, a field
+   * included, but saves nothing from inside an open dialog or on a key repeat
+   * (#326).
    */
   private _onKeyDown = async (event: KeyboardEvent) => {
     if (this._viewMode !== 'editor' || !this._session) return;
     if (!event.metaKey && !event.ctrlKey) return;
-    if (isTypingTarget(event)) return;
 
     const key = event.key.toLowerCase();
+    if (key === 's') {
+      event.preventDefault();
+      if (event.repeat || isInsideOpenDialog(event)) return;
+      await this._onFileSave(event.shiftKey);
+      return;
+    }
+    if (isTypingTarget(event)) return;
+
     if (key === 'z' && !event.shiftKey) {
       event.preventDefault();
       await this._undo();
@@ -404,6 +416,7 @@ export class RRApp extends LitElement {
           id="file-save"
           icon="floppy"
           label=${saveLabel()}
+          key="Mod+S"
           @look-press=${(e: CustomEvent<LookPressDetail>) => this._onFileSave(e.detail.shiftKey)}
         ></look-command>
       </look-group>

@@ -180,6 +180,10 @@ and do not gate a feature on a handle existing.
 * **Save As is a Shift-click on Save, not a button of its own**, read from `look-press`'s
   `shiftKey`. On a browser without the API a Save As button would do exactly what Save does. The
   tooltip names the modifier only where the browser can honour it.
+* **Cmd/Ctrl+S is Save and Cmd/Ctrl+Shift+S is Save As**, in the editor view with an archive open
+  (#326). The key cancels the browser's Save Page even when a field has focus. It saves nothing on
+  a key repeat. It saves nothing from inside an open dialog either, since a dialog's fields commit
+  on blur or Enter.
 
 ## Every manifest mutation goes through `history.record`
 
