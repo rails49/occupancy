@@ -1111,6 +1111,32 @@ describe('rr-editor-view', () => {
       ]);
     });
 
+    it('says why a gap cannot be made straight, and keeps it free (#322)', async () => {
+      const el = await mountWithTool('track');
+      const hint = () => el.shadowRoot!.querySelector('.track-hint')?.textContent?.trim();
+      // Along a curve of radius 20 G: the first three clicks are within the tolerance of a straight, the first four are not.
+      const at = [
+        { x: 100, y: 170 },
+        { x: 300, y: 125 },
+        { x: 500, y: 103 },
+        { x: 700, y: 103 },
+        { x: 900, y: 125 },
+      ];
+      for (const p of at) await clickAt(el, p);
+      await pressEscape(el);
+      for (const p of [{ x: 200, y: 145 }, { x: 400, y: 111 }]) {
+        await rightClickAt(el, p);
+        await choose(el, 'make-straight');
+      }
+      const before = el.session!.tracks[0];
+      expect(before.clicks!.map(p => p.straight === true)).to.deep.equal([true, true, false, false, false]);
+
+      await rightClickAt(el, { x: 600, y: 100 });
+      await choose(el, 'make-straight');
+      expect(hint()).to.match(/^The track is not straight there/);
+      expect(el.session!.tracks[0]).to.equal(before);
+    });
+
     it('opens Delete line on a click of a line too, and deletes the line', async () => {
       const el = await mountWithTool('track');
       await clickAt(el, { x: 100, y: 100 });

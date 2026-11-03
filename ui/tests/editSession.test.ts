@@ -2544,7 +2544,7 @@ describe('EditSession straight marks through edits (#319)', () => {
     expect(marks(s)).toEqual([false, true, true, false, false, false]);
   });
 
-  it('merges the two gaps of a deleted click into one, straight only if both were', async () => {
+  it('merges the two gaps of a click deleted from its menu into one, straight only if both were, as one entry', async () => {
     const cases: [number, boolean[]][] = [
       [2, [false, true, false, false, false]],
       [3, [false, true, false, false, false]],
@@ -2555,17 +2555,23 @@ describe('EditSession straight marks through edits (#319)', () => {
     for (const [index, expected] of cases) {
       const s = marked();
       const px = line(s).clicks![index];
-      await s.delete({ kind: 'track-click', line: 0, index, px: { x: px.x, y: px.y } });
+      const entries = s.history.size;
+      await s.delete(s.rightClick({ x: px.x, y: px.y }, SCALE)!);
       expect(marks(s), `delete click ${index}`).toEqual(expected);
+      expect(s.history.size).toBe(entries + 1);
+      expect(s.history.undoLabel).toBe('delete click');
       expect(line(s).nodes).toEqual(nodesOf(s, line(s).clicks!));
     }
   });
 
   it('marks both gaps straight when a click is inserted into a straight gap, and neither into a free one (#321)', async () => {
     const s = marked();
+    const entries = s.history.size;
     await clicks(s, { x: 400, y: 103 });
     expect(line(s).clicks![2]).toEqual({ x: 400, y: 103, straight: true });
     expect(marks(s)).toEqual([false, true, true, true, false, false, false]);
+    expect(s.history.size).toBe(entries + 1);
+    expect(s.history.undoLabel).toBe('insert click');
 
     await clicks(s, { x: 1000, y: 97 });
     expect(line(s).clicks![6]).toEqual({ x: 1000, y: 97 });
@@ -2629,6 +2635,16 @@ describe('EditSession straight marks through edits (#319)', () => {
     expect(s.refusal).toBe('off-straight');
     expect(line(s)).toEqual(before);
     expect(s.history.size).toBe(entries);
+  });
+
+  it('marks both gaps straight when a click is pressed into a straight gap and dragged, as one entry (#322)', async () => {
+    const s = marked();
+    const entries = s.history.size;
+    expect(await drag(s, [{ x: 600, y: 100 }, { x: 610, y: 102 }, { x: 620, y: 103 }])).toBe(true);
+    expect(line(s).clicks![3]).toEqual({ x: 620, y: 103, straight: true });
+    expect(marks(s)).toEqual([false, true, true, true, false, false, false]);
+    expect(s.history.size).toBe(entries + 1);
+    expect(s.history.undoLabel).toBe('insert click');
   });
 
   it('keeps the marks when the line goes on from its last click or its first, and through an edit while tracing', async () => {
