@@ -306,7 +306,8 @@ export class EditSession {
    * is live, and ends one still at its start. While a track chain is live
    * only a click of its line is grabbed, or, while it is still at its start,
    * a click of another line, which ends it. Otherwise the track tool grabs a
-   * line's click before anything else.
+   * line's click before anything else, and a press within the start distance
+   * of a line, on nothing else, inserts a click there (`_grabInsert`).
    */
   beginDrag(at: Point, scale: number): Drag | null {
     if (this._drag) return null;
