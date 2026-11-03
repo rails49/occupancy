@@ -367,6 +367,17 @@ describe('a line with straight gaps', () => {
     });
   }
 
+  it('follows the circle that meets a run through the last two of three free clicks', () => {
+    // The first click is on a curve of 30 G, the next two on one of 50 G that meets the straight.
+    const pieces: Piece[] = [{ radius: 30, turn: 30 }, { radius: 50, turn: 30 }, { straight: 20 }];
+    const clicks = straightBetween(clicksAt(pieces, [10, 22, 34, 46, 51, 56, 61], { noise: 0 }), 3, 6);
+    const track = Array.from({ length: 1301 }, (_, i) => along(pieces, 21 + (i * 26) / 1300));
+    const line = samples(lineOf(clicks));
+    const from = nearestSample(line, clicks[1]);
+    const to = nearestSample(line, clicks[3]);
+    for (const p of every(line.slice(from, to + 1), 5)) expect(distanceTo(p, track)).toBeLessThan(1e-3);
+  });
+
   it('is built when the curves on both sides of a one-gap run would touch it the wrong way round', () => {
     // Clicks on a circle of 40 G that touches the run 4.25 G along it, past
     // where the circle from the other side touches it, 0.75 G along.

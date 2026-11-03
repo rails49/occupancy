@@ -401,8 +401,8 @@ function join(line: Straight, far: Point, near: Point, second: Point, opts: FitO
 /**
  * The headings at free clicks `i` to `j`, with run `before` ending just
  * before them and run `after` starting just after them, if any. Next to a
- * run, the circle that meets it sets the heading of the click next to it
- * and, with four clicks or more, of the one beyond.
+ * run, the circle that meets it sets the headings of the click next to it
+ * and the one beyond, unless the circle at the other end sets that one.
  */
 function freeHeadings(clicks: readonly Click[], i: number, j: number, before?: Run, after?: Run): number[] {
   const free = clicks.slice(i, j + 1);
@@ -414,13 +414,12 @@ function freeHeadings(clicks: readonly Click[], i: number, j: number, before?: R
     return [hs.length === 1 ? hs[0] : hs[0] + wrapAngle(hs[1] - hs[0]) / 2];
   }
   const fixed: (number | null)[] = new Array(m).fill(null);
-  if (before?.out) {
-    fixed[0] = before.out.near;
-    if (m >= 4) fixed[1] = before.out.far;
-  }
-  if (after?.into) {
-    fixed[m - 1] = after.into.near;
-    if (m >= 4) fixed[m - 2] = after.into.far;
-  }
+  const from = before?.out;
+  const to = after?.into;
+  if (from) fixed[0] = from.near;
+  if (to) fixed[m - 1] = to.near;
+  // Three clicks between two such circles: the middle one is left to the rule.
+  if (from && !(to && m === 3)) fixed[1] ??= from.far;
+  if (to && !(from && m === 3)) fixed[m - 2] ??= to.far;
   return headings(free, fixed);
 }
