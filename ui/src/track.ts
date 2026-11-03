@@ -172,10 +172,7 @@ export function hitTrack(tracks: readonly Track[], at: Point, radius: number): T
  */
 export function nearestGap(track: Track, at: Point): number {
   // Points along the line in order; a click's place is its nearest point's index.
-  const samples = segments(track.nodes).flatMap(s => {
-    const n = Math.max(4, Math.ceil(Math.hypot(s.p1.x - s.p0.x, s.p1.y - s.p0.y) / SAMPLE_PX));
-    return Array.from({ length: n + 1 }, (_, k) => pointAt(s, k / n));
-  });
+  const samples = offsetPoints(track.nodes, 0);
   const place = (p: Point) => {
     let best = 0;
     samples.forEach((q, i) => {

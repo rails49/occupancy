@@ -18,7 +18,7 @@ import {
 const opts = fitOptions(G);
 
 /** The line of `clicks`; throws when the rule refuses them. */
-function lineOf(clicks: readonly Click[]): Fit {
+function fitOf(clicks: readonly Click[]): Fit {
   const built = buildLine(clicks, opts);
   if (built.kind !== 'line') throw new Error(`refused: ${built.reason}`);
   return built.fit;
@@ -66,7 +66,7 @@ describe('two clicks', () => {
   it('make a straight from the first to the second', () => {
     const a = { x: 100, y: 100 };
     const b = { x: 400, y: 500 };
-    const line = samples(lineOf([a, b]));
+    const line = samples(fitOf([a, b]));
     expect(line[0]).toEqual(a);
     expect(distanceTo(b, line)).toBeLessThan(1e-9);
     for (const p of line) expect(Math.abs(4 * (p.x - 100) - 3 * (p.y - 100))).toBeLessThan(1e-9);
@@ -81,7 +81,7 @@ function onCircle(centre: Point, radius: number, angles: readonly number[]): Poi
 describe('clicks on one straight or one circle', () => {
   it('give that straight, however they are spaced', () => {
     const clicks = [0, 3, 11, 12.5, 30, 41].map(s => ({ x: 100 + s * G * 0.8, y: 50 + s * G * 0.6 }));
-    const line = samples(lineOf(clicks));
+    const line = samples(fitOf(clicks));
     for (const p of line) expect(Math.abs(0.6 * (p.x - 100) - 0.8 * (p.y - 50))).toBeLessThan(1e-6);
     expect(distanceTo(clicks[clicks.length - 1], line)).toBeLessThan(1e-6);
   });
@@ -94,7 +94,7 @@ describe('clicks on one straight or one circle', () => {
     it(`give that circle: ${name}`, () => {
       const centre = { x: 2000, y: 1500 };
       const r = 30 * G;
-      const line = samples(lineOf(onCircle(centre, r, angles)));
+      const line = samples(fitOf(onCircle(centre, r, angles)));
       for (const p of line) expect(Math.hypot(p.x - centre.x, p.y - centre.y)).toBeCloseTo(r, 6);
       expect(distanceTo(onCircle(centre, r, [angles[angles.length - 1]])[0], line)).toBeLessThan(1e-6);
     });
@@ -146,7 +146,7 @@ function every(points: readonly Point[], n: number): Point[] {
 
 /** The line between each click and the next, as samples. */
 function gaps(clicks: readonly Click[]): Point[][] {
-  const line = samples(lineOf(clicks));
+  const line = samples(fitOf(clicks));
   const at: number[] = [];
   let from = 0;
   for (const p of clicks) {
@@ -200,7 +200,7 @@ describe('every line', () => {
 
     it(`has no kink: ${name}`, () => {
       // Samples a pixel apart on arcs no tighter than 10 G turn under 0.004 rad from one to the next.
-      const line = samples(lineOf(clicks));
+      const line = samples(fitOf(clicks));
       for (let i = 2; i < line.length; i++) {
         const a = Math.atan2(line[i - 1].y - line[i - 2].y, line[i - 1].x - line[i - 2].x);
         const b = Math.atan2(line[i].y - line[i - 1].y, line[i].x - line[i - 1].x);
@@ -209,8 +209,8 @@ describe('every line', () => {
     });
 
     it(`is the same for the clicks reversed: ${name}`, () => {
-      const forward = samples(lineOf(clicks));
-      const backward = samples(lineOf([...clicks].reverse()));
+      const forward = samples(fitOf(clicks));
+      const backward = samples(fitOf([...clicks].reverse()));
       expect(backward[0]).toEqual(clicks[clicks.length - 1]);
       for (const p of every(forward, 20)) expect(distanceTo(p, backward)).toBeLessThan(1e-6);
       for (const p of every(backward, 20)) expect(distanceTo(p, forward)).toBeLessThan(1e-6);
@@ -320,7 +320,7 @@ describe('a line with straight gaps', () => {
     const inRun = runClicks(marked);
 
     it(`is exactly straight along each run, and within the tolerance of its clicks: ${name}`, () => {
-      const line = samples(lineOf(clicks));
+      const line = samples(fitOf(clicks));
       for (const [a, b] of runs) {
         const from = nearestSample(line, clicks[a]);
         const to = nearestSample(line, clicks[b]);
@@ -331,14 +331,14 @@ describe('a line with straight gaps', () => {
     });
 
     it(`passes through every free click: ${name}`, () => {
-      const line = samples(lineOf(clicks));
+      const line = samples(fitOf(clicks));
       clicks.forEach((p, i) => {
         if (!inRun.includes(i)) expect(distanceTo(p, line)).toBeLessThan(1e-6);
       });
     });
 
     it(`has no kink: ${name}`, () => {
-      const line = samples(lineOf(clicks));
+      const line = samples(fitOf(clicks));
       for (let i = 2; i < line.length; i++) {
         const a = Math.atan2(line[i - 1].y - line[i - 2].y, line[i - 1].x - line[i - 2].x);
         const b = Math.atan2(line[i].y - line[i - 1].y, line[i].x - line[i - 1].x);
@@ -347,8 +347,8 @@ describe('a line with straight gaps', () => {
     });
 
     it(`is the same for the clicks and marks reversed: ${name}`, () => {
-      const forward = samples(lineOf(clicks));
-      const backward = samples(lineOf(reversedClicks(clicks)));
+      const forward = samples(fitOf(clicks));
+      const backward = samples(fitOf(reversedClicks(clicks)));
       for (const p of every(forward, 20)) expect(distanceTo(p, backward)).toBeLessThan(1e-6);
       for (const p of every(backward, 20)) expect(distanceTo(p, forward)).toBeLessThan(1e-6);
     });
@@ -357,7 +357,7 @@ describe('a line with straight gaps', () => {
       const exact = markedClicks(marked, 0);
       const total = lengthOf(pieces);
       const track = Array.from({ length: Math.ceil(total / 0.05) + 1 }, (_, i) => along(pieces, Math.min(total, i * 0.05)));
-      const line = samples(lineOf(exact));
+      const line = samples(fitOf(exact));
       const from = nearestSample(track, exact[0]);
       const to = nearestSample(track, exact[exact.length - 1]);
       for (const p of every(line, 5)) expect(distanceTo(p, track)).toBeLessThan(1e-3);
@@ -368,13 +368,13 @@ describe('a line with straight gaps', () => {
       // A straight part whose length changes is sampled at other points
       // along it, so a gap out of reach is compared with the whole line.
       const was = gaps(clicks);
-      const wasLine = samples(lineOf(clicks));
+      const wasLine = samples(fitOf(clicks));
       const free = clicks.map((_, i) => i).filter(i => !inRun.includes(i) && i > 0 && i < clicks.length - 1);
       for (const j of free) {
         // A tenth of a gauge: clicks 5 G apart on a curve of 25 G leave little room before an arc is too tight.
         const moved = clicks.map((p, i) => (i === j ? { ...p, x: p.x + G / 12, y: p.y - G / 15 } : p));
         const now = gaps(moved);
-        const nowLine = samples(lineOf(moved));
+        const nowLine = samples(fitOf(moved));
         was.forEach((g, k) => {
           if (k > j - 4 && k < j + 3) return;
           for (const p of every(g, 5)) expect(distanceTo(p, nowLine), `click ${j}, gap ${k}`).toBeLessThan(1e-6);
@@ -390,7 +390,7 @@ describe('a line with straight gaps', () => {
     const pieces: Piece[] = [{ radius: 30, turn: 30 }, { radius: 50, turn: 30 }, { straight: 20 }];
     const clicks = straightBetween(clicksAt(pieces, [10, 22, 34, 46, 51, 56, 61], { noise: 0 }), 3, 6);
     const track = Array.from({ length: 1301 }, (_, i) => along(pieces, 21 + (i * 26) / 1300));
-    const line = samples(lineOf(clicks));
+    const line = samples(fitOf(clicks));
     const from = nearestSample(line, clicks[1]);
     const to = nearestSample(line, clicks[3]);
     for (const p of every(line.slice(from, to + 1), 5)) expect(distanceTo(p, track)).toBeLessThan(1e-3);
@@ -406,14 +406,14 @@ describe('a line with straight gaps', () => {
     });
     const after = [...before].reverse().map(p => ({ x: 5 * G - p.x, y: -p.y }));
     const clicks = [...before, { x: 0, y: 0, straight: true }, { x: 5 * G, y: 0 }, ...after];
-    const line = samples(lineOf(clicks));
+    const line = samples(fitOf(clicks));
     for (const p of [...before, ...after]) expect(distanceTo(p, line)).toBeLessThan(1e-6);
     for (let i = 2; i < line.length; i++) {
       const a = Math.atan2(line[i - 1].y - line[i - 2].y, line[i - 1].x - line[i - 2].x);
       const b = Math.atan2(line[i].y - line[i - 1].y, line[i].x - line[i - 1].x);
       expect(Math.abs(Math.atan2(Math.sin(b - a), Math.cos(b - a)))).toBeLessThan(0.005);
     }
-    const backward = samples(lineOf(reversedClicks(clicks)));
+    const backward = samples(fitOf(reversedClicks(clicks)));
     for (const p of every(line, 20)) expect(distanceTo(p, backward)).toBeLessThan(1e-6);
   });
 });

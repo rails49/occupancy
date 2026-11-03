@@ -23,12 +23,15 @@ import {
   clickHitAt,
   insertAt,
   lineOf,
+  markedClick,
+  recordLine,
   refitLine,
   trackHitAt,
   trackTool,
   withClickAt,
   withClickIn,
   withoutClick,
+  writeTrack,
 } from './trackChain.js';
 import { fitOptions } from './trackFit.js';
 import type { Refusal } from './trackFit.js';
@@ -382,27 +385,24 @@ export class EditSession {
   private _grabInsert(at: Point): Drag | null {
     if (this._tool !== 'track' || this._gated('track')) return null;
     const insert = insertAt(this._context, at);
-    if (!insert) return null;
-    const clicks = this._tracks()[insert.line].clicks!;
-    return this._dragLine(insert.line, 'insert click', pixel(at), at, to => withClickIn(clicks, insert.gap, to));
+    if (!insert || insert.gap === null) return null;
+    const { line, gap } = insert;
+    const clicks = this._tracks()[line].clicks!;
+    return this._dragLine(line, 'insert click', pixel(at), at, to => withClickIn(clicks, gap, to));
   }
 
   /**
-   * A drag of a click of line `line` from `from`, grabbed at `at`: each move
-   * writes the clicks `clicksAt(to)` with their line, or with the last line
-   * the rule took where it refuses them, and the release writes one entry
-   * `label`. A release back at `from`, or one the rule refuses, leaves the
-   * line as it was.
+   * A drag of a click of line `line`, which starts at `from` and is grabbed
+   * at `at`. `clicksAt(to)` gives the line's clicks with the dragged click at
+   * `to`. On each move the line is built again from those clicks and
+   * written; where the rule refuses them, the clicks are written with the
+   * last line it built. The release writes one entry `label`. A release back
+   * at `from`, or at a place the rule refuses, leaves the line as it was.
    */
   private _dragLine(line: number, label: string, from: Point, at: Point, clicksAt: (to: Point) => Click[]): Drag {
     const start = this._tracks()[line];
     const opts = fitOptions(this._scene().dpt!);
     const gesture = this.history.beginGesture(label, { kind: 'layout' });
-    const write = (track: Track) => {
-      const lines = [...this._tracks()];
-      lines[line] = track;
-      this._writeLayout({ tracks: lines });
-    };
     let shown = start;
     return this._dragClick(
       from,
@@ -410,12 +410,12 @@ export class EditSession {
       to => {
         const clicks = clicksAt(to);
         const built = lineOf(clicks, opts);
-        if (typeof built !== 'string') shown = built;
-        write({ ...shown, clicks });
-        return typeof built === 'string' ? built : null;
+        if (built.kind === 'line') shown = built.track;
+        writeTrack(this._context, line, { ...shown, clicks });
+        return built.kind === 'line' ? null : built.reason;
       },
       async to => {
-        write((to && refitLine(this._context, clicksAt(to))) || start);
+        writeTrack(this._context, line, (to && refitLine(this._context, clicksAt(to))) || start);
         await gesture.commit();
       }
     );
@@ -609,11 +609,7 @@ export class EditSession {
           await chain.remove(index);
           return;
         }
-        const refit = refitLine(this._context, withoutClick(clicks, index));
-        if (!refit) return;
-        const lines = [...this._tracks()];
-        lines[line] = refit;
-        await this._record('delete click', { kind: 'layout' }, () => this._writeLayout({ tracks: lines }));
+        await recordLine(this._context, 'delete click', line, withoutClick(clicks, index));
         return;
       }
       case 'car': {
@@ -648,15 +644,8 @@ export class EditSession {
     const clicks = this._tracks()[line]?.clicks;
     if (!gap || !clicks || !this._trackNodeIsStillAt(line, 0, subject.px)) return;
     if ((clicks[gap.index]?.straight === true) !== gap.straight) return;
-    const { x, y } = clicks[gap.index];
-    const marked = clicks.map((p, i) => (i !== gap.index ? p : straight ? { x, y, straight } : { x, y }));
-    const refit = refitLine(this._context, marked);
-    if (!refit) return;
-    const lines = [...this._tracks()];
-    lines[line] = refit;
-    await this._record(straight ? 'make straight' : 'make free', { kind: 'layout' }, () =>
-      this._writeLayout({ tracks: lines })
-    );
+    const marked = clicks.map((p, i) => (i === gap.index ? markedClick(p, straight) : p));
+    await recordLine(this._context, straight ? 'make straight' : 'make free', line, marked);
   }
 
   /** Deletes line `line` as one entry, and ends a chain tracing it. */

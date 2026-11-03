@@ -17,14 +17,17 @@ export function clickHitAt(tracks: readonly Track[], at: Point, scale: number): 
   return hitClick(tracks, at, DEFAULT_GRAB_RADIUS_SCREEN_PX * scale);
 }
 
+/** A track of a set of clicks, or why the rule refuses them. */
+export type Lined = { readonly kind: 'line'; readonly track: Track } | { readonly kind: 'refused'; readonly reason: Refusal };
+
 /**
  * `clicks` with the nodes of their line (`buildLine`), or why the rule
  * refuses them. One click has no nodes.
  */
-export function lineOf(clicks: readonly Click[], opts: FitOptions): Track | Refusal {
-  if (clicks.length < 2) return { nodes: [], clicks: [...clicks] };
+export function lineOf(clicks: readonly Click[], opts: FitOptions): Lined {
+  if (clicks.length < 2) return { kind: 'line', track: { nodes: [], clicks: [...clicks] } };
   const built = buildLine(clicks, opts);
-  return built.kind === 'line' ? { nodes: fitNodes(built.fit), clicks: [...clicks] } : built.reason;
+  return built.kind === 'line' ? { kind: 'line', track: { nodes: fitNodes(built.fit), clicks: [...clicks] } } : built;
 }
 
 /**
@@ -34,11 +37,30 @@ export function lineOf(clicks: readonly Click[], opts: FitOptions): Track | Refu
  */
 export function refitLine(ctx: ChainContext, clicks: readonly Click[]): Track | null {
   const line = lineOf(clicks, fitOptions(ctx.scene().dpt!));
-  if (typeof line === 'string') {
-    ctx.refuse(line);
-    return null;
-  }
-  return line;
+  if (line.kind === 'line') return line.track;
+  ctx.refuse(line.reason);
+  return null;
+}
+
+/** Writes `track` as line `index`, or as a new line when `index` is the number of lines. */
+export function writeTrack(ctx: ChainContext, index: number, track: Track) {
+  const lines = [...tracks(ctx)];
+  lines[index] = track;
+  ctx.writeLayout({ tracks: lines });
+}
+
+/**
+ * Writes line `index` with `clicks` and the nodes of their line, as one
+ * entry `label`. Clicks the rule refuses write nothing, and the hint says why.
+ */
+export async function recordLine(ctx: ChainContext, label: string, index: number, clicks: readonly Click[]) {
+  const line = refitLine(ctx, clicks);
+  if (line) await ctx.record(label, { kind: 'layout' }, () => writeTrack(ctx, index, line));
+}
+
+/** The click at `p`, starting a straight gap when `straight`. */
+export function markedClick(p: Point, straight: boolean | undefined): Click {
+  return straight ? { x: p.x, y: p.y, straight: true } : { x: p.x, y: p.y };
 }
 
 /** `clicks` with click `index` moved to `to`, its mark kept. */
@@ -51,19 +73,19 @@ export function withClickAt(clicks: readonly Click[], index: number, to: Point):
  * The new click takes that click's mark, so a straight gap becomes two.
  */
 export function withClickIn(clicks: readonly Click[], gap: number, p: Point): Click[] {
-  const click: Click = clicks[gap].straight ? { x: p.x, y: p.y, straight: true } : { x: p.x, y: p.y };
-  return [...clicks.slice(0, gap + 1), click, ...clicks.slice(gap + 1)];
+  return [...clicks.slice(0, gap + 1), markedClick(p, clicks[gap].straight), ...clicks.slice(gap + 1)];
 }
 
 /**
  * The line within the start distance of `at` that a click there inserts
- * into, and the gap it goes in, or null when no line with clicks is near.
+ * into, and the gap it goes in, or null when no line is near. A line with
+ * no clicks has no gap to insert into.
  */
-export function insertAt(ctx: ChainContext, at: Point): { line: number; gap: number } | null {
+export function insertAt(ctx: ChainContext, at: Point): { line: number; gap: number | null } | null {
   const lines = tracks(ctx);
   const hit = hitTrack(lines, at, TRACK_FIT.startDistance * ctx.scene().dpt!);
-  if (!hit || !lines[hit.line].clicks) return null;
-  return { line: hit.line, gap: nearestGap(lines[hit.line], at) };
+  if (!hit) return null;
+  return { line: hit.line, gap: lines[hit.line].clicks ? nearestGap(lines[hit.line], at) : null };
 }
 
 /**
@@ -72,10 +94,7 @@ export function insertAt(ctx: ChainContext, at: Point): { line: number; gap: num
  */
 export function withoutClick(clicks: readonly Click[], index: number): Click[] {
   const out = clicks.filter((_, i) => i !== index);
-  if (index > 0) {
-    const { x, y } = clicks[index - 1];
-    out[index - 1] = clicks[index - 1].straight && clicks[index].straight ? { x, y, straight: true } : { x, y };
-  }
+  if (index > 0) out[index - 1] = markedClick(clicks[index - 1], clicks[index - 1].straight && clicks[index].straight);
   return out;
 }
 
@@ -95,20 +114,17 @@ export const trackTool: ChainTool = (ctx, at, scale) => {
     return { kind: 'chain', chain: TrackChain.continuing(ctx, click.line, click.index === 0) };
   }
   const insert = insertAt(ctx, at);
-  if (insert) return { kind: 'edit', run: () => insertClick(ctx, insert.line, insert.gap, pixel(at)) };
-  if (hitTrack(lines, at, TRACK_FIT.startDistance * ctx.scene().dpt!)) return { kind: 'edit', run: async () => NONE };
-  return { kind: 'chain', chain: TrackChain.starting(ctx, pixel(at)) };
+  if (!insert) return { kind: 'chain', chain: TrackChain.starting(ctx, pixel(at)) };
+  const { line, gap } = insert;
+  if (gap === null) return { kind: 'edit', run: async () => NONE };
+  return {
+    kind: 'edit',
+    run: async () => {
+      await recordLine(ctx, 'insert click', line, withClickIn(lines[line].clicks!, gap, pixel(at)));
+      return NONE;
+    },
+  };
 };
-
-/** Inserts a click at `p` into gap `gap` of line `index`, as one entry. One the rule refuses writes nothing. */
-async function insertClick(ctx: ChainContext, index: number, gap: number, p: Point): Promise<ClickResult> {
-  const lines = [...tracks(ctx)];
-  const line = refitLine(ctx, withClickIn(lines[index].clicks!, gap, p));
-  if (!line) return NONE;
-  lines[index] = line;
-  await ctx.record('insert click', { kind: 'layout' }, () => ctx.writeLayout({ tracks: lines }));
-  return NONE;
-}
 
 /**
  * A chain of track: one track, traced click by click from either end. The
@@ -171,7 +187,7 @@ export class TrackChain implements Chain {
   view(): ChainView {
     const trace = this._fromFirst ? reversed(this._view) : this._view;
     const clicks = trace.clicks!;
-    const shown = this._straight ? { ...trace, clicks: [...clicks.slice(0, -1), { ...clicks.at(-1)!, straight: true }] } : trace;
+    const shown = this._straight ? { ...trace, clicks: [...clicks.slice(0, -1), markedClick(clicks.at(-1)!, true)] } : trace;
     return { tool: 'track', end: this._end(), line: this._index, trace: shown };
   }
 
@@ -192,11 +208,10 @@ export class TrackChain implements Chain {
     const clicks = this._line.clicks!;
     const label = this._index === null ? 'place track' : 'extend track';
     if (this._fromFirst) {
-      if (await this._write(label, [this._straight ? { ...p, straight: true } : p, ...clicks])) this._straight = false;
+      if (await this._write(label, [markedClick(p, this._straight), ...clicks])) this._straight = false;
       return NONE;
     }
-    const last = clicks[clicks.length - 1];
-    const marked = this._straight ? [...clicks.slice(0, -1), { ...last, straight: true }] : clicks;
+    const marked = this._straight ? [...clicks.slice(0, -1), markedClick(clicks.at(-1)!, true)] : clicks;
     if (await this._write(label, [...marked, p])) this._straight = false;
     return NONE;
   }
@@ -223,8 +238,8 @@ export class TrackChain implements Chain {
     }
     const clicks = withClickAt(this._line.clicks!, index, to);
     const line = lineOf(clicks, this._opts);
-    this._view = { ...(typeof line === 'string' ? this._view : line), clicks };
-    return typeof line === 'string' ? line : null;
+    this._view = { ...(line.kind === 'line' ? line.track : this._view), clicks };
+    return line.kind === 'line' ? null : line.reason;
   }
 
   /** Moves click `index` to `to`, and builds the line again from its clicks. A move the rule refuses writes nothing. */
@@ -256,19 +271,18 @@ export class TrackChain implements Chain {
    * Returns whether it wrote.
    */
   private async _write(label: string, clicks: readonly Click[]): Promise<boolean> {
-    const line = lineOf(clicks, this._opts);
-    if (typeof line === 'string') {
-      this._ctx.refuse(line);
+    const built = lineOf(clicks, this._opts);
+    if (built.kind === 'refused') {
+      this._ctx.refuse(built.reason);
       return false;
     }
+    const line = built.track;
     this._before.push(this._line);
     this._line = line;
     this._view = line;
-    const lines = [...tracks(this._ctx)];
-    const index = this._index ?? lines.length;
-    lines[index] = line;
+    const index = this._index ?? tracks(this._ctx).length;
     this._index = index;
-    await this._ctx.record(label, { kind: 'layout' }, () => this._ctx.writeLayout({ tracks: lines }));
+    await this._ctx.record(label, { kind: 'layout' }, () => writeTrack(this._ctx, index, line));
     return true;
   }
 
@@ -301,10 +315,7 @@ function reversed(line: Track): Track {
   const n = clicks.length;
   return {
     nodes: line.nodes.map(p => ({ ...p, heading: wrapAngle(p.heading + Math.PI) })).reverse(),
-    clicks: clicks.map((_, j) => {
-      const { x, y } = clicks[n - 1 - j];
-      return j < n - 1 && clicks[n - 2 - j].straight ? { x, y, straight: true } : { x, y };
-    }),
+    clicks: clicks.map((_, j) => markedClick(clicks[n - 1 - j], j < n - 1 && clicks[n - 2 - j].straight)),
   };
 }
 
