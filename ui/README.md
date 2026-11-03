@@ -210,9 +210,8 @@ reaches it is the editor **declining** to author something, which is the editor 
 failing. It stays up until the user closes it ([#265]).
 
 **Keyboard:** Cmd/Ctrl+Z and Cmd+Shift+Z / Ctrl+Y, and Cmd/Ctrl+S and Cmd/Ctrl+Shift+S for Save
-and Save As, bound on `window`, **editor view only**. Save cancels the browser's Save Page even in
-a field, and saves nothing from inside an open dialog or on a key repeat ([#326]). Undo and redo
-bail when a field has focus, testing `event.composedPath()[0]` rather than `event.target` —
+and Save As, bound on `window`, **editor view only**. When Save runs is in `docs/UI.md` § Saving
+([#326]). Undo and redo bail when a field has focus, testing `event.composedPath()[0]` rather than `event.target` —
 Shoelace inputs are custom elements, so `target` is retargeted to the host and the naive check would
 hijack Cmd+Z mid-typing. A press with a drag still live does nothing (see `history.ts`).
 
@@ -273,7 +272,7 @@ the editor adds three command groups:
 
 | Group | Commands | |
 |---|---|---|
-| File | `#file-new`, `#file-open`, `#file-save` (`Mod+S`) | A Shift-click on Save is Save As ([#48]) |
+| File | `#file-new`, `#file-open`, `#file-save` (`Mod+S`) | A Shift-click on Save, or `Shift+Mod+S`, is Save As ([#48]) |
 | History | `#edit-undo` (`Mod+Z`), `#edit-redo` (`Shift+Mod+Z`) | Disabled when the stack is empty |
 | Tools | `#tool-calibration`, `#tool-sensor`, `#tool-car` | Only while a manifest is loaded; the active tool is `pressed` |
 

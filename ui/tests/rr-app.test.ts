@@ -381,7 +381,7 @@ describe('rr-app', () => {
 
     it('does Save As on Cmd+Shift+S', async () => {
       const { save } = await mount();
-      press({ key: 'S', metaKey: true, shiftKey: true });
+      expect(press({ key: 'S', metaKey: true, shiftKey: true }).defaultPrevented).toBe(true);
       expect(save).toHaveBeenCalledWith(true);
     });
 
@@ -410,6 +410,23 @@ describe('rr-app', () => {
       const { save } = await mount();
       expect(press({ metaKey: true, repeat: true }).defaultPrevented).toBe(true);
       expect(save).not.toHaveBeenCalled();
+    });
+
+    // The save branch runs before the field check, so undo must still leave
+    // a field's own Cmd+Z alone.
+    it('still leaves Cmd+Z in a field to the field', async () => {
+      const { el } = await mount();
+      const undo = vi.spyOn(el as any, '_undo');
+      const input = document.createElement('input');
+      document.body.append(input);
+      onTestFinished(() => input.remove());
+      expect(press({ key: 'z', metaKey: true }, input).defaultPrevented).toBe(false);
+      expect(undo).not.toHaveBeenCalled();
+    });
+
+    it('leaves the key to the browser with no archive open', async () => {
+      await fixture<RRApp>(html`<rr-app></rr-app>`);
+      expect(press({ metaKey: true }).defaultPrevented).toBe(false);
     });
 
     it('leaves the key to the browser outside the editor view', async () => {
