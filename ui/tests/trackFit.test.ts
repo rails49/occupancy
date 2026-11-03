@@ -366,6 +366,27 @@ describe('a line with straight gaps', () => {
       }
     });
   }
+
+  it('is built when the curves on both sides of a one-gap run would touch it the wrong way round', () => {
+    // Clicks on a circle of 40 G that touches the run 4.25 G along it, past
+    // where the circle from the other side touches it, 0.75 G along.
+    const R = 40;
+    const before = [3, 2, 1].map(k => {
+      const a = 0.2 + 0.15 * k;
+      return { x: (4.25 - R * Math.sin(a)) * G, y: R * (1 - Math.cos(a)) * G };
+    });
+    const after = [...before].reverse().map(p => ({ x: 5 * G - p.x, y: -p.y }));
+    const clicks = [...before, { x: 0, y: 0, straight: true }, { x: 5 * G, y: 0 }, ...after];
+    const line = samples(lineOf(clicks));
+    for (const p of [...before, ...after]) expect(distanceTo(p, line)).toBeLessThan(1e-6);
+    for (let i = 2; i < line.length; i++) {
+      const a = Math.atan2(line[i - 1].y - line[i - 2].y, line[i - 1].x - line[i - 2].x);
+      const b = Math.atan2(line[i].y - line[i - 1].y, line[i].x - line[i - 1].x);
+      expect(Math.abs(Math.atan2(Math.sin(b - a), Math.cos(b - a)))).toBeLessThan(0.005);
+    }
+    const backward = samples(lineOf(reversedClicks(clicks)));
+    for (const p of every(line, 20)) expect(distanceTo(p, backward)).toBeLessThan(1e-6);
+  });
 });
 
 describe('the rule refuses', () => {

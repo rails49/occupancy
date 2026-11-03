@@ -266,13 +266,23 @@ function joinCircle(
   return best;
 }
 
-/** A run of neighbouring straight gaps: clicks `a` to `b`, its line, and where the line starts and ends. */
+/** Where a circle from two free clicks touches a run, and its heading, in the direction of travel, at the click next to the run (`near`) and the one beyond (`far`). */
+interface Join {
+  readonly touch: Point;
+  readonly near: number;
+  readonly far: number;
+}
+
+/**
+ * A run of neighbouring straight gaps: clicks `a` to `b`, its line, and the
+ * circles from the free clicks before and after it that meet it, or null.
+ */
 interface Run {
   readonly a: number;
   readonly b: number;
   readonly line: Straight;
-  start: Point;
-  end: Point;
+  readonly into: Join | null;
+  readonly out: Join | null;
 }
 
 /**
@@ -285,8 +295,8 @@ interface Run {
  * circle through the two nearest free clicks that touches the run gives
  * their headings and where the run starts or ends, if it is no tighter than
  * the minimum radius and touches the run between the nearest free click and
- * the run's second click; otherwise the free gap is two arcs to the foot of
- * the run's end click.
+ * the run's second click, and the run still starts before it ends;
+ * otherwise the free gap is two arcs to the foot of the run's end click.
  *
  * Refused when a click is not ahead of the click before it along that
  * click's heading, or that click not behind it along its own, which would
@@ -299,7 +309,7 @@ export function buildLine(clicks: readonly Click[], opts: FitOptions): Built {
     if (clicks[i].x === clicks[i - 1].x && clicks[i].y === clicks[i - 1].y) return { kind: 'refused', reason: 'behind' };
   }
 
-  const runs: Run[] = [];
+  const spans: { a: number; b: number; line: Straight }[] = [];
   for (let g = 0; g < n - 1; g++) {
     if (!clicks[g].straight) continue;
     let b = g + 1;
@@ -310,17 +320,30 @@ export function buildLine(clicks: readonly Click[], opts: FitOptions): Built {
     if (points.some(q => Math.abs(n0.x * (q.x - line.p.x) + n0.y * (q.y - line.p.y)) > opts.tolerance)) {
       return { kind: 'refused', reason: 'off-straight' };
     }
-    runs.push({ a: g, b, line, start: foot(line, clicks[g]).at, end: foot(line, clicks[b]).at });
+    spans.push({ a: g, b, line });
     g = b - 1;
   }
+  const free = (i: number) => i >= 0 && i < n && !spans.some(r => i >= r.a && i <= r.b);
+  const runs: Run[] = spans.map(({ a, b, line }) => {
+    const into = free(a - 2) && free(a - 1) ? join(line, clicks[a - 2], clicks[a - 1], clicks[a + 1], opts) : null;
+    // Looking back along the run.
+    const back = { p: line.p, heading: line.heading + Math.PI };
+    const away = free(b + 2) && free(b + 1) ? join(back, clicks[b + 2], clicks[b + 1], clicks[b - 1], opts) : null;
+    const out = away && { touch: away.touch, near: away.near + Math.PI, far: away.far + Math.PI };
+    // On a run of one gap the two circles can touch it the wrong way round.
+    if (into && out && foot(line, into.touch).s > foot(line, out.touch).s) return { a, b, line, into: null, out: null };
+    return { a, b, line, into, out };
+  });
 
   const h = new Array<number>(n);
   for (const r of runs) for (let i = r.a; i <= r.b; i++) h[i] = r.line.heading;
   for (let i = 0; i < n; i++) {
-    if (runs.some(r => i >= r.a && i <= r.b)) continue;
+    if (!free(i)) continue;
     let j = i;
-    while (j + 1 < n && !runs.some(r => r.a === j + 1)) j++;
-    stretchHeadings(clicks, i, j, runs, opts).forEach((hk, k) => (h[i + k] = hk));
+    while (free(j + 1)) j++;
+    const before = runs.find(r => r.b === i - 1);
+    const after = runs.find(r => r.a === j + 1);
+    freeHeadings(clicks, i, j, before, after).forEach((hk, k) => (h[i + k] = hk));
     i = j;
   }
 
@@ -337,7 +360,7 @@ export function buildLine(clicks: readonly Click[], opts: FitOptions): Built {
       ways.push({ p: clicks[i], h: h[i], straight: false });
       continue;
     }
-    ways.push({ p: r.start, h: r.line.heading, straight: true }, { p: r.end, h: r.line.heading, straight: false });
+    ways.push({ p: runStart(r, clicks), h: r.line.heading, straight: true }, { p: runEnd(r, clicks), h: r.line.heading, straight: false });
     i = r.b;
   }
   const parts: Part[] = [];
@@ -355,39 +378,49 @@ export function buildLine(clicks: readonly Click[], opts: FitOptions): Built {
   return { kind: 'line', fit: { start: { x: ways[0].p.x, y: ways[0].p.y, heading: ways[0].h }, parts } };
 }
 
+/** Where run `r` starts: where the circle into it touches, or the foot of its first click. */
+function runStart(r: Run, clicks: readonly Click[]): Point {
+  return r.into?.touch ?? foot(r.line, clicks[r.a]).at;
+}
+
+/** Where run `r` ends: where the circle out of it touches, or the foot of its last click. */
+function runEnd(r: Run, clicks: readonly Click[]): Point {
+  return r.out?.touch ?? foot(r.line, clicks[r.b]).at;
+}
+
 /**
- * The headings at free clicks `i` to `j`, and where a run next to them
- * starts or ends (`buildLine`).
+ * The circle through free clicks `far` then `near` that meets `line`
+ * between the foot of `near` and the foot of `second`, the run's second
+ * click, or null (`joinCircle`).
  */
-function stretchHeadings(clicks: readonly Click[], i: number, j: number, runs: Run[], opts: FitOptions): number[] {
+function join(line: Straight, far: Point, near: Point, second: Point, opts: FitOptions): Join | null {
+  const c = joinCircle(line, far, near, foot(line, near).s, foot(line, second).s, opts.minRadius);
+  return c && { touch: c.touch, near: c.hv, far: c.hu };
+}
+
+/**
+ * The headings at free clicks `i` to `j`, with run `before` ending just
+ * before them and run `after` starting just after them, if any. Next to a
+ * run, the circle that meets it sets the heading of the click next to it
+ * and, with four clicks or more, of the one beyond.
+ */
+function freeHeadings(clicks: readonly Click[], i: number, j: number, before?: Run, after?: Run): number[] {
   const free = clicks.slice(i, j + 1);
   const m = free.length;
-  const before = runs.find(r => r.b === i - 1);
-  const after = runs.find(r => r.a === j + 1);
-  const fixed: (number | null)[] = new Array(m).fill(null);
   if (m === 1) {
     const hs: number[] = [];
-    if (before) hs.push(2 * chord(before.end, free[0]) - before.line.heading);
-    if (after) hs.push(2 * chord(free[0], after.start) - after.line.heading);
+    if (before) hs.push(2 * chord(runEnd(before, clicks), free[0]) - before.line.heading);
+    if (after) hs.push(2 * chord(free[0], runStart(after, clicks)) - after.line.heading);
     return [hs.length === 1 ? hs[0] : hs[0] + wrapAngle(hs[1] - hs[0]) / 2];
   }
-  if (before) {
-    // Looking back along the run, from the foot of its end click.
-    const back = { p: before.line.p, heading: before.line.heading + Math.PI };
-    const join = joinCircle(back, free[1], free[0], foot(back, free[0]).s, foot(back, clicks[before.b - 1]).s, opts.minRadius);
-    if (join) {
-      before.end = join.touch;
-      fixed[0] = join.hv + Math.PI;
-      if (m >= 4) fixed[1] = join.hu + Math.PI;
-    }
+  const fixed: (number | null)[] = new Array(m).fill(null);
+  if (before?.out) {
+    fixed[0] = before.out.near;
+    if (m >= 4) fixed[1] = before.out.far;
   }
-  if (after) {
-    const join = joinCircle(after.line, free[m - 2], free[m - 1], foot(after.line, free[m - 1]).s, foot(after.line, clicks[after.a + 1]).s, opts.minRadius);
-    if (join) {
-      after.start = join.touch;
-      fixed[m - 1] = join.hv;
-      if (m >= 4) fixed[m - 2] = join.hu;
-    }
+  if (after?.into) {
+    fixed[m - 1] = after.into.near;
+    if (m >= 4) fixed[m - 2] = after.into.far;
   }
   return headings(free, fixed);
 }
