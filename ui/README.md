@@ -785,20 +785,20 @@ A centerline's SVG ([#284], [#311]). The exports must be used together.
 
 ### `track.ts`
 
-The arithmetic of a G1 centerline ([#284]): pure functions, tested in `tests/track.test.ts`. A
-`Track` is a list of `TrackNode`s (`x`, `y`, `heading` in radians, `atan2(dy, dx)` in image
-pixels). Between two nodes the curve is a cubic Bézier whose handles leave each node along its
-heading, with length `d / (3 cos²(φ/4))`.
+What the editor draws and hits on a G1 centerline ([#284]): pure functions, tested in
+`tests/track.test.ts`. A `Track` is a list of `TrackNode`s (`x`, `y`, `heading` in radians,
+`atan2(dy, dx)` in image pixels). The curve between two nodes, a cubic Bézier, and the nearest
+point on a track are `@rails49/r49`'s (`segment`, `pointAt`, `headingAt`, `nearestOnTrack`;
+FORMAT.md § Node), and so is `wrapAngle`.
 
 | Export | Description |
 |---|---|
-| `segment(a, b)`, `segments(nodes)` | The Bézier between two nodes, or between each consecutive pair |
-| `pointAt`, `tangentAt` | A point on a segment, and the derivative there |
+| `segments(nodes)` | `@rails49/r49`'s `segment` between each consecutive pair of nodes |
 | `trackPath(nodes)` | An SVG path, one `C` per segment |
 | `offsetPoints(nodes, offset)` | Sampled points `offset` px to the right of the line; negative is left |
 | `hitTrack(tracks, at, radius)` | The line under the pointer: the one with a point nearest `at` within `radius`, or null |
 | `hitClick(tracks, at, radius)` | The click under the pointer: the nearest one within `radius`, as a line and an index, or null |
-| `nearestOnTrack(tracks, at, maxPx)`, `SNAP_TRACK_WIDTHS` | The point on any centerline nearest `at` within `maxPx`, or null; and the reach sensors and car ends snap within, 1.5 track widths |
+| `nearestOnTrack(tracks, at, maxPx)`, `SNAP_TRACK_WIDTHS` | `@rails49/r49`'s nearest point on any centerline, when it lies within `maxPx`, or null; and the reach sensors and car ends snap within, 1.5 track widths |
 
 ### `trackFit.ts`
 

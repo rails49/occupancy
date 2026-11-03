@@ -1,56 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import {
-  hitClick,
-  hitTrack,
-  offsetPoints,
-  pointAt,
-  segment,
-  tangentAt,
-  trackPath,
-  wrapAngle,
-  nearestOnTrack,
-  segments,
-} from '../src/track.js';
+import { hitClick, hitTrack, nearestGap, nearestOnTrack, offsetPoints, trackPath } from '../src/track.js';
 import type { Track, TrackNode } from '../src/track.js';
 
 function node(x: number, y: number, heading: number): TrackNode {
   return { x, y, heading };
 }
-
-describe('wrapAngle', () => {
-  it('maps into (-π, π]', () => {
-    expect(wrapAngle(0)).toBe(0);
-    expect(wrapAngle(Math.PI)).toBeCloseTo(Math.PI);
-    expect(wrapAngle(-Math.PI)).toBeCloseTo(Math.PI);
-    expect(wrapAngle(3 * Math.PI / 2)).toBeCloseTo(-Math.PI / 2);
-    expect(wrapAngle(-5 * Math.PI / 2)).toBeCloseTo(-Math.PI / 2);
-  });
-});
-
-describe('segment', () => {
-  it('puts both handles on the chord for a straight', () => {
-    const s = segment(node(0, 0, 0), node(300, 0, 0));
-    expect(s.c0).toEqual({ x: 100, y: 0 });
-    expect(s.c1).toEqual({ x: 200, y: 0 });
-  });
-
-  it('follows a circular arc when the headings are symmetric about the chord', () => {
-    // A quarter circle of radius 100 centred on (0, 100), from (0, 0) to (100, 100).
-    const s = segment(node(0, 0, 0), node(100, 100, Math.PI / 2));
-    for (let t = 0; t <= 1; t += 0.05) {
-      const p = pointAt(s, t);
-      expect(Math.hypot(p.x, p.y - 100)).toBeCloseTo(100, 0);
-    }
-  });
-
-  it('leaves each node along its heading', () => {
-    const s = segment(node(0, 0, 0.3), node(200, 80, 0.5));
-    const v0 = tangentAt(s, 0);
-    const v1 = tangentAt(s, 1);
-    expect(Math.atan2(v0.y, v0.x)).toBeCloseTo(0.3);
-    expect(Math.atan2(v1.y, v1.x)).toBeCloseTo(0.5);
-  });
-});
 
 describe('trackPath', () => {
   it('draws one cubic per segment', () => {
@@ -112,45 +66,31 @@ describe('hitClick', () => {
 });
 
 describe('nearestOnTrack', () => {
-  const straight: Track[] = [
-    {
-      nodes: [
-        { x: 0, y: 100, heading: 0 },
-        { x: 1000, y: 100, heading: 0 },
-      ],
-    },
-  ];
+  const straight: Track[] = [{ nodes: [node(0, 100, 0), node(1000, 100, 0)] }];
 
-  it('moves a point straight onto a straight, exactly', () => {
-    const p = nearestOnTrack(straight, { x: 333, y: 140 }, 50)!;
-    expect(p.x).toBeCloseTo(333, 6);
-    expect(p.y).toBeCloseTo(100, 6);
+  it('finds the point within the reach', () => {
+    expect(nearestOnTrack(straight, { x: 333, y: 140 }, 50)).toEqual({ x: expect.closeTo(333, 6), y: expect.closeTo(100, 6) });
   });
 
   it('finds nothing beyond the reach', () => {
     expect(nearestOnTrack(straight, { x: 333, y: 151 }, 50)).toBeNull();
     expect(nearestOnTrack([], { x: 0, y: 0 }, 50)).toBeNull();
   });
-
-  it('takes the nearer of two tracks', () => {
-    const two: Track[] = [...straight, { nodes: straight[0].nodes.map(n => ({ ...n, y: 200 })) }];
-    expect(nearestOnTrack(two, { x: 500, y: 160 }, 100)!.y).toBeCloseTo(200, 6);
-  });
-
-  it('lands on a curve, at the curve\'s own distance', () => {
-    const arc = segments([
-      { x: 0, y: 0, heading: 0 },
-      { x: 100, y: 100, heading: Math.PI / 2 },
-    ])[0];
-    const on = pointAt(arc, 0.5);
-    const curve: Track = {
-      nodes: [
-        { x: 0, y: 0, heading: 0 },
-        { x: 100, y: 100, heading: Math.PI / 2 },
-      ],
-    };
-    const p = nearestOnTrack([curve], { x: on.x + 3, y: on.y - 3 }, 20)!;
-    expect(Math.hypot(p.x - on.x, p.y - on.y)).toBeLessThan(0.5);
-  });
 });
 
+describe('nearestGap', () => {
+  const track: Track = {
+    nodes: [node(0, 0, 0), node(300, 0, 0)],
+    clicks: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 200, y: 0 }, { x: 300, y: 0 }],
+  };
+
+  it('names the gap whose part of the line is nearest, by the click it starts from', () => {
+    expect(nearestGap(track, { x: 20, y: -5 })).toBe(0);
+    expect(nearestGap(track, { x: 150, y: 5 })).toBe(1);
+    expect(nearestGap(track, { x: 290, y: 3 })).toBe(2);
+  });
+
+  it('names the last gap past the end of the line', () => {
+    expect(nearestGap(track, { x: 400, y: 0 })).toBe(2);
+  });
+});

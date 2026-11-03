@@ -1,8 +1,9 @@
+import { wrapAngle } from '@rails49/r49';
 import type { Click, Point, TrackNode } from '@rails49/r49';
 import { DEFAULT_GRAB_RADIUS_SCREEN_PX } from './geometry.js';
 import { pixel, NONE } from './chain.js';
 import type { Chain, ChainContext, ChainHit, ChainTool, ChainView, ClickResult } from './chain.js';
-import { hitClick, hitTrack, nearestGap, squareAt, wrapAngle } from './track.js';
+import { hitClick, hitTrack, nearestGap, squareAt } from './track.js';
 import type { ClickHit, Track, TrackHit } from './track.js';
 import { TRACK_FIT, buildLine, fitNodes, fitOptions } from './trackFit.js';
 import type { FitOptions, Refusal } from './trackFit.js';

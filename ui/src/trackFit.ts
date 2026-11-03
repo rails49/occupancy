@@ -1,6 +1,5 @@
-import type { Click, Point } from '@rails49/r49';
-import { wrapAngle } from './track.js';
-import type { TrackNode } from './track.js';
+import { wrapAngle } from '@rails49/r49';
+import type { Click, Point, TrackNode } from '@rails49/r49';
 
 /**
  * Straights and circular arcs, tangent where they meet, through the clicks
