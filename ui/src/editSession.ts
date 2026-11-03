@@ -22,6 +22,7 @@ import {
   TrackChain,
   clickHitAt,
   insertAt,
+  lineOf,
   refitLine,
   trackHitAt,
   trackTool,
@@ -29,6 +30,7 @@ import {
   withClickIn,
   withoutClick,
 } from './trackChain.js';
+import { fitOptions } from './trackFit.js';
 import type { Refusal } from './trackFit.js';
 import { nearestOnTrack, SNAP_TRACK_WIDTHS } from './track.js';
 import type { ClickHit, Track, TrackHit, TrackNode } from './track.js';
@@ -353,11 +355,7 @@ export class EditSession {
     return drag;
   }
 
-  /**
-   * A drag of a click on a line. The click follows the pointer and the line
-   * stays as it is; on release the whole line refits from its clicks, as one
-   * entry. A refit the line refuses puts the click back and writes nothing.
-   */
+  /** A drag of a click on a line, which the line follows (`_dragLine`). */
   private _grabClick(hit: ClickHit, at: Point): Drag {
     const clicks = this._tracks()[hit.line].clicks!;
     return this._dragLine(hit.line, 'move click', clicks[hit.index], at, to => withClickAt(clicks, hit.index, to));
@@ -377,22 +375,31 @@ export class EditSession {
   }
 
   /**
-   * A drag of a click of line `line` from `from`, grabbed at `at`: the line
-   * of `clicksAt(to)` is written on release, as one entry `label`. A release
-   * back at `from`, or one the rule refuses, leaves the line as it was.
+   * A drag of a click of line `line` from `from`, grabbed at `at`: each move
+   * writes the clicks `clicksAt(to)` with their line, or with the last line
+   * the rule took where it refuses them, and the release writes one entry
+   * `label`. A release back at `from`, or one the rule refuses, leaves the
+   * line as it was.
    */
   private _dragLine(line: number, label: string, from: Point, at: Point, clicksAt: (to: Point) => Click[]): Drag {
     const start = this._tracks()[line];
+    const opts = fitOptions(this._scene().dpt!);
     const gesture = this.history.beginGesture(label, { kind: 'layout' });
     const write = (track: Track) => {
       const lines = [...this._tracks()];
       lines[line] = track;
       this._writeLayout({ tracks: lines });
     };
+    let shown = start;
     return this._dragClick(
       from,
       at,
-      to => write({ ...start, clicks: clicksAt(to) }),
+      to => {
+        const clicks = clicksAt(to);
+        const built = lineOf(clicks, opts);
+        if (typeof built !== 'string') shown = built;
+        write({ ...shown, clicks });
+      },
       async to => {
         write((to && refitLine(this._context, clicksAt(to))) || start);
         await gesture.commit();
@@ -402,7 +409,7 @@ export class EditSession {
 
   /**
    * A drag while a track chain is live: of a click of the line it traces, and
-   * nothing else. The dot follows the pointer and the trace stays as it is; on
+   * nothing else. The trace follows the pointer (`TrackChain.hold`); on
    * release the chain takes the move (`TrackChain.move`), as one entry.
    */
   private _grabTraced(chain: TrackChain, at: Point, scale: number): Drag | null {

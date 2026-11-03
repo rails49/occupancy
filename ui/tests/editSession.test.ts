@@ -2325,9 +2325,8 @@ describe('EditSession finished track lines (#302)', () => {
     return { s, at };
   }
 
-  it('refits the whole line once, on release, when a click is dragged', async () => {
+  it('refits the whole line when a click is dragged, as one entry on release', async () => {
     const { s, at } = await finished();
-    const before = structuredClone(line(s));
     const entries = s.history.size;
     const from = at[3];
     const to = { x: from.x + 3, y: from.y - 10 };
@@ -2336,7 +2335,6 @@ describe('EditSession finished track lines (#302)', () => {
     expect(d).not.toBeNull();
     d.move({ x: from.x + 1, y: from.y - 5 });
     d.move(to);
-    expect(line(s).nodes).toEqual(before.nodes);
     expect(s.history.size).toBe(entries);
     await d.end();
 
@@ -2622,7 +2620,7 @@ describe('EditSession track edits while tracing (#303)', () => {
     return { s, at, onPart2: 9 };
   }
 
-  it('builds the line again from the moved clicks when a click is dragged, on release, as one entry', async () => {
+  it('builds the line again from the moved clicks when a click is dragged, as one entry on release', async () => {
     const { s, at, onPart2 } = await tracing();
     const before = traceOf(s);
     const entries = s.history.size;
@@ -2632,7 +2630,6 @@ describe('EditSession track edits while tracing (#303)', () => {
     expect(d).not.toBeNull();
     d.move(to);
     expect(traceOf(s).clicks![onPart2]).toEqual(to);
-    expect(traceOf(s).nodes).toEqual(before.nodes);
     expect(s.history.size).toBe(entries);
     await d.end();
 
@@ -3097,6 +3094,55 @@ describe('EditSession inserting and dragging clicks (#321)', () => {
       const { s } = await finished();
       s.selectTool('sensor');
       expect(s.beginDrag(inGap(s, 8, 20), SCALE)).toBeNull();
+    });
+  });
+
+  describe('a drag', () => {
+    /** `at` with click `i` at `to`. */
+    const movedTo = (at: readonly Point[], i: number, to: Point) => at.map((p, k) => (k === i ? to : p));
+
+    it('draws the line of the moved clicks on every move, for a finished line', async () => {
+      const { s, at } = await finished();
+      const d = s.beginDrag(at[9], SCALE)!;
+      for (const dy of [5, 12, 20]) {
+        const to = { x: at[9].x + 3, y: at[9].y + dy };
+        d.move(to);
+        expect(line(s).clicks).toEqual(movedTo(at, 9, to));
+        expect(line(s).nodes).toEqual(nodesOf(s, movedTo(at, 9, to)));
+      }
+      await d.end();
+      expect(s.history.undoLabel).toBe('move click');
+    });
+
+    it('draws the line of the moved clicks on every move, for the line being traced', async () => {
+      const s = session({ tool: 'track', rows: false });
+      const at = laidAlong(PIECES, dptOf(s));
+      await clicks(s, ...at);
+      const entries = s.history.size;
+      const d = s.beginDrag(at[9], SCALE)!;
+      for (const dy of [5, 12, 20]) {
+        const to = { x: at[9].x + 3, y: at[9].y + dy };
+        d.move(to);
+        expect(pendingTrack(s)!.clicks).toEqual(movedTo(at, 9, to));
+        expect(pendingTrack(s)!.nodes).toEqual(nodesOf(s, movedTo(at, 9, to)));
+      }
+      expect(s.history.size).toBe(entries);
+      await d.end();
+      expect(s.history.size).toBe(entries + 1);
+      expect(line(s).clicks).toEqual(movedTo(at, 9, { x: at[9].x + 3, y: at[9].y + 20 }));
+    });
+
+    it('draws the line with the inserted click on every move of a press and drag', async () => {
+      const { s, at } = await finished();
+      const d = s.beginDrag(inGap(s, 8, 20), SCALE)!;
+      for (const px of [10, 0, -10]) {
+        const to = inGap(s, 8, px);
+        d.move(to);
+        const inserted = [...at.slice(0, 9), to, ...at.slice(9)];
+        expect(line(s).clicks).toEqual(inserted);
+        expect(line(s).nodes).toEqual(nodesOf(s, inserted));
+      }
+      await d.end();
     });
   });
 
