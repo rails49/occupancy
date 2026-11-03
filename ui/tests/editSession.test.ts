@@ -2560,6 +2560,17 @@ describe('EditSession straight marks through edits (#319)', () => {
     }
   });
 
+  it('marks both gaps straight when a click is inserted into a straight gap, and neither into a free one (#321)', async () => {
+    const s = marked();
+    await clicks(s, { x: 400, y: 103 });
+    expect(line(s).clicks![2]).toEqual({ x: 400, y: 103, straight: true });
+    expect(marks(s)).toEqual([false, true, true, true, false, false, false]);
+
+    await clicks(s, { x: 1000, y: 97 });
+    expect(line(s).clicks![6]).toEqual({ x: 1000, y: 97 });
+    expect(marks(s)).toEqual([false, true, true, true, false, false, false, false]);
+  });
+
   it('keeps the marks when the line goes on from its last click or its first, and through an edit while tracing', async () => {
     const s = marked();
     await clicks(s, { x: 1100, y: 100 }, { x: 1300, y: 100 });
