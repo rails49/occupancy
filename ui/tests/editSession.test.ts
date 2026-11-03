@@ -2345,20 +2345,19 @@ describe('EditSession finished track lines (#302)', () => {
     expect(line(s).nodes).toEqual(fitOf(s, moved));
     expect(trackChain(s)).toBeNull();
   });
-  it('ends a trace still at its first click when a click of a line is dragged, and moves the click', async () => {
+  it('keeps a trace still at its first click when a click of another line is pressed, and extends it there', async () => {
     const { s, at } = await finished();
-    await clicks(s, { x: -2000, y: -2000 });
-    expect(trackChain(s)).toEqual({ line: null, clicks: [{ x: -2000, y: -2000 }] });
-    const from = at[3];
-    const to = { x: from.x + 3, y: from.y - 10 };
+    const start = { x: at[3].x - 400, y: at[3].y + 300 };
+    await clicks(s, start);
+    expect(trackChain(s)).toEqual({ line: null, clicks: [start] });
 
-    const d = s.beginDrag(from, SCALE);
-    expect(d).not.toBeNull();
-    expect(trackChain(s)).toBeNull();
-    d!.move(to);
-    await d!.end();
+    expect(s.beginDrag(at[3], SCALE)).toBeNull();
+    expect(trackChain(s)).toEqual({ line: null, clicks: [start] });
+    await clicks(s, at[3]);
 
-    expect(line(s).clicks).toEqual(at.map((p, i) => (i === 3 ? to : p)));
+    expect(s.tracks).toHaveLength(2);
+    expect(line(s, 1).clicks).toEqual([start, at[3]]);
+    expect(line(s, 0).clicks).toEqual(at);
   });
 
   it('names a click as the subject of a right-click, and the line between clicks', async () => {
