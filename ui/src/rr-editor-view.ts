@@ -28,6 +28,7 @@ import type { FrameSize, Rect, Size } from './geometry.js';
 import type { PendingCar } from './carMarker.js';
 import type { Track } from './track.js';
 import { trackHint } from './trackHint.js';
+import type { TrackCues } from './trackMarker.js';
 import { isInsideOpenDialog } from './keyboard.js';
 import { classChoices, rootClass } from './vocabulary.js';
 import type { ClassChoice } from './vocabulary.js';
@@ -284,6 +285,8 @@ interface LiveGesture {
 export interface NotifyDetail {
   /** Plain text. */
   readonly message: string;
+  /** How long the toast stays up, in ms; until closed when absent. */
+  readonly duration?: number;
 }
 
 /** Why a portrait image is refused, naming what the user picked (#255). */
@@ -428,6 +431,9 @@ function revokeImageUrls(urls: ImageUrls) {
   urls.thumbnail = null;
 }
 
+/** How long a notice from the session stays up, in ms (#324). */
+const NOTICE_MS = 3000;
+
 /**
  * Main editor view: shows an archive's images and what is authored on them,
  * and turns pointer, dialog and menu events into calls on an `EditSession`.
@@ -438,7 +444,8 @@ function revokeImageUrls(urls: ImageUrls) {
  * highlight after an undo, and blob URLs — and re-renders
  * whenever the session changes. See ADR 0017.
  *
- * Takes `session`. Emits `rr-notify` (`NotifyDetail`) when a click is refused.
+ * Takes `session`. Emits `rr-notify` (`NotifyDetail`) when a click is refused,
+ * and for 3 s with each notice the session sends (`subscribeNotices`).
  *
  * It owns the zoom (#44): a drag on empty image draws a rect to zoom to, or
  * pans once zoomed, a Shift-drag draws a rect wherever it begins, and the
@@ -472,6 +479,8 @@ export class RREditorView extends LitElement {
   @state() private _frameMismatch: ViewerMediaFrameDetail | null = null;
   /** Stops listening to the session. */
   private _unsubscribe: (() => void) | null = null;
+  /** Stops listening to the session's notices. */
+  private _unsubscribeNotices: (() => void) | null = null;
   /** The reference point a dialog is open on, or null when none is. */
   private _pendingCalibration: PendingCalibration | null = null;
   /** The sensor whose name dialog is open, by `id`, or null when none is. */
@@ -486,6 +495,12 @@ export class RREditorView extends LitElement {
    * is traced.
    */
   @state() private _cursor: Point | null = null;
+  /**
+   * Where the pointer last was over the image, and its scale, under the
+   * track tool: the preview and the hover follow it (#324). Null once it
+   * leaves the image.
+   */
+  @state() private _trackPointer: { readonly at: Point; readonly scale: number } | null = null;
   /**
    * The objects a reveal is pointing at, or `null` when none is. Held as ids
    * and pixels and resolved on every render, so a later edit cannot leave the
@@ -678,6 +693,8 @@ export class RREditorView extends LitElement {
     window.removeEventListener('keydown', this._onKeyDown);
     this._unsubscribe?.();
     this._unsubscribe = null;
+    this._unsubscribeNotices?.();
+    this._unsubscribeNotices = null;
     // An open drag would hold undo shut until the archive is replaced.
     if (this._gesture) void this._endGesture(this._gesture);
     // A timer outliving the element would write state into a detached one.
@@ -688,6 +705,8 @@ export class RREditorView extends LitElement {
   private _listen() {
     this._unsubscribe?.();
     this._unsubscribe = this.session?.subscribe(this._onSessionChange) ?? null;
+    this._unsubscribeNotices?.();
+    this._unsubscribeNotices = this.session?.subscribeNotices(message => this._notify(message, NOTICE_MS)) ?? null;
   }
 
   /** Any change re-renders. After an undo or redo, the changed objects are shown. */
@@ -892,10 +911,10 @@ export class RREditorView extends LitElement {
   }
 
   /** Asks `rr-app` to show a transient message — see {@link NotifyDetail}. */
-  private _notify(message: string) {
+  private _notify(message: string, duration?: number) {
     this.dispatchEvent(
       new CustomEvent<NotifyDetail>('rr-notify', {
-        detail: { message },
+        detail: duration === undefined ? { message } : { message, duration },
         bubbles: true,
         composed: true,
       })
@@ -1047,6 +1066,9 @@ export class RREditorView extends LitElement {
     if (this.session?.chain?.tool === 'car') {
       this._cursor = { x: Math.round(e.detail.point.x), y: Math.round(e.detail.point.y) };
     }
+    if (this.session?.tool === 'track') {
+      this._trackPointer = { at: e.detail.point, scale: e.detail.imagePxPerScreenPx };
+    }
 
     const gesture = this._current(e);
     if (!gesture) return;
@@ -1057,6 +1079,11 @@ export class RREditorView extends LitElement {
       this._beginDrag(gesture);
     }
     this._applyDrag(gesture, e.detail);
+  }
+
+  /** The pointer left the image: nothing follows it. */
+  private _onViewerPointerLeave() {
+    this._trackPointer = null;
   }
 
   /**
@@ -1409,24 +1436,51 @@ export class RREditorView extends LitElement {
     return to ? { anchor: chain.end, to } : { anchor: chain.end, to: cursor, refused: true };
   }
 
-  /** What the track chain in flight draws, or null when none is. */
+  /**
+   * The line drawn blue, or null: the one a track chain traces, or the one a
+   * drag of one of its clicks, or an insert into it, is changing (#324).
+   */
   private _pendingTrack(): Track | null {
     const chain = this.session?.chain;
-    return chain?.tool === 'track' ? chain.trace : null;
+    if (chain?.tool === 'track') return chain.trace;
+    const held = this.session?.heldLine ?? null;
+    return held === null ? null : this.session!.tracks[held];
   }
 
-  /** The stored tracks, less the one a track chain draws as its trace. */
+  /** The stored tracks, less the one drawn blue. */
   private _tracks() {
     const chain = this.session?.chain;
-    const line = chain?.tool === 'track' ? chain.line : null;
+    const line = chain?.tool === 'track' ? chain.line : this.session!.heldLine;
     return this.session!.tracks.filter((_, i) => i !== line);
   }
 
-  /** What to do next with the track tool, while it is the tool and DPT resolves (`trackHint`). */
-  private _renderTrackHint(manifest: ManifestData) {
-    const dpt = getDPT(manifest);
-    if (this.session?.tool !== 'track' || dpt === null) return '';
-    return html`<div class="track-hint">${trackHint(this._pendingTrack(), this.session.refusal)}</div>`;
+  /**
+   * What the track tool draws over the tracks, or null under another tool
+   * or while DPT does not resolve (#324): the ring while a line is traced,
+   * and what follows the pointer, which nothing does while a press is in
+   * flight.
+   */
+  private _trackCues(manifest: ManifestData): TrackCues | null {
+    const session = this.session!;
+    if (session.tool !== 'track' || getDPT(manifest) === null) return null;
+    const pointer = this._gesture ? null : this._trackPointer;
+    return {
+      tracing: session.chain?.tool === 'track',
+      preview: pointer && session.previewTrack(pointer.at, pointer.scale),
+      hover: pointer && session.hoverTrack(pointer.at, pointer.scale),
+    };
+  }
+
+  /**
+   * What to do next with the track tool, while it is the tool and DPT
+   * resolves (`trackHint`). While the preview follows the pointer, why a
+   * click there would be refused.
+   */
+  private _renderTrackHint(cues: TrackCues | null) {
+    if (!cues) return '';
+    const refusal = cues.preview ? cues.preview.refusal : this.session!.refusal;
+    const trace = cues.tracing ? this._pendingTrack() : null;
+    return html`<div class="track-hint">${trackHint(trace, refusal)}</div>`;
   }
 
   /** Zoom to fit, present only while zoomed. */
@@ -1448,6 +1502,7 @@ export class RREditorView extends LitElement {
     const manifest = this.session?.archive.getManifest();
     const currentImage = this.session?.image;
     const src = currentImage ? this._imageUrls.get(currentImage.filename)?.full : null;
+    const trackCues = this.session && manifest ? this._trackCues(manifest) : null;
 
     return html`
       <div class="main-content">
@@ -1458,7 +1513,7 @@ export class RREditorView extends LitElement {
 
             ${this._renderFrameMismatch()}
 
-            ${this._renderTrackHint(manifest)}
+            ${this._renderTrackHint(trackCues)}
 
             <div class="viewer-wrap">
               <rr-viewer
@@ -1471,6 +1526,7 @@ export class RREditorView extends LitElement {
                 .tracks=${this._tracks()}
                 .pendingTrack=${this._pendingTrack()}
                 .trackDetail=${this.session.tool === 'track'}
+                .trackCues=${trackCues}
                 .highlight=${this._highlight && this._resolveHighlight(this._highlight)}
                 .zoom=${this._zoom}
                 .zoomPreview=${this._zoomPreview}
@@ -1479,6 +1535,7 @@ export class RREditorView extends LitElement {
                 @rr-pointer-move=${this._onViewerPointerMove}
                 @rr-pointer-up=${this._onViewerPointerUp}
                 @rr-pointer-cancel=${this._onViewerPointerCancel}
+                @rr-pointer-leave=${this._onViewerPointerLeave}
                 @rr-pointer-contextmenu=${this._onViewerContextMenu}
                 @rr-pointer-dblclick=${this._onViewerDoubleClick}
                 @rr-wheel=${this._onViewerWheel}

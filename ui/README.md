@@ -150,6 +150,7 @@ rr-app                          ← shell: owns the editing session and the view
 > [#307]: https://github.com/rails49/occupancy/issues/307
 > [#311]: https://github.com/rails49/occupancy/issues/311
 > [#313]: https://github.com/rails49/occupancy/issues/313
+> [#324]: https://github.com/rails49/occupancy/issues/324
 
 ## State and data flow
 
@@ -218,7 +219,8 @@ Application shell. Owns the editing session and routes between the views.
 `rr-notify` is a child's transient message, toasted here because this is where toasts live. A toast
 shows its message as text, never as HTML. It is raised at `warning`, never `danger`: everything that
 reaches it is the editor **declining** to author something, which is the editor working rather than
-failing. It stays up until the user closes it ([#265]).
+failing. It stays up until the user closes it ([#265]), or for the detail's `duration` in ms when it
+gives one.
 
 **Keyboard:** Cmd/Ctrl+Z and Cmd+Shift+Z / Ctrl+Y, bound on `window`, **editor view only**. The
 handler bails when a field has focus, testing `event.composedPath()[0]` rather than `event.target` —
@@ -414,7 +416,8 @@ image pixel coordinates.
 | `cars` | `readonly CarLabel[]` | Car spans to draw: a chord inside its width rectangle. Per **image**, so switching images swaps the whole list; empty in the live view |
 | `pendingCar` | `PendingCar \| null` | The **rubber band** — `{ anchor, to }` for the chain in flight. The one thing here that is not in the manifest; empty in the live view |
 | `tracks` | `readonly Track[]` | The layout's centerlines ([#284]), drawn under everything else. Per layout, so the same on every image; empty in the live view |
-| `pendingTrack` | `TraceView \| null` | The line a track chain is tracing ([#311]): its clicks, its fit and where it goes on from. The editor leaves that line out of `tracks` |
+| `pendingTrack` | `Track \| null` | The line drawn blue ([#324]): the one a track chain is tracing, or one a drag of its click or an insert is changing. The editor leaves that line out of `tracks` |
+| `trackCues` | `TrackCues \| null` | What the track tool draws over the tracks ([#324]): the ring on the traced line's end, hollow end dots when none is traced, and the preview or hover at the pointer. `null` under another tool |
 | `trackDetail` | `boolean` | Whether centerlines show their rails and click dots, or the centerline alone. The editor sets it while the track tool is chosen |
 | `highlight` | `ViewerHighlight \| null` | The objects a reveal is pointing at — `{ cars, sensors, calibration, trackClicks }`, ids for the first two, **indices** for the third and pixels for the fourth. Already resolved by `rr-editor-view`; the viewer draws it and decides nothing. `null` in the live view |
 | `zoom` | `Rect \| null` | The region of the **authored frame** on screen ([#44]). `null` is fit — the absence of a zoom, which is exactly what this element drew before the property existed. View state the editor owns; never in the manifest and never in the history. `null` in the live view |
@@ -422,11 +425,11 @@ image pixel coordinates.
 | `dpt` | `number \| null` | The scale the **world-sized** symbols are drawn at. `null` falls them back to `symbolSize` |
 | `resolution` | `{ width, height }` | `camera.resolution` — the frame every coordinate is **authored** in. Not the viewBox: the viewBox is the media's own size, and this is scaled onto it |
 
-**Emits:** `rr-pointer-down`, `rr-pointer-move`, `rr-pointer-up`, `rr-pointer-cancel`
-(`ViewerPointerDetail`), `rr-pointer-contextmenu` (`ViewerContextMenuDetail`), `rr-wheel`
+**Emits:** `rr-pointer-down`, `rr-pointer-move`, `rr-pointer-up`, `rr-pointer-cancel`,
+`rr-pointer-leave` (`ViewerPointerDetail`), `rr-pointer-contextmenu` (`ViewerContextMenuDetail`), `rr-wheel`
 (`ViewerWheelDetail`, without `preventDefault`), `rr-media-frame`
 (`ViewerMediaFrameDetail`, once per media load) and `rr-viewport` (`ViewerViewportDetail`, whenever
-the measured viewport changes size). All eight fire in both `src` and `stream` mode. They are declared in `HTMLElementEventMap`, so a listener anywhere up
+the measured viewport changes size). All nine fire in both `src` and `stream` mode. They are declared in `HTMLElementEventMap`, so a listener anywhere up
 the tree gets the detail typed without a cast.
 
 | Detail field | Type | Description |
@@ -757,7 +760,7 @@ both; each tool module supplies what differs.
 | `ChainView`, `ChainContext`, `ClickResult` | What the editor draws of a chain; what a tool reads and writes through the session, including `snap`; what a click asks the editor for |
 | `NO_TRACK`, `NO_TRACK_NOTICE` | Why a sensor or car end was refused: no centerline within `SNAP_TRACK_WIDTHS` |
 | `carTool`, `ALREADY_LABELED` | A free car end continues a chain, a coupling is refused with `ALREADY_LABELED`, a click on a car's body splits it, and empty image starts a chain |
-| `trackTool`, `TrackChain` | A click on a line's first or last click continues it as a chain; on a click between them, or within `TRACK_FIT.startDistance` of any line, it does nothing ([#313]); anywhere else it starts a chain ([#298]). Each click goes on the end of the chain's trace (`trackTrace.ts`) and writes the line's clicks with the nodes of the line as drawn (`fitNodes`). A chain from a first click traces backwards and writes back in stored order, its nodes turned round. `hold`, `move` and `remove` take a click of the traced line, by stored index, while the chain is live: a drag draws it held, and a move or delete builds the line again from its clicks and writes one entry ([#303]). `atStart()` is true once every entry the chain wrote is undone |
+| `trackTool`, `TrackChain` | A click on a line's first or last click continues it as a chain; on a click between them it notifies `MIDDLE_CLICK` ([#324]); anywhere else it starts a chain ([#298]). Each click goes on the end of the chain's trace (`trackTrace.ts`) and writes the line's clicks with the nodes of the line as drawn (`fitNodes`). A chain from a first click traces backwards and writes back in stored order, its nodes turned round. `hold`, `move` and `remove` take a click of the traced line, by stored index, while the chain is live: a drag draws it held, and a move or delete builds the line again from its clicks and writes one entry ([#303]). `atStart()` is true once every entry the chain wrote is undone |
 | `trackHitAt`, `clickHitAt`, `refitLine` | The line or the click under the track tool's pointer, within the grab radius; a line with given clicks and the nodes of their fit, traced in stored order (`Trace.rebuilt`): an edit with no chain live. Null, and the session's `refused`, when a click of the rebuilt line would add nothing or need an arc tighter than the minimum; the hint shows the refusal sentence for both |
 
 ---
@@ -769,9 +772,11 @@ A centerline's SVG ([#284], [#311]). The exports must be used together.
 | Export | Type | Description |
 |---|---|---|
 | `renderTrack(track, size, highlighted?)` | `(Track, TrackSymbolSize, Point[]?) => SVGTemplateResult` | The centerline as one cubic per node pair, and with `size.detail` the two rails at ±G/2 and a dot per click. No rails when `size.dpt` is `null`. A click at a pixel in `highlighted` takes `highlight.ts`'s class, and is drawn without `size.detail` too |
-| `renderPendingTrack(view, size, image)` | `(TraceView, TrackSymbolSize, ImageSize) => SVGTemplateResult` | The line a track chain is tracing: the rails and a solid centerline from its fit, the projection ahead of it as a dashed centerline to the edge of the image, after an arc the tangent at its end as a dotted line to the edge, and a dot per click, white on the first click of each part after the first. `image` is the image's pixel size |
-| `TrackSymbolSize` | `{ dpt, strokePx, dotPx, detail }` | The DPT the rails are spaced by, screen-constant stroke and dot sizes, and whether to draw the rails and dots or the centerline alone |
-| `trackMarkerStyles` | `CSSResult` | The green ink |
+| `renderPendingTrack(track, size, ring?)` | `(Track, TrackSymbolSize, boolean?) => SVGTemplateResult` | The line being traced or changed, blue ([#324]): rails, centerline and a dot per click. With `ring`, the last click has a ring twice a dot's size, square on a straight end |
+| `renderTrackCues(cues, size)` | `(TrackCues, TrackSymbolSize) => SVGTemplateResult` | The preview of the next gap, dashed blue, red where refused; a green ring on an end dot under the pointer; a half-opacity dot where a click would insert ([#324]) |
+| `TrackSymbolSize` | `{ dpt, strokePx, dotPx, detail, hollowEnds? }` | The DPT the rails are spaced by, screen-constant stroke and dot sizes, whether to draw the rails and dots or the centerline alone, and whether a line's two end dots are hollow |
+| `TrackCues` | `{ tracing, preview, hover }` | Whether a line is traced, `TrackChain.preview`'s `TrackPreview`, and `trackHover`'s `TrackHover` |
+| `trackMarkerStyles` | `CSSResult` | The green ink, blue for the line being traced or changed, red for a refused preview |
 
 ### `track.ts`
 
@@ -970,7 +975,9 @@ undo, and blob URLs, and re-renders on every change the session reports.
 
 **Emits:** `rr-notify` (`{ message }`) when a click is refused, such as the **car tool** clicking
 inside a car already labelled ([#43]), or when an image add is refused ([#255], [#260]) — one event
-per pick, however many of its files were refused ([#262]). `rr-app` owns the toast.
+per pick, however many of its files were refused ([#262]). `rr-app` owns the toast. Each notice the
+session sends (`subscribeNotices`: a track refusal, or what to do instead of a track click that did
+nothing) goes up as `{ message, duration: 3000 }` ([#324]).
 
 * Makes a blob URL for each image when it first appears in the image list and revokes it when the
   image goes. A new session revokes them all.

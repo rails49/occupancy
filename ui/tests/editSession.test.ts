@@ -4,6 +4,8 @@ import type { ReferencePoint, CarLabel, Click, Track, ManifestData, Point, Senso
 import { EditSession } from '../src/editSession.js';
 import { ALREADY_LABELED } from '../src/carChain.js';
 import { NO_TRACK } from '../src/chain.js';
+import { MIDDLE_CLICK, NO_CLICKS } from '../src/trackChain.js';
+import { refusalText } from '../src/trackHint.js';
 import { buildLine, fitNodes, fitOptions } from '../src/trackFit.js';
 import type { Refusal } from '../src/trackFit.js';
 import { G, along, laidAlong, offLine, positionsAlong, tightClicks, tooTight, type Piece } from './trackClicks.js';
@@ -3463,5 +3465,219 @@ describe('EditSession straight gaps while tracing (#320)', () => {
     await clicks(s, { x: 700, y: 100 });
     expect(s.refusal).toBeNull();
     expect(line(s).clicks!.map(p => p.straight === true)).toEqual([true, true, false]);
+  });
+});
+
+describe('EditSession track cues (#324)', () => {
+  function line(s: EditSession): Track {
+    return s.archive.getManifest().layout.tracks![0];
+  }
+
+  /** Every notice the session sends, in order. */
+  function noticesOf(s: EditSession): string[] {
+    const heard: string[] = [];
+    s.subscribeNotices(message => heard.push(message));
+    return heard;
+  }
+
+  /** A session tracing a line along y = 100 from x = 100 to 400. */
+  async function tracing(): Promise<EditSession> {
+    const s = session({ tool: 'track', rows: false });
+    await clicks(s, { x: 100, y: 100 }, { x: 400, y: 100 });
+    return s;
+  }
+
+  /** A finished line of four clicks along y = 100, 300 px apart. */
+  async function finished(): Promise<EditSession> {
+    const s = session({ tool: 'track', rows: false });
+    await clicks(s, ...[100, 400, 700, 1000].map(x => ({ x, y: 100 })));
+    s.endChain();
+    return s;
+  }
+
+  describe('the preview', () => {
+    it('is the next gap as a click at the pointer would build it, from the end the chain goes on from', async () => {
+      const s = await tracing();
+      const at = { x: 700, y: 160 };
+      const nodes = nodesOf(s, [{ x: 100, y: 100 }, { x: 400, y: 100 }, at]);
+      const from = nodes.findIndex(n => n.x === 400 && n.y === 100);
+
+      expect(s.previewTrack(at, SCALE)).toEqual({ nodes: nodes.slice(from), refusal: null });
+    });
+
+    it('writes nothing, and changes neither the hint nor the history', async () => {
+      const s = await tracing();
+      const heard = noticesOf(s);
+      const entries = s.history.size;
+      s.previewTrack({ x: 100 + Math.round(5 * dptOf(s)), y: 100 + Math.round(10 * dptOf(s)) }, SCALE);
+      expect(s.history.size).toBe(entries);
+      expect(s.refusal).toBeNull();
+      expect(heard).toEqual([]);
+      expect(line(s).clicks).toHaveLength(2);
+    });
+
+    it('is a straight to the pointer, with the reason, where the rule refuses a click', async () => {
+      const s = await tracing();
+      // Ahead of the straight, at a right angle to it within 5 G: tighter than 10 G.
+      const at = { x: 400 + Math.round(5 * dptOf(s)), y: 100 + Math.round(5 * dptOf(s)) };
+      const preview = s.previewTrack(at, SCALE)!;
+      expect(preview.refusal).toBe('tight');
+      expect(preview.nodes.map(n => ({ x: n.x, y: n.y }))).toEqual([{ x: 400, y: 100 }, at]);
+      expect(preview.nodes[0].heading).toBeCloseTo(Math.PI / 4, 9);
+    });
+
+    it('is a straight while a straight is pending', async () => {
+      const s = await tracing();
+      await s.click({ x: 400, y: 100 }, SCALE);
+      s.doubleClick({ x: 400, y: 100 }, SCALE);
+      const preview = s.previewTrack({ x: 700, y: 130 }, SCALE)!;
+      expect(preview.refusal).toBeNull();
+      expect(preview.nodes.length).toBeGreaterThan(1);
+      for (const n of preview.nodes) expect(n.heading).toBeCloseTo(Math.atan2(30, 300), 9);
+    });
+
+    it('runs from the first click of a line continued from there', async () => {
+      const s = await finished();
+      await s.click({ x: 100, y: 100 }, SCALE);
+      const preview = s.previewTrack({ x: -200, y: 100 }, SCALE)!;
+      expect(preview.nodes[0]).toMatchObject({ x: 100, y: 100 });
+      expect(preview.nodes.at(-1)).toMatchObject({ x: -200, y: 100 });
+      expect(Math.abs(preview.nodes[0].heading)).toBeCloseTo(Math.PI, 9);
+    });
+
+    it('is null within the grab radius of the end, and with no line traced', async () => {
+      const s = await tracing();
+      expect(s.previewTrack({ x: 405, y: 100 }, SCALE)).toBeNull();
+      s.endChain();
+      expect(s.previewTrack({ x: 700, y: 100 }, SCALE)).toBeNull();
+    });
+  });
+
+  describe('the hover', () => {
+    it('is an end dot under the pointer, and nothing on a middle dot', async () => {
+      const s = await finished();
+      expect(s.hoverTrack({ x: 1003, y: 102 }, SCALE)).toEqual({ kind: 'end', at: { x: 1000, y: 100 }, square: false });
+      expect(s.hoverTrack({ x: 100, y: 100 }, SCALE)).toEqual({ kind: 'end', at: { x: 100, y: 100 }, square: false });
+      expect(s.hoverTrack({ x: 400, y: 100 }, SCALE)).toBeNull();
+    });
+
+    it('is a square end dot where a straight gap ends', async () => {
+      const s = await finished();
+      await s.markGap(s.rightClick({ x: 850, y: 100 }, SCALE) as MenuSubject & { kind: 'track' }, true);
+      expect(s.hoverTrack({ x: 1000, y: 100 }, SCALE)).toEqual({ kind: 'end', at: { x: 1000, y: 100 }, square: true });
+    });
+
+    it('is where a click would insert, within a gauge of a line, and nothing farther', async () => {
+      const s = await finished();
+      const near = { x: 550.4, y: 100 + 0.5 * dptOf(s) };
+      expect(s.hoverTrack(near, SCALE)).toEqual({ kind: 'insert', at: { x: 550, y: Math.round(near.y) } });
+      expect(s.hoverTrack({ x: 550, y: 100 + 1.5 * dptOf(s) }, SCALE)).toBeNull();
+    });
+
+    it('is null while a line is traced, under another tool, and on a line with no clicks', async () => {
+      const s = await tracing();
+      expect(s.hoverTrack({ x: 100, y: 100 }, SCALE)).toBeNull();
+      s.endChain();
+      s.selectTool('sensor');
+      expect(s.hoverTrack({ x: 100, y: 100 }, SCALE)).toBeNull();
+
+      const bare = session({ tool: 'track', rows: false });
+      bare.archive.getManifest().layout.tracks = [{ nodes: [{ x: 100, y: 100, heading: 0 }, { x: 500, y: 100, heading: 0 }] }];
+      expect(bare.hoverTrack({ x: 300, y: 100 }, SCALE)).toBeNull();
+    });
+  });
+
+  describe('the line a drag holds', () => {
+    it('is the line whose click is dragged, until the release', async () => {
+      const s = await finished();
+      expect(s.heldLine).toBeNull();
+      const d = s.beginDrag({ x: 400, y: 100 }, SCALE)!;
+      d.move({ x: 400, y: 110 });
+      expect(s.heldLine).toBe(0);
+      await d.end();
+      expect(s.heldLine).toBeNull();
+    });
+
+    it('is the line a press and drag inserts into', async () => {
+      const s = await finished();
+      const d = s.beginDrag({ x: 550, y: 110 }, SCALE)!;
+      expect(s.heldLine).toBe(0);
+      await d.cancel();
+      expect(s.heldLine).toBeNull();
+    });
+  });
+
+  describe('notices', () => {
+    it('says why a click was refused, once', async () => {
+      const s = await tracing();
+      const heard = noticesOf(s);
+      await clicks(s, { x: 400 + Math.round(5 * dptOf(s)), y: 100 + Math.round(5 * dptOf(s)) });
+      expect(heard).toEqual([refusalText('tight')]);
+    });
+
+    it('says nothing for a click on the end the chain goes on from', async () => {
+      const s = await tracing();
+      const heard = noticesOf(s);
+      await clicks(s, { x: 402, y: 100 });
+      expect(heard).toEqual([]);
+    });
+
+    it('says why a drag was released at a refused position, and nothing while it moves', async () => {
+      const s = await finished();
+      const heard = noticesOf(s);
+      const d = s.beginDrag({ x: 700, y: 100 }, SCALE)!;
+      d.move({ x: 1300, y: 100 });
+      expect(s.refusal).toBe('behind');
+      expect(heard).toEqual([]);
+      await d.end();
+      expect(heard).toEqual([refusalText('behind')]);
+    });
+
+    it('says why a dragged click of the traced line was released at a refused position', async () => {
+      const s = session({ tool: 'track', rows: false });
+      await clicks(s, ...[100, 400, 700, 1000].map(x => ({ x, y: 100 })));
+      const heard = noticesOf(s);
+      expect(await drag(s, [{ x: 700, y: 100 }, { x: 1300, y: 100 }])).toBe(true);
+      expect(heard).toEqual([refusalText('behind')]);
+    });
+
+    it('says why a gap cannot be made straight', async () => {
+      const s = session({ tool: 'track', rows: false });
+      // Along a curve of radius 20 G: the first three clicks are within the tolerance of a straight, the first four are not.
+      await clicks(s, { x: 100, y: 170 }, { x: 300, y: 125 }, { x: 500, y: 103 }, { x: 700, y: 103 }, { x: 900, y: 125 });
+      s.endChain();
+      const gap = (at: Point) => s.rightClick(at, SCALE) as MenuSubject & { kind: 'track' };
+      await s.markGap(gap({ x: 200, y: 145 }), true);
+      await s.markGap(gap({ x: 400, y: 111 }), true);
+      const heard = noticesOf(s);
+      await s.markGap(gap({ x: 600, y: 100 }), true);
+      expect(heard).toEqual([refusalText('off-straight')]);
+    });
+
+    it('says what to do for a click on a middle dot, and starts nothing', async () => {
+      const s = await finished();
+      const heard = noticesOf(s);
+      const entries = s.history.size;
+      await clicks(s, { x: 400, y: 100 });
+      expect(heard).toEqual([MIDDLE_CLICK]);
+      expect(s.chain).toBeNull();
+      expect(s.history.size).toBe(entries);
+    });
+
+    it('says what to do for a click near a line with no clicks', async () => {
+      const s = session({ tool: 'track', rows: false });
+      s.archive.getManifest().layout.tracks = [{ nodes: [{ x: 100, y: 100, heading: 0 }, { x: 500, y: 100, heading: 0 }] }];
+      const heard = noticesOf(s);
+      await clicks(s, { x: 300, y: 104 });
+      expect(heard).toEqual([NO_CLICKS]);
+    });
+
+    it('stops when unsubscribed', async () => {
+      const s = await finished();
+      const heard: string[] = [];
+      s.subscribeNotices(m => heard.push(m))();
+      await clicks(s, { x: 400, y: 100 });
+      expect(heard).toEqual([]);
+    });
   });
 });

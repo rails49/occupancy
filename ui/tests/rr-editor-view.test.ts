@@ -17,6 +17,8 @@ import type { RRContextMenu } from '../src/rr-context-menu.js';
 import type { NotifyDetail } from '../src/rr-editor-view.js';
 import type { SlCheckbox } from '@shoelace-style/shoelace';
 import type { Rect } from '../src/geometry.js';
+import { MIDDLE_CLICK } from '../src/trackChain.js';
+import { refusalText } from '../src/trackHint.js';
 
 
 // The camera, the image size and the thumbnail are mocked: one needs
@@ -43,15 +45,6 @@ vi.mock('../src/imageSize.js', () => ({
 vi.mock('../src/thumbnail.js', () => ({
   makeThumbnail: (image: Blob) => makeThumbnail(image),
 }));
-
-// The fit runs as it is; the spy counts its calls, so a test can show a
-// pointer move runs none.
-const { buildLine } = vi.hoisted(() => ({ buildLine: vi.fn() }));
-vi.mock('../src/trackFit.js', async importOriginal => {
-  const fit = await importOriginal<typeof import('../src/trackFit.js')>();
-  buildLine.mockImplementation(fit.buildLine);
-  return { ...fit, buildLine };
-});
 
 // Mock ResizeObserver for RRViewer
 global.ResizeObserver = vi.fn().mockImplementation(() => ({
@@ -943,6 +936,10 @@ describe('rr-editor-view', () => {
       return el.shadowRoot!.querySelector('rr-viewer')!.pendingTrack;
     }
 
+    function cues(el: RREditorView) {
+      return el.shadowRoot!.querySelector('rr-viewer')!.trackCues;
+    }
+
     async function moveTo(el: RREditorView, point: Point) {
       gesture(el, 'rr-pointer-move', point, 1);
       await el.updateComplete;
@@ -1016,19 +1013,94 @@ describe('rr-editor-view', () => {
       expect(pending(el)!.clicks).to.deep.equal([{ x: 100, y: 100 }, { x: 300, y: 100 }, at]);
     });
 
-    it('runs no fit on a pointer move, and draws nothing that follows it', async () => {
+    it('draws the next gap to the pointer, and red with the reason live where a click there is refused (#324)', async () => {
       const el = await mountWithTool('track');
+      const hint = () => el.shadowRoot!.querySelector('.track-hint')?.textContent?.trim();
       await laid(el);
       const before = pending(el);
-      // The spy sees the fit a click runs.
-      expect(buildLine).toHaveBeenCalled();
-      buildLine.mockClear();
 
-      await moveTo(el, { x: 500, y: 200 });
-      await moveTo(el, { x: 600, y: 300 });
+      await moveTo(el, { x: 500, y: 120 });
+      expect(cues(el)!.tracing).to.equal(true);
+      expect(cues(el)!.preview).to.deep.equal(el.session!.previewTrack({ x: 500, y: 120 }, 1));
+      const end = cues(el)!.preview!.nodes.at(-1)!;
+      expect(end.x).to.be.closeTo(500, 1e-9);
+      expect(end.y).to.be.closeTo(120, 1e-9);
+      expect(hint()).to.match(/^Click along the middle of the track/);
 
-      expect(buildLine).not.toHaveBeenCalled();
+      // Ahead of the straight, at a right angle to it within 5 G: tighter than 10 G.
+      await moveTo(el, { x: 750, y: 550 });
+      expect(cues(el)!.preview!.refusal).to.equal('tight');
+      expect(hint()).to.equal(refusalText('tight'));
       expect(pending(el)).to.equal(before);
+      expect(el.session!.tracks[0].clicks).to.have.length(2);
+    });
+
+    it('rings the end a line goes on from, and draws no hover while tracing (#324)', async () => {
+      const el = await mountWithTool('track');
+      await laid(el);
+      await moveTo(el, { x: 300, y: 100 });
+      expect(cues(el)).to.deep.equal({ tracing: true, preview: null, hover: null });
+    });
+
+    it('draws the line a click of it is dragged on, and puts it back among the lines on release (#324)', async () => {
+      const el = await mountWithTool('track');
+      for (const p of [{ x: 100, y: 100 }, { x: 997, y: 100 }, { x: 1894, y: 100 }]) await clickAt(el, p);
+      await pressEscape(el);
+      const viewer = el.shadowRoot!.querySelector('rr-viewer')!;
+
+      gesture(el, 'rr-pointer-down', { x: 997, y: 100 }, 1);
+      await moveTo(el, { x: 997, y: 130 });
+      expect(pending(el)!.clicks![1]).to.deep.equal({ x: 997, y: 130 });
+      expect(viewer.tracks).to.have.length(0);
+      expect(cues(el)).to.deep.equal({ tracing: false, preview: null, hover: null });
+
+      gesture(el, 'rr-pointer-up', { x: 997, y: 130 }, 1);
+      await flush();
+      await el.updateComplete;
+      expect(pending(el)).to.equal(null);
+      expect(viewer.tracks).to.have.length(1);
+    });
+
+    it('rings an end dot under the pointer and shows where a click would insert, with no line traced (#324)', async () => {
+      const el = await mountWithTool('track');
+      for (const p of [{ x: 100, y: 100 }, { x: 997, y: 100 }, { x: 1894, y: 100 }]) await clickAt(el, p);
+      await pressEscape(el);
+
+      await moveTo(el, { x: 1894, y: 102 });
+      expect(cues(el)).to.deep.equal({ tracing: false, preview: null, hover: { kind: 'end', at: { x: 1894, y: 100 }, square: false } });
+      await moveTo(el, { x: 500, y: 130 });
+      expect(cues(el)!.hover).to.deep.equal({ kind: 'insert', at: { x: 500, y: 130 } });
+      await moveTo(el, { x: 997, y: 100 });
+      expect(cues(el)!.hover).to.equal(null);
+      await moveTo(el, { x: 500, y: 400 });
+      expect(cues(el)!.hover).to.equal(null);
+
+      await moveTo(el, { x: 1894, y: 100 });
+      gesture(el, 'rr-pointer-leave', { x: 1894, y: 100 }, 1);
+      await el.updateComplete;
+      expect(cues(el)!.hover).to.equal(null);
+
+      el.session!.selectTool('sensor');
+      await el.updateComplete;
+      expect(cues(el)).to.equal(null);
+    });
+
+    it('toasts why a click was refused, and what to do on a middle dot, for 3 s (#324)', async () => {
+      const el = await mountWithTool('track');
+      const toasts: NotifyDetail[] = [];
+      el.addEventListener('rr-notify', e => toasts.push((e as CustomEvent<NotifyDetail>).detail));
+      await laid(el);
+      await clickAt(el, { x: 300, y: 100 });
+      expect(toasts).to.deep.equal([]);
+
+      await clickAt(el, { x: 750, y: 550 });
+      expect(toasts).to.deep.equal([{ message: refusalText('tight'), duration: 3000 }]);
+
+      await clickAt(el, { x: 500, y: 100 });
+      await pressEscape(el);
+      await clickAt(el, { x: 300, y: 100 });
+      expect(toasts.at(-1)).to.deep.equal({ message: MIDDLE_CLICK, duration: 3000 });
+      expect(toasts).to.have.length(2);
     });
 
     it('ends the chain on Escape and hands the line to the viewer', async () => {
@@ -1173,7 +1245,7 @@ describe('rr-editor-view', () => {
 
       gesture(el, 'rr-pointer-down', at[1], 1);
       await moveTo(el, { x: 997, y: 130 });
-      expect(el.shadowRoot!.querySelector('rr-viewer')!.tracks[0].clicks![1]).to.deep.equal({ x: 997, y: 130 });
+      expect(pending(el)!.clicks![1]).to.deep.equal({ x: 997, y: 130 });
       expect(hint()).to.match(/^Click to start a line/);
       // Past the last click: behind it.
       await moveTo(el, { x: 2500, y: 100 });

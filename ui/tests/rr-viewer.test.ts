@@ -690,6 +690,39 @@ describe('rr-viewer', () => {
         expect(el.shadowRoot!.querySelectorAll('.track-pending .click')).to.have.length(3);
         expect(el.shadowRoot!.querySelectorAll('.track-pending .centerline')).to.have.length(1);
       });
+
+      it('rings the traced line\'s end while tracing, and draws end dots hollow with none traced (#324)', async () => {
+        const tracing = { tracing: true, preview: null, hover: null };
+        const el = await fixture<RrViewer>(html`
+          <rr-viewer
+            .tracks=${tracks}
+            .pendingTrack=${tracks[0]}
+            .trackDetail=${true}
+            .trackCues=${tracing}
+            .dpt=${90}
+            .resolution=${resolution}
+          ></rr-viewer>
+        `);
+        expect(el.shadowRoot!.querySelectorAll('.track-pending .ring')).to.have.length(1);
+        expect(el.shadowRoot!.querySelectorAll('.click.end')).to.have.length(0);
+
+        el.trackCues = { ...tracing, tracing: false };
+        await el.updateComplete;
+        expect(el.shadowRoot!.querySelectorAll('.ring')).to.have.length(0);
+        expect(el.shadowRoot!.querySelectorAll('.click.end')).to.have.length(4);
+
+        el.trackCues = null;
+        await el.updateComplete;
+        expect(el.shadowRoot!.querySelectorAll('.click.end')).to.have.length(0);
+      });
+
+      it('draws the cues over the tracks', async () => {
+        const cues = { tracing: false, preview: null, hover: { kind: 'insert' as const, at: { x: 250, y: 100 } } };
+        const el = await fixture<RrViewer>(html`
+          <rr-viewer .tracks=${tracks} .trackDetail=${true} .trackCues=${cues} .dpt=${90} .resolution=${resolution}></rr-viewer>
+        `);
+        expect(el.shadowRoot!.querySelectorAll('.track-insert .click')).to.have.length(1);
+      });
     });
 
     describe('the rubber band', () => {
@@ -952,6 +985,17 @@ describe('rr-viewer', () => {
         seen.push(e.detail);
       });
       svg.dispatchEvent(new MouseEvent('dblclick', { clientX: 140, clientY: 110, bubbles: true, cancelable: true }));
+
+      expect(seen.length).to.equal(1);
+      expect(seen[0].point).to.deep.equal({ x: 200, y: 200 });
+    });
+
+    it('reports the pointer leaving the image (#324)', () => {
+      const seen: ViewerPointerDetail[] = [];
+      el.addEventListener('rr-pointer-leave', e => {
+        seen.push(e.detail);
+      });
+      svg.dispatchEvent(new MouseEvent('pointerleave', { clientX: 140, clientY: 110 }));
 
       expect(seen.length).to.equal(1);
       expect(seen[0].point).to.deep.equal({ x: 200, y: 200 });

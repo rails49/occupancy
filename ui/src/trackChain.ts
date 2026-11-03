@@ -1,7 +1,7 @@
-import type { Click, Point } from '@rails49/r49';
+import type { Click, Point, TrackNode } from '@rails49/r49';
 import { DEFAULT_GRAB_RADIUS_SCREEN_PX } from './geometry.js';
 import { pixel, NONE } from './chain.js';
-import type { Chain, ChainContext, ChainTool, ChainView, ClickResult } from './chain.js';
+import type { Chain, ChainContext, ChainHit, ChainTool, ChainView, ClickResult } from './chain.js';
 import { hitClick, hitTrack, nearestGap, wrapAngle } from './track.js';
 import type { ClickHit, Track, TrackHit } from './track.js';
 import { TRACK_FIT, buildLine, fitNodes, fitOptions } from './trackFit.js';
@@ -16,6 +16,27 @@ export function trackHitAt(tracks: readonly Track[], at: Point, scale: number): 
 export function clickHitAt(tracks: readonly Track[], at: Point, scale: number): ClickHit | null {
   return hitClick(tracks, at, DEFAULT_GRAB_RADIUS_SCREEN_PX * scale);
 }
+
+/** What a click on a line's middle dot does instead (#324). */
+export const MIDDLE_CLICK = 'To change this click, drag it or right-click it.';
+
+/** What a click near a line with no clicks does instead (#324). */
+export const NO_CLICKS = 'This line has no clicks to change. Right-click it to delete it.';
+
+/** The next gap a click would add, from the end a chain goes on from to the pointer (#324). */
+export interface TrackPreview {
+  /** The gap as the rule builds it; where the rule refuses, a straight to the pointer. */
+  readonly nodes: readonly TrackNode[];
+  /** Why the rule refuses a click at the pointer, or null. */
+  readonly refusal: Refusal | null;
+}
+
+/** What the track tool's pointer is over with no chain live (#324). */
+export type TrackHover =
+  /** A line's first or last click, which a click continues the line from. */
+  | { readonly kind: 'end'; readonly at: Point; readonly square: boolean }
+  /** Within the start distance of a line: where a click inserts a click. */
+  | { readonly kind: 'insert'; readonly at: Point };
 
 /** A track of a set of clicks, or why the rule refuses them. */
 export type Lined = { readonly kind: 'line'; readonly track: Track } | { readonly kind: 'refused'; readonly reason: Refusal };
@@ -101,22 +122,23 @@ export function withoutClick(clicks: readonly Click[], index: number): Click[] {
 /**
  * The track tool's click with no chain live (#298, #302, #311, #321). A click
  * on a line's first or last click continues the line as a chain from there;
- * on a click between them it does nothing. Within the start distance of a
- * line it inserts a click at the pointer, as one entry; on a line with no
- * clicks it does nothing. Anywhere else a chain starts, even on a sensor.
+ * on a click between them it says what to do instead (#324). Within the
+ * start distance of a line it inserts a click at the pointer, as one entry;
+ * on a line with no clicks it says what to do instead. Anywhere else a chain
+ * starts, even on a sensor.
  */
 export const trackTool: ChainTool = (ctx, at, scale) => {
   const lines = tracks(ctx);
   const click = clickHitAt(lines, at, scale);
   if (click) {
     const last = lines[click.line].clicks!.length - 1;
-    if (click.index !== 0 && click.index !== last) return { kind: 'edit', run: async () => NONE };
+    if (click.index !== 0 && click.index !== last) return notice(ctx, MIDDLE_CLICK);
     return { kind: 'chain', chain: TrackChain.continuing(ctx, click.line, click.index === 0) };
   }
   const insert = insertAt(ctx, at);
   if (!insert) return { kind: 'chain', chain: TrackChain.starting(ctx, pixel(at)) };
   const { line, gap } = insert;
-  if (gap === null) return { kind: 'edit', run: async () => NONE };
+  if (gap === null) return notice(ctx, NO_CLICKS);
   return {
     kind: 'edit',
     run: async () => {
@@ -125,6 +147,35 @@ export const trackTool: ChainTool = (ctx, at, scale) => {
     },
   };
 };
+
+/** An edit that writes nothing and says `message`. */
+function notice(ctx: ChainContext, message: string): ChainHit {
+  return {
+    kind: 'edit',
+    run: async () => {
+      ctx.notify(message);
+      return NONE;
+    },
+  };
+}
+
+/**
+ * What a click at `at` would do with no chain live, as `trackTool` decides
+ * it: continue a line from an end dot, or insert a click. Null on a middle
+ * dot, near a line with no clicks, and where a click starts a line.
+ */
+export function trackHover(ctx: ChainContext, at: Point, scale: number): TrackHover | null {
+  const lines = tracks(ctx);
+  const click = clickHitAt(lines, at, scale);
+  if (click) {
+    const clicks = lines[click.line].clicks!;
+    const i = click.index;
+    if (i !== 0 && i !== clicks.length - 1) return null;
+    return { kind: 'end', at: { x: clicks[i].x, y: clicks[i].y }, square: !!(clicks[i].straight || clicks[i - 1]?.straight) };
+  }
+  const insert = insertAt(ctx, at);
+  return insert && insert.gap !== null ? { kind: 'insert', at: pixel(at) } : null;
+}
 
 /**
  * A chain of track: one track, traced click by click from either end. The
@@ -205,15 +256,38 @@ export class TrackChain implements Chain {
   async extend(at: Point, scale: number): Promise<ClickResult> {
     const p = pixel(at);
     if (this._atEnd(p, scale)) return NONE;
-    const clicks = this._line.clicks!;
     const label = this._index === null ? 'place track' : 'extend track';
-    if (this._fromFirst) {
-      if (await this._write(label, [markedClick(p, this._straight), ...clicks])) this._straight = false;
-      return NONE;
-    }
-    const marked = this._straight ? [...clicks.slice(0, -1), markedClick(clicks.at(-1)!, true)] : clicks;
-    if (await this._write(label, [...marked, p])) this._straight = false;
+    if (await this._write(label, this._extended(p))) this._straight = false;
     return NONE;
+  }
+
+  /**
+   * The next gap a click at `at` would add, from the click the chain goes on
+   * from, in the order traced: as the rule builds it, or a straight to `at`
+   * with the reason where it refuses the click. Null within the grab radius
+   * of that click, where a click adds nothing. Writes nothing.
+   */
+  preview(at: Point, scale: number): TrackPreview | null {
+    const p = pixel(at);
+    if (this._atEnd(p, scale)) return null;
+    const end = this._end();
+    const line = lineOf(this._extended(p), this._opts);
+    if (line.kind === 'refused') {
+      const heading = Math.atan2(p.y - end.y, p.x - end.x);
+      return { nodes: [{ x: end.x, y: end.y, heading }, { x: p.x, y: p.y, heading }], refusal: line.reason };
+    }
+    const nodes = (this._fromFirst ? reversed(line.track) : line.track).nodes;
+    const distance = (n: TrackNode) => Math.hypot(n.x - end.x, n.y - end.y);
+    const from = nodes.reduce((best, n, i) => (distance(n) < distance(nodes[best]) ? i : best), 0);
+    return { nodes: nodes.slice(from), refusal: null };
+  }
+
+  /** The line's clicks with `p` at the end the chain goes on from, and a straight asked for marked. */
+  private _extended(p: Point): Click[] {
+    const clicks = this._line.clicks!;
+    if (this._fromFirst) return [markedClick(p, this._straight), ...clicks];
+    const marked = this._straight ? [...clicks.slice(0, -1), markedClick(clicks.at(-1)!, true)] : clicks;
+    return [...marked, p];
   }
 
   /**

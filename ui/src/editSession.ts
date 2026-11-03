@@ -27,17 +27,20 @@ import {
   recordLine,
   refitLine,
   trackHitAt,
+  trackHover,
   trackTool,
   withClickAt,
   withClickIn,
   withoutClick,
   writeTrack,
 } from './trackChain.js';
+import type { TrackHover, TrackPreview } from './trackChain.js';
 import { fitOptions } from './trackFit.js';
 import type { Refusal } from './trackFit.js';
 import { nearestGap, nearestOnTrack, SNAP_TRACK_WIDTHS } from './track.js';
 import type { ClickHit, Track, TrackHit, TrackNode } from './track.js';
 import type { EditorTool } from './tools.js';
+import { refusalText } from './trackHint.js';
 
 export type { ChainView, ClickResult } from './chain.js';
 
@@ -141,7 +144,10 @@ export class EditSession {
   private _drag: Drag | null = null;
   /** Why the last click or edit under the track tool was refused, or null when it was not. */
   private _refusal: Refusal | null = null;
+  /** The line a drag of one of its clicks, or an insert into it, holds, or null. */
+  private _held: number | null = null;
   private readonly _listeners = new Set<SessionListener>();
+  private readonly _noticeListeners = new Set<(message: string) => void>();
   private readonly _context: ChainContext = {
     manifest: () => this.archive.getManifest(),
     image: () => this.image,
@@ -149,6 +155,7 @@ export class EditSession {
     snap: at => this._snap(at),
     record: (label, target, mutate) => this._record(label, target, mutate),
     refuse: reason => this._refuse(reason),
+    notify: message => this._notify(message),
     writeLayout: changes => this._writeLayout(changes),
     writeImage: (filename, changes) => this._writeImage(filename, changes),
   };
@@ -163,6 +170,16 @@ export class EditSession {
   subscribe(listener: SessionListener): () => void {
     this._listeners.add(listener);
     return () => this._listeners.delete(listener);
+  }
+
+  /**
+   * Calls `listener` with each toast the track tool asks for: why a click or
+   * an edit was refused, or what to do instead of a click that did nothing
+   * (#324). Returns a function that stops it.
+   */
+  subscribeNotices(listener: (message: string) => void): () => void {
+    this._noticeListeners.add(listener);
+    return () => this._noticeListeners.delete(listener);
   }
 
   /** The image on screen, or undefined when the archive has none. */
@@ -206,6 +223,30 @@ export class EditSession {
    */
   get refusal(): Refusal | null {
     return this._refusal;
+  }
+
+  /**
+   * The next gap a click at `at` would add to the line a live track chain
+   * traces (`TrackChain.preview`), or null when none is live or the click
+   * would add nothing. Writes nothing.
+   */
+  previewTrack(at: Point, scale: number): TrackPreview | null {
+    return this._chain instanceof TrackChain ? this._chain.preview(at, scale) : null;
+  }
+
+  /**
+   * What a click at `at` would act on under the track tool with no chain
+   * live (`trackHover`), or null. Null under another tool, while the tool is
+   * gated, and while a chain is live.
+   */
+  hoverTrack(at: Point, scale: number): TrackHover | null {
+    if (this._chain || this._tool !== 'track' || this._gated('track')) return null;
+    return trackHover(this._context, at, scale);
+  }
+
+  /** The line a drag of one of its clicks, or an insert into it, is changing, or null. */
+  get heldLine(): number | null {
+    return this._held;
   }
 
   /**
@@ -404,6 +445,7 @@ export class EditSession {
     const opts = fitOptions(this._scene().dpt!);
     const gesture = this.history.beginGesture(label, { kind: 'layout' });
     let shown = start;
+    this._held = line;
     return this._dragClick(
       from,
       at,
@@ -415,6 +457,7 @@ export class EditSession {
         return built.kind === 'line' ? null : built.reason;
       },
       async to => {
+        this._held = null;
         writeTrack(this._context, line, (to && refitLine(this._context, clicksAt(to))) || start);
         await gesture.commit();
       }
@@ -920,10 +963,16 @@ export class EditSession {
     if (movedLabels && image) this._writeImage(image.filename, { labels });
   }
 
-  /** The click or edit was refused: the hint says why until the next one. */
+  /** The click or edit was refused: a toast says why, and the hint until the next one. */
   private _refuse(reason: Refusal) {
     this._refusal = reason;
     this._changed();
+    this._notify(refusalText(reason));
+  }
+
+  /** Asks for a toast. */
+  private _notify(message: string) {
+    for (const listener of this._noticeListeners) listener(message);
   }
 
   /** A click or an edit begins: the last refusal is over. */

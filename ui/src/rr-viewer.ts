@@ -13,8 +13,8 @@ import {
   carMarkerStyles,
 } from './carMarker.js';
 import type { CarSymbolSize, CarWarning, PendingCar } from './carMarker.js';
-import { renderTrack, renderPendingTrack, trackMarkerStyles } from './trackMarker.js';
-import type { TrackSymbolSize } from './trackMarker.js';
+import { renderTrack, renderPendingTrack, renderTrackCues, trackMarkerStyles } from './trackMarker.js';
+import type { TrackCues, TrackSymbolSize } from './trackMarker.js';
 import type { Track } from './track.js';
 import {
   coupledEnds,
@@ -451,10 +451,17 @@ export class RrViewer extends LitElement {
    */
   @property({ attribute: false }) tracks: readonly Track[] = [];
   /**
-   * The line a track chain is tracing, or `null`. View state, like
-   * `pendingCar`. The editor leaves that line out of `tracks`.
+   * The line drawn blue, or `null`: the one a track chain is tracing, or
+   * one a drag is changing. View state, like `pendingCar`. The editor leaves
+   * that line out of `tracks`.
    */
   @property({ attribute: false }) pendingTrack: Track | null = null;
+  /**
+   * What the track tool draws over the tracks (#324), or `null` under
+   * another tool: the ring on the end a traced line goes on from, hollow end
+   * dots when none is traced, and the preview or hover at the pointer.
+   */
+  @property({ attribute: false }) trackCues: TrackCues | null = null;
   /**
    * Whether tracks show their rails and click dots, or the centerline
    * alone. The editor sets it while the track tool is chosen.
@@ -763,6 +770,7 @@ export class RrViewer extends LitElement {
    */
   private reportGesture(name: ViewerPointerEventName, originalEvent: PointerEvent): boolean;
   private reportGesture(name: 'rr-pointer-contextmenu' | 'rr-pointer-dblclick', originalEvent: MouseEvent): boolean;
+  private reportGesture(name: 'rr-pointer-leave', originalEvent: PointerEvent): boolean;
   private reportGesture(name: 'rr-wheel', originalEvent: WheelEvent): boolean;
   private reportGesture(name: string, originalEvent: PointerEvent | MouseEvent): boolean {
     const converted = this.toImagePoint(originalEvent.clientX, originalEvent.clientY);
@@ -808,6 +816,11 @@ export class RrViewer extends LitElement {
   private onPointerCancel(e: PointerEvent) {
     this.reportGesture('rr-pointer-cancel', e);
     this.releaseCapture(e.pointerId);
+  }
+
+  /** The pointer left the image, so nothing that follows it should stay drawn. */
+  private onPointerLeave(e: PointerEvent) {
+    this.reportGesture('rr-pointer-leave', e);
   }
 
   private onContextMenu(e: MouseEvent) {
@@ -876,6 +889,7 @@ export class RrViewer extends LitElement {
       strokePx: this.symbolSize * TRACK_STROKE_RATIO,
       dotPx: this.symbolSize * CAR_HANDLE_SIZE_RATIO,
       detail: this.trackDetail,
+      hollowEnds: this.trackCues !== null && !this.trackCues.tracing,
     };
   }
 
@@ -954,6 +968,7 @@ export class RrViewer extends LitElement {
           @pointermove=${this.onPointerMove}
           @pointerup=${this.onPointerUp}
           @pointercancel=${this.onPointerCancel}
+          @pointerleave=${this.onPointerLeave}
           @contextmenu=${this.onContextMenu}
           @dblclick=${this.onDoubleClick}
           @wheel=${this.onWheel}
@@ -961,7 +976,8 @@ export class RrViewer extends LitElement {
           <g class="frame" transform="scale(${fit.sx}, ${fit.sy})">
             <!-- Track under everything: cars stand on it. -->
             ${this.tracks.map(t => renderTrack(t, trackSize, this.highlight?.trackClicks ?? []))}
-            ${this.pendingTrack ? renderPendingTrack(this.pendingTrack, trackSize) : ''}
+            ${this.pendingTrack ? renderPendingTrack(this.pendingTrack, trackSize, this.trackCues?.tracing) : ''}
+            ${this.trackCues ? renderTrackCues(this.trackCues, trackSize) : ''}
 
             <!-- Cars first: their width rectangles are the only area fills here,
                  so drawing them underneath keeps a crosshair or a sensor placed
@@ -1046,6 +1062,7 @@ declare global {
   interface HTMLElementEventMap {
     'rr-pointer-down': CustomEvent<ViewerPointerDetail>;
     'rr-pointer-move': CustomEvent<ViewerPointerDetail>;
+    'rr-pointer-leave': CustomEvent<ViewerPointerDetail>;
     'rr-pointer-up': CustomEvent<ViewerPointerDetail>;
     'rr-pointer-cancel': CustomEvent<ViewerPointerDetail>;
     'rr-pointer-contextmenu': CustomEvent<ViewerContextMenuDetail>;
