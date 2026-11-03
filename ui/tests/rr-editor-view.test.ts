@@ -1080,6 +1080,37 @@ describe('rr-editor-view', () => {
       ]);
     });
 
+    it('offers Make straight on a free gap and Make free on a straight one, next to Delete line (#322)', async () => {
+      const el = await mountWithTool('track');
+      await clickAt(el, { x: 100, y: 100 });
+      await clickAt(el, { x: 300, y: 100 });
+      await clickAt(el, { x: 500, y: 100 });
+      await pressEscape(el);
+      const label = (id: string) =>
+        menuOf(el).shadowRoot!.querySelector(`sl-menu-item[data-id="${id}"]`)!.textContent!.trim();
+
+      await rightClickAt(el, { x: 400, y: 100 });
+      expect(menuItems(el)).to.deep.equal(['make-straight', 'delete']);
+      expect(label('make-straight')).to.equal('Make straight');
+      expect(label('delete')).to.equal('Delete line');
+      await choose(el, 'make-straight');
+      expect(el.session!.tracks[0].clicks).to.deep.equal([
+        { x: 100, y: 100 },
+        { x: 300, y: 100, straight: true },
+        { x: 500, y: 100 },
+      ]);
+
+      await rightClickAt(el, { x: 400, y: 100 });
+      expect(menuItems(el)).to.deep.equal(['make-free', 'delete']);
+      expect(label('make-free')).to.equal('Make free');
+      await choose(el, 'make-free');
+      expect(el.session!.tracks[0].clicks).to.deep.equal([
+        { x: 100, y: 100 },
+        { x: 300, y: 100 },
+        { x: 500, y: 100 },
+      ]);
+    });
+
     it('opens Delete line on a click of a line too, and deletes the line', async () => {
       const el = await mountWithTool('track');
       await clickAt(el, { x: 100, y: 100 });

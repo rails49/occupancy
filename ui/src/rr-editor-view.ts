@@ -187,8 +187,14 @@ function itemsFor(subject: MenuSubject): readonly ContextMenuItem[] {
       return SENSOR_ITEMS;
     case 'car':
       return carItems();
-    case 'track':
-      return [{ id: 'delete', label: 'Delete line' }];
+    case 'track': {
+      const line = { id: 'delete', label: 'Delete line' };
+      if (!subject.gap) return [line];
+      const mark = subject.gap.straight
+        ? { id: 'make-free', label: 'Make free' }
+        : { id: 'make-straight', label: 'Make straight' };
+      return [mark, line];
+    }
     case 'track-click':
       return [
         { id: 'delete', label: 'Delete click' },
@@ -1241,6 +1247,10 @@ export class RREditorView extends LitElement {
         return;
       case 'delete-line':
         if (subject.kind === 'track-click') await this.session.deleteLine(subject);
+        return;
+      case 'make-straight':
+      case 'make-free':
+        if (subject.kind === 'track') await this.session.markGap(subject, e.detail.id === 'make-straight');
         return;
       case 'name':
         if (subject.kind === 'sensor') await this._openSensorName(subject.id);
