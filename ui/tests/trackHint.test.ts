@@ -14,25 +14,24 @@ const tracing: Track = {
   ],
 };
 
-const IDLE = "Click at least a gauge from any track to start a line, or on a line's end to go on.";
-const TRACING = 'Click ahead on the track centre; right-click or Escape ends the line.';
-const REFUSED = 'Needs an arc tighter than 15 G: click farther ahead, or end the line.';
+const IDLE =
+  'Click to start a line, click an end dot to continue one, click a line to add a click. Right-click a gap to make it straight or free.';
+const TRACING = 'Click along the middle of the track. Double-click where a straight starts. Right-click or Escape ends.';
 
 describe('trackHint', () => {
-  it('says how to start a line or go on with one when nothing is traced', () => {
-    expect(trackHint(null, false)).toBe(IDLE);
+  it('says how to start a line, go on with one or change one when nothing is traced', () => {
+    expect(trackHint(null, null)).toBe(IDLE);
   });
 
   it('asks for the next click and says how to end while tracing, from the first click on', () => {
-    expect(trackHint({ nodes: [], clicks: [{ x: 0, y: 0 }] }, false)).toBe(TRACING);
-    expect(trackHint(tracing, false)).toBe(TRACING);
+    expect(trackHint({ nodes: [], clicks: [{ x: 0, y: 0 }] }, null)).toBe(TRACING);
+    expect(trackHint(tracing, null)).toBe(TRACING);
   });
 
-  it('says why the last click was refused, and what to do', () => {
-    expect(trackHint(tracing, true)).toBe(REFUSED);
-  });
-
-  it('has no sentence about red clicks', () => {
-    for (const trace of [null, tracing]) for (const refused of [false, true]) expect(trackHint(trace, refused)).not.toMatch(/red/i);
+  it('says why the last click or edit was refused, and what to do, traced or not', () => {
+    for (const trace of [null, tracing]) {
+      expect(trackHint(trace, 'behind')).toBe('Behind the click before it: click farther along the track.');
+      expect(trackHint(trace, 'tight')).toBe('Needs an arc tighter than 10 G: click farther along the track.');
+    }
   });
 });

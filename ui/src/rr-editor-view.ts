@@ -1403,7 +1403,7 @@ export class RREditorView extends LitElement {
   private _renderTrackHint(manifest: ManifestData) {
     const dpt = getDPT(manifest);
     if (this.session?.tool !== 'track' || dpt === null) return '';
-    return html`<div class="track-hint">${trackHint(this._pendingTrack(), this.session.refused)}</div>`;
+    return html`<div class="track-hint">${trackHint(this._pendingTrack(), this.session.refusal)}</div>`;
   }
 
   /** Zoom to fit, present only while zoomed. */

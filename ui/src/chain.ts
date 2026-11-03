@@ -1,5 +1,6 @@
 import type { CarLabel, Image, ManifestData, Point, ReferencePoint, Sensor, WorldPoint } from '@rails49/r49';
 import type { Track } from './track.js';
+import type { Refusal } from './trackFit.js';
 import type { HitScene, HitTolerance } from './geometry.js';
 import { DEFAULT_GRAB_RADIUS_SCREEN_PX } from './geometry.js';
 import type { HistoryTarget } from './history.js';
@@ -84,8 +85,8 @@ export interface ChainContext {
   snap(at: Point): Point | null;
   /** Runs a write through the history, then tells the listeners. */
   record(label: string, target: HistoryTarget, mutate: () => void): Promise<void>;
-  /** Says the click or edit was refused: the hint says why until the next one. */
-  refuse(): void;
+  /** Says the click or edit was refused, and why: the hint says so until the next one. */
+  refuse(reason: Refusal): void;
   writeLayout(changes: {
     calibrationPoints?: readonly ReferencePoint[];
     sensors?: readonly Sensor[];

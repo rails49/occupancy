@@ -4,6 +4,7 @@ import type {
   CarLabel,
   Image,
   Layout,
+  Click,
   Point,
   R49Archive,
   Sensor,
@@ -17,7 +18,8 @@ import { TOOLS } from './tools.js';
 import { grab, pixel, NONE, NO_TRACK_NOTICE } from './chain.js';
 import type { Chain, ChainContext, ChainTool, ChainView, ClickResult } from './chain.js';
 import { carTool } from './carChain.js';
-import { TrackChain, clickHitAt, refitLine, trackHitAt, trackTool } from './trackChain.js';
+import { TrackChain, clickHitAt, refitLine, trackHitAt, trackTool, withClickAt, withoutClick } from './trackChain.js';
+import type { Refusal } from './trackFit.js';
 import { nearestOnTrack, SNAP_TRACK_WIDTHS } from './track.js';
 import type { ClickHit, Track, TrackHit, TrackNode } from './track.js';
 import type { EditorTool } from './tools.js';
@@ -114,8 +116,8 @@ export class EditSession {
   /** The car or track chain in progress. */
   private _chain: Chain | null = null;
   private _drag: Drag | null = null;
-  /** Whether the last click or edit under the track tool was refused. */
-  private _refused = false;
+  /** Why the last click or edit under the track tool was refused, or null when it was not. */
+  private _refusal: Refusal | null = null;
   private readonly _listeners = new Set<SessionListener>();
   private readonly _context: ChainContext = {
     manifest: () => this.archive.getManifest(),
@@ -123,7 +125,7 @@ export class EditSession {
     scene: () => this._scene(),
     snap: at => this._snap(at),
     record: (label, target, mutate) => this._record(label, target, mutate),
-    refuse: () => this._refuse(),
+    refuse: reason => this._refuse(reason),
     writeLayout: changes => this._writeLayout(changes),
     writeImage: (filename, changes) => this._writeImage(filename, changes),
   };
@@ -175,12 +177,12 @@ export class EditSession {
   }
 
   /**
-   * Whether the last click or edit under the track tool was refused: it
-   * needed an arc tighter than the minimum, and the hint says so until the
-   * next click or edit, or the line ends (`trackHint`).
+   * Why the last click or edit under the track tool was refused, or null:
+   * the hint says why until the next click or edit, or the line ends
+   * (`trackHint`).
    */
-  get refused(): boolean {
-    return this._refused;
+  get refusal(): Refusal | null {
+    return this._refusal;
   }
 
   /**
@@ -206,7 +208,7 @@ export class EditSession {
     if (tool === this._tool) return;
     this._tool = tool;
     this._chain = null;
-    this._refused = false;
+    this._refusal = null;
     this._changed();
   }
 
@@ -227,7 +229,7 @@ export class EditSession {
   endChain() {
     if (!this._chain) return;
     this._chain = null;
-    this._refused = false;
+    this._refusal = null;
     this._changed();
   }
 
@@ -354,11 +356,7 @@ export class EditSession {
       lines[hit.line] = line;
       this._writeLayout({ tracks: lines });
     };
-    const moved = (to: Point) => {
-      const clicks = [...start.clicks!];
-      clicks[hit.index] = to;
-      return clicks;
-    };
+    const moved = (to: Point) => withClickAt(start.clicks!, hit.index, to);
     return this._dragClick(
       hit,
       at,
@@ -553,7 +551,7 @@ export class EditSession {
           await chain.remove(index);
           return;
         }
-        const refit = refitLine(this._context, clicks.filter((_, i) => i !== index));
+        const refit = refitLine(this._context, withoutClick(clicks, index));
         if (!refit) return;
         const lines = [...this._tracks()];
         lines[line] = refit;
@@ -855,15 +853,15 @@ export class EditSession {
   }
 
   /** The click or edit was refused: the hint says why until the next one. */
-  private _refuse() {
-    this._refused = true;
+  private _refuse(reason: Refusal) {
+    this._refusal = reason;
     this._changed();
   }
 
   /** A click or an edit begins: the last refusal is over. */
   private _attempt() {
-    if (!this._refused) return;
-    this._refused = false;
+    if (!this._refusal) return;
+    this._refusal = null;
     this._changed();
   }
 
@@ -990,7 +988,7 @@ export class EditSession {
   }
 
   /** The clicks of a click subject's line, if the click is still at its pixel: clicks have no id. */
-  private _clickIsStillAt(subject: MenuSubject & { kind: 'track-click' }): readonly Point[] | null {
+  private _clickIsStillAt(subject: MenuSubject & { kind: 'track-click' }): readonly Click[] | null {
     const clicks = this._tracks()[subject.line]?.clicks;
     const click = clicks?.[subject.index];
     return click && samePoint(click, subject.px) ? clicks : null;

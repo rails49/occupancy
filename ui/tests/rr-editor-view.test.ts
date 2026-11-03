@@ -46,11 +46,11 @@ vi.mock('../src/thumbnail.js', () => ({
 
 // The fit runs as it is; the spy counts its calls, so a test can show a
 // pointer move runs none.
-const { extend } = vi.hoisted(() => ({ extend: vi.fn() }));
+const { buildLine } = vi.hoisted(() => ({ buildLine: vi.fn() }));
 vi.mock('../src/trackFit.js', async importOriginal => {
   const fit = await importOriginal<typeof import('../src/trackFit.js')>();
-  extend.mockImplementation(fit.extend);
-  return { ...fit, extend };
+  buildLine.mockImplementation(fit.buildLine);
+  return { ...fit, buildLine };
 });
 
 // Mock ResizeObserver for RRViewer
@@ -975,9 +975,9 @@ describe('rr-editor-view', () => {
     it('shows what to do next under the track tool alone', async () => {
       const el = await mountWithTool('track');
       const hint = () => el.shadowRoot!.querySelector('.track-hint')?.textContent?.trim();
-      expect(hint()).to.match(/^Click at least a gauge from any track/);
+      expect(hint()).to.match(/^Click to start a line/);
       await laid(el);
-      expect(hint()).to.match(/^Click ahead on the track centre/);
+      expect(hint()).to.match(/^Click along the middle of the track/);
 
       el.session!.selectTool('sensor');
       await el.updateComplete;
@@ -1000,14 +1000,14 @@ describe('rr-editor-view', () => {
       const el = await mountWithTool('track');
       await laid(el);
       const before = pending(el);
-      // The spy sees the step a click runs.
-      expect(extend).toHaveBeenCalled();
-      extend.mockClear();
+      // The spy sees the fit a click runs.
+      expect(buildLine).toHaveBeenCalled();
+      buildLine.mockClear();
 
       await moveTo(el, { x: 500, y: 200 });
       await moveTo(el, { x: 600, y: 300 });
 
-      expect(extend).not.toHaveBeenCalled();
+      expect(buildLine).not.toHaveBeenCalled();
       expect(pending(el)).to.equal(before);
     });
 
@@ -1080,11 +1080,11 @@ describe('rr-editor-view', () => {
 
       // Ahead of the straight, at a right angle to it within 11 G: a radius of 7.5 G.
       await clickAt(el, { x: 1087, y: 997 });
-      expect(hint()).to.match(/^Needs an arc tighter than 15 G/);
+      expect(hint()).to.match(/^Needs an arc tighter than 10 G/);
       expect(el.session!.tracks[0].clicks).to.have.length(2);
 
       await clickAt(el, { x: 1894, y: 100 });
-      expect(hint()).to.match(/^Click ahead on the track centre/);
+      expect(hint()).to.match(/^Click along the middle of the track/);
     });
 
     it('ends the chain on right-click, opening no menu', async () => {

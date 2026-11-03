@@ -1,14 +1,20 @@
-import { TRACK_FIT } from './trackFit.js';
 import type { Track } from './track.js';
+import { TRACK_FIT } from './trackFit.js';
+import type { Refusal } from './trackFit.js';
+
+/** Why a click or an edit was refused, and what to do. */
+const REFUSED: Record<Refusal, string> = {
+  behind: 'Behind the click before it: click farther along the track.',
+  tight: `Needs an arc tighter than ${TRACK_FIT.minRadius} G: click farther along the track.`,
+};
 
 /**
- * The track tool's hint (#311): one of three sentences on what to do next.
- * With the last click refused: why, and what to do. While tracing: the next
- * click, and how to end. Otherwise: how to start a line or go on with one.
- * Pure.
+ * The track tool's hint (#317): what to do next. After a refusal: why, and
+ * what to do. While tracing: the next click, and how to end. Otherwise: how
+ * to start, continue or change a line. Pure.
  */
-export function trackHint(trace: Track | null, refused: boolean): string {
-  if (refused) return `Needs an arc tighter than ${TRACK_FIT.minRadius} G: click farther ahead, or end the line.`;
-  if (trace) return 'Click ahead on the track centre; right-click or Escape ends the line.';
-  return "Click at least a gauge from any track to start a line, or on a line's end to go on.";
+export function trackHint(trace: Track | null, refusal: Refusal | null): string {
+  if (refusal) return REFUSED[refusal];
+  if (trace) return 'Click along the middle of the track. Double-click where a straight starts. Right-click or Escape ends.';
+  return 'Click to start a line, click an end dot to continue one, click a line to add a click. Right-click a gap to make it straight or free.';
 }

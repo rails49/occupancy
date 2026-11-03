@@ -1,5 +1,5 @@
 /**
- * Synthetic clicks for the fit and trace tests (#300): points laid along a
+ * Synthetic clicks for the line rule's tests (#300): points laid along a
  * known chain of straights and arcs, with a little seeded noise, so the
  * expected parts are known.
  */
@@ -64,7 +64,7 @@ export function lengthOf(pieces: readonly Piece[]): number {
   );
 }
 
-/** Where the curvature changes, and about every `spacing` gauges between: the clicks the projection rule expects. */
+/** Where the curvature changes, and about every `spacing` gauges between. */
 export function positionsAlong(pieces: readonly Piece[], spacing = 10): number[] {
   const out = [0];
   let from = 0;
@@ -114,21 +114,22 @@ export function laidAlong(pieces: readonly Piece[], dpt = G): Point[] {
 
 /**
  * For a line along a straight of 20 G into an arc: the fourth click 4 G
- * across, 10 G on from the straight's end. A 13 G arc, which the fifth click
- * then cannot follow, so moving the fourth click here is refused.
+ * across, 10 G on from the straight's end, on an arc of 13 G. Between the
+ * third and fifth clicks the line then needs an arc tighter than 10 G, so
+ * moving the fourth click here is refused.
  */
 export function tooTight(dpt = G): Point {
   return atDpt(along([{ straight: 20 }, { radius: 13, turn: 90 }], 30), dpt);
 }
 
 /**
- * A straight of 20 G into a 16 G arc, clicked every 8 G. Without the click
- * where the curve starts, the third, the first click into it bends a wide arc
- * from the straight's last click, and the next needs an arc of 8 G from where
- * that one ends, so deleting the third click is refused.
+ * A straight of 20 G into a 12 G arc, clicked every 5 G along the arc.
+ * Without the click where the curve starts, the third, the line turns from
+ * the straight into the arc within one gap and needs an arc tighter than
+ * 10 G, so deleting the third click is refused.
  */
 export function tightClicks(dpt = G): Point[] {
-  return clicksAt([{ straight: 20 }, { radius: 16, turn: 90 }], [0, 10, 20, 28, 36, 44], { noise: 0 }).map(p => atDpt(p, dpt));
+  return clicksAt([{ straight: 20 }, { radius: 12, turn: 120 }], [0, 10, 20, 25, 30, 35, 40], { noise: 0 }).map(p => atDpt(p, dpt));
 }
 
 /** `p` moved `gauges` to the left of the direction from `before` to `after`. */

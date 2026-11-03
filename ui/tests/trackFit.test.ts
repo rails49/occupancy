@@ -1,231 +1,259 @@
 import { describe, it, expect } from 'vitest';
-import type { Point } from '@rails49/r49';
-import { ahead, distances, extend, fitNodes, type Line } from '../src/trackFit.js';
-import { Trace, traceOptions } from '../src/trackTrace.js';
-import { G, along, clicksAlong, clicksAt, type Piece } from './trackClicks.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import type { Click, Point } from '@rails49/r49';
+import { buildLine, fitNodes, fitOptions, sampleFit, type Fit } from '../src/trackFit.js';
+import { G, clicksAlong, clicksAt, positionsAlong } from './trackClicks.js';
 
-const opts = traceOptions(G);
+const opts = fitOptions(G);
 
-/** The line built click by click over `clicks`; throws when a click does not go on it. */
-function built(clicks: readonly Point[]): Line {
-  let line: Line | null = null;
-  for (let n = 1; n < clicks.length; n++) {
-    const step = extend(line, clicks.slice(0, n), clicks[n], opts);
-    if (step.kind !== 'added') throw new Error(`click ${n + 1} ${step.kind}`);
-    line = step.line;
+/** The line of `clicks`; throws when the rule refuses them. */
+function lineOf(clicks: readonly Click[]): Fit {
+  const built = buildLine(clicks, opts);
+  if (built.kind !== 'line') throw new Error(`refused: ${built.reason}`);
+  return built.fit;
+}
+
+/** Points along the line every pixel. */
+function samples(fit: Fit): Point[] {
+  return sampleFit(fit, 1, 0);
+}
+
+/** How far `p` lies from the polyline through `points`. */
+function distanceTo(p: Point, points: readonly Point[]): number {
+  let best = Infinity;
+  for (let i = 0; i + 1 < points.length; i++) {
+    const a = points[i];
+    const b = points[i + 1];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const l2 = dx * dx + dy * dy;
+    const t = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2));
+    best = Math.min(best, Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy));
   }
-  if (!line) throw new Error('no line');
-  return line;
+  return best;
 }
 
-/**
- * Each part's radius in gauges. A refit straight's curvature is never exactly
- * 0, so a straight is a part whose radius is over 200 G: its sagitta over a
- * 40 G straight is under 1 G.
- */
-function radii(line: Line): number[] {
-  return line.fit.parts.map(p => {
-    const r = 1 / Math.abs(p.curvature) / G;
-    return r > 200 ? Infinity : r;
-  });
-}
-
-/** How far the click farthest from the line lies, in gauges. */
-function worst(line: Line, clicks: readonly Point[]): number {
-  return Math.max(...distances(line, clicks)) / G;
-}
-
-/** The true point `gauges` along an arc of 30 G turning left. */
-const ARC = [{ radius: 30, turn: 120 }];
-const onArc = (gauges: number) => along(ARC, gauges);
-
-describe('the first clicks of a line', () => {
-  it('make a straight of two clicks, with a straight projection ahead', () => {
-    const line = built([
-      { x: 100, y: 100 },
-      { x: 400, y: 500 },
-    ]);
-    const heading = Math.atan2(400, 300);
-    expect(line.fit.start).toEqual({ x: 100, y: 100, heading });
-    expect(line.fit.parts).toEqual([{ length: 500, curvature: 0 }]);
-    const on = ahead(line);
-    expect(on.start.x).toBeCloseTo(400, 6);
-    expect(on.start.y).toBeCloseTo(500, 6);
-    expect(on.start.heading).toBe(heading);
-    expect(on.curvature).toBe(0);
-  });
-
-  it('make one arc through three clicks, which the projection follows', () => {
-    const line = built([onArc(0), onArc(20), onArc(40)]);
-    expect(line.fit.parts).toHaveLength(1);
-    const [part] = line.fit.parts;
-    expect(1 / part.curvature / G).toBeCloseTo(30, 6);
-    expect(part.length / G).toBeCloseTo(40, 6);
-    expect(line.fit.start.heading).toBeCloseTo(0.3, 6);
-    expect(ahead(line).curvature).toBe(part.curvature);
+describe('two clicks', () => {
+  it('make a straight from the first to the second', () => {
+    const a = { x: 100, y: 100 };
+    const b = { x: 400, y: 500 };
+    const line = samples(lineOf([a, b]));
+    expect(line[0]).toEqual(a);
+    expect(distanceTo(b, line)).toBeLessThan(1e-9);
+    for (const p of line) expect(Math.abs(4 * (p.x - 100) - 3 * (p.y - 100))).toBeLessThan(1e-9);
   });
 });
 
-describe('a click within the tolerance', () => {
-  it('continues a straight, refit over its clicks so their noise averages out', () => {
-    const clicks = clicksAlong([{ straight: 40 }]);
-    const line = built(clicks);
-    expect(line.fit.parts).toHaveLength(1);
-    expect(radii(line)[0]).toBeGreaterThan(200);
-    expect(worst(line, clicks)).toBeLessThanOrEqual(0.5);
-    // The refit heading is the straight's, not the first two clicks'.
-    expect(line.fit.start.heading).toBeCloseTo(0.3, 2);
+/** Clicks on the circle of `radius` px about `centre`, at `angles` in radians. */
+function onCircle(centre: Point, radius: number, angles: readonly number[]): Point[] {
+  return angles.map(a => ({ x: centre.x + radius * Math.cos(a), y: centre.y + radius * Math.sin(a) }));
+}
+
+describe('clicks on one straight or one circle', () => {
+  it('give that straight, however they are spaced', () => {
+    const clicks = [0, 3, 11, 12.5, 30, 41].map(s => ({ x: 100 + s * G * 0.8, y: 50 + s * G * 0.6 }));
+    const line = samples(lineOf(clicks));
+    for (const p of line) expect(Math.abs(0.6 * (p.x - 100) - 0.8 * (p.y - 50))).toBeLessThan(1e-6);
+    expect(distanceTo(clicks[clicks.length - 1], line)).toBeLessThan(1e-6);
   });
 
-  it('continues an arc, refit over its clicks to its radius', () => {
-    const clicks = clicksAlong([{ radius: 30, turn: 120 }]);
-    const line = built(clicks);
-    expect(line.fit.parts).toHaveLength(1);
-    expect(radii(line)[0]).toBeCloseTo(30, 0);
-    expect(line.fit.parts[0].length / G).toBeCloseTo(Math.PI * 20, 0);
-    expect(worst(line, clicks)).toBeLessThanOrEqual(0.5);
-  });
-});
-
-describe('a click beyond the tolerance', () => {
-  it('starts a new part at the last click, which one click bends and the projection follows', () => {
-    const straight = clicksAlong([{ straight: 20 }], { noise: 0 });
-    const into = along([{ straight: 20 }, { radius: 30, turn: 90 }], 26);
-    const line = built([...straight, into]);
-    expect(radii(line)).toHaveLength(2);
-    expect(radii(line)[0]).toBe(Infinity);
-    expect(radii(line)[1]).toBeCloseTo(30, 0);
-    expect(line.fit.parts[1].length / G).toBeCloseTo(6, 2);
-    expect(line.firstClick).toEqual([0, straight.length]);
-    expect(ahead(line).curvature).toBe(line.fit.parts[1].curvature);
-  });
-
-  // Clicks where the curvature changes and about 10 G apart, as the rule
-  // expects: radii in gauges, Infinity for a straight.
-  const shapes: [string, Piece[], number[], number[]][] = [
-    ['a straight into an arc', [{ straight: 20 }, { radius: 30, turn: 90 }], [0, 10, 20, 30, 40, 50, 60, 67.1], [Infinity, 30]],
-    ['a reverse curve', [{ radius: 30, turn: 60 }, { radius: 30, turn: -60 }], [0, 10, 20, 31.4, 41.4, 51.4, 62.8], [30, 30]],
-    [
-      'a 180° curve',
-      [{ straight: 15 }, { radius: 25, turn: 180 }, { straight: 15 }],
-      [0, 7, 15, 25, 35, 45, 55, 65, 75, 85, 93.5, 100, 108.5],
-      [Infinity, 25, Infinity],
-    ],
-  ];
-  for (const [name, pieces, positions, expected] of shapes) {
-    it(`traces ${name} as its parts, every click within the tolerance`, () => {
-      const clicks = clicksAt(pieces, positions, { noise: 0 });
-      const line = built(clicks);
-      const got = radii(line);
-      expect(got).toHaveLength(expected.length);
-      got.forEach((r, i) => expect(r === expected[i] || Math.abs(r / expected[i] - 1) < 0.02).toBe(true));
-      expect(worst(line, clicks)).toBeLessThanOrEqual(0.5);
+  for (const [name, angles] of [
+    ['three clicks', [0, 0.4, 1]],
+    ['clicks spaced unevenly round most of a turn', [0, 0.3, 0.45, 1.2, 1.9, 2.1, 3, 4.4, 5.2]],
+    ['clicks the other way round', [2, 1.5, 0.2, -0.6, -1]],
+  ] as const) {
+    it(`give that circle: ${name}`, () => {
+      const centre = { x: 2000, y: 1500 };
+      const r = 30 * G;
+      const line = samples(lineOf(onCircle(centre, r, angles)));
+      for (const p of line) expect(Math.hypot(p.x - centre.x, p.y - centre.y)).toBeCloseTo(r, 6);
+      expect(distanceTo(onCircle(centre, r, [angles[angles.length - 1]])[0], line)).toBeLessThan(1e-6);
     });
   }
-
-  it('turns the way the track turns', () => {
-    const line = built(clicksAt([{ radius: 30, turn: 60 }, { radius: 30, turn: -60 }], [0, 10, 20, 31.4, 41.4, 51.4, 62.8], { noise: 0 }));
-    expect(line.fit.parts.map(p => Math.sign(p.curvature))).toEqual([1, -1]);
-  });
-});
-
-describe('a click not ahead of the last click', () => {
-  const straight = [
-    { x: 100, y: 100 },
-    { x: 300, y: 100 },
-    { x: 500, y: 100 },
-  ];
-
-  it('adds nothing: beside it, behind it, or on it', () => {
-    const line = built(straight);
-    for (const p of [{ x: 500, y: 140 }, { x: 400, y: 100 }, { x: 500, y: 100 }, { x: 100, y: 100 }]) {
-      expect(extend(line, straight, p, opts)).toEqual({ kind: 'ignored' });
-    }
-  });
-
-  it('adds nothing on an arc either, a click behind its start included', () => {
-    const clicks = clicksAt(ARC, [0, 15, 30, 45], { noise: 0 });
-    const line = built(clicks);
-    expect(extend(line, clicks, onArc(40), opts)).toEqual({ kind: 'ignored' });
-    expect(extend(line, clicks, along([{ radius: 30, turn: -120 }], 10), opts)).toEqual({ kind: 'ignored' });
-  });
-
-  it('goes on from the second click, which only a click on the first cannot', () => {
-    expect(extend(null, [straight[0]], straight[0], opts)).toEqual({ kind: 'ignored' });
-    expect(extend(null, [straight[0]], { x: 100, y: 300 }, opts).kind).toBe('added');
-  });
-});
-
-describe('a click that needs a radius under the minimum', () => {
-  it('is refused as the third click', () => {
-    const clicks = [
-      { x: 100, y: 100 },
-      { x: 100 + 10 * G, y: 100 },
-    ];
-    const line = built(clicks);
-    // The circle through the three has a radius of 7.5 G.
-    expect(extend(line, clicks, { x: 100 + 11 * G, y: 100 + 10 * G }, opts)).toEqual({ kind: 'refused' });
-    // Through a click farther on it has one of 35 G, which is allowed.
-    expect(extend(line, clicks, { x: 100 + 40 * G, y: 100 + 30 * G }, opts).kind).toBe('added');
-  });
-
-  it('is refused as the first click of a new part, and the line stays as it was', () => {
-    const clicks = clicksAt([{ straight: 30 }], [0, 10, 20, 30], { noise: 0 });
-    const line = built(clicks);
-    const tight = along([{ straight: 30 }, { radius: 10, turn: 90 }], 40);
-    expect(extend(line, clicks, tight, opts)).toEqual({ kind: 'refused' });
-    const wide = along([{ straight: 30 }, { radius: 20, turn: 90 }], 50);
-    const step = extend(line, clicks, wide, opts);
-    expect(step.kind).toBe('added');
-    if (step.kind === 'added') expect(radii(step.line)).toEqual([Infinity, expect.closeTo(20, 1)]);
-  });
-});
-
-describe('a loop of one radius', () => {
-  it('clicked round 297° is one part', () => {
-    const positions = Array.from({ length: 10 }, (_, i) => i * 19);
-    const clicks = clicksAt([{ radius: 33, turn: 300 }], positions);
-    const line = built(clicks);
-    expect(radii(line)).toEqual([expect.closeTo(33, 0)]);
-    expect((line.fit.parts[0].length / G / 33 / Math.PI) * 180).toBeCloseTo(297, 0);
-    expect(worst(line, clicks)).toBeLessThanOrEqual(0.5);
-  });
 });
 
 /**
- * A click set in tests/clickSets, the rule's regression suite: `gauge`,
- * `lines` of clicks `[x, y]` in image pixels in the order made, the part
- * count the rule gives each line, and a `note` saying where the clicks came
- * from. Today there is one set, synthetic. A set recorded in the editor is a
- * file dropped into the directory; the suite finds it.
+ * Noisy clicks along the shapes track is laid in, at the spacing the rule
+ * expects and closer: the line must pass through each of them.
+ */
+const SHAPES: [string, Click[]][] = [
+  ['a straight', clicksAlong([{ straight: 80 }], { spacing: 6 })],
+  ['an arc', clicksAlong([{ radius: 30, turn: 160 }], { spacing: 6 })],
+  ['a straight into an arc', clicksAt([{ straight: 20 }, { radius: 30, turn: 90 }], positionsAlong([{ straight: 20 }, { radius: 30, turn: 90 }]))],
+  ['a reverse curve', clicksAlong([{ radius: 30, turn: 60 }, { radius: 30, turn: -60 }], { spacing: 6 })],
+  [
+    'a 180° curve between straights',
+    clicksAt(
+      [{ straight: 15 }, { radius: 25, turn: 180 }, { straight: 15 }],
+      positionsAlong([{ straight: 15 }, { radius: 25, turn: 180 }, { straight: 15 }], 6)
+    ),
+  ],
+];
+
+/**
+ * A click set in tests/clickSets: `gauge`, and `lines` of clicks `[x, y]` in
+ * image pixels in the order made. A set recorded in the editor is a file
+ * dropped into the directory; the suite finds it.
  */
 interface ClickSet {
-  readonly note: string;
   readonly gauge: number;
   readonly lines: readonly (readonly [number, number])[][];
-  readonly parts: readonly number[];
 }
 
-describe('the click sets in tests/clickSets', () => {
-  const sets = import.meta.glob<ClickSet>('./clickSets/*.json', { eager: true, import: 'default' });
+const SETS = import.meta.glob<ClickSet>('./clickSets/*.json', { eager: true, import: 'default' });
 
-  it('are found', () => {
-    expect(Object.keys(sets).length).toBeGreaterThan(0);
+/** Every line to check: the shapes, and every line of every click set, at its gauge. */
+const LINES: { name: string; clicks: Click[]; gauge: number }[] = [
+  ...SHAPES.map(([name, clicks]) => ({ name, clicks, gauge: G })),
+  ...Object.entries(SETS).flatMap(([file, set]) =>
+    set.lines.map((raw, i) => ({ name: `${file} line ${i + 1}`, clicks: raw.map(([x, y]) => ({ x, y })), gauge: set.gauge }))
+  ),
+];
+
+/** Every `n`th of `points`, and the last. */
+function every(points: readonly Point[], n: number): Point[] {
+  return points.filter((_, i) => i % n === 0 || i === points.length - 1);
+}
+
+/** The line between each click and the next, as samples. */
+function gaps(clicks: readonly Click[]): Point[][] {
+  const line = samples(lineOf(clicks));
+  const at: number[] = [];
+  let from = 0;
+  for (const p of clicks) {
+    let best = from;
+    for (let i = from; i < line.length; i++) {
+      if (Math.hypot(line[i].x - p.x, line[i].y - p.y) < Math.hypot(line[best].x - p.x, line[best].y - p.y)) best = i;
+    }
+    at.push(best);
+    from = best;
+  }
+  return at.slice(1).map((end, k) => line.slice(at[k], end + 1));
+}
+
+/** How far apart two stretches of line lie, at most. */
+function apart(a: readonly Point[], b: readonly Point[]): number {
+  return Math.max(...every(a, 5).map(p => distanceTo(p, b)), ...every(b, 5).map(p => distanceTo(p, a)));
+}
+
+/**
+ * Checks that only gaps within three of an edit change: `kept` maps a gap of
+ * the line before to the same gap after, for every gap out of reach, and
+ * `touched` is a gap the edit does change.
+ */
+function expectLocal(before: readonly Click[], after: readonly Click[], kept: (gap: number) => number | null, touched: number) {
+  const was = gaps(before);
+  const now = gaps(after);
+  let checked = 0;
+  was.forEach((g, k) => {
+    const n = kept(k);
+    if (n === null) return;
+    expect(apart(g, now[n]), `gap ${k}`).toBeLessThan(1e-6);
+    checked++;
+  });
+  expect(checked).toBeGreaterThan(0);
+  expect(apart(was[touched], now[touched])).toBeGreaterThan(1e-3);
+}
+
+describe('every line', () => {
+  it('includes the click sets', () => {
+    expect(Object.keys(SETS).length).toBeGreaterThan(0);
   });
 
-  for (const [file, set] of Object.entries(sets)) {
-    set.lines.forEach((raw, i) => {
-      it(`${file} line ${i + 1}: ${set.parts[i]} parts over its ${raw.length} clicks, every one on the line within the tolerance`, () => {
-        const t = Trace.replay(
-          raw.map(([x, y]) => ({ x, y })),
-          traceOptions(set.gauge)
-        );
-        expect(t.line?.fit.parts).toHaveLength(set.parts[i]);
-        expect(t.clicks).toHaveLength(raw.length);
-        expect(Math.max(...distances(t.line!, t.clicks)) / set.gauge).toBeLessThanOrEqual(0.5);
-      });
+  for (const { name, clicks, gauge } of LINES) {
+    it(`passes through every click: ${name}`, () => {
+      const built = buildLine(clicks, fitOptions(gauge));
+      expect(built.kind).toBe('line');
+      if (built.kind !== 'line') return;
+      const line = samples(built.fit);
+      for (const p of clicks) expect(distanceTo(p, line)).toBeLessThan(1e-6);
+    });
+
+    it(`has no kink: ${name}`, () => {
+      // Samples a pixel apart on arcs no tighter than 10 G turn under 0.004 rad from one to the next.
+      const line = samples(lineOf(clicks));
+      for (let i = 2; i < line.length; i++) {
+        const a = Math.atan2(line[i - 1].y - line[i - 2].y, line[i - 1].x - line[i - 2].x);
+        const b = Math.atan2(line[i].y - line[i - 1].y, line[i].x - line[i - 1].x);
+        expect(Math.abs(Math.atan2(Math.sin(b - a), Math.cos(b - a)))).toBeLessThan(0.005);
+      }
+    });
+
+    it(`is the same for the clicks reversed: ${name}`, () => {
+      const forward = samples(lineOf(clicks));
+      const backward = samples(lineOf([...clicks].reverse()));
+      expect(backward[0]).toEqual(clicks[clicks.length - 1]);
+      for (const p of every(forward, 20)) expect(distanceTo(p, backward)).toBeLessThan(1e-6);
+      for (const p of every(backward, 20)) expect(distanceTo(p, forward)).toBeLessThan(1e-6);
     });
   }
+});
+
+describe('an edit', () => {
+  const long = LINES.filter(l => l.clicks.length >= 12);
+
+  it('is checked on lines long enough to leave gaps out of its reach', () => {
+    expect(long.length).toBeGreaterThan(0);
+  });
+
+  for (const { name, clicks, gauge } of long) {
+    const j = Math.floor(clicks.length / 2);
+
+    it(`moving a click changes at most three gaps on each side: ${name}`, () => {
+      const moved = clicks.map((p, i) => (i === j ? { x: p.x + gauge / 4, y: p.y - gauge / 5 } : p));
+      expectLocal(clicks, moved, g => (g <= j - 4 || g >= j + 3 ? g : null), j);
+    });
+
+    it(`inserting a click changes at most three gaps on each side: ${name}`, () => {
+      // Near the line, halfway along the gap.
+      const gap = gaps(clicks)[j];
+      const mid = gap[Math.floor(gap.length / 2)];
+      const inserted = [...clicks.slice(0, j + 1), { x: mid.x + 2, y: mid.y - 1 }, ...clicks.slice(j + 1)];
+      expectLocal(clicks, inserted, g => (g <= j - 3 ? g : g >= j + 3 ? g + 1 : null), j - 1);
+    });
+
+    it(`deleting a click changes at most three gaps on each side: ${name}`, () => {
+      const left = clicks.filter((_, i) => i !== j);
+      expectLocal(clicks, left, g => (g <= j - 4 ? g : g >= j + 3 ? g - 1 : null), j - 2);
+    });
+  }
+});
+
+describe('the rule refuses', () => {
+  const P = (x: number, y: number) => ({ x: 100 + x * G, y: 100 + y * G });
+
+  it('a click behind the click before it, or on it', () => {
+    expect(buildLine([P(0, 0), P(10, 0), P(5, 0)], opts)).toEqual({ kind: 'refused', reason: 'behind' });
+    expect(buildLine([P(0, 0), P(10, 0), P(10, 0)], opts)).toEqual({ kind: 'refused', reason: 'behind' });
+    expect(buildLine([P(0, 0), P(0, 0)], opts)).toEqual({ kind: 'refused', reason: 'behind' });
+    expect(buildLine([P(0, 0), P(10, 0), P(-3, 1)], opts)).toEqual({ kind: 'refused', reason: 'behind' });
+  });
+
+  it('two clicks out of order on a long line', () => {
+    const [, clicks] = SHAPES[0];
+    const swapped = clicks.map((p, i) => (i === 5 ? clicks[6] : i === 6 ? clicks[5] : p));
+    expect(buildLine(swapped, opts)).toEqual({ kind: 'refused', reason: 'behind' });
+  });
+
+  it('an arc tighter than 10 G, and takes one of 10 G and more', () => {
+    // The circle through the three has a radius of 7.5 G; through a click farther on, 35 G.
+    expect(buildLine([P(0, 0), P(10, 0), P(11, 10)], opts)).toEqual({ kind: 'refused', reason: 'tight' });
+    expect(buildLine([P(0, 0), P(10, 0), P(40, 30)], opts).kind).toBe('line');
+    const centre = { x: 2000, y: 1500 };
+    const angles = [0, 0.5, 1, 1.5, 2];
+    expect(buildLine(onCircle(centre, 9.9 * G, angles), opts)).toEqual({ kind: 'refused', reason: 'tight' });
+    expect(buildLine(onCircle(centre, 10.1 * G, angles), opts).kind).toBe('line');
+  });
+
+  it('the same clicks reversed for the same reason', () => {
+    for (const clicks of [
+      [P(0, 0), P(10, 0), P(5, 0)],
+      [P(0, 0), P(10, 0), P(11, 10)],
+    ]) {
+      expect(buildLine([...clicks].reverse(), opts)).toEqual(buildLine(clicks, opts));
+    }
+  });
 });
 
 describe('fitNodes', () => {
@@ -267,5 +295,15 @@ describe('fitNodes', () => {
       expect(Math.hypot(n.x, n.y - r)).toBeCloseTo(r, 6);
       expect(Math.cos(n.heading - (i * sweep) / 4)).toBeCloseTo(1, 6);
     });
+  });
+});
+
+describe('the rule module', () => {
+  it('imports nothing but the r49 types and track.ts, so no DOM and no Lit', () => {
+    for (const file of ['trackFit.ts', 'track.ts']) {
+      const source = fs.readFileSync(path.resolve(__dirname, '../src', file), 'utf8');
+      const from = [...source.matchAll(/from '([^']+)'/g)].map(m => m[1]);
+      for (const f of from) expect(['@rails49/r49', './track.js']).toContain(f);
+    }
   });
 });
