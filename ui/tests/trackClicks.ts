@@ -3,7 +3,7 @@
  * known chain of straights and arcs, with a little seeded noise, so the
  * expected parts are known.
  */
-import type { Point } from '@rails49/r49';
+import type { Click, Point } from '@rails49/r49';
 
 /** Gauge in image pixels, the user's photos' DPT. */
 export const G = 32.5;
@@ -138,4 +138,18 @@ export function offLine(p: Point, before: Point, after: Point, gauges: number): 
   const dy = after.y - before.y;
   const len = Math.hypot(dx, dy);
   return { x: p.x - (dy / len) * gauges * G, y: p.y + (dx / len) * gauges * G };
+}
+
+/** `clicks` with the gaps from click `from` to click `to` marked straight. */
+export function straightBetween(clicks: readonly Click[], from: number, to: number): Click[] {
+  return clicks.map((p, i) => (i >= from && i < to ? { ...p, straight: true } : p));
+}
+
+/** The same clicks and marks the other way round: a gap's mark goes to the click that now starts it. */
+export function reversedClicks(clicks: readonly Click[]): Click[] {
+  const n = clicks.length;
+  return clicks.map((_, j) => {
+    const { x, y } = clicks[n - 1 - j];
+    return j < n - 1 && clicks[n - 2 - j].straight ? { x, y, straight: true } : { x, y };
+  });
 }

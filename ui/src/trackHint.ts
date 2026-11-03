@@ -6,6 +6,7 @@ import type { Refusal } from './trackFit.js';
 const REFUSED: Record<Refusal, string> = {
   behind: 'Behind the click before it: click farther along the track.',
   tight: `Needs an arc tighter than ${TRACK_FIT.minRadius} G: click farther along the track.`,
+  'off-straight': `The track is not straight there: a click is more than ${TRACK_FIT.tolerance} G off the straight. Make the gap free.`,
 };
 
 /**

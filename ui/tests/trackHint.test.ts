@@ -32,6 +32,9 @@ describe('trackHint', () => {
     for (const trace of [null, tracing]) {
       expect(trackHint(trace, 'behind')).toBe('Behind the click before it: click farther along the track.');
       expect(trackHint(trace, 'tight')).toBe('Needs an arc tighter than 10 G: click farther along the track.');
+      expect(trackHint(trace, 'off-straight')).toBe(
+        'The track is not straight there: a click is more than 0.1 G off the straight. Make the gap free.'
+      );
     }
   });
 });

@@ -103,7 +103,9 @@ export type Refusal =
   /** A click is not ahead of the click before it along that click's heading, or the other way round. */
   | 'behind'
   /** An arc is tighter than the minimum radius. */
-  | 'tight';
+  | 'tight'
+  /** A click of a straight run is more than the tolerance off the run's line. */
+  | 'off-straight';
 
 /** The line of a set of clicks, or why there is none. */
 export type Built = { readonly kind: 'line'; readonly fit: Fit } | { readonly kind: 'refused'; readonly reason: Refusal };
@@ -127,19 +129,20 @@ function circle3(a: Point, b: Point, c: Point): { curvature: number; ha: number;
 }
 
 /**
- * The heading at each of `clicks`, a free stretch of two or more. Two give
- * their chord. Between, a click with two clicks on each side mixes the
- * headings there of the circles behind and ahead, each weighted by how much
- * the curvature changes on the other side, after Akima (1970); the click next
- * to an end takes the heading of the circle through it and its two
- * neighbours. An end takes the one arc through the end gap tangent at the
- * inner click.
+ * The heading at each of `clicks`, a free stretch of two or more, where
+ * `fixed` gives none. Two give their chord. Between, a click with two clicks
+ * on each side mixes the headings there of the circles behind and ahead,
+ * each weighted by how much the curvature changes on the other side, after
+ * Akima (1970); the click next to an end takes the heading of the circle
+ * through it and its two neighbours. An end takes the one arc through the
+ * end gap tangent at the inner click.
  */
-function headings(clicks: readonly Point[]): number[] {
+function headings(clicks: readonly Point[], fixed: readonly (number | null)[]): number[] {
   const m = clicks.length;
-  if (m === 2) return [chord(clicks[0], clicks[1]), chord(clicks[0], clicks[1])];
-  const h = new Array<number>(m);
+  const h = [...fixed];
+  if (m === 2 && h[0] === null && h[1] === null) return [chord(clicks[0], clicks[1]), chord(clicks[0], clicks[1])];
   for (let i = 1; i < m - 1; i++) {
+    if (h[i] !== null) continue;
     const mid = circle3(clicks[i - 1], clicks[i], clicks[i + 1]);
     if (i < 2 || i > m - 3) {
       h[i] = mid.hb;
@@ -152,9 +155,9 @@ function headings(clicks: readonly Point[]): number[] {
     const share = wb + wf < 1e-15 ? 0.5 : wf / (wb + wf);
     h[i] = behind.hc + share * wrapAngle(ahead.ha - behind.hc);
   }
-  h[0] = 2 * chord(clicks[0], clicks[1]) - h[1];
-  h[m - 1] = 2 * chord(clicks[m - 2], clicks[m - 1]) - h[m - 2];
-  return h;
+  h[0] ??= 2 * chord(clicks[0], clicks[1]) - h[1]!;
+  h[m - 1] ??= 2 * chord(clicks[m - 2], clicks[m - 1]) - h[m - 2]!;
+  return h as number[];
 }
 
 /** The one arc from `a` with heading `heading` through `b`. */
@@ -178,24 +181,213 @@ function biarc(a: Point, ha: number, b: Point, hb: number): Part[] {
   return [arc(a, ha, joint), arc(joint, g - (t0 + t1) / 2, b)];
 }
 
+/** A straight through `p` with heading `heading`. */
+interface Straight {
+  readonly p: Point;
+  readonly heading: number;
+}
+
+/** The foot of `x` on `line`, and how far along it from `line.p`. */
+function foot(line: Straight, x: Point): { at: Point; s: number } {
+  const s = (x.x - line.p.x) * Math.cos(line.heading) + (x.y - line.p.y) * Math.sin(line.heading);
+  return { at: { x: line.p.x + s * Math.cos(line.heading), y: line.p.y + s * Math.sin(line.heading) }, s };
+}
+
+/** The total least squares line through `points`, heading from the first towards the last. */
+function fitStraight(points: readonly Point[]): Straight {
+  const n = points.length;
+  const p = { x: points.reduce((s, q) => s + q.x, 0) / n, y: points.reduce((s, q) => s + q.y, 0) / n };
+  let sxx = 0;
+  let sxy = 0;
+  let syy = 0;
+  for (const q of points) {
+    sxx += (q.x - p.x) ** 2;
+    sxy += (q.x - p.x) * (q.y - p.y);
+    syy += (q.y - p.y) ** 2;
+  }
+  const a = 0.5 * Math.atan2(2 * sxy, sxx - syy);
+  const first = points[0];
+  const last = points[n - 1];
+  const ahead = (last.x - first.x) * Math.cos(a) + (last.y - first.y) * Math.sin(a) >= 0;
+  return { p, heading: ahead ? a : a + Math.PI };
+}
+
+/**
+ * The circle through `u` then `v` that goes on to touch `line` and leave
+ * along it, no tighter than `minRadius` and within a half turn from `u` to
+ * `v`: where it touches, and its heading at `u` and `v`. Null when there is
+ * none, or it touches the line outside `[from, to]` px along it.
+ */
+function joinCircle(
+  line: Straight,
+  u: Point,
+  v: Point,
+  from: number,
+  to: number,
+  minRadius: number
+): { touch: Point; hu: number; hv: number } | null {
+  const half = Math.hypot(v.x - u.x, v.y - u.y) / 2;
+  const mid = { x: (u.x + v.x) / 2, y: (u.y + v.y) / 2 };
+  const g = chord(u, v);
+  // The centre is mid + t w, w the left normal of the chord, and lies as far from the line as from u.
+  const w = { x: -Math.sin(g), y: Math.cos(g) };
+  const n = { x: -Math.sin(line.heading), y: Math.cos(line.heading) };
+  const alpha = n.x * (mid.x - line.p.x) + n.y * (mid.y - line.p.y);
+  const beta = n.x * w.x + n.y * w.y;
+  const qa = beta * beta - 1;
+  const qb = 2 * alpha * beta;
+  const qc = alpha * alpha - half * half;
+  const roots: number[] = [];
+  if (Math.abs(qa) < 1e-12) {
+    if (Math.abs(qb) > 1e-12) roots.push(-qc / qb);
+  } else {
+    const disc = qb * qb - 4 * qa * qc;
+    if (disc >= 0) roots.push((-qb + Math.sqrt(disc)) / (2 * qa), (-qb - Math.sqrt(disc)) / (2 * qa));
+  }
+  const sweep = (c: Point, sigma: number, a: Point, b: Point) => {
+    const d = sigma * (chord(c, b) - chord(c, a));
+    return d - 2 * Math.PI * Math.floor(d / (2 * Math.PI));
+  };
+  let best: { touch: Point; hu: number; hv: number; beyond: number } | null = null;
+  for (const t of roots) {
+    const c = { x: mid.x + t * w.x, y: mid.y + t * w.y };
+    if (Math.hypot(half, t) < minRadius) continue;
+    const { at: touch, s } = foot(line, c);
+    if (s < from || s > to) continue;
+    // Travel round c that leaves along the line where it touches.
+    const sigma = (touch.y - c.y) * Math.cos(line.heading) - (touch.x - c.x) * Math.sin(line.heading) <= 0 ? 1 : -1;
+    const uv = sweep(c, sigma, u, v);
+    const ut = sweep(c, sigma, u, touch);
+    if (uv >= Math.PI || ut <= uv) continue;
+    if (!best || ut - uv < best.beyond) {
+      best = { touch, hu: chord(c, u) + (sigma * Math.PI) / 2, hv: chord(c, v) + (sigma * Math.PI) / 2, beyond: ut - uv };
+    }
+  }
+  return best;
+}
+
+/** A run of neighbouring straight gaps: clicks `a` to `b`, its line, and where the line starts and ends. */
+interface Run {
+  readonly a: number;
+  readonly b: number;
+  readonly line: Straight;
+  start: Point;
+  end: Point;
+}
+
 /**
  * The line through `clicks`, two or more, in order: a function of the
- * clicks alone, built whole. Every gap is free; a click's `straight` mark is
- * not read. Refused when a click is not
- * ahead of the click before it along that click's heading, or that click
- * not behind it along its own, which would loop; or when an arc is tighter
- * than the minimum radius.
+ * clicks and their marks alone, built whole. A click marked `straight`
+ * starts a straight gap; the last click's mark is not read.
+ *
+ * A run of neighbouring straight gaps is the total least squares line
+ * through its clicks. Every other click is on the line. Next to a run, the
+ * circle through the two nearest free clicks that touches the run gives
+ * their headings and where the run starts or ends, if it is no tighter than
+ * the minimum radius and touches the run between the nearest free click and
+ * the run's second click; otherwise the free gap is two arcs to the foot of
+ * the run's end click.
+ *
+ * Refused when a click is not ahead of the click before it along that
+ * click's heading, or that click not behind it along its own, which would
+ * loop; when an arc is tighter than the minimum radius; or when a click of a
+ * straight run is more than the tolerance off its line.
  */
 export function buildLine(clicks: readonly Click[], opts: FitOptions): Built {
-  for (let i = 1; i < clicks.length; i++) {
+  const n = clicks.length;
+  for (let i = 1; i < n; i++) {
     if (clicks[i].x === clicks[i - 1].x && clicks[i].y === clicks[i - 1].y) return { kind: 'refused', reason: 'behind' };
   }
-  const h = headings(clicks);
-  for (let i = 1; i < clicks.length; i++) {
+
+  const runs: Run[] = [];
+  for (let g = 0; g < n - 1; g++) {
+    if (!clicks[g].straight) continue;
+    let b = g + 1;
+    while (b < n - 1 && clicks[b].straight) b++;
+    const points = clicks.slice(g, b + 1);
+    const line = fitStraight(points);
+    const n0 = { x: -Math.sin(line.heading), y: Math.cos(line.heading) };
+    if (points.some(q => Math.abs(n0.x * (q.x - line.p.x) + n0.y * (q.y - line.p.y)) > opts.tolerance)) {
+      return { kind: 'refused', reason: 'off-straight' };
+    }
+    runs.push({ a: g, b, line, start: foot(line, clicks[g]).at, end: foot(line, clicks[b]).at });
+    g = b - 1;
+  }
+
+  const h = new Array<number>(n);
+  for (const r of runs) for (let i = r.a; i <= r.b; i++) h[i] = r.line.heading;
+  for (let i = 0; i < n; i++) {
+    if (runs.some(r => i >= r.a && i <= r.b)) continue;
+    let j = i;
+    while (j + 1 < n && !runs.some(r => r.a === j + 1)) j++;
+    stretchHeadings(clicks, i, j, runs, opts).forEach((hk, k) => (h[i + k] = hk));
+    i = j;
+  }
+
+  for (let i = 1; i < n; i++) {
     const g = chord(clicks[i - 1], clicks[i]);
     if (Math.cos(h[i - 1] - g) <= 0 || Math.cos(h[i] - g) <= 0) return { kind: 'refused', reason: 'behind' };
   }
-  const parts = clicks.slice(1).flatMap((b, i) => biarc(clicks[i], h[i], b, h[i + 1]));
+
+  // The line goes through each free click and along each run from its start to its end.
+  const ways: { p: Point; h: number; straight: boolean }[] = [];
+  for (let i = 0; i < n; i++) {
+    const r = runs.find(q => q.a === i);
+    if (!r) {
+      ways.push({ p: clicks[i], h: h[i], straight: false });
+      continue;
+    }
+    ways.push({ p: r.start, h: r.line.heading, straight: true }, { p: r.end, h: r.line.heading, straight: false });
+    i = r.b;
+  }
+  const parts: Part[] = [];
+  for (let k = 0; k + 1 < ways.length; k++) {
+    const [a, b] = [ways[k], ways[k + 1]];
+    if (!a.straight) {
+      parts.push(...biarc(a.p, a.h, b.p, b.h));
+      continue;
+    }
+    const length = (b.p.x - a.p.x) * Math.cos(a.h) + (b.p.y - a.p.y) * Math.sin(a.h);
+    if (length < 0) return { kind: 'refused', reason: 'behind' };
+    parts.push({ length, curvature: 0 });
+  }
   if (parts.some(part => Math.abs(part.curvature) * opts.minRadius > 1)) return { kind: 'refused', reason: 'tight' };
-  return { kind: 'line', fit: { start: { x: clicks[0].x, y: clicks[0].y, heading: h[0] }, parts } };
+  return { kind: 'line', fit: { start: { x: ways[0].p.x, y: ways[0].p.y, heading: ways[0].h }, parts } };
+}
+
+/**
+ * The headings at free clicks `i` to `j`, and where a run next to them
+ * starts or ends (`buildLine`).
+ */
+function stretchHeadings(clicks: readonly Click[], i: number, j: number, runs: Run[], opts: FitOptions): number[] {
+  const free = clicks.slice(i, j + 1);
+  const m = free.length;
+  const before = runs.find(r => r.b === i - 1);
+  const after = runs.find(r => r.a === j + 1);
+  const fixed: (number | null)[] = new Array(m).fill(null);
+  if (m === 1) {
+    const hs: number[] = [];
+    if (before) hs.push(2 * chord(before.end, free[0]) - before.line.heading);
+    if (after) hs.push(2 * chord(free[0], after.start) - after.line.heading);
+    return [hs.length === 1 ? hs[0] : hs[0] + wrapAngle(hs[1] - hs[0]) / 2];
+  }
+  if (before) {
+    // Looking back along the run, from the foot of its end click.
+    const back = { p: before.line.p, heading: before.line.heading + Math.PI };
+    const join = joinCircle(back, free[1], free[0], foot(back, free[0]).s, foot(back, clicks[before.b - 1]).s, opts.minRadius);
+    if (join) {
+      before.end = join.touch;
+      fixed[0] = join.hv + Math.PI;
+      if (m >= 4) fixed[1] = join.hu + Math.PI;
+    }
+  }
+  if (after) {
+    const join = joinCircle(after.line, free[m - 2], free[m - 1], foot(after.line, free[m - 1]).s, foot(after.line, clicks[after.a + 1]).s, opts.minRadius);
+    if (join) {
+      after.start = join.touch;
+      fixed[m - 1] = join.hv;
+      if (m >= 4) fixed[m - 2] = join.hu;
+    }
+  }
+  return headings(free, fixed);
 }
