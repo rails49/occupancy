@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Track trace prototype</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="top">
+      <h1>Track trace prototype <span class="tag">throwaway</span></h1>
+      <p>
+        Can a line through clicks be edited locally, extended at both ends, give the same line in either
+        order, and turn exactly straight where the track is straight? Each free click is on the line; its
+        direction comes from its neighbours, and each gap is two arcs. Gaps marked straight or one radius
+        are fitted as one piece, within the tolerance of their clicks.
+      </p>
+    </header>
+
+    <main class="layout">
+      <section class="stage">
+        <canvas id="view"></canvas>
+        <canvas id="curvature"></canvas>
+      </section>
+
+      <aside class="side">
+        <section class="panel">
+          <h2>Photo and scale</h2>
+          <label class="row">Photo <input id="photo" type="file" accept="image/*" /></label>
+          <div class="row">
+            <label>1 G = <input id="gauge" type="number" min="1" step="0.1" /> px</label>
+            <button id="measure" type="button">Measure</button>
+          </div>
+          <label class="row">Tolerance <input id="tolerance" type="number" min="0.01" step="0.01" /> G</label>
+        </section>
+
+        <section class="panel">
+          <h2>Rule</h2>
+          <label class="row"
+            >Direction at a click
+            <select id="rule">
+              <option value="akima">Weighted between the circles behind and ahead</option>
+              <option value="circle3">Circle through the click and its two neighbours</option>
+              <option value="onearc">One arc per gap (old rule)</option>
+            </select>
+          </label>
+          <fieldset class="row">
+            <legend>New gaps are</legend>
+            <label><input type="radio" name="newMark" value="free" /> free (1)</label>
+            <label><input type="radio" name="newMark" value="straight" /> straight (2)</label>
+            <label><input type="radio" name="newMark" value="radius" /> one radius (3)</label>
+          </fieldset>
+          <fieldset class="row">
+            <legend>Add clicks at</legend>
+            <label><input type="radio" name="activeEnd" value="start" /> the start</label>
+            <label><input type="radio" name="activeEnd" value="end" /> the end (E switches)</label>
+          </fieldset>
+          <fieldset class="row">
+            <legend>Show</legend>
+            <label><input id="showRails" type="checkbox" /> rails</label>
+            <label><input id="showJoints" type="checkbox" /> where arcs meet</label>
+            <label><input id="showProjection" type="checkbox" /> projection</label>
+            <label><input id="showNumbers" type="checkbox" /> click numbers</label>
+            <label><input id="showOld" type="checkbox" /> old rule in grey</label>
+          </fieldset>
+          <div class="row buttons">
+            <button id="fit" type="button">Fit view</button>
+            <button id="reverse" type="button">Reverse order</button>
+            <button id="undo" type="button">Undo</button>
+            <button id="redo" type="button">Redo</button>
+            <button id="clear" type="button">Clear</button>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>Current state</h2>
+          <dl id="state" class="state"></dl>
+        </section>
+
+        <section class="panel">
+          <h2>Walkthroughs</h2>
+          <div id="tabs" class="tabs"></div>
+          <p id="scenarioText" class="scenario"></p>
+          <ol id="steps" class="steps"></ol>
+        </section>
+
+        <section class="panel">
+          <h2>How to use</h2>
+          <ul class="help">
+            <li>Click empty space: add a click at the chosen end.</li>
+            <li>Click on the line: insert a click there. Hold and drag to place it.</li>
+            <li>Drag a click: move it. The yellow band shows what changed.</li>
+            <li>Click a click: select it. Shift-click another: select the clicks between.</li>
+            <li>S, R, F: mark the selected gaps, or the gap under the pointer, straight, one radius or free.</li>
+            <li>Delete: remove the selected clicks, or the click under the pointer.</li>
+            <li>Scroll or right-drag or space-drag: pan. Pinch, Ctrl-scroll or + and −: zoom.</li>
+            <li>Cmd-Z, Shift-Cmd-Z: undo, redo. Esc: clear the selection.</li>
+          </ul>
+          <details>
+            <summary>Clicks as JSON</summary>
+            <textarea id="json" rows="6" spellcheck="false"></textarea>
+            <div class="row buttons">
+              <button id="jsonOut" type="button">Show current</button>
+              <button id="jsonIn" type="button">Load from text</button>
+            </div>
+          </details>
+        </section>
+      </aside>
+    </main>
+
+    <script src="trace.js"></script>
+    <script src="page.js"></script>
+  </body>
+</html>

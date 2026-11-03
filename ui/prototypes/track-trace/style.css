@@ -1,0 +1,228 @@
+:root {
+  --ink: #1d1d1f;
+  --ink-2: #5a5a60;
+  --pane: #ffffff;
+  --card: #f4f4f6;
+  --line: #dcdce0;
+  --accent: #2563eb;
+  --warn: #b42318;
+  --matte: #111111;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--pane);
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+.top {
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.top h1 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.top p {
+  margin: 4px 0 0;
+  color: var(--ink-2);
+  max-width: 1100px;
+}
+
+.tag {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--warn);
+  border: 1px solid var(--warn);
+  border-radius: 4px;
+  padding: 0 4px;
+  vertical-align: middle;
+}
+
+.layout {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.stage {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--matte);
+}
+
+#view {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: block;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+#view.over-click {
+  cursor: grab;
+}
+
+#view.over-line {
+  cursor: copy;
+}
+
+#view.panning {
+  cursor: move;
+}
+
+#curvature {
+  height: 120px;
+  width: 100%;
+  display: block;
+  border-top: 1px solid #333333;
+}
+
+.side {
+  width: 360px;
+  overflow-y: auto;
+  border-left: 1px solid var(--line);
+  padding: 8px 12px 24px;
+}
+
+.panel {
+  padding: 8px 0 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.panel h2 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+  margin: 0 0 6px;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0;
+}
+
+fieldset.row {
+  border: none;
+  padding: 0;
+}
+
+fieldset.row legend {
+  padding: 0;
+  margin-bottom: 2px;
+  color: var(--ink-2);
+  width: 100%;
+}
+
+input[type='number'] {
+  width: 64px;
+}
+
+select {
+  max-width: 100%;
+}
+
+.buttons button {
+  padding: 3px 8px;
+}
+
+button.on {
+  outline: 2px solid var(--accent);
+}
+
+.state {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 3px 8px;
+  margin: 0;
+}
+
+.state dt {
+  color: var(--ink-2);
+}
+
+.state dd {
+  margin: 0;
+}
+
+.state .warn {
+  color: var(--warn);
+}
+
+.state .changed {
+  background: #fff3b0;
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.tabs button {
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  border-radius: 4px;
+}
+
+.tabs button.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.scenario {
+  color: var(--ink-2);
+}
+
+.steps {
+  padding-left: 20px;
+  margin: 0;
+}
+
+.steps li {
+  margin: 4px 0;
+}
+
+.steps button {
+  text-align: left;
+  padding: 3px 8px;
+}
+
+.steps li.next button {
+  outline: 2px solid var(--accent);
+}
+
+.help {
+  padding-left: 16px;
+  margin: 0 0 8px;
+  color: var(--ink-2);
+}
+
+textarea {
+  width: 100%;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+}
