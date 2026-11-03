@@ -2,7 +2,7 @@ import type { Click, Point } from '@rails49/r49';
 import { DEFAULT_GRAB_RADIUS_SCREEN_PX } from './geometry.js';
 import { pixel, NONE } from './chain.js';
 import type { Chain, ChainContext, ChainTool, ChainView, ClickResult } from './chain.js';
-import { hitClick, hitTrack } from './track.js';
+import { hitClick, hitTrack, nearestGap } from './track.js';
 import type { ClickHit, Track, TrackHit } from './track.js';
 import { TRACK_FIT, buildLine, fitNodes, fitOptions } from './trackFit.js';
 import type { FitOptions, Refusal } from './trackFit.js';
@@ -47,6 +47,26 @@ export function withClickAt(clicks: readonly Click[], index: number, to: Point):
 }
 
 /**
+ * `clicks` with a click at `p` inserted into gap `gap`, after click `gap`.
+ * The new click takes that click's mark, so a straight gap becomes two.
+ */
+export function withClickIn(clicks: readonly Click[], gap: number, p: Point): Click[] {
+  const click: Click = clicks[gap].straight ? { x: p.x, y: p.y, straight: true } : { x: p.x, y: p.y };
+  return [...clicks.slice(0, gap + 1), click, ...clicks.slice(gap + 1)];
+}
+
+/**
+ * The line within the start distance of `at` that a click there inserts
+ * into, and the gap it goes in, or null when no line with clicks is near.
+ */
+export function insertAt(ctx: ChainContext, at: Point): { line: number; gap: number } | null {
+  const lines = tracks(ctx);
+  const hit = hitTrack(lines, at, TRACK_FIT.startDistance * ctx.scene().dpt!);
+  if (!hit || !lines[hit.line].clicks) return null;
+  return { line: hit.line, gap: nearestGap(lines[hit.line], at) };
+}
+
+/**
  * `clicks` without click `index`. Its two gaps become one, straight only if
  * both were; with the first or last click goes the one gap it ends.
  */
@@ -60,10 +80,11 @@ export function withoutClick(clicks: readonly Click[], index: number): Click[] {
 }
 
 /**
- * The track tool's click with no chain live (#298, #302, #311). A click on a
- * line's first or last click continues the line as a chain from there; on a
- * click between them, or within the start distance of any line, it does
- * nothing. Anywhere else a chain starts, even on a sensor.
+ * The track tool's click with no chain live (#298, #302, #311, #321). A click
+ * on a line's first or last click continues the line as a chain from there;
+ * on a click between them it does nothing. Within the start distance of a
+ * line it inserts a click at the pointer, as one entry; on a line with no
+ * clicks it does nothing. Anywhere else a chain starts, even on a sensor.
  */
 export const trackTool: ChainTool = (ctx, at, scale) => {
   const lines = tracks(ctx);
@@ -73,9 +94,21 @@ export const trackTool: ChainTool = (ctx, at, scale) => {
     if (click.index !== 0 && click.index !== last) return { kind: 'edit', run: async () => NONE };
     return { kind: 'chain', chain: TrackChain.continuing(ctx, click.line, click.index === 0) };
   }
+  const insert = insertAt(ctx, at);
+  if (insert) return { kind: 'edit', run: () => insertClick(ctx, insert.line, insert.gap, pixel(at)) };
   if (hitTrack(lines, at, TRACK_FIT.startDistance * ctx.scene().dpt!)) return { kind: 'edit', run: async () => NONE };
   return { kind: 'chain', chain: TrackChain.starting(ctx, pixel(at)) };
 };
+
+/** Inserts a click at `p` into gap `gap` of line `index`, as one entry. One the rule refuses writes nothing. */
+async function insertClick(ctx: ChainContext, index: number, gap: number, p: Point): Promise<ClickResult> {
+  const lines = [...tracks(ctx)];
+  const line = refitLine(ctx, withClickIn(lines[index].clicks!, gap, p));
+  if (!line) return NONE;
+  lines[index] = line;
+  await ctx.record('insert click', { kind: 'layout' }, () => ctx.writeLayout({ tracks: lines }));
+  return NONE;
+}
 
 /**
  * A chain of track: one track, traced click by click from either end. The
@@ -152,9 +185,21 @@ export class TrackChain implements Chain {
     return NONE;
   }
 
-  /** Draws click `index` at `to` while a drag holds it, and the line as it is; null puts the click back. */
-  hold(index: number, to: Point | null) {
-    this._view = to ? { ...this._line, clicks: withClickAt(this._line.clicks!, index, to) } : this._line;
+  /**
+   * Draws click `index` at `to` while a drag holds it, with the line of the
+   * moved clicks, or the last line the rule took where it refuses them; null
+   * puts the click back. Returns why the rule refuses the click at `to`, or
+   * null.
+   */
+  hold(index: number, to: Point | null): Refusal | null {
+    if (!to) {
+      this._view = this._line;
+      return null;
+    }
+    const clicks = withClickAt(this._line.clicks!, index, to);
+    const line = lineOf(clicks, this._opts);
+    this._view = { ...(typeof line === 'string' ? this._view : line), clicks };
+    return typeof line === 'string' ? line : null;
   }
 
   /** Moves click `index` to `to`, and builds the line again from its clicks. A move the rule refuses writes nothing. */

@@ -18,7 +18,19 @@ import { TOOLS } from './tools.js';
 import { grab, pixel, NONE, NO_TRACK_NOTICE } from './chain.js';
 import type { Chain, ChainContext, ChainTool, ChainView, ClickResult } from './chain.js';
 import { carTool } from './carChain.js';
-import { TrackChain, clickHitAt, refitLine, trackHitAt, trackTool, withClickAt, withoutClick } from './trackChain.js';
+import {
+  TrackChain,
+  clickHitAt,
+  insertAt,
+  lineOf,
+  refitLine,
+  trackHitAt,
+  trackTool,
+  withClickAt,
+  withClickIn,
+  withoutClick,
+} from './trackChain.js';
+import { fitOptions } from './trackFit.js';
 import type { Refusal } from './trackFit.js';
 import { nearestOnTrack, SNAP_TRACK_WIDTHS } from './track.js';
 import type { ClickHit, Track, TrackHit, TrackNode } from './track.js';
@@ -294,7 +306,8 @@ export class EditSession {
    * is live, and ends one still at its start. While a track chain is live
    * only a click of its line is grabbed, or, while it is still at its start,
    * a click of another line, which ends it. Otherwise the track tool grabs a
-   * line's click before anything else.
+   * line's click before anything else, and a press within the start distance
+   * of a line, on nothing else, inserts a click there (`_grabInsert`).
    */
   beginDrag(at: Point, scale: number): Drag | null {
     if (this._drag) return null;
@@ -315,7 +328,7 @@ export class EditSession {
     if (click) return this._grabClick(click, at);
     const scene = this._scene();
     const hit = hitTest(scene, at, grab(scale));
-    if (!hit) return null;
+    if (!hit) return this._grabInsert(at);
     const handles = dragHandles(hit, scene);
     if (handles.length === 0) return null;
     const filename = this.image?.filename;
@@ -343,26 +356,54 @@ export class EditSession {
     return drag;
   }
 
-  /**
-   * A drag of a click on a line. The click follows the pointer and the line
-   * stays as it is; on release the whole line refits from its clicks, as one
-   * entry. A refit the line refuses puts the click back and writes nothing.
-   */
+  /** A drag of a click on a line, which the line follows (`_dragLine`). */
   private _grabClick(hit: ClickHit, at: Point): Drag {
-    const start = this._tracks()[hit.line];
-    const gesture = this.history.beginGesture('move click', { kind: 'layout' });
-    const write = (line: Track) => {
+    const clicks = this._tracks()[hit.line].clicks!;
+    return this._dragLine(hit.line, 'move click', clicks[hit.index], at, to => withClickAt(clicks, hit.index, to));
+  }
+
+  /**
+   * A press within the start distance of a line under the track tool: a
+   * click inserted at the press into the gap nearest it, placed where the
+   * drag ends, as one entry. Null when no line with clicks is near.
+   */
+  private _grabInsert(at: Point): Drag | null {
+    if (this._tool !== 'track' || this._gated('track')) return null;
+    const insert = insertAt(this._context, at);
+    if (!insert) return null;
+    const clicks = this._tracks()[insert.line].clicks!;
+    return this._dragLine(insert.line, 'insert click', pixel(at), at, to => withClickIn(clicks, insert.gap, to));
+  }
+
+  /**
+   * A drag of a click of line `line` from `from`, grabbed at `at`: each move
+   * writes the clicks `clicksAt(to)` with their line, or with the last line
+   * the rule took where it refuses them, and the release writes one entry
+   * `label`. A release back at `from`, or one the rule refuses, leaves the
+   * line as it was.
+   */
+  private _dragLine(line: number, label: string, from: Point, at: Point, clicksAt: (to: Point) => Click[]): Drag {
+    const start = this._tracks()[line];
+    const opts = fitOptions(this._scene().dpt!);
+    const gesture = this.history.beginGesture(label, { kind: 'layout' });
+    const write = (track: Track) => {
       const lines = [...this._tracks()];
-      lines[hit.line] = line;
+      lines[line] = track;
       this._writeLayout({ tracks: lines });
     };
-    const moved = (to: Point) => withClickAt(start.clicks!, hit.index, to);
+    let shown = start;
     return this._dragClick(
-      hit,
+      from,
       at,
-      to => write({ ...start, clicks: moved(to) }),
+      to => {
+        const clicks = clicksAt(to);
+        const built = lineOf(clicks, opts);
+        if (typeof built !== 'string') shown = built;
+        write({ ...shown, clicks });
+        return typeof built === 'string' ? built : null;
+      },
       async to => {
-        write((to && refitLine(this._context, moved(to))) || start);
+        write((to && refitLine(this._context, clicksAt(to))) || start);
         await gesture.commit();
       }
     );
@@ -370,14 +411,14 @@ export class EditSession {
 
   /**
    * A drag while a track chain is live: of a click of the line it traces, and
-   * nothing else. The dot follows the pointer and the trace stays as it is; on
+   * nothing else. The trace follows the pointer (`TrackChain.hold`); on
    * release the chain takes the move (`TrackChain.move`), as one entry.
    */
   private _grabTraced(chain: TrackChain, at: Point, scale: number): Drag | null {
     const click = this._tracedClick(chain, at, scale);
     if (!click) return null;
     return this._dragClick(
-      click,
+      this._clickAt(click),
       at,
       to => chain.hold(click.index, to),
       async to => {
@@ -388,23 +429,24 @@ export class EditSession {
   }
 
   /**
-   * A drag of `click`, grabbed at `at`. `show` takes where the click is
-   * dragged to on each move; `drop` takes where it was let go, or null when
-   * it is back where it was or the drag was cancelled.
+   * A drag of a click at `from`, grabbed at `at`. `show` takes where the
+   * click is dragged to on each move, and returns why the rule refuses it
+   * there, which the hint says while the click is there; `drop` takes where
+   * it was let go, or null when it is back where it was or the drag was
+   * cancelled.
    */
   private _dragClick(
-    click: ClickHit,
+    from: Point,
     at: Point,
-    show: (to: Point) => void,
+    show: (to: Point) => Refusal | null,
     drop: (to: Point | null) => Promise<void>
   ): Drag {
-    const from = this._clickAt(click);
     let to = from;
     const drag: Drag = {
       move: p => {
         if (this._drag !== drag) return;
         to = dragTo({ from }, { x: p.x - at.x, y: p.y - at.y });
-        show(to);
+        this._refusal = show(to);
         this._changed();
       },
       end: async () => {

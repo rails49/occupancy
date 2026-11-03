@@ -166,6 +166,29 @@ export function hitTrack(tracks: readonly Track[], at: Point, radius: number): T
   return nearestWithin(near, at, radius);
 }
 
+/**
+ * The gap of `track` whose part of the line is nearest `at`: the index of
+ * the click it starts from. The track has two or more clicks.
+ */
+export function nearestGap(track: Track, at: Point): number {
+  // Points along the line in order; a click's place is its nearest point's index.
+  const samples = segments(track.nodes).flatMap(s => {
+    const n = Math.max(4, Math.ceil(Math.hypot(s.p1.x - s.p0.x, s.p1.y - s.p0.y) / SAMPLE_PX));
+    return Array.from({ length: n + 1 }, (_, k) => pointAt(s, k / n));
+  });
+  const place = (p: Point) => {
+    let best = 0;
+    samples.forEach((q, i) => {
+      if (Math.hypot(q.x - p.x, q.y - p.y) < Math.hypot(samples[best].x - p.x, samples[best].y - p.y)) best = i;
+    });
+    return best;
+  };
+  const along = place(at);
+  const clicks = track.clicks!;
+  const passed = clicks.slice(1).filter(p => place(p) < along).length;
+  return Math.min(passed, clicks.length - 2);
+}
+
 /** A pointer on a click: click `index` of track `line`. */
 export interface ClickHit {
   readonly line: number;
