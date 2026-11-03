@@ -3146,6 +3146,85 @@ describe('EditSession inserting and dragging clicks (#321)', () => {
     });
   });
 
+  describe('a drag at a refused position', () => {
+    const BEND: readonly Piece[] = [{ straight: 20 }, { radius: 30, turn: 90 }, { straight: 20 }];
+
+    it('keeps the last line the rule took and says why, and a release there writes nothing and puts the click back', async () => {
+      const s = session({ tool: 'track', rows: false });
+      const at = laidAlong(BEND, dptOf(s));
+      await clicks(s, ...at);
+      s.endChain();
+      const before = structuredClone(line(s));
+      const entries = s.history.size;
+      const valid = { x: at[3].x + 2, y: at[3].y + 3 };
+      const refused = tooTight(dptOf(s));
+
+      const d = s.beginDrag(at[3], SCALE)!;
+      d.move(valid);
+      const taken = structuredClone(line(s).nodes);
+      expect(s.refusal).toBeNull();
+      d.move(refused);
+      expect(line(s).nodes).toEqual(taken);
+      expect(line(s).clicks![3]).toEqual(refused);
+      expect(s.refusal).toBe('tight');
+      d.move(valid);
+      expect(s.refusal).toBeNull();
+      d.move(refused);
+      await d.end();
+
+      expect(line(s)).toEqual(before);
+      expect(s.history.size).toBe(entries);
+      expect(s.refusal).toBe('tight');
+    });
+
+    it('does the same for the line being traced, and keeps the chain', async () => {
+      const s = session({ tool: 'track', rows: false });
+      const at = laidAlong(BEND, dptOf(s));
+      await clicks(s, ...at);
+      const before = { line: structuredClone(line(s)), trace: structuredClone(pendingTrack(s)) };
+      const entries = s.history.size;
+      const valid = { x: at[3].x + 2, y: at[3].y + 3 };
+      const refused = tooTight(dptOf(s));
+
+      const d = s.beginDrag(at[3], SCALE)!;
+      d.move(valid);
+      const taken = structuredClone(pendingTrack(s)!.nodes);
+      d.move(refused);
+      expect(pendingTrack(s)!.nodes).toEqual(taken);
+      expect(pendingTrack(s)!.clicks![3]).toEqual(refused);
+      expect(s.refusal).toBe('tight');
+      d.move(valid);
+      expect(s.refusal).toBeNull();
+      d.move(refused);
+      await d.end();
+
+      expect({ line: line(s), trace: pendingTrack(s) }).toEqual(before);
+      expect(s.history.size).toBe(entries);
+      expect(s.refusal).toBe('tight');
+    });
+
+    it('inserts nothing for a press and drag released there', async () => {
+      const s = session({ tool: 'track', rows: false });
+      const at = laidAlong(BEND, dptOf(s));
+      await clicks(s, ...at);
+      s.endChain();
+      const before = structuredClone(line(s));
+      const entries = s.history.size;
+      const press = { x: Math.round((at[2].x + at[3].x) / 2), y: Math.round((at[2].y + at[3].y) / 2) };
+
+      const d = s.beginDrag(press, SCALE)!;
+      d.move({ x: press.x, y: press.y + 2 });
+      const taken = structuredClone(line(s).nodes);
+      d.move(tooTight(dptOf(s)));
+      expect(line(s).nodes).toEqual(taken);
+      expect(s.refusal).not.toBeNull();
+      await d.end();
+
+      expect(line(s)).toEqual(before);
+      expect(s.history.size).toBe(entries);
+    });
+  });
+
   it('extends the line being traced with a click within a gauge of another line', async () => {
     const { s, at } = await finished();
     // A new line crossing the finished one at its ninth click, square to the second straight.

@@ -1087,6 +1087,28 @@ describe('rr-editor-view', () => {
       expect(hint()).to.match(/^Click along the middle of the track/);
     });
 
+    it('says why while a dragged click is where the rule refuses it, and puts it back on release there (#321)', async () => {
+      const el = await mountWithTool('track');
+      const hint = () => el.shadowRoot!.querySelector('.track-hint')?.textContent?.trim();
+      const at = [{ x: 100, y: 100 }, { x: 997, y: 100 }, { x: 1894, y: 100 }];
+      for (const p of at) await clickAt(el, p);
+      await pressEscape(el);
+
+      gesture(el, 'rr-pointer-down', at[1], 1);
+      await moveTo(el, { x: 997, y: 130 });
+      expect(el.shadowRoot!.querySelector('rr-viewer')!.tracks[0].clicks![1]).to.deep.equal({ x: 997, y: 130 });
+      expect(hint()).to.match(/^Click to start a line/);
+      // Past the last click: behind it.
+      await moveTo(el, { x: 2500, y: 100 });
+      expect(hint()).to.match(/^Behind the click before it/);
+      gesture(el, 'rr-pointer-up', { x: 2500, y: 100 }, 1);
+      await flush();
+      await el.updateComplete;
+
+      expect(el.session!.tracks[0].clicks).to.deep.equal(at);
+      expect(hint()).to.match(/^Behind the click before it/);
+    });
+
     it('ends the chain on right-click, opening no menu', async () => {
       const el = await mountWithTool('track');
       await laid(el);

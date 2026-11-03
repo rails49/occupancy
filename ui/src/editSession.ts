@@ -399,6 +399,7 @@ export class EditSession {
         const built = lineOf(clicks, opts);
         if (typeof built !== 'string') shown = built;
         write({ ...shown, clicks });
+        return typeof built === 'string' ? built : null;
       },
       async to => {
         write((to && refitLine(this._context, clicksAt(to))) || start);
@@ -428,13 +429,15 @@ export class EditSession {
 
   /**
    * A drag of a click at `from`, grabbed at `at`. `show` takes where the
-   * click is dragged to on each move; `drop` takes where it was let go, or
-   * null when it is back where it was or the drag was cancelled.
+   * click is dragged to on each move, and returns why the rule refuses it
+   * there, which the hint says while the click is there; `drop` takes where
+   * it was let go, or null when it is back where it was or the drag was
+   * cancelled.
    */
   private _dragClick(
     from: Point,
     at: Point,
-    show: (to: Point) => void,
+    show: (to: Point) => Refusal | null,
     drop: (to: Point | null) => Promise<void>
   ): Drag {
     let to = from;
@@ -442,7 +445,7 @@ export class EditSession {
       move: p => {
         if (this._drag !== drag) return;
         to = dragTo({ from }, { x: p.x - at.x, y: p.y - at.y });
-        show(to);
+        this._refusal = show(to);
         this._changed();
       },
       end: async () => {

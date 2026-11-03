@@ -188,16 +188,18 @@ export class TrackChain implements Chain {
   /**
    * Draws click `index` at `to` while a drag holds it, with the line of the
    * moved clicks, or the last line the rule took where it refuses them; null
-   * puts the click back.
+   * puts the click back. Returns why the rule refuses the click at `to`, or
+   * null.
    */
-  hold(index: number, to: Point | null) {
+  hold(index: number, to: Point | null): Refusal | null {
     if (!to) {
       this._view = this._line;
-      return;
+      return null;
     }
     const clicks = withClickAt(this._line.clicks!, index, to);
     const line = lineOf(clicks, this._opts);
     this._view = { ...(typeof line === 'string' ? this._view : line), clicks };
+    return typeof line === 'string' ? line : null;
   }
 
   /** Moves click `index` to `to`, and builds the line again from its clicks. A move the rule refuses writes nothing. */
