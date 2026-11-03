@@ -278,6 +278,12 @@ export interface ViewerContextMenuDetail extends Omit<ViewerPointerDetail, 'orig
   readonly originalEvent: MouseEvent;
 }
 
+/** A double-click, in image pixel coordinates, after the pointer events of its two clicks. */
+export interface ViewerDoubleClickDetail extends Omit<ViewerPointerDetail, 'originalEvent'> {
+  /** The `dblclick` event. */
+  readonly originalEvent: MouseEvent;
+}
+
 /**
  * Display surface, shared by the editor (`src` → `<img>`) and the live view
  * (`stream` → `<video>`), with annotations drawn over it in image pixel
@@ -333,7 +339,7 @@ export interface ViewerContextMenuDetail extends Omit<ViewerPointerDetail, 'orig
  * @fires rr-pointer-up - Gesture finished. Detail: {@link ViewerPointerDetail}
  * @fires rr-pointer-cancel - Gesture abandoned by the browser. Detail: {@link ViewerPointerDetail}
  * @fires rr-pointer-contextmenu - Right-click. Detail: {@link ViewerContextMenuDetail}
- * @fires rr-pointer-dblclick - Double-click, after the pointer events of its two clicks. Detail: {@link ViewerContextMenuDetail}
+ * @fires rr-pointer-dblclick - Double-click, after the pointer events of its two clicks. Detail: {@link ViewerDoubleClickDetail}
  * @fires rr-wheel - Mouse wheel over the image. Detail: {@link ViewerWheelDetail}
  * @fires rr-media-frame - Media loaded, with its size against the archive's. Detail: {@link ViewerMediaFrameDetail}
  * @fires rr-viewport - The viewport was measured at a new size. Detail: {@link ViewerViewportDetail}
@@ -762,8 +768,8 @@ export class RrViewer extends LitElement {
     const converted = this.toImagePoint(originalEvent.clientX, originalEvent.clientY);
     if (!converted) return false;
     this.dispatchEvent(
-      new CustomEvent<ViewerPointerDetail | ViewerContextMenuDetail>(name, {
-        detail: { ...converted, originalEvent } as ViewerPointerDetail | ViewerContextMenuDetail,
+      new CustomEvent<ViewerPointerDetail | ViewerContextMenuDetail | ViewerDoubleClickDetail>(name, {
+        detail: { ...converted, originalEvent } as ViewerPointerDetail | ViewerContextMenuDetail | ViewerDoubleClickDetail,
         bubbles: true,
         composed: true,
       })
@@ -1043,7 +1049,7 @@ declare global {
     'rr-pointer-up': CustomEvent<ViewerPointerDetail>;
     'rr-pointer-cancel': CustomEvent<ViewerPointerDetail>;
     'rr-pointer-contextmenu': CustomEvent<ViewerContextMenuDetail>;
-    'rr-pointer-dblclick': CustomEvent<ViewerContextMenuDetail>;
+    'rr-pointer-dblclick': CustomEvent<ViewerDoubleClickDetail>;
     'rr-wheel': CustomEvent<ViewerWheelDetail>;
     'rr-media-frame': CustomEvent<ViewerMediaFrameDetail>;
     'rr-viewport': CustomEvent<ViewerViewportDetail>;

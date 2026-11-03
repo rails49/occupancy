@@ -39,6 +39,7 @@ import { imageSize } from './imageSize.js';
 import { makeThumbnail } from './thumbnail.js';
 import type {
   ViewerContextMenuDetail,
+  ViewerDoubleClickDetail,
   ViewerHighlight,
   ViewerMediaFrameDetail,
   ViewerPointerDetail,
@@ -1224,7 +1225,7 @@ export class RREditorView extends LitElement {
    * Double-click, after its two clicks have run: on the click a live track
    * chain goes on from, the gap to the next click is to be straight.
    */
-  private _onViewerDoubleClick(e: CustomEvent<ViewerContextMenuDetail>) {
+  private _onViewerDoubleClick(e: CustomEvent<ViewerDoubleClickDetail>) {
     this.session?.doubleClick(e.detail.point, e.detail.imagePxPerScreenPx);
   }
 

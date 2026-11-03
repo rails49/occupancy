@@ -1,5 +1,4 @@
-import type { CarLabel, Image, ManifestData, Point, ReferencePoint, Sensor, WorldPoint } from '@rails49/r49';
-import type { Track } from './track.js';
+import type { CarLabel, Image, ManifestData, Point, ReferencePoint, Sensor, Track, WorldPoint } from '@rails49/r49';
 import type { Refusal } from './trackFit.js';
 import type { HitScene, HitTolerance } from './geometry.js';
 import { DEFAULT_GRAB_RADIUS_SCREEN_PX } from './geometry.js';
