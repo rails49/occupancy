@@ -208,7 +208,7 @@ The format and the editor store three kinds of geometry, in pixel coordinates:
 
 #### Track centerlines
 
-Each archive stores its [tracks](GLOSSARY.md#track), drawn once and shared by every image ([ADR 0025](docs/adr/0025-a-track-passes-through-every-click-with-gaps-marked-straight.md)). The classifier places its patches on them, and sensors and car ends land on them. A track is one unbranched line of [parts](GLOSSARY.md#track), each a straight or a circular arc, tangent at every [join](GLOSSARY.md#track). Its [centerline](GLOSSARY.md#track) is that line as drawn. Turnouts and crossings are not traced.
+Each archive stores its [tracks](GLOSSARY.md#track), drawn once and shared by every image ([ADR 0024](docs/adr/0024-a-track-passes-through-every-click-with-gaps-marked-straight.md)). The classifier places its patches on them, and sensors and car ends land on them. A track is one unbranched line of [parts](GLOSSARY.md#track), each a straight or a circular arc, tangent at every [join](GLOSSARY.md#track). Its [centerline](GLOSSARY.md#track) is that line as drawn. Turnouts and crossings are not traced.
 
 **The rule.** The line is a function of its [clicks](GLOSSARY.md#track) and their marks alone, and is built whole on every change ([#317](https://github.com/rails49/occupancy/issues/317)). The same clicks and marks give the same line in either order, on screen, in the archive and on reload. Each [gap](GLOSSARY.md#track) is a [free gap](GLOSSARY.md#track) unless the click that starts it is marked straight, which makes it a [straight gap](GLOSSARY.md#track). The rule works in image pixels ([research note](docs/research/track-arcs-in-image.md)); how it was chosen is in [`track-trace-local-curves.md`](docs/research/track-trace-local-curves.md).
 
