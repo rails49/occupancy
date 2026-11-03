@@ -17,6 +17,11 @@ export function segments(nodes: readonly TrackNode[]): Segment[] {
   return nodes.slice(1).map((node, i) => segment(nodes[i], node));
 }
 
+/** How many steps a segment is sampled in: one per {@link SAMPLE_PX} of its chord, and at least four. */
+function samples(s: Segment): number {
+  return Math.max(4, Math.ceil(Math.hypot(s.p1.x - s.p0.x, s.p1.y - s.p0.y) / SAMPLE_PX));
+}
+
 /** An SVG path through the nodes: one `C` command per segment. */
 export function trackPath(nodes: readonly TrackNode[]): string {
   if (nodes.length === 0) return '';
@@ -33,7 +38,7 @@ export function trackPath(nodes: readonly TrackNode[]): string {
 export function offsetPoints(nodes: readonly TrackNode[], offset: number): Point[] {
   const points: Point[] = [];
   for (const [i, s] of segments(nodes).entries()) {
-    const n = Math.max(4, Math.ceil(Math.hypot(s.p1.x - s.p0.x, s.p1.y - s.p0.y) / SAMPLE_PX));
+    const n = samples(s);
     for (let k = i === 0 ? 0 : 1; k <= n; k++) {
       const t = k / n;
       const p = pointAt(s, t);
@@ -66,7 +71,7 @@ export interface TrackHit {
 export function hitTrack(tracks: readonly Track[], at: Point, radius: number): TrackHit | null {
   const near = tracks.flatMap((track, line) =>
     segments(track.nodes).flatMap(s => {
-      const n = Math.max(4, Math.ceil(Math.hypot(s.p1.x - s.p0.x, s.p1.y - s.p0.y) / SAMPLE_PX));
+      const n = samples(s);
       return Array.from({ length: n + 1 }, (_, k) => [{ line }, pointAt(s, k / n)] as const);
     })
   );

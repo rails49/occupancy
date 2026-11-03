@@ -15,7 +15,7 @@ import type { DragHandle, HitKind, HitScene, HitTarget, Size } from './geometry.
 import { EditHistory, revealTarget } from './history.js';
 import type { HistoryEntry, HistoryGesture, HistoryHighlight, HistoryTarget } from './history.js';
 import { TOOLS } from './tools.js';
-import { grab, pixel, NONE, NO_TRACK_NOTICE } from './chain.js';
+import { grab, grabRadius, pixel, NONE, NO_TRACK_NOTICE } from './chain.js';
 import type { Chain, ChainContext, ChainTool, ChainView, ClickResult } from './chain.js';
 import { carTool } from './carChain.js';
 import {
@@ -29,6 +29,7 @@ import {
   trackHitAt,
   trackHover,
   trackTool,
+  tracks,
   withClickAt,
   withClickIn,
   withoutClick,
@@ -144,6 +145,11 @@ export class EditSession {
   private _drag: Drag | null = null;
   /** Why the last click or edit under the track tool was refused, or null when it was not. */
   private _refusal: Refusal | null = null;
+  /**
+   * Where the last click edited or said what to do under the track tool with
+   * no chain live, and the tracks it left; null after any other click.
+   */
+  private _trackEdit: { at: Point; tracks: readonly Track[] } | null = null;
   /** The line a drag of one of its clicks, or an insert into it, holds, or null. */
   private _held: number | null = null;
   private readonly _listeners = new Set<SessionListener>();
@@ -213,7 +219,7 @@ export class EditSession {
 
   /** The layout's tracks, the one a track chain is laying included. */
   get tracks(): readonly Track[] {
-    return this._tracks();
+    return tracks(this._context);
   }
 
   /**
@@ -301,12 +307,16 @@ export class EditSession {
    * A click at `at`. A live chain takes it as its next segment. Otherwise the
    * car or track tool looks first (`carChain.ts`, `trackChain.ts`), then an
    * object under the pointer is edited whatever the tool, and empty image runs
-   * the tool.
+   * the tool. A click within the grab radius of one the track tool edited or
+   * said what to do for, with the tracks unchanged since, is the second click
+   * of a double-click: it does nothing and says nothing.
    */
   async click(at: Point, scale: number): Promise<ClickResult> {
     const px = pixel(at);
     this._attempt();
 
+    const last = this._trackEdit;
+    this._trackEdit = null;
     if (this._chain) return this._chain.extend(at, scale);
 
     const chainTool = CHAIN_TOOLS[this._tool];
@@ -315,6 +325,12 @@ export class EditSession {
       this._chain = chainHit.chain;
       this._changed();
       return NONE;
+    }
+    if (chainHit && this._tool === 'track') {
+      if (last && last.tracks === tracks(this._context) && Math.hypot(at.x - last.at.x, at.y - last.at.y) <= grabRadius(scale)) return NONE;
+      const result = await chainHit.run();
+      this._trackEdit = { at, tracks: tracks(this._context) };
+      return result;
     }
     if (chainHit) return chainHit.run();
 
@@ -414,7 +430,7 @@ export class EditSession {
 
   /** A drag of a click on a line, which the line follows (`_dragLine`). */
   private _grabClick(hit: ClickHit, at: Point): Drag {
-    const clicks = this._tracks()[hit.line].clicks!;
+    const clicks = tracks(this._context)[hit.line].clicks!;
     return this._dragLine(hit.line, 'move click', clicks[hit.index], at, to => withClickAt(clicks, hit.index, to));
   }
 
@@ -428,7 +444,7 @@ export class EditSession {
     const insert = insertAt(this._context, at);
     if (!insert || insert.gap === null) return null;
     const { line, gap } = insert;
-    const clicks = this._tracks()[line].clicks!;
+    const clicks = tracks(this._context)[line].clicks!;
     return this._dragLine(line, 'insert click', pixel(at), at, to => withClickIn(clicks, gap, to));
   }
 
@@ -441,7 +457,7 @@ export class EditSession {
    * at `from`, or at a place the rule refuses, leaves the line as it was.
    */
   private _dragLine(line: number, label: string, from: Point, at: Point, clicksAt: (to: Point) => Click[]): Drag {
-    const start = this._tracks()[line];
+    const start = tracks(this._context)[line];
     const opts = fitOptions(this._scene().dpt!);
     const gesture = this.history.beginGesture(label, { kind: 'layout' });
     let shown = start;
@@ -523,7 +539,7 @@ export class EditSession {
 
   /** Where click `click.index` of line `click.line` is. */
   private _clickAt(click: ClickHit): Point {
-    return this._tracks()[click.line].clicks![click.index];
+    return tracks(this._context)[click.line].clicks![click.index];
   }
 
   /** The menu subject for a line's click, with the pixel it is at. */
@@ -558,7 +574,7 @@ export class EditSession {
     if (click) return this._clickSubject(click);
     const trackHit = this._trackHit(at, scale);
     if (trackHit) {
-      const line = this._tracks()[trackHit.line];
+      const line = tracks(this._context)[trackHit.line];
       const px = pointOf(line.nodes[0]);
       if (!line.clicks || line.clicks.length < 2) return { kind: 'track', line: trackHit.line, px };
       const index = nearestGap(line, at);
@@ -684,7 +700,7 @@ export class EditSession {
   async markGap(subject: MenuSubject & { kind: 'track' }, straight: boolean) {
     this._attempt();
     const { line, gap } = subject;
-    const clicks = this._tracks()[line]?.clicks;
+    const clicks = tracks(this._context)[line]?.clicks;
     if (!gap || !clicks || !this._trackNodeIsStillAt(line, 0, subject.px)) return;
     if ((clicks[gap.index]?.straight === true) !== gap.straight) return;
     const marked = clicks.map((p, i) => (i === gap.index ? markedClick(p, straight) : p));
@@ -694,7 +710,7 @@ export class EditSession {
   /** Deletes line `line` as one entry, and ends a chain tracing it. */
   private async _deleteLine(line: number) {
     if (this._chain instanceof TrackChain && this._chain.line === line) this._chain = null;
-    const lines = this._tracks().filter((_, i) => i !== line);
+    const lines = tracks(this._context).filter((_, i) => i !== line);
     await this._record('delete track', { kind: 'layout' }, () => this._writeLayout({ tracks: lines }));
   }
 
@@ -1070,20 +1086,16 @@ export class EditSession {
     return this.archive.getManifest().layout.sensors;
   }
 
-  private _tracks(): readonly Track[] {
-    return this.archive.getManifest().layout.tracks ?? [];
-  }
-
   /** The click under the track tool's pointer. Null under another tool, or while the tool is gated. */
   private _clickHit(at: Point, scale: number): ClickHit | null {
     if (this._tool !== 'track' || this._gated('track')) return null;
-    return clickHitAt(this._tracks(), at, scale);
+    return clickHitAt(tracks(this._context), at, scale);
   }
 
   /** The line under the track tool's pointer. Null under another tool, or while the tool is gated. */
   private _trackHit(at: Point, scale: number): TrackHit | null {
     if (this._tool !== 'track' || this._gated('track')) return null;
-    return trackHitAt(this._tracks(), at, scale);
+    return trackHitAt(tracks(this._context), at, scale);
   }
 
   /**
@@ -1094,19 +1106,19 @@ export class EditSession {
   private _snap(at: Point): Point | null {
     const dpt = getDPT(this.archive.getManifest());
     if (dpt === null) return pixel(at);
-    const on = nearestOnTrack(this._tracks(), at, SNAP_TRACK_WIDTHS * trackWidthPx(dpt));
+    const on = nearestOnTrack(tracks(this._context), at, SNAP_TRACK_WIDTHS * trackWidthPx(dpt));
     return on && pixel(on);
   }
 
   /** Whether node `node` of line `line` is still at `px`: lines and nodes have no id. */
   private _trackNodeIsStillAt(line: number, node: number, px: Point): boolean {
-    const n = this._tracks()[line]?.nodes[node];
-    return n !== undefined && n.x === px.x && n.y === px.y;
+    const n = tracks(this._context)[line]?.nodes[node];
+    return n !== undefined && samePoint(n, px);
   }
 
   /** The clicks of a click subject's line, if the click is still at its pixel: clicks have no id. */
   private _clickIsStillAt(subject: MenuSubject & { kind: 'track-click' }): readonly Click[] | null {
-    const clicks = this._tracks()[subject.line]?.clicks;
+    const clicks = tracks(this._context)[subject.line]?.clicks;
     const click = clicks?.[subject.index];
     return click && samePoint(click, subject.px) ? clicks : null;
   }

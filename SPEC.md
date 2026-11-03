@@ -223,7 +223,7 @@ Each archive stores its [tracks](GLOSSARY.md#track), drawn once and shared by ev
 
 **Refusals.** The rule refuses a set of clicks when:
 
-* a click is not ahead of the click before it along that click's heading, or the click before it is not behind it along its own, or two neighbouring clicks are at one pixel;
+* a click is not ahead of the click before it along that click's heading, or the click before it is not behind it along its own, or two neighbouring clicks are at one pixel, or a run of straight gaps ends before it starts;
 * any arc is tighter than the minimum radius;
 * a click of a run of straight gaps is more than the [tolerance](GLOSSARY.md#track) off the run's line.
 
@@ -301,7 +301,7 @@ Dragging edits everything: car ends, couplings, calibration points and sensors.
 
 | State | Right-click |
 | :-- | :-- |
-| Chaining a train or tracing track | Ends the chain, except on a traced click other than the last, which opens Delete click |
+| Chaining a train or tracing track | Ends the chain, except on a traced click other than the last, which opens Delete click and Delete line |
 | Idle | Context menu on the object under the cursor |
 
 The context menu carries delete and reclassify, so the editor needs no delete mode. A dotted class nests there as a submenu (`stock › loco › steam`). A new car is `stock`; refinement goes through the menu.

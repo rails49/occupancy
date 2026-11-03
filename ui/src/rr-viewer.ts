@@ -338,6 +338,7 @@ export interface ViewerDoubleClickDetail extends Omit<ViewerPointerDetail, 'orig
  * @fires rr-pointer-move - Pointer moved. Detail: {@link ViewerPointerDetail}
  * @fires rr-pointer-up - Gesture finished. Detail: {@link ViewerPointerDetail}
  * @fires rr-pointer-cancel - Gesture abandoned by the browser. Detail: {@link ViewerPointerDetail}
+ * @fires rr-pointer-leave - Pointer left the image. Detail: {@link ViewerPointerDetail}
  * @fires rr-pointer-contextmenu - Right-click. Detail: {@link ViewerContextMenuDetail}
  * @fires rr-pointer-dblclick - Double-click, after the pointer events of its two clicks. Detail: {@link ViewerDoubleClickDetail}
  * @fires rr-wheel - Mouse wheel over the image. Detail: {@link ViewerWheelDetail}

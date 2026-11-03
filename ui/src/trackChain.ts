@@ -1,7 +1,6 @@
 import { wrapAngle } from '@rails49/r49';
 import type { Click, Point, TrackNode } from '@rails49/r49';
-import { DEFAULT_GRAB_RADIUS_SCREEN_PX } from './geometry.js';
-import { pixel, NONE } from './chain.js';
+import { grabRadius, pixel, NONE } from './chain.js';
 import type { Chain, ChainContext, ChainHit, ChainTool, ChainView, ClickResult } from './chain.js';
 import { hitClick, hitTrack, nearestGap, squareAt } from './track.js';
 import type { ClickHit, Track, TrackHit } from './track.js';
@@ -10,12 +9,12 @@ import type { FitOptions, Refusal } from './trackFit.js';
 
 /** The line under the track tool's pointer, or null. */
 export function trackHitAt(tracks: readonly Track[], at: Point, scale: number): TrackHit | null {
-  return hitTrack(tracks, at, DEFAULT_GRAB_RADIUS_SCREEN_PX * scale);
+  return hitTrack(tracks, at, grabRadius(scale));
 }
 
 /** The click under the track tool's pointer, or null. */
 export function clickHitAt(tracks: readonly Track[], at: Point, scale: number): ClickHit | null {
-  return hitClick(tracks, at, DEFAULT_GRAB_RADIUS_SCREEN_PX * scale);
+  return hitClick(tracks, at, grabRadius(scale));
 }
 
 /** What a click on a line's middle dot does instead (#324). */
@@ -366,7 +365,7 @@ export class TrackChain implements Chain {
   /** Whether `p` is within the grab radius of the click the chain goes on from. */
   private _atEnd(p: Point, scale: number): boolean {
     const end = this._end();
-    return Math.hypot(p.x - end.x, p.y - end.y) <= DEFAULT_GRAB_RADIUS_SCREEN_PX * scale;
+    return Math.hypot(p.x - end.x, p.y - end.y) <= grabRadius(scale);
   }
 
   /**
@@ -429,6 +428,7 @@ function sameClicks(a: readonly Click[], b: readonly Click[]): boolean {
   return a.length === b.length && a.every((p, i) => p.x === b[i].x && p.y === b[i].y && !p.straight === !b[i].straight);
 }
 
-function tracks(ctx: ChainContext): readonly Track[] {
+/** The layout's tracks. */
+export function tracks(ctx: ChainContext): readonly Track[] {
   return ctx.manifest().layout.tracks ?? [];
 }

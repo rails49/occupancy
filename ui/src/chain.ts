@@ -111,6 +111,11 @@ export function grab(scale: number): HitTolerance {
   return { screenPx: DEFAULT_GRAB_RADIUS_SCREEN_PX, imagePxPerScreenPx: scale };
 }
 
+/** The grab radius in image pixels at the scale the pointer event reported. */
+export function grabRadius(scale: number): number {
+  return DEFAULT_GRAB_RADIUS_SCREEN_PX * scale;
+}
+
 /** `at` in whole image pixels. */
 export function pixel(at: Point): Point {
   return { x: Math.round(at.x), y: Math.round(at.y) };

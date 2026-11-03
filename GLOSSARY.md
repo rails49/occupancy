@@ -136,7 +136,7 @@ A car label suggested by the detector for a person to accept, correct or reject.
 `r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
 
 **Free gap**:
-`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
+`r49`'s word, owned by its [GLOSSARY.md § Tracks](https://github.com/rails49/r49/blob/main/GLOSSARY.md#tracks).
 
 **Node**:
 A point of a stored track with the direction the track runs there. Each join is stored as a node. See rails49/r49's [FORMAT § Node](https://github.com/rails49/r49/blob/main/FORMAT.md#node).

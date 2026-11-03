@@ -1,6 +1,6 @@
 # Track centerlines are stored
 
-*Superseded by [ADR 0024](0024-centerlines-store-fitted-nodes-and-their-clicks.md).*
+*Superseded by [ADR 0025](0025-a-track-passes-through-every-click-with-gaps-marked-straight.md).*
 
 Supersedes [ADR 0010](0010-track-is-not-stored.md).
 

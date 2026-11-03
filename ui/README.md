@@ -521,7 +521,7 @@ postage stamp is harder to aim at than a soft enlargement.
 **Scaling — two kinds, and mixing them up misdraws everything.** A `ResizeObserver` recomputes
 `symbolSize = SYMBOL_SIZE_SCREEN_PX / ctm.a` off the same transform the pointer path uses, keeping markers, crosshairs,
 car endpoint handles and every **label** a constant *screen* size at any zoom or window size. A
-**sensor's diamond** is not one of those: it is drawn one **track width** across, which in image
+**sensor's diamond** is not one of those: it is drawn two **track widths** across, and a track width in image
 pixels *is* `dpt` (`geometry.ts` § `trackWidthPx`), so it shrinks with the photograph exactly as the
 cars around it do. A **car's width rectangle** is the same kind of size, 2.09 track widths of it,
 which is what makes a sensor's footprint comparable to a car's.
@@ -564,7 +564,7 @@ covered today.
 
 | Export | Description |
 |---|---|
-| `trackWidthPx(dpt)` | Track width in image pixels — which **is** DPT, since `getDPT` returns px/mm × gauge_mm. A sensor is drawn one of these across |
+| `trackWidthPx(dpt)` | Track width in image pixels — which **is** DPT, since `getDPT` returns px/mm × gauge_mm. A sensor is drawn two of these across |
 | `sensorDiameterPx(dpt, imagePxPerScreenPx)` | The diameter a sensor is **drawn** at: two track widths, or the screen-constant size with no DPT. The renderer and the hit-test share it, so what you see is what you can grab |
 | `SYMBOL_SIZE_SCREEN_PX` | Size of a screen-constant symbol (markers, crosshairs, labels), in screen pixels |
 | `carWidthPx(dpt)` | Car width in image pixels: `dpt × STANDARD_WIDTH / STANDARD_GAUGE` — 2.09 track widths |
@@ -1156,7 +1156,7 @@ it gets the objects the entry changed.
 | `previewCar(point)` | Where a click would put the next car of a live car chain: the nearest track, or null when none is near |
 | `previewTrack(point, scale)`, `hoverTrack(point, scale)` | What follows the pointer under the track tool ([#324]): the next gap a click would add to the traced line (`TrackChain.preview`), and with no chain live the end dot or insert a click would act on (`trackHover`). Each null otherwise |
 | `heldLine` | The line a drag of one of its clicks, or an insert into it, is changing, or null ([#324]) |
-| `click(point, scale)` | Writes, or returns what the editor must ask for: a reference point's world position, a sensor's name, or a notice |
+| `click(point, scale)` | Writes, or returns what the editor must ask for: a reference point's world position, a sensor's name, or a notice. Under the track tool with no chain live, a click within the grab radius of the click before it, which inserted a click or said what to do, with the tracks unchanged since, is the second click of a double-click: it writes and says nothing ([#324]) |
 | `doubleClick(point, scale)` | After the two clicks of a double-click: on the click a live track chain goes on from, the next gap is to be straight (`TrackChain.straighten`, [#320]). Otherwise nothing |
 | `beginDrag(point, scale)` | A `Drag` (`move`, `end`, `cancel`) on what is under the point, or null. Under the track tool a click comes first, then a press within the start distance of a line, which inserts a click and drags it ([#321]); the line is built again on every move, keeps its last valid shape where the rule refuses, and on `end` is written as one entry, or the click springs back and `refusal` says why. While a track chain is live only a click of its line is grabbed, and the chain takes the move on `end` ([#303]) |
 | `rightClick(point, scale)` | Ends a live chain, or returns the `MenuSubject` a menu acts on. Under the track tool a click is `track-click` (Delete click, Delete line) and the rest of a line `track`, with the gap under the pointer and whether it is straight when the line has clicks. While a track chain is live a click of its line other than the one it goes on from is `track-click` and the chain goes on ([#303]) |

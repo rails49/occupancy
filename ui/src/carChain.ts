@@ -1,8 +1,8 @@
 import { make_id } from '@rails49/r49';
 import type { CarLabel, Point } from '@rails49/r49';
-import { carCovering, hitTest, DEFAULT_GRAB_RADIUS_SCREEN_PX } from './geometry.js';
+import { carCovering, hitTest } from './geometry.js';
 import type { CarEnd } from './geometry.js';
-import { grab, NONE, NO_TRACK_NOTICE } from './chain.js';
+import { grab, grabRadius, NONE, NO_TRACK_NOTICE } from './chain.js';
 import type { Chain, ChainContext, ChainTool, ChainView, ClickResult } from './chain.js';
 import { rootClass } from './vocabulary.js';
 
@@ -80,7 +80,7 @@ class CarChain implements Chain {
     if (!px) return NO_TRACK_NOTICE;
     const from = this._lastDot();
     const image = this._ctx.manifest().images.find(img => img.filename === this._filename);
-    if (!image || near(px, from, DEFAULT_GRAB_RADIUS_SCREEN_PX * scale)) return NONE;
+    if (!image || near(px, from, grabRadius(scale))) return NONE;
 
     const car: CarLabel = {
       id: make_id(CAR_NODE_ID),
@@ -138,7 +138,7 @@ async function splitCar(
   if (!Number.isFinite(t)) return NONE;
   const mid = ctx.snap({ x: car.p0.x + t * dx, y: car.p0.y + t * dy });
   if (!mid) return NO_TRACK_NOTICE;
-  const reach = DEFAULT_GRAB_RADIUS_SCREEN_PX * scale;
+  const reach = grabRadius(scale);
   if (near(mid, car.p0, reach) || near(mid, car.p1, reach)) return NONE;
 
   const labels = image.labels.flatMap(label =>

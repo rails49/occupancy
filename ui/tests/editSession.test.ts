@@ -3672,6 +3672,55 @@ describe('EditSession track cues (#324)', () => {
       expect(heard).toEqual([NO_CLICKS]);
     });
 
+    describe('for a double-click with no line traced', () => {
+      /** A double-click at `at` as the viewer sends it: click, click, double-click. */
+      async function doubleClick(s: EditSession, at: Point) {
+        await s.click(at, SCALE);
+        await s.click(at, SCALE);
+        s.doubleClick(at, SCALE);
+      }
+
+      it('inserts one click near a line, and says nothing', async () => {
+        const s = await finished();
+        const heard = noticesOf(s);
+        const entries = s.history.size;
+        const at = { x: 550, y: 100 };
+        await doubleClick(s, at);
+        expect(heard).toEqual([]);
+        expect(s.history.size).toBe(entries + 1);
+        expect(line(s).clicks).toEqual([{ x: 100, y: 100 }, { x: 400, y: 100 }, at, { x: 700, y: 100 }, { x: 1000, y: 100 }]);
+        expect(s.chain).toBeNull();
+      });
+
+      it('says what to do once on a middle dot', async () => {
+        const s = await finished();
+        const heard = noticesOf(s);
+        const entries = s.history.size;
+        await doubleClick(s, { x: 400, y: 100 });
+        expect(heard).toEqual([MIDDLE_CLICK]);
+        expect(s.history.size).toBe(entries);
+        expect(s.chain).toBeNull();
+      });
+
+      it('continues the line from an end dot with the next gap straight', async () => {
+        const s = await finished();
+        const heard = noticesOf(s);
+        await doubleClick(s, { x: 1000, y: 100 });
+        await clicks(s, { x: 1300, y: 100 });
+        expect(heard).toEqual([]);
+        expect(line(s).clicks!.slice(-2)).toEqual([{ x: 1000, y: 100, straight: true }, { x: 1300, y: 100 }]);
+      });
+
+      it('inserts again for a click at the same place after an undo', async () => {
+        const s = await finished();
+        await clicks(s, { x: 550, y: 100 });
+        await s.undo();
+        await clicks(s, { x: 550, y: 100 });
+        expect(s.history.canRedo).toBe(false);
+        expect(line(s).clicks).toHaveLength(5);
+      });
+    });
+
     it('stops when unsubscribed', async () => {
       const s = await finished();
       const heard: string[] = [];
