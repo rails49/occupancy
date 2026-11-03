@@ -6,7 +6,7 @@ import { ALREADY_LABELED } from '../src/carChain.js';
 import { NO_TRACK } from '../src/chain.js';
 import { buildLine, fitNodes, fitOptions } from '../src/trackFit.js';
 import type { Refusal } from '../src/trackFit.js';
-import { G, along, laidAlong, offLine, tightClicks, tooTight, type Piece } from './trackClicks.js';
+import { G, along, laidAlong, offLine, positionsAlong, tightClicks, tooTight, type Piece } from './trackClicks.js';
 import type { MenuSubject, Reveal } from '../src/editSession.js';
 import { TOOLS } from '../src/tools.js';
 import type { EditorTool } from '../src/tools.js';
@@ -2396,20 +2396,6 @@ describe('EditSession finished track lines (#302)', () => {
     expect(s.tracks).toHaveLength(0);
     expect(s.history.undoLabel).toBe('delete track');
   });
-  it('does nothing for a click on the line between clicks', async () => {
-    const { s } = await finished();
-    const entries = s.history.size;
-    const before = structuredClone(line(s));
-    // A few pixels off the line, between its fifth and sixth clicks: still on the line.
-    const k = getDPT(s.archive.getManifest())! / G;
-    const mid = along([{ straight: 20 }, { radius: 30, turn: 60 }], 46);
-    const on = { x: Math.round(mid.x * k) + 2, y: Math.round(mid.y * k) - 3 };
-    expect(await s.click(on, SCALE)).toEqual({ kind: 'none' });
-    expect(trackChain(s)).toBeNull();
-    expect(s.history.size).toBe(entries);
-    expect(line(s)).toEqual(before);
-  });
-
   it('does nothing for a click on a click between the ends', async () => {
     const { s, at } = await finished();
     const entries = s.history.size;
@@ -2806,14 +2792,12 @@ describe('EditSession track tool starts and refusals (#313, #319)', () => {
   }
 
   describe('starting a line', () => {
-    it('starts nothing within a gauge of a line, off its clicks, and a line farther away', async () => {
+    it('starts no line within a gauge of a line, off its clicks, and starts one farther away', async () => {
       const { s, at } = await finished();
-      const entries = s.history.size;
 
-      // Half a gauge off the straight, between its second and third clicks: 45 px, past the grab radius.
+      // Half a gauge off the straight, at its second click: 45 px, past the grab radius.
       await clicks(s, across(s, at, 1, 0.5));
       expect(trackChain(s)).toBeNull();
-      expect(s.history.size).toBe(entries);
 
       const far = across(s, at, 1, 1.5);
       await clicks(s, far);
@@ -2975,5 +2959,118 @@ describe('EditSession track tool starts and refusals (#313, #319)', () => {
       expect(s.tracks).toHaveLength(1);
       expect(s.history.size).toBe(entries);
     });
+  });
+});
+
+describe('EditSession inserting and dragging clicks (#321)', () => {
+  const PIECES: readonly Piece[] = [
+    { straight: 20 },
+    { radius: 30, turn: 90 },
+    { straight: 30 },
+    { radius: 30, turn: -90 },
+    { straight: 20 },
+  ];
+
+  function line(s: EditSession, index = 0): Track {
+    return s.archive.getManifest().layout.tracks![index];
+  }
+
+  /** A finished line of 18 clicks along `PIECES`. */
+  async function finished(): Promise<{ s: EditSession; at: Point[] }> {
+    const s = session({ tool: 'track', rows: false });
+    const at = laidAlong(PIECES, dptOf(s));
+    await clicks(s, ...at);
+    s.endChain();
+    return { s, at };
+  }
+
+  /** A point on the true track halfway along gap `gap`, moved `px` pixels across it, in whole pixels. */
+  function inGap(s: EditSession, gap: number, px = 0): Point {
+    const k = dptOf(s) / G;
+    const where = positionsAlong(PIECES);
+    const s0 = (where[gap] + where[gap + 1]) / 2;
+    const p = along(PIECES, s0);
+    const q = along(PIECES, s0 + 0.01);
+    const len = Math.hypot(q.x - p.x, q.y - p.y);
+    return {
+      x: Math.round(p.x * k - ((q.y - p.y) / len) * px),
+      y: Math.round(p.y * k + ((q.x - p.x) / len) * px),
+    };
+  }
+
+  /** The index of the node at `p`. */
+  function nodeAt(nodes: Track['nodes'], p: Point): number {
+    const i = nodes.findIndex(n => Math.hypot(n.x - p.x, n.y - p.y) < 1e-6);
+    if (i < 0) throw new Error('no node at the click');
+    return i;
+  }
+
+  /**
+   * Expects the line to have changed only within three gaps on each side of
+   * new click `j`: the nodes up to click j - 3 and from click j + 3 on are as
+   * they were.
+   */
+  function expectOnlyNear(before: Track['nodes'], after: Track, j: number) {
+    const clicks = after.clicks!;
+    const head = nodeAt(after.nodes, clicks[j - 3]);
+    expect(after.nodes.slice(0, head + 1)).toEqual(before.slice(0, head + 1));
+    const from = nodeAt(after.nodes, clicks[j + 3]);
+    const tail = after.nodes.slice(from);
+    const was = before.slice(nodeAt(before, clicks[j + 3]));
+    expect(tail).toHaveLength(was.length);
+    tail.forEach((n, i) => {
+      expect(n.x).toBeCloseTo(was[i].x, 6);
+      expect(n.y).toBeCloseTo(was[i].y, 6);
+    });
+  }
+
+  describe('a click on a line', () => {
+    it('inserts a click at the pointer into the gap nearest it, as one entry, changing the line only nearby', async () => {
+      const { s, at } = await finished();
+      const before = structuredClone(line(s));
+      const entries = s.history.size;
+      const p = inGap(s, 8, 20);
+
+      expect(await s.click(p, SCALE)).toEqual({ kind: 'none' });
+
+      const inserted = [...at.slice(0, 9), p, ...at.slice(9)];
+      expect(trackChain(s)).toBeNull();
+      expect(s.history.size).toBe(entries + 1);
+      expect(s.history.undoLabel).toBe('insert click');
+      expect(line(s).clicks).toEqual(inserted);
+      expect(line(s).nodes).toEqual(nodesOf(s, inserted));
+      expectOnlyNear(before.nodes, line(s), 9);
+
+      await s.undo();
+      expect(line(s)).toEqual(before);
+    });
+
+    it('writes nothing for an insert the rule refuses, and the hint says why', async () => {
+      const { s, at } = await finished();
+      const before = structuredClone(line(s));
+      const entries = s.history.size;
+      // 20 px past the grab radius of the second click, half a gauge across: a turn tighter than 10 G.
+      const p = { x: Math.round(at[1].x + 30 * Math.cos(0.3) - 45 * Math.sin(0.3)), y: Math.round(at[1].y + 30 * Math.sin(0.3) + 45 * Math.cos(0.3)) };
+
+      await clicks(s, p);
+
+      expect(line(s)).toEqual(before);
+      expect(s.history.size).toBe(entries);
+      expect(trackChain(s)).toBeNull();
+      expect(s.refusal).toBe('tight');
+    });
+  });
+
+  it('extends the line being traced with a click within a gauge of another line', async () => {
+    const { s, at } = await finished();
+    // A new line crossing the finished one at its ninth click, square to the second straight.
+    const k = dptOf(s) / G;
+    const a = { x: at[9].x - Math.round(15 * G * k), y: at[9].y };
+    const b = { x: at[9].x + 30, y: at[9].y + 40 };
+    await clicks(s, a, { x: a.x + Math.round(10 * G * k), y: a.y }, b);
+
+    expect(s.tracks).toHaveLength(2);
+    expect(line(s, 1).clicks).toEqual([a, { x: a.x + Math.round(10 * G * k), y: a.y }, b]);
+    expect(line(s, 0).clicks).toEqual(at);
   });
 });
