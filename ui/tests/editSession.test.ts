@@ -7,7 +7,6 @@ import { NO_TRACK } from '../src/chain.js';
 import { wrapAngle } from '../src/track.js';
 import { fitNodes } from '../src/trackFit.js';
 import { Trace, traceOptions } from '../src/trackTrace.js';
-import type { TraceView } from '../src/trackTrace.js';
 import { G, along, laidAlong, offLine, tightClicks, tooTight, type Piece } from './trackClicks.js';
 import type { MenuSubject, Reveal } from '../src/editSession.js';
 import { TOOLS } from '../src/tools.js';
@@ -101,7 +100,7 @@ function trackChain(s: EditSession) {
 }
 
 /** What the editor draws of a live track chain, as `rr-editor-view` reads it, or null when none is live. */
-function pendingTrack(s: EditSession): TraceView | null {
+function pendingTrack(s: EditSession): Track | null {
   const chain = s.chain;
   return chain?.tool === 'track' ? chain.trace : null;
 }
@@ -2537,7 +2536,7 @@ describe('EditSession track edits while tracing (#303)', () => {
     return s.archive.getManifest().layout.tracks![0];
   }
 
-  function traceOf(s: EditSession): TraceView {
+  function traceOf(s: EditSession): Track {
     const chain = s.chain;
     if (chain?.tool !== 'track') throw new Error('no track chain');
     return structuredClone(chain.trace);
@@ -2552,7 +2551,7 @@ describe('EditSession track edits while tracing (#303)', () => {
 
   /** The line a trace of `at` draws, at this session's DPT. */
   function fitOf(s: EditSession, at: readonly Point[]) {
-    return Trace.replay(at, traceOptions(getDPT(s.archive.getManifest())!)).fit();
+    return fitNodes(Trace.replay(at, traceOptions(getDPT(s.archive.getManifest())!)).fit()!);
   }
 
   /**
@@ -2573,7 +2572,6 @@ describe('EditSession track edits while tracing (#303)', () => {
       dptOf(s)
     );
     await clicks(s, ...at);
-    expect(traceOf(s).fit?.parts).toHaveLength(5);
     const { firstClick } = Trace.replay(at, traceOptions(getDPT(s.archive.getManifest())!)).line!;
     const onPart2 = Math.floor((firstClick[2] + firstClick[3]) / 2);
     return { s, at, onPart2 };
@@ -2588,19 +2586,18 @@ describe('EditSession track edits while tracing (#303)', () => {
     const d = s.beginDrag(at[onPart2], SCALE)!;
     expect(d).not.toBeNull();
     d.move(to);
-    expect(traceOf(s).clicks[onPart2]).toEqual(to);
-    expect(traceOf(s).fit).toEqual(before.fit);
+    expect(traceOf(s).clicks![onPart2]).toEqual(to);
+    expect(traceOf(s).nodes).toEqual(before.nodes);
     expect(s.history.size).toBe(entries);
     await d.end();
 
     const moved = at.map((p, i) => (i === onPart2 ? to : p));
     const after = traceOf(s);
     expect(after.clicks).toEqual(moved);
-    expect(after.fit).toEqual(fitOf(s, moved));
+    expect(after.nodes).toEqual(fitOf(s, moved));
     // The straight before the edit stays; the edited straight moves.
-    expect(after.fit?.start).toEqual(before.fit?.start);
-    expect(after.fit?.parts[0]).toEqual(before.fit?.parts[0]);
-    expect(after.fit?.parts[2]).not.toEqual(before.fit?.parts[2]);
+    expect(after.nodes.slice(0, 2)).toEqual(before.nodes.slice(0, 2));
+    expect(after.nodes).not.toEqual(before.nodes);
     expect(s.history.size).toBe(entries + 1);
     expect(s.history.undoLabel).toBe('move click');
     expect(line(s).clicks).toEqual(moved);
@@ -2620,9 +2617,8 @@ describe('EditSession track edits while tracing (#303)', () => {
     const left = at.filter((_, i) => i !== onPart2);
     const after = traceOf(s);
     expect(after.clicks).toEqual(left);
-    expect(after.fit).toEqual(fitOf(s, left));
-    expect(after.fit?.start).toEqual(before.fit?.start);
-    expect(after.fit?.parts[0]).toEqual(before.fit?.parts[0]);
+    expect(after.nodes).toEqual(fitOf(s, left));
+    expect(after.nodes.slice(0, 2)).toEqual(before.nodes.slice(0, 2));
     expect(s.history.size).toBe(entries + 1);
     expect(s.history.undoLabel).toBe('delete click');
     expect(line(s).clicks).toEqual(left);
@@ -2670,9 +2666,7 @@ describe('EditSession track edits while tracing (#303)', () => {
       await clicks(s, p);
       const now = traceOf(s);
       expect(now.clicks).toEqual([...left, ...next.slice(0, k + 1)]);
-      const n = Math.max(0, (shown.fit?.parts.length ?? 0) - 1);
-      expect(now.fit?.start).toEqual(shown.fit?.start);
-      expect(now.fit?.parts.slice(0, n)).toEqual(shown.fit?.parts.slice(0, n));
+      expect(now.nodes.slice(0, 2)).toEqual(shown.nodes.slice(0, 2));
       shown = now;
     }
     expect(s.history.undoLabel).toBe('extend track');
@@ -2767,21 +2761,19 @@ describe('EditSession editor on the projection rule (#313)', () => {
       expect(trackChain(s)).toEqual({ line: null, clicks: [far] });
     });
 
-    it('continues a finished line from either end, with the projection drawn from that end at once', async () => {
+    it('continues a finished line from either end, drawn at once', async () => {
       const { s, at } = await finished();
       const last = at[at.length - 1];
       const entries = s.history.size;
 
       await clicks(s, last);
-      expect(pendingTrack(s)?.ahead).toMatchObject({
-        start: { x: expect.closeTo(last.x, 0), y: expect.closeTo(last.y, 0) },
-      });
+      expect(s.chain?.end).toEqual(last);
+      expect(pendingTrack(s)?.nodes.length).toBeGreaterThan(1);
       s.endChain();
 
       await clicks(s, at[0]);
-      expect(pendingTrack(s)?.ahead).toMatchObject({
-        start: { x: expect.closeTo(at[0].x, 0), y: expect.closeTo(at[0].y, 0), heading: expect.closeTo(0.3 - Math.PI, 1) },
-      });
+      expect(s.chain?.end).toEqual(at[0]);
+      expect(pendingTrack(s)?.nodes.length).toBeGreaterThan(1);
       expect(s.history.size).toBe(entries);
     });
   });

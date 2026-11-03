@@ -1,11 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { render, svg } from 'lit';
-import type { Point } from '@rails49/r49';
 import { renderPendingTrack, renderTrack, trackMarkerStyles } from '../src/trackMarker.js';
 import type { TrackSymbolSize } from '../src/trackMarker.js';
+import { trackPath } from '../src/track.js';
 import type { Track } from '../src/track.js';
-import type { Ahead, Fit } from '../src/trackFit.js';
-import type { TraceView } from '../src/trackTrace.js';
 import { HIGHLIGHT_CLASS } from '../src/highlight.js';
 
 /** Render a lit SVGTemplateResult into a detached <svg> and return it. */
@@ -69,98 +67,32 @@ describe('renderTrack', () => {
 });
 
 describe('renderPendingTrack', () => {
-  /** A straight fit from (0, 0) heading along +x, one part per length. */
-  function straight(lengths: readonly number[]): Fit {
-    return { start: { x: 0, y: 0, heading: 0 }, parts: lengths.map(length => ({ length, curvature: 0 })) };
-  }
-
-  const clicks: Point[] = [0, 50, 100, 150, 200, 250, 300].map(x => ({ x, y: 0 }));
-
-  /** Where the straight goes on from: its end, straight ahead. */
-  const ahead: Ahead = { start: { x: 300, y: 0, heading: 0 }, curvature: 0 };
-  const image = { width: 1000, height: 600 };
-
-  function view(over: Partial<TraceView>): TraceView {
-    return { clicks, partStarts: [], fit: null, ahead: null, ...over };
-  }
-
-  /** The last point of a polyline, within a sample step of where the line leaves the image. */
-  function endOf(el: Element): number[] {
-    const points = el.getAttribute('points')!.split(' ');
-    return points[points.length - 1].split(',').map(Number);
-  }
-
-  it('draws the rails and the centerline of the fit, solid, and a dot per click', () => {
-    const el = renderSvg(renderPendingTrack(view({ fit: straight([100, 200]), ahead }), size, image));
+  it('draws the rails and the centerline of the line, solid, and a dot per click', () => {
+    const el = renderSvg(renderPendingTrack(track, size));
+    expect(el.querySelector('.track-pending')).not.toBeNull();
     expect(el.querySelectorAll('.rail')).toHaveLength(2);
     const centerline = el.querySelectorAll('.centerline');
     expect(centerline).toHaveLength(1);
+    expect(centerline[0].getAttribute('d')).toBe(trackPath(track.nodes));
     expect(centerline[0].getAttribute('stroke-dasharray')).toBeNull();
-    expect(el.querySelectorAll('.click')).toHaveLength(clicks.length);
-    expect(el.querySelectorAll('.bar, .tail')).toHaveLength(0);
+    expect(el.querySelectorAll('.click')).toHaveLength(track.clicks!.length);
   });
 
-  it('draws the projection ahead of the line as a dashed centerline to the edge of the image, with no rails and no tangent after a straight', () => {
-    const el = renderSvg(renderPendingTrack(view({ fit: straight([300]), ahead }), size, image));
-    const projection = el.querySelectorAll('.projection');
-    expect(projection).toHaveLength(1);
-    expect(projection[0].getAttribute('stroke-dasharray')).toMatch(/^[1-9]/);
-    expect(projection[0].getAttribute('points')).toMatch(/^300,0 /);
-    expect(endOf(projection[0])).toEqual([expect.closeTo(1000, -1), 0]);
-    expect(el.querySelectorAll('.rail')).toHaveLength(2);
-    expect(el.querySelectorAll('.tangent')).toHaveLength(0);
-  });
-
-  it('draws the tangent after an arc as a dotted line to the edge, beside the projection, which stops at the edge too', () => {
-    // An arc of 400 px radius bending up from (300, 300): its projection
-    // leaves the image at the top; the tangent runs along y = 300.
-    const arc: Ahead = { start: { x: 300, y: 300, heading: 0 }, curvature: -1 / 400 };
-    const el = renderSvg(renderPendingTrack(view({ fit: straight([300]), ahead: arc }), size, image));
-    const tangent = el.querySelector('.tangent')!;
-    expect(tangent.getAttribute('stroke-dasharray')).toMatch(/^0 /);
-    expect(tangent.getAttribute('points')).toMatch(/^300,300 /);
-    expect(endOf(tangent)).toEqual([expect.closeTo(1000, -1), 300]);
-    const projection = el.querySelector('.projection')!.getAttribute('points')!.split(' ');
-    expect(projection.length).toBeGreaterThan(2);
-    const [, last] = projection[projection.length - 1].split(',').map(Number);
-    expect(last).toBeGreaterThanOrEqual(0);
-    expect(last).toBeLessThan(3);
-    expect(projection.every(p => p.split(',').map(Number).every(v => v >= 0))).toBe(true);
-  });
-
-  it('draws a loop that stays inside the image as one turn of the circle', () => {
-    const loop: Ahead = { start: { x: 500, y: 300, heading: 0 }, curvature: 1 / 50 };
-    const el = renderSvg(renderPendingTrack(view({ fit: straight([300]), ahead: loop }), size, image));
-    const n = el.querySelector('.projection')!.getAttribute('points')!.split(' ').length;
-    expect(n).toBeGreaterThan((2 * Math.PI * 50) / 2 - 2);
-    expect(n).toBeLessThan((2 * Math.PI * 50) / 2 + 3);
+  it('draws no projection, no tangent and no marked click', () => {
+    const el = renderSvg(renderPendingTrack(track, size));
+    expect(el.querySelectorAll('.projection, .tangent, .part-start, .node, .heading-handle')).toHaveLength(0);
+    expect([...el.querySelectorAll('.click')].every(d => d.getAttribute('class') === 'click')).toBe(true);
   });
 
   it('draws the centerline alone with no gauge to space the rails by', () => {
-    const el = renderSvg(renderPendingTrack(view({ fit: straight([100]) }), { ...size, dpt: null }, image));
+    const el = renderSvg(renderPendingTrack(track, { ...size, dpt: null }));
     expect(el.querySelectorAll('.rail')).toHaveLength(0);
     expect(el.querySelectorAll('.centerline')).toHaveLength(1);
   });
 
-  it('draws a dot per click, none marked with no part after the first, and no node dots or handles', () => {
-    const el = renderSvg(renderPendingTrack(view({ fit: straight([300]), ahead }), size, image));
-    const dots = [...el.querySelectorAll('.click')];
-    expect(dots).toHaveLength(clicks.length);
-    expect(dots.every(d => d.getAttribute('class') === 'click')).toBe(true);
-    expect(el.querySelectorAll('.node, .heading, .heading-handle')).toHaveLength(0);
-  });
-
-  it('marks the first click of each part after the first, and no other', () => {
-    const el = renderSvg(renderPendingTrack(view({ fit: straight([100, 100, 100]), partStarts: [2, 4] }), size, image));
-    const dots = [...el.querySelectorAll('.click')];
-    expect(dots.map(d => d.classList.contains('part-start'))).toEqual([false, false, true, false, true, false, false]);
-    expect(dots[2].getAttribute('cx')).toBe('100');
-    expect(dots[4].getAttribute('cx')).toBe('200');
-  });
-
   it('draws the first click alone before the second', () => {
-    const el = renderSvg(renderPendingTrack(view({ clicks: [{ x: 5, y: 5 }] }), size, image));
+    const el = renderSvg(renderPendingTrack({ nodes: [], clicks: [{ x: 5, y: 5 }] }, size));
     expect(el.querySelectorAll('.click')).toHaveLength(1);
-    expect(el.querySelectorAll('.centerline, .rail, .projection, .tangent')).toHaveLength(0);
+    expect(el.querySelectorAll('.centerline, .rail')).toHaveLength(0);
   });
 });

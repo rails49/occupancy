@@ -7,7 +7,7 @@ import type { ClickHit, Track, TrackHit, TrackNode } from './track.js';
 import { TRACK_FIT, fitNodes } from './trackFit.js';
 import type { Step } from './trackFit.js';
 import { Trace, traceOptions } from './trackTrace.js';
-import type { TraceOptions, TraceView } from './trackTrace.js';
+import type { TraceOptions } from './trackTrace.js';
 
 /** The line under the track tool's pointer, or null. */
 export function trackHitAt(tracks: readonly Track[], at: Point, scale: number): TrackHit | null {
@@ -75,7 +75,7 @@ export class TrackChain implements Chain {
   private _trace: Trace;
   /** The trace before each entry this chain wrote, oldest first. */
   private _before: Trace[] = [];
-  private _view: TraceView;
+  private _view: Track;
 
   /** A new line from `start`. */
   static starting(ctx: ChainContext, start: Point): TrackChain {
@@ -95,7 +95,7 @@ export class TrackChain implements Chain {
     this._reversed = reversed;
     this._base = index === null ? 0 : clicks.length;
     this._trace = Trace.replay(this._order(clicks), this._opts);
-    this._view = this._trace.view();
+    this._view = drawn(this._trace);
   }
 
   /** The line's index, or null before the second click writes it. */
@@ -104,7 +104,7 @@ export class TrackChain implements Chain {
   }
 
   view(): ChainView {
-    const clicks = this._view.clicks;
+    const clicks = this._view.clicks!;
     return { tool: 'track', end: clicks[clicks.length - 1], line: this._index, trace: this._view };
   }
 
@@ -161,7 +161,7 @@ export class TrackChain implements Chain {
     if (step === 'refused') this._ctx.refuse();
     if (step !== 'added') return;
     this._before.push(before);
-    this._view = this._trace.view();
+    this._view = drawn(this._trace);
     const lines = [...tracks(this._ctx)];
     const index = this._index ?? lines.length;
     lines[index] = this._stored();
@@ -199,7 +199,7 @@ export class TrackChain implements Chain {
       this._before = [];
       this._trace = Trace.replay(clicks, this._opts);
     }
-    this._view = this._trace.view();
+    this._view = drawn(this._trace);
     return true;
   }
 
@@ -207,6 +207,12 @@ export class TrackChain implements Chain {
   private _order(clicks: readonly Point[]): Point[] {
     return this._reversed ? [...clicks].reverse() : [...clicks];
   }
+}
+
+/** The line a trace draws: its clicks, and the nodes of their line once there are two. */
+function drawn(trace: Trace): Track {
+  const fit = trace.fit();
+  return { nodes: fit ? fitNodes(fit) : [], clicks: [...trace.clicks] };
 }
 
 /** `nodes` run the other way: last first, each heading turned round. */

@@ -1,16 +1,17 @@
 import { describe, it, expect } from 'vitest';
 import { trackHint } from '../src/trackHint.js';
-import type { TraceView } from '../src/trackTrace.js';
+import type { Track } from '../src/track.js';
 
-/** A trace of one straight part. */
-const tracing: TraceView = {
+/** A line of two clicks being traced. */
+const tracing: Track = {
+  nodes: [
+    { x: 0, y: 0, heading: 0 },
+    { x: 100, y: 0, heading: 0 },
+  ],
   clicks: [
     { x: 0, y: 0 },
     { x: 100, y: 0 },
   ],
-  partStarts: [],
-  fit: { start: { x: 0, y: 0, heading: 0 }, parts: [{ length: 100, curvature: 0 }] },
-  ahead: { start: { x: 100, y: 0, heading: 0 }, curvature: 0 },
 };
 
 const IDLE = "Click at least a gauge from any track to start a line, or on a line's end to go on.";
@@ -23,7 +24,7 @@ describe('trackHint', () => {
   });
 
   it('asks for the next click and says how to end while tracing, from the first click on', () => {
-    expect(trackHint({ clicks: [{ x: 0, y: 0 }], partStarts: [], fit: null, ahead: null }, false)).toBe(TRACING);
+    expect(trackHint({ nodes: [], clicks: [{ x: 0, y: 0 }] }, false)).toBe(TRACING);
     expect(trackHint(tracing, false)).toBe(TRACING);
   });
 

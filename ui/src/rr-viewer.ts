@@ -15,7 +15,6 @@ import {
 import type { CarSymbolSize, CarWarning, PendingCar } from './carMarker.js';
 import { renderTrack, renderPendingTrack, trackMarkerStyles } from './trackMarker.js';
 import type { TrackSymbolSize } from './trackMarker.js';
-import type { TraceView } from './trackTrace.js';
 import type { Track } from './track.js';
 import {
   coupledEnds,
@@ -448,7 +447,7 @@ export class RrViewer extends LitElement {
    * The line a track chain is tracing, or `null`. View state, like
    * `pendingCar`. The editor leaves that line out of `tracks`.
    */
-  @property({ attribute: false }) pendingTrack: TraceView | null = null;
+  @property({ attribute: false }) pendingTrack: Track | null = null;
   /**
    * Whether tracks show their rails and click dots, or the centerline
    * alone. The editor sets it while the track tool is chosen.
@@ -950,7 +949,7 @@ export class RrViewer extends LitElement {
           <g class="frame" transform="scale(${fit.sx}, ${fit.sy})">
             <!-- Track under everything: cars stand on it. -->
             ${this.tracks.map(t => renderTrack(t, trackSize, this.highlight?.trackClicks ?? []))}
-            ${this.pendingTrack ? renderPendingTrack(this.pendingTrack, trackSize, viewBoxSize) : ''}
+            ${this.pendingTrack ? renderPendingTrack(this.pendingTrack, trackSize) : ''}
 
             <!-- Cars first: their width rectangles are the only area fills here,
                  so drawing them underneath keeps a crosshair or a sensor placed

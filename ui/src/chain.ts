@@ -3,7 +3,6 @@ import type { Track } from './track.js';
 import type { HitScene, HitTolerance } from './geometry.js';
 import { DEFAULT_GRAB_RADIUS_SCREEN_PX } from './geometry.js';
 import type { HistoryTarget } from './history.js';
-import type { TraceView } from './trackTrace.js';
 
 /**
  * What the car tool and the track tool share (#284): a chain, where each click
@@ -49,7 +48,8 @@ export type ChainView =
       readonly end: Point;
       /** The track the chain writes, which the trace draws in its place; null before the second click. */
       readonly line: number | null;
-      readonly trace: TraceView;
+      /** The line as drawn: no nodes before the second click. */
+      readonly trace: Track;
     };
 
 /** A chain in progress. */

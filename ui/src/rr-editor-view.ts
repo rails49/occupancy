@@ -26,7 +26,7 @@ import {
 } from './geometry.js';
 import type { FrameSize, Rect, Size } from './geometry.js';
 import type { PendingCar } from './carMarker.js';
-import type { TraceView } from './trackTrace.js';
+import type { Track } from './track.js';
 import { trackHint } from './trackHint.js';
 import { isInsideOpenDialog } from './keyboard.js';
 import { classChoices, rootClass } from './vocabulary.js';
@@ -1387,7 +1387,7 @@ export class RREditorView extends LitElement {
   }
 
   /** What the track chain in flight draws, or null when none is. */
-  private _pendingTrack(): TraceView | null {
+  private _pendingTrack(): Track | null {
     const chain = this.session?.chain;
     return chain?.tool === 'track' ? chain.trace : null;
   }
