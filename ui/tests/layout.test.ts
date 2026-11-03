@@ -34,3 +34,17 @@ describe('the editor turns with the rail', () => {
     for (const q of heightQueries) expect(q).toBe(`max-height: ${TURN_HEIGHT_PX}px`);
   });
 });
+
+/**
+ * A flex item will not shrink below its content's width by default, and the
+ * thumbnail strip's content is one row of every image in the archive. Without
+ * `min-width: 0` the column takes that row's width and a narrow window clips
+ * the photograph instead of letterboxing it. jsdom does not lay out, so this
+ * pins the rule, not the result.
+ */
+describe('the editor shrinks with a narrow window', () => {
+  it('lets the main column shrink below the thumbnail strip', () => {
+    const rule = cssTextOf(RREditorView.styles).match(/\.main-content\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(rule).toMatch(/min-width:\s*0[;\s]/);
+  });
+});

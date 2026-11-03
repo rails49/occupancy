@@ -268,7 +268,7 @@ A car is two clicks on the visible car ends. Each end lands on the nearest cente
 
 A span covers the part of a car the camera sees, whatever hides the rest. A car half inside a tunnel is labeled from its visible end to the portal. A car with something across its middle, such as a road bridge, gets one span per visible piece. A car fully hidden is not labeled. There is no minimum length: every piece the person can identify as a car gets a span, and a piece left unlabeled on a `labeled_complete` image is taught as background. [rails49/r49 FORMAT § Car label](https://github.com/rails49/r49/blob/main/FORMAT.md#car-label) owns the definition.
 
-A train is authored as a chain of clicks. The first click starts a car, and every click after it ends the current car and starts the next. Right-click ends the chain, and the next click starts a new train. Nothing about the train is stored; chaining makes the coincidence of ends exact.
+A train is authored as a chain of clicks. The first click starts a car, and every click after it ends the current car and starts the next. Right-click ends the chain, and the next click starts a new train. Where something other than the cars, such as a bridge, hides the point where two cars meet, the chain ends with a click on the near side and a right-click, and the next click starts a new train on the far side. A car partly behind its neighbour needs no extra step: the click where it comes into view ends one car and starts the next ([r49 FORMAT § Car label](https://github.com/rails49/r49/blob/main/FORMAT.md#car-label)). Nothing about the train is stored; chaining makes the coincidence of ends exact.
 
 A coupling draws as one shared handle. Dragging it moves both cars' ends together, so a train survives editing. A single car can still be deleted: deleting the middle car of three leaves two trains.
 
@@ -351,7 +351,7 @@ Change detection is used where a wrong answer costs a warning or a wasted frame:
 2. Re-classification gating. In the live view, skip inference on frames where nothing changed. A false negative costs a stale frame, never a wrong occupancy report. Relevant to [Testing and Demo](#testing-and-demo) item 3. Not scheduled; raise it as its own request. "Has the frame changed" and "has the camera moved" are different questions, so item 1 does not answer it.
 3. Change proposes, a model decides. Change detection nominates regions and the CNN or detector decides each one. That is option 2 or 3 with a cheap front end, so it still needs DPT above the detector's [minimum](https://github.com/rails49/detector/blob/main/SPEC.md#minimum-dpt). A possible future optimisation, not specified here.
 
-> Licensing, should EX-SensorCAM code ever be reused: EX-SensorCAM is GPL-3.0, not AGPL-3.0. GPLv3 §13 permits combining it with an AGPLv3 work, but it is a distinct licence and must be recorded as one.
+> Licensing, should EX-SensorCAM code ever be reused: EX-SensorCAM is GPL-3.0, so a work combining it with code here would be GPL-3.0.
 
 ### Description
 
