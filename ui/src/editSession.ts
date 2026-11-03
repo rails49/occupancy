@@ -18,7 +18,17 @@ import { TOOLS } from './tools.js';
 import { grab, pixel, NONE, NO_TRACK_NOTICE } from './chain.js';
 import type { Chain, ChainContext, ChainTool, ChainView, ClickResult } from './chain.js';
 import { carTool } from './carChain.js';
-import { TrackChain, clickHitAt, refitLine, trackHitAt, trackTool, withClickAt, withoutClick } from './trackChain.js';
+import {
+  TrackChain,
+  clickHitAt,
+  insertAt,
+  refitLine,
+  trackHitAt,
+  trackTool,
+  withClickAt,
+  withClickIn,
+  withoutClick,
+} from './trackChain.js';
 import type { Refusal } from './trackFit.js';
 import { nearestOnTrack, SNAP_TRACK_WIDTHS } from './track.js';
 import type { ClickHit, Track, TrackHit, TrackNode } from './track.js';
@@ -315,7 +325,7 @@ export class EditSession {
     if (click) return this._grabClick(click, at);
     const scene = this._scene();
     const hit = hitTest(scene, at, grab(scale));
-    if (!hit) return null;
+    if (!hit) return this._grabInsert(at);
     const handles = dragHandles(hit, scene);
     if (handles.length === 0) return null;
     const filename = this.image?.filename;
@@ -349,20 +359,42 @@ export class EditSession {
    * entry. A refit the line refuses puts the click back and writes nothing.
    */
   private _grabClick(hit: ClickHit, at: Point): Drag {
-    const start = this._tracks()[hit.line];
-    const gesture = this.history.beginGesture('move click', { kind: 'layout' });
-    const write = (line: Track) => {
+    const clicks = this._tracks()[hit.line].clicks!;
+    return this._dragLine(hit.line, 'move click', clicks[hit.index], at, to => withClickAt(clicks, hit.index, to));
+  }
+
+  /**
+   * A press within the start distance of a line under the track tool: a
+   * click inserted at the press into the gap nearest it, placed where the
+   * drag ends, as one entry. Null when no line with clicks is near.
+   */
+  private _grabInsert(at: Point): Drag | null {
+    if (this._tool !== 'track' || this._gated('track')) return null;
+    const insert = insertAt(this._context, at);
+    if (!insert) return null;
+    const clicks = this._tracks()[insert.line].clicks!;
+    return this._dragLine(insert.line, 'insert click', pixel(at), at, to => withClickIn(clicks, insert.gap, to));
+  }
+
+  /**
+   * A drag of a click of line `line` from `from`, grabbed at `at`: the line
+   * of `clicksAt(to)` is written on release, as one entry `label`. A release
+   * back at `from`, or one the rule refuses, leaves the line as it was.
+   */
+  private _dragLine(line: number, label: string, from: Point, at: Point, clicksAt: (to: Point) => Click[]): Drag {
+    const start = this._tracks()[line];
+    const gesture = this.history.beginGesture(label, { kind: 'layout' });
+    const write = (track: Track) => {
       const lines = [...this._tracks()];
-      lines[hit.line] = line;
+      lines[line] = track;
       this._writeLayout({ tracks: lines });
     };
-    const moved = (to: Point) => withClickAt(start.clicks!, hit.index, to);
     return this._dragClick(
-      hit,
+      from,
       at,
-      to => write({ ...start, clicks: moved(to) }),
+      to => write({ ...start, clicks: clicksAt(to) }),
       async to => {
-        write((to && refitLine(this._context, moved(to))) || start);
+        write((to && refitLine(this._context, clicksAt(to))) || start);
         await gesture.commit();
       }
     );
@@ -377,7 +409,7 @@ export class EditSession {
     const click = this._tracedClick(chain, at, scale);
     if (!click) return null;
     return this._dragClick(
-      click,
+      this._clickAt(click),
       at,
       to => chain.hold(click.index, to),
       async to => {
@@ -388,17 +420,16 @@ export class EditSession {
   }
 
   /**
-   * A drag of `click`, grabbed at `at`. `show` takes where the click is
-   * dragged to on each move; `drop` takes where it was let go, or null when
-   * it is back where it was or the drag was cancelled.
+   * A drag of a click at `from`, grabbed at `at`. `show` takes where the
+   * click is dragged to on each move; `drop` takes where it was let go, or
+   * null when it is back where it was or the drag was cancelled.
    */
   private _dragClick(
-    click: ClickHit,
+    from: Point,
     at: Point,
     show: (to: Point) => void,
     drop: (to: Point | null) => Promise<void>
   ): Drag {
-    const from = this._clickAt(click);
     let to = from;
     const drag: Drag = {
       move: p => {

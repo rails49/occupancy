@@ -3061,6 +3061,45 @@ describe('EditSession inserting and dragging clicks (#321)', () => {
     });
   });
 
+  describe('a press and drag on a line', () => {
+    it('inserts a click into the gap nearest the press and places it where the drag ends, as one entry', async () => {
+      const { s, at } = await finished();
+      const before = structuredClone(line(s));
+      const entries = s.history.size;
+      const press = inGap(s, 8, 20);
+      const to = inGap(s, 8, -10);
+
+      expect(await drag(s, [press, inGap(s, 8, 5), to])).toBe(true);
+
+      const inserted = [...at.slice(0, 9), to, ...at.slice(9)];
+      expect(trackChain(s)).toBeNull();
+      expect(s.history.size).toBe(entries + 1);
+      expect(s.history.undoLabel).toBe('insert click');
+      expect(line(s).clicks).toEqual(inserted);
+      expect(line(s).nodes).toEqual(nodesOf(s, inserted));
+
+      await s.undo();
+      expect(line(s)).toEqual(before);
+    });
+
+    it('writes nothing when the drag is cancelled', async () => {
+      const { s } = await finished();
+      const before = structuredClone(line(s));
+      const entries = s.history.size;
+      const d = s.beginDrag(inGap(s, 8, 20), SCALE)!;
+      d.move(inGap(s, 8, -10));
+      await d.cancel();
+      expect(line(s)).toEqual(before);
+      expect(s.history.size).toBe(entries);
+    });
+
+    it('grabs nothing on a line under another tool', async () => {
+      const { s } = await finished();
+      s.selectTool('sensor');
+      expect(s.beginDrag(inGap(s, 8, 20), SCALE)).toBeNull();
+    });
+  });
+
   it('extends the line being traced with a click within a gauge of another line', async () => {
     const { s, at } = await finished();
     // A new line crossing the finished one at its ninth click, square to the second straight.
