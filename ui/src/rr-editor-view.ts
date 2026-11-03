@@ -502,6 +502,10 @@ export class RREditorView extends LitElement {
 
     .main-content {
       flex-grow: 1;
+      /* A flex item will not shrink below its content by default, and the
+         thumbnail strip's content is a row of every image: without this a
+         narrow window clips the photograph instead of letterboxing it. */
+      min-width: 0;
       display: flex;
       flex-direction: column;
       background: var(--sl-color-neutral-0);
