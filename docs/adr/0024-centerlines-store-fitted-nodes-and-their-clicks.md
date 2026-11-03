@@ -1,5 +1,7 @@
 # Centerlines store fitted nodes and the clicks they came from
 
+*Superseded by [ADR 0025](0025-a-track-passes-through-every-click-with-gaps-marked-straight.md).*
+
 Resolves [#291](https://github.com/rails49/occupancy/issues/291), on map [#287](https://github.com/rails49/occupancy/issues/287). Supersedes [ADR 0021](0021-track-centerlines-are-stored.md).
 
 Each archive stores its track centerlines, an optional field of the `.r49` format, in image pixels. The classifier needs them: a patch is placed on the track and turned to its direction, and its training labels come from where cars stand along it. A car belongs to the centerline nearest its span midpoint, which keeps a car on the next track from reading as occupied. Centerlines are drawn once per archive, since its images share one pose. Turnouts and crossings are not traced, and a sensor with no centerline under it reads unknown. That is accepted as a limitation.

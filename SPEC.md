@@ -200,7 +200,7 @@ The format and the editor store three kinds of geometry, in pixel coordinates:
 |---|---|---|---|---|
 | Cars | A [span](GLOSSARY.md#cars-and-labels): two points along the car's centerline | Per image | Yes, the detector's only class | Yes |
 | Sensors | A single point | Per layout | No, an output specification | No |
-| [Centerlines](#track-centerlines) | [Nodes](GLOSSARY.md#track), and the [clicks](GLOSSARY.md#track) they were fitted from | Per layout | No, they place the classifier's patches | No |
+| [Tracks](#track-centerlines) | [Nodes](GLOSSARY.md#track), and the [clicks](GLOSSARY.md#track) and marks they were built from | Per layout | No, they place the classifier's patches | No |
 
 1. Cars. Width is not stored; every car is drawn at the [car width](GLOSSARY.md#cars-and-labels) (rails49/detector's [SPEC § Car width](https://github.com/rails49/detector/blob/main/SPEC.md#car-width-is-derived-from-dpt-never-stored)). [Trains and couplings](GLOSSARY.md#cars-and-labels) are derived from coincident ends and never labeled. Each car carries [provenance](#provenance-is-required-not-optional).
 
@@ -208,34 +208,57 @@ The format and the editor store three kinds of geometry, in pixel coordinates:
 
 #### Track centerlines
 
-Each archive stores its track [centerlines](GLOSSARY.md#track), drawn once and shared by every image ([ADR 0024](docs/adr/0024-centerlines-store-fitted-nodes-and-their-clicks.md)). The classifier places its patches on them, and sensors and car ends land on them. A centerline is one unbranched line of [parts](GLOSSARY.md#track), each a straight or a circular arc, tangent at every [join](GLOSSARY.md#track). Turnouts and crossings are not traced.
+Each archive stores its [tracks](GLOSSARY.md#track), drawn once and shared by every image ([ADR 0025](docs/adr/0025-a-track-passes-through-every-click-with-gaps-marked-straight.md)). The classifier places its patches on them, and sensors and car ends land on them. A track is one unbranched line of [parts](GLOSSARY.md#track), each a straight or a circular arc, tangent at every [join](GLOSSARY.md#track). Its [centerline](GLOSSARY.md#track) is that line as drawn. Turnouts and crossings are not traced.
 
-**Tracing.** The person clicks along the middle of the track, in order, with the track tool ([#311](https://github.com/rails49/occupancy/issues/311)). The current part is carried on past the last click and drawn ahead of it as the [projection](GLOSSARY.md#track), so the person sees where the line is going before the next click. When the current part is an arc, the [tangent](GLOSSARY.md#track) at its end is drawn too: where a straight would leave the arc. The person adds clicks along the arc until the tangent lies along the straight in the photograph, then clicks far along the tangent, and the straight leaves the arc at the right heading. Clicks are needed where the curvature changes, and few on a long straight or an arc of one radius. A curve of one radius on the layout may come out as several arcs whose radii change steadily: camera tilt, grades and lens distortion bend a long curve in the photo, and the fit works in image pixels ([research note](docs/research/track-arcs-in-image.md)). Each click takes well under a second.
+**The rule.** The line is a function of its [clicks](GLOSSARY.md#track) and their marks alone, and is built whole on every change ([#317](https://github.com/rails49/occupancy/issues/317)). The same clicks and marks give the same line in either order, on screen, in the archive and on reload. Each [gap](GLOSSARY.md#track) is a [free gap](GLOSSARY.md#track) unless the click that starts it is marked straight, which makes it a [straight gap](GLOSSARY.md#track). The rule works in image pixels ([research note](docs/research/track-arcs-in-image.md)); how it was chosen is in [`track-trace-local-curves.md`](docs/research/track-trace-local-curves.md).
 
-The line is a function of its clicks, in their order: take the clicks one by one, and let each go on the end of the line as it stands. Nothing else goes into it, so the same clicks always give the same line, on screen, in the archive and on reload.
+* The line passes through every click that is not in a run of straight gaps.
+* Each such click takes a heading from its neighbours. With two clicks on each side, it mixes the headings there of the circle through it and the two clicks behind, and of the circle through it and the two clicks ahead, each weighted by how much the curvature changes on the other side, after Akima (1970). This is exact where the radius changes at a click. Next to the end of a stretch of free gaps, the heading is that of the circle through the click and its two neighbours. At an end of the line, the end gap is the one arc tangent at the inner click. Two clicks give a straight; three give the one arc through all three.
+* Each free gap is the equal-chord biarc between its two clicks and their headings: two arcs that meet tangentially on the perpendicular bisector of the chord.
+* A run of neighbouring straight gaps is the total least squares line through its clicks.
+* Next to a run, the circle through the two nearest free clicks that touches the run sets their headings and where the run starts or ends. It is used only if its radius is at least the minimum and it touches the run between the nearest free click and the run's second click. Otherwise the free gap next to the run is a biarc to the foot of the run's end click on the run's line. A curve therefore meets a straight tangentially with no click where the curve ends.
+* Moving, inserting or deleting a click outside a run changes the line within three gaps on each side of it. Moving a click of a run moves the whole run and the curves that meet it.
+* The tool never guesses which gaps are straight. At 0.1 G, a 50 G curve and a straight cannot be told apart over 9 G of track.
+* A free gap between two runs with no click inside it is a biarc between the run ends, which is not exact; a click on the curve fixes it. The first and last two clicks of a stretch of free gaps take the three-click circle's heading, so a change of radius at such a click is not exact; one more click past it fixes that. A broad curve clicked closely can show a radius that changes from gap to gap; clicking it less often avoids that.
 
-* A line starts with a click farther than the start distance from every centerline. The first click sets its position. The second sets its direction: the two make a straight, and the projection runs straight ahead. The third sets its curvature: the one arc through all three, which the projection follows from then on.
-* After that the [tolerance](GLOSSARY.md#track) decides. A click within the tolerance of the projection continues the current part. The part is refit by least squares over all its clicks: its start fixed, its heading free on the first part only, its curvature free, and its length to the foot of its farthest click. Noise in early clicks averages out as later clicks come, and the projection settles. The tolerance is tested against the projection carried on without limit, so a click far ahead on a straight still continues it.
-* A click farther than the tolerance from the projection starts a new part at the join, the end of the current part. The new part leaves the join with the heading there and takes its curvature from this one click: the one arc through it. One click after a join shows the projection of the new part.
-* A click whose foot on the projection is not ahead of the end of the current part adds nothing, and nor does a click on the last click.
-* A click the line could reach only with an arc tighter than the minimum radius is refused: nothing is added, and the hint says to click farther ahead or end the line.
-* Right-click or Escape ends the line, and ending changes nothing. The projection stays where it is until the next click or the release of a drag; nothing follows the pointer.
-* A click into the next curve that is still within the tolerance continues the part, so a part ends at its last click: click the end of a straight before clicking into the curve.
-* While tracing, every part is drawn with its rails and centerline, every click is a dot, the first click of each part after the first is a white dot, the projection is drawn ahead of the line to the edge of the image as a dashed centerline, and after an arc the tangent at its end as a dotted line to the edge. A mark says which part a click belongs to, never that something is wrong.
-* While the track tool is selected, a line above the photograph says what to do next: while tracing, click ahead and how to end; after a refused click or edit, why and what to do, until the next click or edit or the end of the line; otherwise, how to start a line or go on with one.
+**Refusals.** The rule refuses a set of clicks when:
 
-**What a click writes.** Every click writes the line's clicks and the nodes of the line as drawn, as one history entry. A refused click writes nothing. A save in the middle of a trace holds a valid line, and every other reader reads nodes as before. Undo takes back the last click, or the last edit of a click, and shows the line as it was before it.
+* a click is not ahead of the click before it along that click's heading, or the click before it is not behind it along its own, or two neighbouring clicks are at one pixel;
+* any arc is tighter than the minimum radius;
+* a click of a run of straight gaps is more than the [tolerance](GLOSSARY.md#track) off the run's line.
 
-**Editing.** Clicks are the only handles: nodes have no handles and headings cannot be turned. A drag of a click rebuilds the line on release, never while it moves.
+A refused click or edit writes nothing and leaves the line as it was. A toast says why and what to do, and so does the hint until the next click or edit.
 
-* Moving or deleting a click builds the line again from the edited clicks by the same rule, from the first click. The parts before the part of the edited click are unchanged, unless the edit moves a click across the tolerance of the part before it: the replay decides again which part each click joins. While a line is being traced from its first click the clicks run backwards, as the trace does; with no line being traced they run in stored order, so a line last built backwards can come out different.
-* An edit is refused when a click of the rebuilt line would add nothing or need an arc tighter than the minimum: the click springs back, nothing is written, and the hint shows the refusal sentence.
-* A click on either end of a finished line continues it, with the projection shown at once from that end. A click on the line, on a click between the ends, or within the start distance of any line elsewhere does nothing. The menu on a click offers Delete click and Delete line; on the rest of a line, Delete line. Deleting one of a line's last two clicks deletes the line.
-* An archive's lines are drawn as stored, with no refit on load. A line stored without clicks is drawn, takes sensors and cars, and can be deleted, but cannot be edited.
+**The rule's constants** are the editor's, kept together and never stored, in gauges converted through DPT: the tolerance (0.1 G), the minimum radius (10 G) and the start distance (1 G). Being in gauges, they put the track tool behind the calibration gate. A change to them moves no stored track until its line is edited.
 
-**Sensors and cars.** A sensor or a car end lands on the nearest centerline within 1.5 track widths when it is placed or dragged, and is refused where there is none. An edit leaves sensors and car ends where they are; nothing lands them again. Under any tool but the track tool, track draws as its centerline alone.
+**Tracing.** The person clicks along the middle of the track with the track tool, and the line follows at once. Each click takes well under a second.
 
-**The rule's constants** are the editor's, kept together and never stored, in gauges converted through DPT: the tolerance (0.5 G), the minimum radius (15 G) and the start distance (1 G). Being in gauges, they put the track tool behind the calibration gate. A change to them moves no stored track until its line is edited.
+* A click farther than the start distance from every line starts a line, even on a sensor. The second click writes it.
+* While a line is being traced, every click extends it at the end it goes on from, even near another line or near the line itself. A click within the grab radius (14 screen px) of that end adds nothing.
+* A double-click marks the gap from the double-clicked click to the next click straight. Its first click places the click as usual, and its second adds nothing. Only that one gap is straight, so tracing goes back to free gaps with no mode switch. The mark is written with the next click, in that click's history entry; ending the line before then drops it.
+* Right-click or Escape ends the line, and ending changes nothing. A right-click on a click of the traced line other than the one it goes on from opens that click's menu instead, and tracing goes on.
+* While a line is being traced, a drag moves only a click of that line.
+
+**Editing.** With no line being traced:
+
+* A click on the first or last click of any line continues that line from there. A double-click on it continues the line with the next gap straight.
+* A click on a click between the ends writes nothing, and a toast says to drag it or right-click it.
+* A click within the start distance of a line inserts a click at the pointer, into the gap whose part of the line is nearest. A press there and a drag places the inserted click. A click inserted into a straight gap gives two straight gaps. Near a line with no clicks, a toast says it can only be deleted.
+* Any click can be dragged, and the line is built again on every pointer move. Where the rule refuses the clicks, the line keeps its last valid shape, the click follows the pointer, and the hint says why. A release there puts the click back and writes nothing.
+* The menu on a click offers Delete click and Delete line. The menu on the rest of a line offers Make straight or Make free for the gap under the pointer, and Delete line; on a line with no clicks, Delete line alone. Deleting a click merges its two gaps into one, straight only if both were. Deleting one of a line's last two clicks deletes the line.
+* Each click, insert, drag, delete and mark change is one history entry.
+
+**Drawing.** Under the track tool every line is drawn with its two rails at ±G/2, its centerline and a dot per click. Both ends of every straight gap are squares in place of dots. The line being traced, or changed by a drag or an insert, is blue; the others are green. Under any other tool a track is drawn as its centerline alone.
+
+* While tracing, the click the line goes on from has a ring, and a double-clicked last click is a square at once. A dashed blue preview runs from that click to the pointer: the gap a click there would add, as the rule builds it, or a red straight where the rule refuses it.
+* With no line being traced, the two end dots of each line are hollow, the end dot under the pointer has a ring, and a faint dot shows where a click would insert one.
+* A line above the photograph says what to do next. While tracing: "Click along the middle of the track. Double-click where a straight starts. Right-click or Escape ends." Otherwise: "Click to start a line, click an end dot to continue one, click a line to add a click. Right-click a gap to make it straight or free." While the preview follows the pointer, it says instead why a click there would be refused; with no preview, after a refused click or edit, why and what to do.
+
+**What a click writes.** Every change writes the line's clicks, their marks and the nodes of the line, as one history entry. The nodes are the start, every join, and the points that cut an arc of more than 90° into equal pieces of at most 90°. The curve between two nodes is the format's, computed by `@rails49/r49` (rails49/r49's [FORMAT § Node](https://github.com/rails49/r49/blob/main/FORMAT.md#node)). A save in the middle of a trace holds a valid line, and every other reader reads only the nodes. Undo takes back the last entry and shows the line as it was before it.
+
+**Loading.** An archive's lines are drawn from their stored nodes, with no rebuild on load. A line stored without clicks is drawn, takes sensors and cars, and can be deleted, but cannot be edited.
+
+**Sensors and cars.** A sensor or a car end lands on the nearest track within 1.5 track widths when it is placed or dragged, and is refused where there is none. An edit leaves sensors and car ends where they are; nothing lands them again.
 
 #### Labeling completeness
 

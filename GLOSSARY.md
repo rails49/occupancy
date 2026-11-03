@@ -121,8 +121,7 @@ A car label suggested by the detector for a person to accept, correct or reject.
 ### Track
 
 **Track**:
-The rails cars run on.
-_Avoid_: using it for a sensor or a block
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
 
 **Centerline**:
 `r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
@@ -130,30 +129,32 @@ _Avoid_: using it for a sensor or a block
 **Click**:
 `r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
 
+**Gap**:
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
+
+**Straight gap**:
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
+
+**Free gap**:
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
+
 **Node**:
-A point of a stored centerline with the direction the track runs there. The end of each fitted part is stored as a node. See rails49/r49's [FORMAT § Node](https://github.com/rails49/r49/blob/main/FORMAT.md#node).
+A point of a stored track with the direction the track runs there. Each join is stored as a node. See rails49/r49's [FORMAT § Node](https://github.com/rails49/r49/blob/main/FORMAT.md#node).
 _Avoid_: control point, vertex
 
 **Part**:
-One straight or one arc of constant curvature in a centerline. Neighbouring parts are tangent where they meet. See [SPEC § Track centerlines](SPEC.md#track-centerlines).
+One straight or one arc of constant curvature in a track. Neighbouring parts are tangent where they meet. See [SPEC § Track centerlines](SPEC.md#track-centerlines).
 _Avoid_: segment, section
 
 **Join**:
-Where two neighbouring parts of a centerline meet, with one heading shared by both. Each join is stored as a node.
+Where two neighbouring parts of a track meet, with one heading shared by both. Each join is stored as a node.
 _Avoid_: part boundary, break
 
-**Projection**:
-The part being traced, carried on past its last click and drawn ahead of it, where the next click is expected. See [SPEC § Track centerlines](SPEC.md#track-centerlines).
-_Avoid_: preview, extension
-
-**Tangent**:
-The straight leaving the end of the part being traced with its heading, drawn ahead of an arc: where a straight next part would run. See [SPEC § Track centerlines](SPEC.md#track-centerlines).
-
 **Tolerance**:
-How far a click may lie from the projection and still continue its part. See [SPEC § Track centerlines](SPEC.md#track-centerlines).
+How far a click of a run of straight gaps may lie off the run's line. See [SPEC § Track centerlines](SPEC.md#track-centerlines).
 
 **Chain**:
-A run of clicks under the car tool or the track tool, each one going on from the last: the next car of a train, or more of a centerline. See [docs/UI.md § Chaining](docs/UI.md#chaining-33).
+A run of clicks under the car tool or the track tool, each one going on from the last: the next car of a train, or more of a track. See [docs/UI.md § Chaining](docs/UI.md#chaining-33).
 
 ### Occupancy
 
@@ -190,7 +191,7 @@ An L1 state: no car on the sensor's track comes within the margin of the sensor.
 How far beyond a car's end, along the track, a sensor still reads occupied: two gauges.
 
 **Unknown**:
-An L1 state: the system could not look, because no model is loaded, DPT is unresolved, the sensor is outside the frame, the classifier finds no centerline under the sensor, or the camera has drifted. Not a confidence outcome. See [SPEC § The vocabulary](SPEC.md#the-vocabulary).
+An L1 state: the system could not look, because no model is loaded, DPT is unresolved, the sensor is outside the frame, the classifier finds no track under the sensor, or the camera has drifted. Not a confidence outcome. See [SPEC § The vocabulary](SPEC.md#the-vocabulary).
 
 **Phantom**:
 `detector`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/detector/blob/main/GLOSSARY.md).
