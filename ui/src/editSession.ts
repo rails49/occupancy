@@ -32,7 +32,7 @@ import {
 } from './trackChain.js';
 import { fitOptions } from './trackFit.js';
 import type { Refusal } from './trackFit.js';
-import { nearestOnTrack, SNAP_TRACK_WIDTHS } from './track.js';
+import { nearestGap, nearestOnTrack, SNAP_TRACK_WIDTHS } from './track.js';
 import type { ClickHit, Track, TrackHit, TrackNode } from './track.js';
 import type { EditorTool } from './tools.js';
 
@@ -78,8 +78,16 @@ export type MenuSubject =
   | { readonly kind: 'car'; readonly id: string }
   | { readonly kind: 'sensor'; readonly id: string }
   | { readonly kind: 'calibration'; readonly index: number; readonly px: Point }
-  /** A whole track; `px` is where its first node was. */
-  | { readonly kind: 'track'; readonly line: number; readonly px: Point }
+  /**
+   * A whole track; `px` is where its first node was. On a line with clicks,
+   * `gap` is the gap under the pointer and whether it was straight.
+   */
+  | {
+      readonly kind: 'track';
+      readonly line: number;
+      readonly px: Point;
+      readonly gap?: { readonly index: number; readonly straight: boolean };
+    }
   /** Click `index` of a track; `px` is where it was. */
   | { readonly kind: 'track-click'; readonly line: number; readonly index: number; readonly px: Point };
 
@@ -497,7 +505,8 @@ export class EditSession {
    * A right-click. On a click of the line a live track chain traces, other
    * than the last, it returns that click and the chain goes on; anywhere else
    * a live chain ends and nothing else happens. Otherwise returns what a menu
-   * would act on: under the track tool a line's click, else the line; then a
+   * would act on: under the track tool a line's click, else the line and the
+   * gap under the pointer; then a
    * sensor or reference point under `at`, else the car whose body is under
    * it, else null.
    */
@@ -514,7 +523,10 @@ export class EditSession {
     const trackHit = this._trackHit(at, scale);
     if (trackHit) {
       const line = this._tracks()[trackHit.line];
-      return { kind: 'track', line: trackHit.line, px: pointOf(line.nodes[0]) };
+      const px = pointOf(line.nodes[0]);
+      if (!line.clicks || line.clicks.length < 2) return { kind: 'track', line: trackHit.line, px };
+      const index = nearestGap(line, at);
+      return { kind: 'track', line: trackHit.line, px, gap: { index, straight: line.clicks[index].straight === true } };
     }
     const scene = this._scene();
     const hit = hitTest(scene, at, grab(scale), MENU_HIT_KINDS);
@@ -631,6 +643,27 @@ export class EditSession {
   async deleteLine(subject: MenuSubject & { kind: 'track-click' }) {
     if (!this._clickIsStillAt(subject)) return;
     await this._deleteLine(subject.line);
+  }
+
+  /**
+   * Makes the gap a menu was opened on straight or free, as one entry, if the
+   * line and the gap's mark are as they were. One the rule refuses writes nothing.
+   */
+  async markGap(subject: MenuSubject & { kind: 'track' }, straight: boolean) {
+    this._attempt();
+    const { line, gap } = subject;
+    const clicks = this._tracks()[line]?.clicks;
+    if (!gap || !clicks || !this._trackNodeIsStillAt(line, 0, subject.px)) return;
+    if ((clicks[gap.index]?.straight === true) !== gap.straight) return;
+    const { x, y } = clicks[gap.index];
+    const marked = clicks.map((p, i) => (i !== gap.index ? p : straight ? { x, y, straight } : { x, y }));
+    const refit = refitLine(this._context, marked);
+    if (!refit) return;
+    const lines = [...this._tracks()];
+    lines[line] = refit;
+    await this._record(straight ? 'make straight' : 'make free', { kind: 'layout' }, () =>
+      this._writeLayout({ tracks: lines })
+    );
   }
 
   /** Deletes line `line` as one entry, and ends a chain tracing it. */

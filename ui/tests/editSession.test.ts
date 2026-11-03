@@ -2572,6 +2572,65 @@ describe('EditSession straight marks through edits (#319)', () => {
     expect(marks(s)).toEqual([false, true, true, true, false, false, false, false]);
   });
 
+  it('names the gap under a right-click and its mark, on a line with clicks (#322)', () => {
+    const s = marked();
+    const px = { x: line(s).nodes[0].x, y: line(s).nodes[0].y };
+    expect(s.rightClick({ x: 200, y: 101 }, SCALE)).toEqual({
+      kind: 'track',
+      line: 0,
+      px,
+      gap: { index: 0, straight: false },
+    });
+    expect(s.rightClick({ x: 600, y: 99 }, SCALE)).toEqual({
+      kind: 'track',
+      line: 0,
+      px,
+      gap: { index: 2, straight: true },
+    });
+  });
+
+  it('makes a free gap straight and a straight gap free, one entry each (#322)', async () => {
+    const s = marked();
+    const entries = s.history.size;
+    await s.markGap(s.rightClick({ x: 800, y: 100 }, SCALE) as MenuSubject & { kind: 'track' }, true);
+    expect(marks(s)).toEqual([false, true, true, true, false, false]);
+    expect(line(s).nodes).toEqual(nodesOf(s, line(s).clicks!));
+    expect(s.history.size).toBe(entries + 1);
+    expect(s.history.undoLabel).toBe('make straight');
+
+    await s.markGap(s.rightClick({ x: 400, y: 100 }, SCALE) as MenuSubject & { kind: 'track' }, false);
+    expect(marks(s)).toEqual([false, false, true, true, false, false]);
+    expect(line(s).nodes).toEqual(nodesOf(s, line(s).clicks!));
+    expect(s.history.size).toBe(entries + 2);
+    expect(s.history.undoLabel).toBe('make free');
+
+    await s.undo();
+    expect(marks(s)).toEqual([false, true, true, true, false, false]);
+    await s.undo();
+    expect(marks(s)).toEqual([false, true, true, false, false, false]);
+  });
+
+  it('refuses a mark change whose line the rule refuses, and writes nothing (#322)', async () => {
+    const s = session({ tool: 'track', rows: false });
+    // Along a curve of radius 20 G: the first three clicks are within the tolerance of a straight, the first four are not.
+    const at: Click[] = [
+      { x: 100, y: 170, straight: true },
+      { x: 300, y: 125, straight: true },
+      { x: 500, y: 103 },
+      { x: 700, y: 103 },
+      { x: 900, y: 125 },
+      { x: 1100, y: 170 },
+    ];
+    s.archive.getManifest().layout.tracks = [{ nodes: nodesOf(s, at), clicks: at }];
+    const before = structuredClone(line(s));
+    const entries = s.history.size;
+
+    await s.markGap(s.rightClick({ x: 600, y: 101 }, SCALE) as MenuSubject & { kind: 'track' }, true);
+    expect(s.refusal).toBe('off-straight');
+    expect(line(s)).toEqual(before);
+    expect(s.history.size).toBe(entries);
+  });
+
   it('keeps the marks when the line goes on from its last click or its first, and through an edit while tracing', async () => {
     const s = marked();
     await clicks(s, { x: 1100, y: 100 }, { x: 1300, y: 100 });
