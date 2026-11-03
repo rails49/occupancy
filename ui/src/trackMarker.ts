@@ -8,7 +8,8 @@ import type { Track } from './track.js';
 
 /**
  * Track rendering for SVG (#284): the centerline, and under the track tool
- * the two rails half a gauge to either side and a dot at each click.
+ * the two rails half a gauge to either side and a dot at each click, a
+ * square at either end of a straight gap.
  *
  * A module rather than a custom element, like the other markers. Its exports
  * must be used together: `trackMarkerStyles` in the host's `static styles`,
@@ -65,7 +66,17 @@ function polyline(points: readonly Point[]): string {
   return points.map(p => `${p.x},${p.y}`).join(' ');
 }
 
-function renderDot(p: Point, size: TrackSymbolSize, cls: string): SVGTemplateResult {
+function renderDot(p: Point, size: TrackSymbolSize, cls: string, square: boolean): SVGTemplateResult {
+  if (square) {
+    return svg`<rect
+      class="${cls}"
+      x="${p.x - size.dotPx / 2}"
+      y="${p.y - size.dotPx / 2}"
+      width="${size.dotPx}"
+      height="${size.dotPx}"
+      stroke-width="${size.strokePx / 2}"
+    />`;
+  }
   return svg`<circle
     class="${cls}"
     cx="${p.x}"
@@ -86,7 +97,12 @@ export function renderTrack(
   return renderLine(track, size, highlighted, 'track');
 }
 
-/** The line a track chain is tracing: its rails, centerline and a dot per click; the first click alone before the second. */
+/**
+ * The line a track chain is tracing, in the order it is traced: its rails,
+ * centerline and a dot per click; the first click alone before the second.
+ * A straight mark on the last click, the one the chain goes on from, draws
+ * it as a square: the next gap is to be straight.
+ */
 export function renderPendingTrack(track: Track, size: TrackSymbolSize): SVGTemplateResult {
   return renderLine(track, { ...size, detail: true }, [], 'track track-pending');
 }
@@ -94,10 +110,11 @@ export function renderPendingTrack(track: Track, size: TrackSymbolSize): SVGTemp
 function renderLine(track: Track, size: TrackSymbolSize, highlighted: readonly Point[], cls: string): SVGTemplateResult {
   const { nodes } = track;
   const gauge = size.dpt;
-  const dots = (track.clicks ?? []).flatMap(p => {
+  const clicks = track.clicks ?? [];
+  const dots = clicks.flatMap((p, i) => {
     const lit = highlighted.some(h => samePoint(h, p));
     if (!size.detail && !lit) return [];
-    return [renderDot(p, size, lit ? `click ${HIGHLIGHT_CLASS}` : 'click')];
+    return [renderDot(p, size, lit ? `click ${HIGHLIGHT_CLASS}` : 'click', !!(p.straight || clicks[i - 1]?.straight))];
   });
   if (nodes.length < 2) return svg`<g class="${cls}">${dots}</g>`;
   return svg`<g class="${cls}">

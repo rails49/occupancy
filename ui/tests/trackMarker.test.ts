@@ -61,6 +61,19 @@ describe('renderTrack', () => {
     expect(lit(false)).toEqual([true]);
   });
 
+  it('draws a square in place of the dot at both ends of each straight gap', () => {
+    const marked: Track = {
+      ...track,
+      clicks: [{ x: 100, y: 100 }, { x: 200, y: 101, straight: true }, { x: 350, y: 99 }, { x: 500, y: 100 }],
+    };
+    const el = renderSvg(renderTrack(marked, size));
+    expect([...el.querySelectorAll('.click')].map(c => c.tagName)).toEqual(['circle', 'rect', 'rect', 'circle']);
+    const square = el.querySelectorAll('rect.click')[0];
+    expect(Number(square.getAttribute('x')) + Number(square.getAttribute('width')) / 2).toBe(200);
+    expect(Number(square.getAttribute('y')) + Number(square.getAttribute('height')) / 2).toBe(101);
+    expect(square.getAttribute('width')).toBe(String(size.dotPx));
+  });
+
   it('has no red class in its styles', () => {
     expect(trackMarkerStyles.cssText).not.toMatch(/red|danger/);
   });
@@ -82,6 +95,14 @@ describe('renderPendingTrack', () => {
     const el = renderSvg(renderPendingTrack(track, size));
     expect(el.querySelectorAll('.projection, .tangent, .part-start, .node, .heading-handle')).toHaveLength(0);
     expect([...el.querySelectorAll('.click')].every(d => d.getAttribute('class') === 'click')).toBe(true);
+  });
+
+  it('draws a square at the click it goes on from when the next gap is to be straight', () => {
+    const pending: Track = { ...track, clicks: [...track.clicks!.slice(0, 3), { x: 500, y: 100, straight: true }] };
+    const el = renderSvg(renderPendingTrack(pending, size));
+    expect([...el.querySelectorAll('.click')].map(c => c.tagName)).toEqual(['circle', 'circle', 'circle', 'rect']);
+    const first = renderSvg(renderPendingTrack({ nodes: [], clicks: [{ x: 5, y: 5, straight: true }] }, size));
+    expect([...first.querySelectorAll('.click')].map(c => c.tagName)).toEqual(['rect']);
   });
 
   it('draws the centerline alone with no gauge to space the rails by', () => {
