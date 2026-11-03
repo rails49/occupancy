@@ -37,6 +37,102 @@ size rule is the session's — `requiredImageSize` answers it, and `addRefusal` 
 message names the file the user picked. `../SPEC.md` § Images states all three rules, why rotating
 in the browser was rejected, and why an image of another size is not something the screen can show.
 
+The **track tool** (#284, #317) does what `../SPEC.md` § Track centerlines says; this section
+holds what the code keeps true, and which module keeps it.
+
+`trackFit.ts` is the rule, pure. A `Fit` is a start pose and a length and a curvature per part.
+`buildLine` takes the clicks with their marks and returns a `Built`: the line, or a refusal and its
+reason (`behind`, `tight`, `off-straight`). It builds the whole line on every call and reads nothing
+but the clicks, so the same clicks and marks give the same line on screen, in the archive and on
+reload, and in either order. A click marked `straight` starts a straight gap; the last click's mark
+is not read. A run of neighbouring straight gaps is fitted first (`fitStraight`, total least
+squares) and refused if a click lies more than the tolerance off it. Next to a run, `joinCircle`
+finds the circle through the two nearest free clicks that touches the run, no tighter than the
+minimum radius, within a half turn between the two clicks, and touching the run between the
+nearest free click and the run's second click; where there is none, the free gap ends at the foot
+of the run's end click. When the circles at both ends of a one-gap run would touch it in the wrong
+order, neither is used. The other free clicks take their headings in `headings`, after Akima
+(1970), and each free gap is the equal-chord `biarc` between its clicks. The refusals are checked
+on the whole line: two neighbouring clicks at one pixel, or a click not ahead of the click before
+it along either click's heading, or a run that ends before it starts, is `behind`; an arc tighter
+than the minimum radius is `tight`. The constants are `TRACK_FIT`, in gauges: tolerance 0.1 G,
+minimum radius 10 G, start distance 1 G. `fitOptions` converts the first two through DPT, and
+`insertAt` the start distance; none is stored. `fitNodes` makes a node of the start and of each
+part's end, and cuts an arc into equal pieces of at most 90°, which the format's curve between
+nodes follows closely. That curve is `@rails49/r49`'s `segment` (FORMAT.md § Node), which
+`track.ts` draws and hits through.
+
+`trackChain.ts` holds the gestures. `lineOf` is `buildLine` and `fitNodes` together, giving a
+`Track` or the refusal; `refitLine` and `recordLine` do the same for an edit with no chain live,
+and refuse through the session. `markedClick`, `withClickAt`, `withClickIn` and `withoutClick` are
+the click edits, and keep the marks: an inserted click takes the mark of the click before it, so a
+straight gap becomes two, and a deleted click's two gaps become one, straight only if both were.
+
+The click sets in `tests/clickSets/` are part of the rule's regression suite
+(`tests/trackFit.test.ts`). Today there is one set, synthetic. A set is a `gauge`, `lines` of clicks
+in track order, and a `note` saying where the clicks came from; a set recorded in the editor is a
+drop-in file in the directory. The test holds, on every set and on synthetic lines from
+`tests/trackClicks.ts`, that the line passes through every click, has no kink, and is the same for
+the clicks reversed; that on lines of twelve clicks or more a move, insert or delete changes at most
+three gaps on each side; and, on marked lines, that each run is straight and within the tolerance
+of its clicks, a curve meets it tangentially, and each refusal happens.
+
+Every entry a track chain writes, a click or a move or delete of a click, writes the line's `clicks`
+with their marks in stored order and the `nodes` of their line, as one `layout` entry. A click or
+edit the rule refuses writes nothing. A chain continued from a line's first click draws the line
+reversed, so the click it goes on from is last (`TrackChain.view`), and puts each new click at the
+front of the stored clicks; the line is the same either way. A double-click on the click the chain
+goes on from (`EditSession.doubleClick`, `TrackChain.straighten`) asks for the next gap to be
+straight. The chain holds that as view state, drawn as a square on its last click, and the next
+click writes the mark with itself as one entry; a refused click keeps it, and the end of the chain,
+a delete or a change under the chain drops it. `TrackChain.preview` builds the line with a click at
+the pointer on every pointer move and writes nothing.
+
+The chain keeps the line from before each entry it wrote, so an undo restores it, and the chain
+ends only once every entry it wrote is undone (`TrackChain.settle`). While a chain is live every
+click goes on its end, even on a sensor or near another line, and a click within the grab radius
+of that end adds nothing. With no chain live (`trackTool`, sharing its lookup with `trackHover`), a
+click on a line's first or last click continues it; on a click between them it notifies
+`MIDDLE_CLICK`; within `TRACK_FIT.startDistance` of a line it inserts a click at the pointer into the
+gap `nearestGap` finds, or notifies `NO_CLICKS` on a line with no clicks; anywhere else it starts a
+chain. A drag while a chain is live grabs only a click of the traced line; `TrackChain.hold` draws
+the line of the moved clicks, or the last line the rule took, and the release moves the click as
+one entry or is refused. With no chain live a drag grabs any line's click, or a press within the
+start distance of a line inserts a click and drags it (`_grabInsert`); `_dragLine` writes the line
+on every pointer move inside one history gesture, keeps the last line the rule took where it
+refuses, and on release writes the rebuilt line or, where refused, the line as it was. The line a
+drag holds is `heldLine`. Right-click on a traced click other than the one the chain goes on from
+opens Delete click and Delete line and the chain goes on; elsewhere it ends the chain. With no
+chain live the menu on a line's gap offers Make straight or Make free (`markGap`), and Delete line.
+Deleting one of a line's last two clicks, or the line, ends a chain on it.
+
+The traced or held line draws in place of its stored line, which `rr-editor-view` leaves out of the
+viewer's `tracks`. `renderTrack` and `renderPendingTrack` draw the rails and the centerline from the
+nodes, a dot per click, and a square at each end of a straight gap (`squareAt`); the pending line is
+blue, and a straight mark on its last click draws that click square. `renderTrackCues` draws the
+ring on the click the chain goes on from, the preview dashed blue or red where refused, the ring on
+an end dot under the pointer and a faint dot where a click would insert. With no chain live the end
+dots are hollow (`hollowEnds`). Under another tool `trackDetail` is false and a track draws as its
+centerline alone.
+
+A refusal is the one thing the tool says no to. `EditSession.refusal` is set by a refused click,
+drag, insert, delete or mark change, which writes nothing and puts a dragged click back, and is
+cleared by the next click or edit, the end of the chain or a tool change; the session also toasts
+`refusalText` through `subscribeNotices`. `trackHint` is one of three sentences: with a refusal, why
+and what to do; while tracing, how to click, mark a straight and end; otherwise, how to start,
+continue or change a line. `rr-editor-view` shows it under the DPT bar while the track tool is
+selected and DPT resolves, with the preview's refusal in place of the session's while a preview
+follows the pointer.
+
+The rule never looks at the photo: it knows the clicks, their marks and one shape rule, a line of
+straights and arcs tangent at every join with no radius under `TRACK_FIT.minRadius`. The tolerance
+has one job, how far a click of a straight run may lie off it. The tool never marks a gap straight
+on its own.
+
+Lines and clicks have no id, so a menu carries the line's first node or the click's pixel and checks
+it is still there, and the reveal after an undo lights the changed clicks by pixel. Under any other
+tool the track grabs nothing.
+
 The picker takes **several files in one pick** (#262), and the pick — not the file — is the unit:
 `addPickedFiles` prepares and judges each file in filename order, hands what survives to
 `EditSession.addImages` as **one** history entry, and returns one notice naming everything it
@@ -148,6 +244,10 @@ before it, which is worse than having no undo. Rules, from entries being scoped 
 
 ## Chaining (#33)
 
+The car tool and the track tool share the chain (`chain.ts`, #284): `EditSession` runs click, undo,
+redo, right-click and drags the same way for both. The rules below are the car's; the track
+tool's are under [What the editor builds](#what-the-editor-builds).
+
 * Every click after the first is simultaneously the end of the current car and the start of the
   next: the same pixel is written as one car's `p1` and handed on as the next one's `p0`, so the
   coincidence a coupling is derived from is exact by construction — chaining records no train.
@@ -226,7 +326,8 @@ rails49/detector's [`SPEC.md` § Parameters live in `config.yaml`](https://githu
   the session demotes a live tool back to calibration after every change — because DPT can vanish
   through an **undo**, which no disabled button can stop.
 * The **sensor** tool is gated with the car tool, one step beyond `SPEC.md` § Labeling Workflow — a
-  sensor point needs no DPT to draw, but #31 asked for both. `needsDpt` is per tool in
+  sensor point needs no DPT to draw, but #31 asked for both. The **track** tool is gated because the
+  rule's constants are in gauges. `needsDpt` is per tool in
   `tools.ts` if that is revisited.
 * Sensors are **per layout**, carry **no provenance** (no model can propose where a human wants an
   answer), and their snowflake ids live in a namespace never compared with label ids. A sensor is

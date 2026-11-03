@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { MockInstance } from 'vitest';
-import { fixture, html } from '@open-wc/testing';
+import { fixture, fixtureCleanup, html } from '@open-wc/testing';
 import { R49Archive, getDPT } from '@rails49/r49';
 import { MIN_DPT } from '@rails49/detector';
 import type { ReferencePoint, CarLabel, Point, Sensor, WorldPoint } from '@rails49/r49';
@@ -17,6 +17,8 @@ import type { RRContextMenu } from '../src/rr-context-menu.js';
 import type { NotifyDetail } from '../src/rr-editor-view.js';
 import type { SlCheckbox } from '@shoelace-style/shoelace';
 import type { Rect } from '../src/geometry.js';
+import { MIDDLE_CLICK } from '../src/trackChain.js';
+import { refusalText } from '../src/trackHint.js';
 
 
 // The camera, the image size and the thumbnail are mocked: one needs
@@ -440,9 +442,26 @@ describe('rr-editor-view', () => {
     ];
   }
 
-  /** A calibrated editor with `tool` live, as the rail would choose it. */
-  async function mountWithTool(tool: 'sensor' | 'car') {
+  /**
+   * Straight track along y = 100, 200, … 800, so cars and sensors placed near
+   * those rows land on them.
+   */
+  function layRows() {
+    archive.getManifest().layout.tracks = Array.from({ length: 8 }, (_, i) => ({
+      nodes: [
+        { x: -1000, y: 100 * (i + 1), heading: 0 },
+        { x: 3000, y: 100 * (i + 1), heading: 0 },
+      ],
+    }));
+  }
+
+  /**
+   * A calibrated editor with `tool` live, as the rail would choose it. The car
+   * and sensor tools get {@link layRows} to land on.
+   */
+  async function mountWithTool(tool: 'sensor' | 'car' | 'track') {
     calibrate();
+    if (tool !== 'track') layRows();
     const el = await mount();
     el.session!.selectTool(tool);
     await el.updateComplete;
@@ -908,6 +927,349 @@ describe('rr-editor-view', () => {
     });
   });
 
+  describe('track (#284)', () => {
+    // An earlier test in this file leaves a context menu open, and an open menu
+    // swallows Escape.
+    beforeEach(fixtureCleanup);
+
+    function pending(el: RREditorView) {
+      return el.shadowRoot!.querySelector('rr-viewer')!.pendingTrack;
+    }
+
+    function cues(el: RREditorView) {
+      return el.shadowRoot!.querySelector('rr-viewer')!.trackCues;
+    }
+
+    async function moveTo(el: RREditorView, point: Point) {
+      gesture(el, 'rr-pointer-move', point, 1);
+      await el.updateComplete;
+    }
+
+    async function pressEscape(el: RREditorView) {
+      document.body.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true })
+      );
+      await el.updateComplete;
+    }
+
+    async function laid(el: RREditorView) {
+      await clickAt(el, { x: 100, y: 100 });
+      await clickAt(el, { x: 300, y: 100 });
+    }
+
+    it('draws the traced line from its trace, leaving it out of the stored lines', async () => {
+      const el = await mountWithTool('track');
+      await laid(el);
+
+      expect(pending(el)!.clicks).to.deep.equal([
+        { x: 100, y: 100 },
+        { x: 300, y: 100 },
+      ]);
+      expect(el.session!.tracks).to.have.length(1);
+      expect(el.shadowRoot!.querySelector('rr-viewer')!.tracks).to.have.length(0);
+    });
+
+    it('marks the gap from a double-clicked click straight, written with the next click', async () => {
+      const el = await mountWithTool('track');
+      await laid(el);
+      const at = { x: 500, y: 100 };
+      await clickAt(el, at);
+      await clickAt(el, at);
+      el.shadowRoot!.querySelector('rr-viewer')!.dispatchEvent(
+        new CustomEvent('rr-pointer-dblclick', {
+          detail: { point: at, imagePxPerScreenPx: 1, originalEvent: new MouseEvent('dblclick') },
+          bubbles: true,
+          composed: true,
+        })
+      );
+      await el.updateComplete;
+      expect(pending(el)!.clicks!.at(-1)).to.deep.equal({ ...at, straight: true });
+
+      await clickAt(el, { x: 700, y: 100 });
+      expect(el.session!.tracks[0].clicks!.slice(-2)).to.deep.equal([{ ...at, straight: true }, { x: 700, y: 100 }]);
+    });
+
+    it('shows what to do next under the track tool alone', async () => {
+      const el = await mountWithTool('track');
+      const hint = () => el.shadowRoot!.querySelector('.track-hint')?.textContent?.trim();
+      expect(hint()).to.match(/^Click to start a line/);
+      await laid(el);
+      expect(hint()).to.match(/^Click along the middle of the track/);
+
+      el.session!.selectTool('sensor');
+      await el.updateComplete;
+      expect(hint()).to.equal(undefined);
+    });
+
+    it('extends the line with a Shift-click like a plain click: Shift is the zoom rect\'s', async () => {
+      const el = await mountWithTool('track');
+      await laid(el);
+      const at = { x: 500, y: 100 };
+      gesture(el, 'rr-pointer-down', at, 1, { shiftKey: true });
+      gesture(el, 'rr-pointer-up', at, 1, { shiftKey: true });
+      await flush();
+      await el.updateComplete;
+
+      expect(pending(el)!.clicks).to.deep.equal([{ x: 100, y: 100 }, { x: 300, y: 100 }, at]);
+    });
+
+    it('draws the next gap to the pointer, and red with the reason live where a click there is refused (#324)', async () => {
+      const el = await mountWithTool('track');
+      const hint = () => el.shadowRoot!.querySelector('.track-hint')?.textContent?.trim();
+      await laid(el);
+      const before = pending(el);
+
+      await moveTo(el, { x: 500, y: 120 });
+      expect(cues(el)!.tracing).to.equal(true);
+      expect(cues(el)!.preview).to.deep.equal(el.session!.previewTrack({ x: 500, y: 120 }, 1));
+      const end = cues(el)!.preview!.nodes.at(-1)!;
+      expect(end.x).to.be.closeTo(500, 1e-9);
+      expect(end.y).to.be.closeTo(120, 1e-9);
+      expect(hint()).to.match(/^Click along the middle of the track/);
+
+      // Ahead of the straight, at a right angle to it within 5 G: tighter than 10 G.
+      await moveTo(el, { x: 750, y: 550 });
+      expect(cues(el)!.preview!.refusal).to.equal('tight');
+      expect(hint()).to.equal(refusalText('tight'));
+      expect(pending(el)).to.equal(before);
+      expect(el.session!.tracks[0].clicks).to.have.length(2);
+    });
+
+    it('rings the end a line goes on from, and draws no hover while tracing (#324)', async () => {
+      const el = await mountWithTool('track');
+      await laid(el);
+      await moveTo(el, { x: 300, y: 100 });
+      expect(cues(el)).to.deep.equal({ tracing: true, preview: null, hover: null });
+    });
+
+    it('draws the line a click of it is dragged on, and puts it back among the lines on release (#324)', async () => {
+      const el = await mountWithTool('track');
+      for (const p of [{ x: 100, y: 100 }, { x: 997, y: 100 }, { x: 1894, y: 100 }]) await clickAt(el, p);
+      await pressEscape(el);
+      const viewer = el.shadowRoot!.querySelector('rr-viewer')!;
+
+      gesture(el, 'rr-pointer-down', { x: 997, y: 100 }, 1);
+      await moveTo(el, { x: 997, y: 130 });
+      expect(pending(el)!.clicks![1]).to.deep.equal({ x: 997, y: 130 });
+      expect(viewer.tracks).to.have.length(0);
+      expect(cues(el)).to.deep.equal({ tracing: false, preview: null, hover: null });
+
+      gesture(el, 'rr-pointer-up', { x: 997, y: 130 }, 1);
+      await flush();
+      await el.updateComplete;
+      expect(pending(el)).to.equal(null);
+      expect(viewer.tracks).to.have.length(1);
+    });
+
+    it('rings an end dot under the pointer and shows where a click would insert, with no line traced (#324)', async () => {
+      const el = await mountWithTool('track');
+      for (const p of [{ x: 100, y: 100 }, { x: 997, y: 100 }, { x: 1894, y: 100 }]) await clickAt(el, p);
+      await pressEscape(el);
+
+      await moveTo(el, { x: 1894, y: 102 });
+      expect(cues(el)).to.deep.equal({ tracing: false, preview: null, hover: { kind: 'end', at: { x: 1894, y: 100 }, square: false } });
+      await moveTo(el, { x: 500, y: 130 });
+      expect(cues(el)!.hover).to.deep.equal({ kind: 'insert', at: { x: 500, y: 130 } });
+      await moveTo(el, { x: 997, y: 100 });
+      expect(cues(el)!.hover).to.equal(null);
+      await moveTo(el, { x: 500, y: 400 });
+      expect(cues(el)!.hover).to.equal(null);
+
+      await moveTo(el, { x: 1894, y: 100 });
+      gesture(el, 'rr-pointer-leave', { x: 1894, y: 100 }, 1);
+      await el.updateComplete;
+      expect(cues(el)!.hover).to.equal(null);
+
+      el.session!.selectTool('sensor');
+      await el.updateComplete;
+      expect(cues(el)).to.equal(null);
+    });
+
+    it('toasts why a click was refused, and what to do on a middle dot, for 3 s (#324)', async () => {
+      const el = await mountWithTool('track');
+      const toasts: NotifyDetail[] = [];
+      el.addEventListener('rr-notify', e => toasts.push((e as CustomEvent<NotifyDetail>).detail));
+      await laid(el);
+      await clickAt(el, { x: 300, y: 100 });
+      expect(toasts).to.deep.equal([]);
+
+      await clickAt(el, { x: 750, y: 550 });
+      expect(toasts).to.deep.equal([{ message: refusalText('tight'), duration: 3000 }]);
+
+      await clickAt(el, { x: 500, y: 100 });
+      await pressEscape(el);
+      await clickAt(el, { x: 300, y: 100 });
+      expect(toasts.at(-1)).to.deep.equal({ message: MIDDLE_CLICK, duration: 3000 });
+      expect(toasts).to.have.length(2);
+    });
+
+    it('ends the chain on Escape and hands the line to the viewer', async () => {
+      const el = await mountWithTool('track');
+      await laid(el);
+
+      await pressEscape(el);
+
+      expect(pending(el)).to.equal(null);
+      expect(el.shadowRoot!.querySelector('rr-viewer')!.tracks).to.have.length(1);
+    });
+
+    it('opens a delete row on a line, and deletes the line', async () => {
+      archive.getManifest().layout.tracks = [
+        {
+          nodes: [
+            { x: 100, y: 100, heading: 0 },
+            { x: 300, y: 100, heading: 0 },
+            { x: 500, y: 100, heading: 0 },
+          ],
+        },
+      ];
+      const el = await mountWithTool('track');
+      expect(el.shadowRoot!.querySelector('rr-viewer')!.trackDetail).to.equal(true);
+
+      await rightClickAt(el, { x: 300, y: 100 });
+      expect(menuItems(el)).to.deep.equal(['delete']);
+      await choose(el, 'delete');
+      expect(el.session!.tracks).to.have.length(0);
+    });
+
+    it('opens Delete click on a click of a line, and deletes the click', async () => {
+      const el = await mountWithTool('track');
+      await clickAt(el, { x: 100, y: 100 });
+      await clickAt(el, { x: 300, y: 100 });
+      await clickAt(el, { x: 500, y: 100 });
+      await pressEscape(el);
+
+      await rightClickAt(el, { x: 300, y: 100 });
+      expect(menuItems(el)).to.deep.equal(['delete', 'delete-line']);
+      const label = (id: string) =>
+        menuOf(el).shadowRoot!.querySelector(`sl-menu-item[data-id="${id}"]`)!.textContent!.trim();
+      expect(label('delete')).to.equal('Delete click');
+      expect(label('delete-line')).to.equal('Delete line');
+      await choose(el, 'delete');
+      expect(el.session!.tracks[0].clicks).to.deep.equal([
+        { x: 100, y: 100 },
+        { x: 500, y: 100 },
+      ]);
+    });
+
+    it('offers Make straight on a free gap and Make free on a straight one, next to Delete line (#322)', async () => {
+      const el = await mountWithTool('track');
+      await clickAt(el, { x: 100, y: 100 });
+      await clickAt(el, { x: 300, y: 100 });
+      await clickAt(el, { x: 500, y: 100 });
+      await pressEscape(el);
+      const label = (id: string) =>
+        menuOf(el).shadowRoot!.querySelector(`sl-menu-item[data-id="${id}"]`)!.textContent!.trim();
+
+      await rightClickAt(el, { x: 400, y: 100 });
+      expect(menuItems(el)).to.deep.equal(['make-straight', 'delete']);
+      expect(label('make-straight')).to.equal('Make straight');
+      expect(label('delete')).to.equal('Delete line');
+      await choose(el, 'make-straight');
+      expect(el.session!.tracks[0].clicks).to.deep.equal([
+        { x: 100, y: 100 },
+        { x: 300, y: 100, straight: true },
+        { x: 500, y: 100 },
+      ]);
+
+      await rightClickAt(el, { x: 400, y: 100 });
+      expect(menuItems(el)).to.deep.equal(['make-free', 'delete']);
+      expect(label('make-free')).to.equal('Make free');
+      await choose(el, 'make-free');
+      expect(el.session!.tracks[0].clicks).to.deep.equal([
+        { x: 100, y: 100 },
+        { x: 300, y: 100 },
+        { x: 500, y: 100 },
+      ]);
+    });
+
+    it('says why a gap cannot be made straight, and keeps it free (#322)', async () => {
+      const el = await mountWithTool('track');
+      const hint = () => el.shadowRoot!.querySelector('.track-hint')?.textContent?.trim();
+      // Along a curve of radius 20 G: the first three clicks are within the tolerance of a straight, the first four are not.
+      const at = [
+        { x: 100, y: 170 },
+        { x: 300, y: 125 },
+        { x: 500, y: 103 },
+        { x: 700, y: 103 },
+        { x: 900, y: 125 },
+      ];
+      for (const p of at) await clickAt(el, p);
+      await pressEscape(el);
+      for (const p of [{ x: 200, y: 145 }, { x: 400, y: 111 }]) {
+        await rightClickAt(el, p);
+        await choose(el, 'make-straight');
+      }
+      const before = el.session!.tracks[0];
+      expect(before.clicks!.map(p => p.straight === true)).to.deep.equal([true, true, false, false, false]);
+
+      await rightClickAt(el, { x: 600, y: 100 });
+      await choose(el, 'make-straight');
+      expect(hint()).to.match(/^The track is not straight there/);
+      expect(el.session!.tracks[0]).to.equal(before);
+    });
+
+    it('opens Delete line on a click of a line too, and deletes the line', async () => {
+      const el = await mountWithTool('track');
+      await clickAt(el, { x: 100, y: 100 });
+      await clickAt(el, { x: 300, y: 100 });
+      await clickAt(el, { x: 500, y: 100 });
+      await pressEscape(el);
+
+      await rightClickAt(el, { x: 300, y: 100 });
+      await choose(el, 'delete-line');
+      expect(el.session!.tracks).to.have.length(0);
+    });
+
+    it('says why a click was refused, until the next click', async () => {
+      const el = await mountWithTool('track');
+      const hint = () => el.shadowRoot!.querySelector('.track-hint')?.textContent?.trim();
+      await clickAt(el, { x: 100, y: 100 });
+      await clickAt(el, { x: 997, y: 100 });
+
+      // Ahead of the straight, at a right angle to it within 11 G: a radius of 7.5 G.
+      await clickAt(el, { x: 1087, y: 997 });
+      expect(hint()).to.match(/^Needs an arc tighter than 10 G/);
+      expect(el.session!.tracks[0].clicks).to.have.length(2);
+
+      await clickAt(el, { x: 1894, y: 100 });
+      expect(hint()).to.match(/^Click along the middle of the track/);
+    });
+
+    it('says why while a dragged click is where the rule refuses it, and puts it back on release there (#321)', async () => {
+      const el = await mountWithTool('track');
+      const hint = () => el.shadowRoot!.querySelector('.track-hint')?.textContent?.trim();
+      const at = [{ x: 100, y: 100 }, { x: 997, y: 100 }, { x: 1894, y: 100 }];
+      for (const p of at) await clickAt(el, p);
+      await pressEscape(el);
+
+      gesture(el, 'rr-pointer-down', at[1], 1);
+      await moveTo(el, { x: 997, y: 130 });
+      expect(pending(el)!.clicks![1]).to.deep.equal({ x: 997, y: 130 });
+      expect(hint()).to.match(/^Click to start a line/);
+      // Past the last click: behind it.
+      await moveTo(el, { x: 2500, y: 100 });
+      expect(hint()).to.match(/^Behind the click before it/);
+      gesture(el, 'rr-pointer-up', { x: 2500, y: 100 }, 1);
+      await flush();
+      await el.updateComplete;
+
+      expect(el.session!.tracks[0].clicks).to.deep.equal(at);
+      expect(hint()).to.match(/^Behind the click before it/);
+    });
+
+    it('ends the chain on right-click, opening no menu', async () => {
+      const el = await mountWithTool('track');
+      await laid(el);
+
+      await rightClickAt(el, { x: 300, y: 100 });
+
+      expect(pending(el)).to.equal(null);
+      expect(menuItems(el)).to.deep.equal([]);
+      expect(el.session!.tracks).to.have.length(1);
+    });
+  });
+
   describe('cars', () => {
     /** The rubber band the viewer is drawing — the anchor made visible. */
     function band(el: RREditorView) {
@@ -947,8 +1309,17 @@ describe('rr-editor-view', () => {
       // the feedback that the first click landed.
       expect(band(el)).to.deep.equal({ anchor: { x: 100, y: 100 }, to: { x: 100, y: 100 } });
 
+      // The band ends where a click would land: on the track along y = 200.
       await moveTo(el, { x: 380.4, y: 220.6 });
-      expect(band(el)).to.deep.equal({ anchor: { x: 100, y: 100 }, to: { x: 380, y: 221 } });
+      expect(band(el)).to.deep.equal({ anchor: { x: 100, y: 100 }, to: { x: 380, y: 200 } });
+
+      // With no track near, it runs to the pointer, marked refused.
+      await moveTo(el, { x: 380, y: 1100 });
+      expect(band(el)).to.deep.equal({
+        anchor: { x: 100, y: 100 },
+        to: { x: 380, y: 1100 },
+        refused: true,
+      });
 
       await clickAt(el, { x: 400, y: 100 });
       await moveTo(el, { x: 600, y: 100 });
@@ -981,21 +1352,34 @@ describe('rr-editor-view', () => {
       expect(band(el)).to.deep.equal({ anchor: { x: 100, y: 100 }, to: { x: 700, y: 100 } });
     });
 
-    it('says why it refused a click on a car already labeled', async () => {
+    it('says why it refused a click on a coupling', async () => {
       const el = await mountWithCarTool();
       await clickAt(el, { x: 100, y: 100 });
       await clickAt(el, { x: 400, y: 100 });
+      await clickAt(el, { x: 700, y: 100 });
       await rightClickAt(el, { x: 900, y: 900 });
       const notices = noticesOf(el);
 
-      await clickAt(el, { x: 250, y: 100 });
       await clickAt(el, { x: 400, y: 100 });
 
       expect(notices).to.deep.equal([
         'That pixel is already inside a labeled car — a car is labeled once.',
-        'That pixel is already inside a labeled car — a car is labeled once.',
       ]);
       expect(band(el)).to.equal(null);
+    });
+
+    it('ends the chain on Escape, and takes the band away', async () => {
+      const el = await mountWithCarTool();
+      await clickAt(el, { x: 100, y: 100 });
+      await clickAt(el, { x: 400, y: 100 });
+
+      document.body.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true })
+      );
+      await el.updateComplete;
+
+      expect(band(el)).to.equal(null);
+      expect(cars()).to.have.length(1);
     });
 
     it('offers delete and the authored vocabulary on a car, never the root', async () => {
@@ -1016,7 +1400,7 @@ describe('rr-editor-view', () => {
           .join('')
           .trim()
       );
-      expect(labels).to.deep.equal(['Delete car', 'Reclassify car']);
+      expect(labels).to.deep.equal(['Delete', 'Reclassify car']);
       // Generated from the vocabulary in `@rails49/r49`'s data file: a subtype added there changes this
       // menu with no code edit (#35).
       expect(submenuItems(el, `reclassify-group:${rootClass()}`)).to.deep.equal(
@@ -1686,6 +2070,7 @@ describe('rr-editor-view', () => {
         cars: ['car-a', 'car-b'],
         sensors: [],
         calibration: [],
+        trackClicks: [],
       });
     });
 
@@ -1703,9 +2088,8 @@ describe('rr-editor-view', () => {
 
     it('lights a layout object without changing the image on screen', async () => {
       addSecondImage();
-      calibrate();
       const el = await mountWithTool('sensor');
-      await clickAt(el, { x: 50, y: 50 });
+      await clickAt(el, { x: 50, y: 100 });
       const { id } = sensors()[0];
       await el.session!.undo();
       await selectImage(el, 1);
@@ -1715,6 +2099,32 @@ describe('rr-editor-view', () => {
 
       expect(highlightOf(el)!.sensors).to.deep.equal([id]);
       expect(el.shadowRoot!.querySelector('rr-thumbnail-bar')!.selectedIndex).to.equal(1);
+    });
+
+    it('lights the clicks an undo brought back, by pixel', async () => {
+      calibrate();
+      archive.getManifest().layout.tracks = [
+        {
+          nodes: [
+            { x: 100, y: 100, heading: 0 },
+            { x: 300, y: 100, heading: 0 },
+          ],
+          clicks: [
+            { x: 100, y: 100 },
+            { x: 300, y: 100 },
+          ],
+        },
+      ];
+      const el = await mountWithTool('track');
+      await el.session!.delete({ kind: 'track', line: 0, px: { x: 100, y: 100 } });
+
+      await el.session!.undo();
+      await el.updateComplete;
+
+      expect(highlightOf(el)!.trackClicks).to.deep.equal([
+        { x: 100, y: 100 },
+        { x: 300, y: 100 },
+      ]);
     });
 
     it('resolves a reference point by pixel, and follows it through a renumbering', async () => {
@@ -1778,7 +2188,7 @@ describe('rr-editor-view', () => {
 
       const zoomOf = (el: RREditorView) => el.shadowRoot!.querySelector('rr-viewer')!.zoom;
 
-      /** Zooms to a rect by drawing it, which is the only way the editor zooms. */
+      /** Zooms to a rect by drawing it. */
       async function zoomTo(el: RREditorView, rect: Rect) {
         await drag(el, [
           { x: rect.x, y: rect.y },
@@ -1873,7 +2283,7 @@ describe('rr-editor-view', () => {
       await el.updateComplete;
     }
 
-    /** Zooms to a rect by drawing it, which is the only way the editor zooms. */
+    /** Zooms to a rect by drawing it. */
     async function zoomTo(el: RREditorView, rect: Rect) {
       await viewDrag(el, [
         { x: rect.x, y: rect.y },
@@ -1888,6 +2298,44 @@ describe('rr-editor-view', () => {
       );
       await el.updateComplete;
     }
+
+    /** A wheel turn over `at`, as the viewer reports it. A negative `deltaY` zooms in. */
+    function wheel(el: RREditorView, at: Point, deltaY: number) {
+      const originalEvent = new WheelEvent('wheel', { deltaY, cancelable: true });
+      viewerOf(el).dispatchEvent(
+        new CustomEvent('rr-wheel', {
+          detail: { point: at, imagePxPerScreenPx: 1, originalEvent },
+          bubbles: true,
+          composed: true,
+        })
+      );
+      return originalEvent;
+    }
+
+    it('zooms in about the pointer when the wheel turns toward the screen', async () => {
+      widen();
+      const el = await mount();
+
+      const event = wheel(el, { x: 250, y: 500 }, -100);
+      await el.updateComplete;
+
+      const rect = zoomOf(el)!;
+      expect(rect.width).to.be.below(1000);
+      expect((250 - rect.x) / rect.width).to.be.closeTo(0.25, 1e-9);
+      expect((500 - rect.y) / rect.height).to.be.closeTo(0.5, 1e-9);
+      expect(event.defaultPrevented).to.be.true;
+    });
+
+    it('zooms back out to fit when the wheel turns away', async () => {
+      widen();
+      const el = await mount();
+      await zoomTo(el, { x: 400, y: 400, width: 200, height: 200 });
+
+      wheel(el, { x: 500, y: 500 }, 2000);
+      await el.updateComplete;
+
+      expect(zoomOf(el)).to.be.null;
+    });
 
     it('is unzoomed until a gesture zooms it', async () => {
       widen();
@@ -2142,6 +2590,7 @@ describe('rr-editor-view', () => {
       // is still there afterwards.
       widen();
       calibrate();
+      layRows();
       const el = await mount();
       el.session!.selectTool('car');
 

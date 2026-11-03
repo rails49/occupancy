@@ -319,6 +319,34 @@ describe('EditHistory highlights', () => {
     expect(history.undoEntry?.highlights).toEqual([{ kind: 'sensor', id: 'sensor-b' }]);
   });
 
+  it('names the clicks a layout entry added or moved, by pixel, and no node', async () => {
+    const archive = await makeArchive();
+    const history = attached(archive);
+    const manifest = archive.getManifest();
+    const nodes = [
+      { x: 0, y: 0, heading: 0 },
+      { x: 100, y: 0, heading: 0 },
+    ];
+    const a = { x: 0, y: 0 };
+    const b = { x: 100, y: 0 };
+    manifest.layout = { ...manifest.layout, tracks: [{ nodes, clicks: [a, b] }] };
+
+    await history.record('extend track', { kind: 'layout' }, () => {
+      const more = [...nodes, { x: 200, y: 50, heading: 0.5 }];
+      manifest.layout = { ...manifest.layout, tracks: [{ nodes: more, clicks: [a, b, { x: 200, y: 50 }] }] };
+    });
+    expect(history.undoEntry?.highlights).toEqual([{ kind: 'track-click', px: { x: 200, y: 50 } }]);
+
+    await history.record('move click', { kind: 'layout' }, () => {
+      const line = manifest.layout.tracks![0];
+      manifest.layout = { ...manifest.layout, tracks: [{ ...line, clicks: [a, { x: 100, y: 5 }, line.clicks![2]] }] };
+    });
+    expect(history.undoEntry?.highlights).toEqual([
+      { kind: 'track-click', px: { x: 100, y: 0 } },
+      { kind: 'track-click', px: { x: 100, y: 5 } },
+    ]);
+  });
+
   it('names both ends of a calibration point that moved', async () => {
     // Points carry no id, so a move is a disappearance and an appearance. Both
     // are offered and the consumer resolves them against the manifest as it

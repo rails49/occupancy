@@ -1,4 +1,4 @@
-import type { Camera, R49Archive, ReferencePoint, Image, Layout, Point } from '@rails49/r49';
+import type { Camera, Track, R49Archive, ReferencePoint, Image, Layout, Point } from '@rails49/r49';
 
 /**
  * Undo/redo for the editor, as scoped snapshots of the manifest.
@@ -62,7 +62,9 @@ interface ImagesSnapshot {
 export type HistoryHighlight =
   | { readonly kind: 'car'; readonly id: string }
   | { readonly kind: 'sensor'; readonly id: string }
-  | { readonly kind: 'calibration'; readonly px: Point };
+  | { readonly kind: 'calibration'; readonly px: Point }
+  /** A track's click, by pixel like a calibration point: clicks have no id. */
+  | { readonly kind: 'track-click'; readonly px: Point };
 
 /**
  * One undoable edit. Returned by {@link EditHistory.undo} and
@@ -153,9 +155,30 @@ export function changedObjects(
         ...changedPoints(b?.calibration.points ?? [], a?.calibration.points ?? []).map(
           px => ({ kind: 'calibration', px }) as const
         ),
+        ...changedClicks(b?.tracks ?? [], a?.tracks ?? []).map(
+          px => ({ kind: 'track-click', px }) as const
+        ),
       ];
     }
   }
+}
+
+/** The pixels of the clicks one side has and the other does not, by value like {@link changedPoints}. */
+function changedClicks(before: readonly Track[], after: readonly Track[]): Point[] {
+  const clicks = (lines: readonly Track[]) => lines.flatMap(line => line.clicks ?? []);
+  const key = (p: Point) => `${p.x},${p.y}`;
+  const b = new Set(clicks(before).map(key));
+  const a = new Set(clicks(after).map(key));
+
+  const pixels: Point[] = [];
+  const seen = new Set<string>();
+  for (const p of [...clicks(before), ...clicks(after)]) {
+    if (b.has(key(p)) && a.has(key(p))) continue;
+    if (seen.has(key(p))) continue;
+    seen.add(key(p));
+    pixels.push({ x: p.x, y: p.y });
+  }
+  return pixels;
 }
 
 /** Ids whose object is absent from one side, or different on the two. */

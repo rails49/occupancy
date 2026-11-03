@@ -13,6 +13,9 @@ import {
   carMarkerStyles,
 } from './carMarker.js';
 import type { CarSymbolSize, CarWarning, PendingCar } from './carMarker.js';
+import { renderTrack, renderPendingTrack, renderTrackCues, trackMarkerStyles } from './trackMarker.js';
+import type { TrackCues, TrackSymbolSize } from './trackMarker.js';
+import type { Track } from './track.js';
 import {
   coupledEnds,
   couplerPoints,
@@ -156,6 +159,9 @@ const CAR_HANDLE_SIZE_RATIO = 0.3;
  */
 const ZOOM_BAND_STROKE_RATIO = 0.06;
 
+/** Stroke width of a track's lines, as a fraction of the screen-constant symbol size. */
+const TRACK_STROKE_RATIO = 0.04;
+
 /**
  * A pointer gesture, in **image pixel coordinates**.
  *
@@ -185,6 +191,12 @@ export interface ViewerPointerDetail {
   readonly imagePxPerScreenPx: number;
   /** The event this came from — `pointerId`, `buttons`, modifier keys. */
   readonly originalEvent: PointerEvent;
+}
+
+/** A wheel turn over the image, in image pixels like {@link ViewerPointerDetail}. */
+export interface ViewerWheelDetail extends Omit<ViewerPointerDetail, 'originalEvent'> {
+  /** The event this came from, for `deltaY`, `deltaMode` and `preventDefault`. */
+  readonly originalEvent: WheelEvent;
 }
 
 /** The four events a pointer gesture goes through, start to finish. */
@@ -232,6 +244,8 @@ export interface ViewerHighlight {
   readonly cars: readonly string[];
   readonly sensors: readonly string[];
   readonly calibration: readonly number[];
+  /** Track clicks, by pixel. */
+  readonly trackClicks: readonly Point[];
 }
 
 /**
@@ -261,6 +275,12 @@ export interface ViewerContextMenuDetail extends Omit<ViewerPointerDetail, 'orig
    * with the right-click, which is state-dependent in the editor and undefined
    * in the live view.
    */
+  readonly originalEvent: MouseEvent;
+}
+
+/** A double-click, in image pixel coordinates, after the pointer events of its two clicks. */
+export interface ViewerDoubleClickDetail extends Omit<ViewerPointerDetail, 'originalEvent'> {
+  /** The `dblclick` event. */
   readonly originalEvent: MouseEvent;
 }
 
@@ -318,7 +338,10 @@ export interface ViewerContextMenuDetail extends Omit<ViewerPointerDetail, 'orig
  * @fires rr-pointer-move - Pointer moved. Detail: {@link ViewerPointerDetail}
  * @fires rr-pointer-up - Gesture finished. Detail: {@link ViewerPointerDetail}
  * @fires rr-pointer-cancel - Gesture abandoned by the browser. Detail: {@link ViewerPointerDetail}
+ * @fires rr-pointer-leave - Pointer left the image. Detail: {@link ViewerPointerDetail}
  * @fires rr-pointer-contextmenu - Right-click. Detail: {@link ViewerContextMenuDetail}
+ * @fires rr-pointer-dblclick - Double-click, after the pointer events of its two clicks. Detail: {@link ViewerDoubleClickDetail}
+ * @fires rr-wheel - Mouse wheel over the image. Detail: {@link ViewerWheelDetail}
  * @fires rr-media-frame - Media loaded, with its size against the archive's. Detail: {@link ViewerMediaFrameDetail}
  * @fires rr-viewport - The viewport was measured at a new size. Detail: {@link ViewerViewportDetail}
  */
@@ -331,8 +354,10 @@ export class RrViewer extends LitElement {
     calibrationMarkerStyles,
     sensorMarkerStyles,
     carMarkerStyles,
-    // Last, and shared by all three above: the glow is an annotation on
-    // whichever symbol a reveal points at, not a symbol of its own.
+    trackMarkerStyles,
+    // Last, and shared by the calibration, sensor and car markers: the glow is
+    // an annotation on whichever symbol a reveal points at, not a symbol of its
+    // own.
     highlightStyles,
   ];
 
@@ -422,11 +447,33 @@ export class RrViewer extends LitElement {
    */
   @property({ attribute: false }) pendingCar: PendingCar | null = null;
   /**
+   * Tracks (#284). Per layout, so the same on every image. Empty in
+   * the live view.
+   */
+  @property({ attribute: false }) tracks: readonly Track[] = [];
+  /**
+   * The line drawn blue, or `null`: the one a track chain is tracing, or
+   * one a drag is changing. View state, like `pendingCar`. The editor leaves
+   * that line out of `tracks`.
+   */
+  @property({ attribute: false }) pendingTrack: Track | null = null;
+  /**
+   * What the track tool draws over the tracks (#324), or `null` under
+   * another tool: the ring on the end a traced line goes on from, hollow end
+   * dots when none is traced, and the preview or hover at the pointer.
+   */
+  @property({ attribute: false }) trackCues: TrackCues | null = null;
+  /**
+   * Whether tracks show their rails and click dots, or the centerline
+   * alone. The editor sets it while the track tool is chosen.
+   */
+  @property({ attribute: false }) trackDetail = false;
+  /**
    * The layout's DPT, or `null` when calibration does not resolve one.
    *
    * The one property here that is neither media nor a thing to draw: it is the
-   * **scale** the world-sized symbols are drawn at. A sensor is one track width
-   * across (`geometry.ts` § `trackWidthPx`) and a car will be 2.09, so both
+   * **scale** the world-sized symbols are drawn at. A sensor is two track widths
+   * across (`geometry.ts` § `sensorDiameterPx`) and a car 2.09, so both
    * shrink with the photograph rather than staying a constant size on screen —
    * which is what makes a sensor's footprint comparable to the cars around it.
    *
@@ -716,20 +763,22 @@ export class RrViewer extends LitElement {
   }
 
   /**
-   * Converts, then dispatches. All five events go through here, so there is one
+   * Converts, then dispatches. Every event goes through here, so there is one
    * place the detail is assembled and one place the conversion can be missed.
    *
    * @returns `false` when there was no transform to convert with, and so
    *          nothing was emitted.
    */
   private reportGesture(name: ViewerPointerEventName, originalEvent: PointerEvent): boolean;
-  private reportGesture(name: 'rr-pointer-contextmenu', originalEvent: MouseEvent): boolean;
+  private reportGesture(name: 'rr-pointer-contextmenu' | 'rr-pointer-dblclick', originalEvent: MouseEvent): boolean;
+  private reportGesture(name: 'rr-pointer-leave', originalEvent: PointerEvent): boolean;
+  private reportGesture(name: 'rr-wheel', originalEvent: WheelEvent): boolean;
   private reportGesture(name: string, originalEvent: PointerEvent | MouseEvent): boolean {
     const converted = this.toImagePoint(originalEvent.clientX, originalEvent.clientY);
     if (!converted) return false;
     this.dispatchEvent(
-      new CustomEvent<ViewerPointerDetail | ViewerContextMenuDetail>(name, {
-        detail: { ...converted, originalEvent } as ViewerPointerDetail | ViewerContextMenuDetail,
+      new CustomEvent<ViewerPointerDetail | ViewerContextMenuDetail | ViewerDoubleClickDetail>(name, {
+        detail: { ...converted, originalEvent } as ViewerPointerDetail | ViewerContextMenuDetail | ViewerDoubleClickDetail,
         bubbles: true,
         composed: true,
       })
@@ -770,8 +819,22 @@ export class RrViewer extends LitElement {
     this.releaseCapture(e.pointerId);
   }
 
+  /** The pointer left the image, so nothing that follows it should stay drawn. */
+  private onPointerLeave(e: PointerEvent) {
+    this.reportGesture('rr-pointer-leave', e);
+  }
+
   private onContextMenu(e: MouseEvent) {
     this.reportGesture('rr-pointer-contextmenu', e);
+  }
+
+  private onDoubleClick(e: MouseEvent) {
+    this.reportGesture('rr-pointer-dblclick', e);
+  }
+
+  /** Reported without `preventDefault`: whether the wheel zooms is the consumer's call. */
+  private onWheel(e: WheelEvent) {
+    this.reportGesture('rr-wheel', e);
   }
 
   /**
@@ -818,6 +881,20 @@ export class RrViewer extends LitElement {
   }
 
   /**
+   * The sizes a track is drawn at: the DPT its rails are spaced by, and
+   * screen-constant strokes and click dots.
+   */
+  private trackSize(): TrackSymbolSize {
+    return {
+      dpt: this.dpt,
+      strokePx: this.symbolSize * TRACK_STROKE_RATIO,
+      dotPx: this.symbolSize * CAR_HANDLE_SIZE_RATIO,
+      detail: this.trackDetail,
+      hollowEnds: this.trackCues !== null && !this.trackCues.tracing,
+    };
+  }
+
+  /**
    * The warning a car's class earns, or `null` when the vocabulary names it.
    *
    * Derived here rather than passed in, for the same reason a coupling is: it
@@ -858,6 +935,7 @@ export class RrViewer extends LitElement {
     // underneath leave their own handles off — see `carMarker.ts`.
     const couplers = couplerPoints(this.cars);
     const carSize = this.carSize();
+    const trackSize = this.trackSize();
     // The viewBox is the **media's** pixel grid, so the overlay letterboxes
     // into the box `object-fit: contain` puts the photograph in; the group
     // inside it carries the authored frame onto that grid. Before anything
@@ -891,9 +969,17 @@ export class RrViewer extends LitElement {
           @pointermove=${this.onPointerMove}
           @pointerup=${this.onPointerUp}
           @pointercancel=${this.onPointerCancel}
+          @pointerleave=${this.onPointerLeave}
           @contextmenu=${this.onContextMenu}
+          @dblclick=${this.onDoubleClick}
+          @wheel=${this.onWheel}
         >
           <g class="frame" transform="scale(${fit.sx}, ${fit.sy})">
+            <!-- Track under everything: cars stand on it. -->
+            ${this.tracks.map(t => renderTrack(t, trackSize, this.highlight?.trackClicks ?? []))}
+            ${this.pendingTrack ? renderPendingTrack(this.pendingTrack, trackSize, this.trackCues?.tracing) : ''}
+            ${this.trackCues ? renderTrackCues(this.trackCues, trackSize) : ''}
+
             <!-- Cars first: their width rectangles are the only area fills here,
                  so drawing them underneath keeps a crosshair or a sensor placed
                  on a car visible instead of tinted over. -->
@@ -977,9 +1063,12 @@ declare global {
   interface HTMLElementEventMap {
     'rr-pointer-down': CustomEvent<ViewerPointerDetail>;
     'rr-pointer-move': CustomEvent<ViewerPointerDetail>;
+    'rr-pointer-leave': CustomEvent<ViewerPointerDetail>;
     'rr-pointer-up': CustomEvent<ViewerPointerDetail>;
     'rr-pointer-cancel': CustomEvent<ViewerPointerDetail>;
     'rr-pointer-contextmenu': CustomEvent<ViewerContextMenuDetail>;
+    'rr-pointer-dblclick': CustomEvent<ViewerDoubleClickDetail>;
+    'rr-wheel': CustomEvent<ViewerWheelDetail>;
     'rr-media-frame': CustomEvent<ViewerMediaFrameDetail>;
     'rr-viewport': CustomEvent<ViewerViewportDetail>;
   }

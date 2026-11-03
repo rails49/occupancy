@@ -5,6 +5,7 @@ import { RrViewer } from '../src/rr-viewer.js';
 import type {
   ViewerPointerDetail,
   ViewerContextMenuDetail,
+  ViewerWheelDetail,
   ViewerPointerEventName,
 } from '../src/rr-viewer.js';
 import { HIGHLIGHT_CLASS } from '../src/highlight.js';
@@ -410,17 +411,17 @@ describe('rr-viewer', () => {
       return Math.max(...xs) - Math.min(...xs);
     }
 
-    it('draws a sensor one track width across, which is DPT', async () => {
+    it('draws a sensor two track widths across, which is twice DPT', async () => {
       // A world size, not a screen one: the sensor shrinks with the photograph
       // exactly as the cars around it do, so the two are comparable.
       const el = await fixture<RrViewer>(html`
         <rr-viewer .sensors=${sensors} .dpt=${90} .resolution=${resolution}></rr-viewer>
       `);
-      expect(diamondSpan(el)).to.equal(90);
+      expect(diamondSpan(el)).to.equal(180);
 
       el.dpt = 20;
       await el.updateComplete;
-      expect(diamondSpan(el)).to.equal(20);
+      expect(diamondSpan(el)).to.equal(40);
     });
 
     it('falls back to the screen size when no DPT resolves', async () => {
@@ -626,6 +627,104 @@ describe('rr-viewer', () => {
       });
     });
 
+    describe('track (#284)', () => {
+      const tracks = [
+        {
+          nodes: [
+            { x: 100, y: 100, heading: 0 },
+            { x: 400, y: 100, heading: 0 },
+          ],
+          clicks: [
+            { x: 100, y: 100 },
+            { x: 250, y: 101 },
+            { x: 400, y: 100 },
+          ],
+        },
+      ];
+
+      it('draws the centerline, both rails and the clicks, under the cars', async () => {
+        const el = await fixture<RrViewer>(html`
+          <rr-viewer
+            .tracks=${tracks}
+            .cars=${cars}
+            .dpt=${90}
+            .resolution=${resolution}
+            .trackDetail=${true}
+          ></rr-viewer>
+        `);
+        const track = el.shadowRoot!.querySelector('.track')!;
+        expect(track.querySelector('.centerline')!.getAttribute('d')).to.equal(
+          'M 100 100 C 200 100 300 100 400 100'
+        );
+        expect(track.querySelectorAll('.rail')).to.have.length(2);
+        expect(track.querySelectorAll('.click')).to.have.length(3);
+        const car = el.shadowRoot!.querySelector('.car')!;
+        expect(track.compareDocumentPosition(car) & Node.DOCUMENT_POSITION_FOLLOWING).to.not.equal(0);
+      });
+
+      it('draws the centerline alone unless asked for the detail', async () => {
+        const el = await fixture<RrViewer>(html`
+          <rr-viewer .tracks=${tracks} .dpt=${90} .resolution=${resolution}></rr-viewer>
+        `);
+        expect(el.shadowRoot!.querySelector('.track .centerline')).to.exist;
+        expect(el.shadowRoot!.querySelector('.track .rail')).to.not.exist;
+        expect(el.shadowRoot!.querySelector('.track .click')).to.not.exist;
+        el.trackDetail = true;
+        await el.updateComplete;
+        expect(el.shadowRoot!.querySelectorAll('.track .rail')).to.have.length(2);
+        expect(el.shadowRoot!.querySelectorAll('.track .click')).to.have.length(3);
+      });
+
+      it('draws no rails without a DPT', async () => {
+        const el = await fixture<RrViewer>(html`
+          <rr-viewer .tracks=${tracks} .dpt=${null} .resolution=${resolution}></rr-viewer>
+        `);
+        expect(el.shadowRoot!.querySelector('.track .centerline')).to.exist;
+        expect(el.shadowRoot!.querySelector('.track .rail')).to.not.exist;
+      });
+
+      it('draws the line being traced', async () => {
+        const el = await fixture<RrViewer>(html`
+          <rr-viewer .pendingTrack=${tracks[0]} .dpt=${90} .resolution=${resolution}></rr-viewer>
+        `);
+        expect(el.shadowRoot!.querySelectorAll('.track-pending .click')).to.have.length(3);
+        expect(el.shadowRoot!.querySelectorAll('.track-pending .centerline')).to.have.length(1);
+      });
+
+      it('rings the traced line\'s end while tracing, and draws end dots hollow with none traced (#324)', async () => {
+        const tracing = { tracing: true, preview: null, hover: null };
+        const el = await fixture<RrViewer>(html`
+          <rr-viewer
+            .tracks=${tracks}
+            .pendingTrack=${tracks[0]}
+            .trackDetail=${true}
+            .trackCues=${tracing}
+            .dpt=${90}
+            .resolution=${resolution}
+          ></rr-viewer>
+        `);
+        expect(el.shadowRoot!.querySelectorAll('.track-pending .ring')).to.have.length(1);
+        expect(el.shadowRoot!.querySelectorAll('.click.end')).to.have.length(0);
+
+        el.trackCues = { ...tracing, tracing: false };
+        await el.updateComplete;
+        expect(el.shadowRoot!.querySelectorAll('.ring')).to.have.length(0);
+        expect(el.shadowRoot!.querySelectorAll('.click.end')).to.have.length(4);
+
+        el.trackCues = null;
+        await el.updateComplete;
+        expect(el.shadowRoot!.querySelectorAll('.click.end')).to.have.length(0);
+      });
+
+      it('draws the cues over the tracks', async () => {
+        const cues = { tracing: false, preview: null, hover: { kind: 'insert' as const, at: { x: 250, y: 100 } } };
+        const el = await fixture<RrViewer>(html`
+          <rr-viewer .tracks=${tracks} .trackDetail=${true} .trackCues=${cues} .dpt=${90} .resolution=${resolution}></rr-viewer>
+        `);
+        expect(el.shadowRoot!.querySelectorAll('.track-insert .click')).to.have.length(1);
+      });
+    });
+
     describe('the rubber band', () => {
       it('draws nothing while no chain is live', async () => {
         const el = await fixture<RrViewer>(html`
@@ -710,7 +809,7 @@ describe('rr-viewer', () => {
           .calibrationPoints=${points}
           .dpt=${90}
           .resolution=${resolution}
-          .highlight=${{ cars: ['C2abcdefghi'], sensors: [], calibration: [1] }}
+          .highlight=${{ cars: ['C2abcdefghi'], sensors: [], calibration: [1], trackClicks: [] }}
         ></rr-viewer>
       `);
 
@@ -732,7 +831,7 @@ describe('rr-viewer', () => {
         <rr-viewer
           .sensors=${sensors}
           .resolution=${resolution}
-          .highlight=${{ cars: [], sensors: ['S1abcdefghi'], calibration: [] }}
+          .highlight=${{ cars: [], sensors: ['S1abcdefghi'], calibration: [], trackClicks: [] }}
         ></rr-viewer>
       `);
       expect(lit(el, '.sensor')).to.deep.equal([true]);
@@ -877,6 +976,42 @@ describe('rr-viewer', () => {
 
       expect(seen.length).to.equal(1);
       expect(seen[0].point).to.deep.equal({ x: 200, y: 200 });
+      expect(event.defaultPrevented).to.be.false;
+    });
+
+    it('reports a double-click in image pixels', () => {
+      const seen: ViewerContextMenuDetail[] = [];
+      el.addEventListener('rr-pointer-dblclick', e => {
+        seen.push(e.detail);
+      });
+      svg.dispatchEvent(new MouseEvent('dblclick', { clientX: 140, clientY: 110, bubbles: true, cancelable: true }));
+
+      expect(seen.length).to.equal(1);
+      expect(seen[0].point).to.deep.equal({ x: 200, y: 200 });
+    });
+
+    it('reports the pointer leaving the image (#324)', () => {
+      const seen: ViewerPointerDetail[] = [];
+      el.addEventListener('rr-pointer-leave', e => {
+        seen.push(e.detail);
+      });
+      svg.dispatchEvent(new MouseEvent('pointerleave', { clientX: 140, clientY: 110 }));
+
+      expect(seen.length).to.equal(1);
+      expect(seen[0].point).to.deep.equal({ x: 200, y: 200 });
+    });
+
+    it('reports the wheel in image pixels, leaving the page scroll to the consumer', () => {
+      const seen: ViewerWheelDetail[] = [];
+      el.addEventListener('rr-wheel', e => {
+        seen.push(e.detail);
+      });
+      const event = new WheelEvent('wheel', { clientX: 140, clientY: 110, deltaY: -100, bubbles: true, cancelable: true });
+      svg.dispatchEvent(event);
+
+      expect(seen.length).to.equal(1);
+      expect(seen[0].point).to.deep.equal({ x: 200, y: 200 });
+      expect(seen[0].originalEvent.deltaY).to.equal(-100);
       expect(event.defaultPrevented).to.be.false;
     });
 

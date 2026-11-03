@@ -62,13 +62,13 @@ export const SYMBOL_SIZE_SCREEN_PX = 36;
  * cannot drift apart; two independent copies of the sizing rule is exactly how
  * a symbol ends up looking bigger than it is clickable.
  *
- * One track width when the layout is calibrated. With no DPT it falls back to
+ * Two track widths when the layout is calibrated. With no DPT it falls back to
  * the screen-constant size: an archive can carry sensors and no calibration —
  * deleting a calibration point is allowed at any time — and a symbol sized from
  * a number that does not exist would vanish.
  */
 export function sensorDiameterPx(dpt: number | null, imagePxPerScreenPx: number): number {
-  return dpt === null ? SYMBOL_SIZE_SCREEN_PX * imagePxPerScreenPx : trackWidthPx(dpt);
+  return dpt === null ? SYMBOL_SIZE_SCREEN_PX * imagePxPerScreenPx : 2 * trackWidthPx(dpt);
 }
 
 /**
@@ -460,7 +460,7 @@ interface Candidate {
  *
  * **A sensor is grabbable across the whole symbol**, not just at its centre.
  * Every other target is a point wearing an annotation, so the pointing device's
- * radius is the whole story; a sensor is a drawn *footprint* one track wide,
+ * radius is the whole story; a sensor is a drawn *footprint* two tracks wide,
  * and a symbol visibly larger than its own hit area reads as a bug the first
  * time a click on it misses. Its reach is therefore the larger of the two —
  * never smaller, so a sensor on a distant track stays as easy to hit as
@@ -717,7 +717,7 @@ export function dragHandles(hit: HitTarget, scene: HitScene): readonly DragHandl
  * in one gesture takes the identical translation — which is what keeps a
  * coupler's two ends on the *same* pixel, and a coupling is exact coincidence.
  */
-export function dragTo(handle: DragHandle, delta: Point): Point {
+export function dragTo(handle: Pick<DragHandle, 'from'>, delta: Point): Point {
   return { x: Math.round(handle.from.x + delta.x), y: Math.round(handle.from.y + delta.y) };
 }
 
@@ -957,6 +957,51 @@ export function zoomRectFromDrag(
  */
 export function panZoomRect(from: Rect, delta: Point, frame: FrameSize): Rect {
   return clampZoomRect({ ...from, x: from.x - delta.x, y: from.y - delta.y }, frame);
+}
+
+/** Wheel travel, in pixels, that scales the zoom rect by e. */
+const WHEEL_PX_PER_E = 500;
+/** One line of a line-mode wheel delta (`WheelEvent.DOM_DELTA_LINE`), in pixels. */
+const WHEEL_LINE_PX = 16;
+
+/**
+ * How much one wheel event scales the zoom rect: below 1 zooms in, above 1
+ * out. Exponential in the travel, so a turn one way and back cancels.
+ */
+export function wheelZoomFactor(deltaY: number, deltaMode: number): number {
+  const px = deltaMode === 1 ? deltaY * WHEEL_LINE_PX : deltaY;
+  return Math.exp(px / WHEEL_PX_PER_E);
+}
+
+/**
+ * The zoom after a wheel event at `at`: the current rect, or the whole frame
+ * at fit, scaled by `factor` about `at`, so the point under the pointer stays
+ * under it. Stops at {@link capZoomRect}'s limit, and is `null` (fit) once the
+ * rect would cover the frame on either axis, as {@link zoomRectFromDrag} is.
+ */
+export function wheelZoomRect(
+  zoom: Rect | null,
+  at: Point,
+  factor: number,
+  frame: FrameSize,
+  viewport: Size
+): Rect | null {
+  const from = zoom ?? { x: 0, y: 0, width: frame.width, height: frame.height };
+  const scaled = scaleRectAbout(from, at, factor);
+  const capped = capZoomRect(scaled, viewport);
+  const rect = capped === scaled ? scaled : scaleRectAbout(from, at, (factor * capped.width) / scaled.width);
+  if (rect.width >= frame.width || rect.height >= frame.height) return null;
+  return clampZoomRect(rect, frame);
+}
+
+/** `rect` scaled by `factor` about `at`. */
+function scaleRectAbout(rect: Rect, at: Point, factor: number): Rect {
+  return {
+    x: at.x + (rect.x - at.x) * factor,
+    y: at.y + (rect.y - at.y) * factor,
+    width: rect.width * factor,
+    height: rect.height * factor,
+  };
 }
 
 /**

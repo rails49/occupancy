@@ -44,11 +44,13 @@ rr-app                          ← shell: owns the editing session and the view
 │   ├── look-band               ← UI name, layout name and scale, bound file, settings gear
 │   └── look-rail               ← the views; in the editor, File, History and Tools
 ├── rr-settings-dialog          ← layout metadata + required-metadata gate (look-dialog)
+├── rr-discard-dialog           ← Save, Discard changes or Cancel before New and Open (look-dialog)
 ├── rr-editor-view              ← editor mode; drives editSession.ts, the rules for one archive
 │   ├── rr-viewer               ← SHARED: media + SVG overlay; reports pointer gestures
 │   │   ├── calibrationMarker.ts ← module, not an element: the labelled crosshair
 │   │   ├── sensorMarker.ts     ← module: the labelled diamond, recoloured by L1 state
-│   │   └── carMarker.ts        ← module: the authored chord + rectangle, and the L0 box
+│   │   ├── carMarker.ts        ← module: the authored chord + rectangle, and the L0 box
+│   │   └── trackMarker.ts      ← module: a track's centerline and its two rails
 │   ├── rr-thumbnail-bar        ← horizontal image selector strip
 │   ├── rr-calibration-dialog   ← asks for a point's x/y/z in mm (look-dialog)
 │   ├── rr-sensor-dialog        ← asks for a sensor's optional name (look-dialog)
@@ -65,7 +67,7 @@ rr-app                          ← shell: owns the editing session and the view
         └── rr-viewer           ← SAME component, zoomed to the finding
 ```
 
-> **The editor authors calibration points, sensors and cars.** v3's point-marker
+> **The editor authors calibration points, track, sensors and cars.** v3's point-marker
 > placement and two-point calibration dragging were removed in the v4 reduction
 > ([#19]); v4 stores neither. [#27] added the provisioning — `rr-viewer`
 > reporting pointer gestures in image pixels, and `geometry.ts` holding the
@@ -99,7 +101,10 @@ rr-app                          ← shell: owns the editing session and the view
 > looking at. [#44] added **zoom**: a drag on empty image draws a rect to zoom
 > to and pans once zoomed, Shift-drags anywhere, and one transform above both
 > the media and the overlay keeps every screen-pixel tolerance and world-pixel
-> size correct with no arithmetic changed.
+> size correct with no arithmetic changed. [#284] added the **track tool**, and
+> sensors and car ends now land on the nearest centerline. [#298] made it fit
+> straights and arcs to the clicks, with the clicks as the only handles, and
+> [#317] builds the line through every click, with gaps the person marks straight.
 >
 > [#19]: https://github.com/rails49/occupancy/issues/19
 > [#27]: https://github.com/rails49/occupancy/issues/27
@@ -138,6 +143,17 @@ rr-app                          ← shell: owns the editing session and the view
 > [#262]: https://github.com/rails49/occupancy/issues/262
 > [#265]: https://github.com/rails49/occupancy/issues/265
 > [#274]: https://github.com/rails49/occupancy/issues/274
+> [#284]: https://github.com/rails49/occupancy/issues/284
+> [#298]: https://github.com/rails49/occupancy/issues/298
+> [#302]: https://github.com/rails49/occupancy/issues/302
+> [#303]: https://github.com/rails49/occupancy/issues/303
+> [#307]: https://github.com/rails49/occupancy/issues/307
+> [#311]: https://github.com/rails49/occupancy/issues/311
+> [#313]: https://github.com/rails49/occupancy/issues/313
+> [#317]: https://github.com/rails49/occupancy/issues/317
+> [#320]: https://github.com/rails49/occupancy/issues/320
+> [#321]: https://github.com/rails49/occupancy/issues/321
+> [#324]: https://github.com/rails49/occupancy/issues/324
 > [#326]: https://github.com/rails49/occupancy/issues/326
 
 ## State and data flow
@@ -207,7 +223,8 @@ Application shell. Owns the editing session and routes between the views.
 `rr-notify` is a child's transient message, toasted here because this is where toasts live. A toast
 shows its message as text, never as HTML. It is raised at `warning`, never `danger`: everything that
 reaches it is the editor **declining** to author something, which is the editor working rather than
-failing. It stays up until the user closes it ([#265]).
+failing. It stays up until the user closes it ([#265]), or for the detail's `duration` in ms when it
+gives one.
 
 **Keyboard:** Cmd/Ctrl+Z and Cmd+Shift+Z / Ctrl+Y, and Cmd/Ctrl+S and Cmd/Ctrl+Shift+S for Save
 and Save As, bound on `window`, **editor view only**. When Save runs is in `docs/UI.md` § Saving
@@ -274,7 +291,7 @@ the editor adds three command groups:
 |---|---|---|
 | File | `#file-new`, `#file-open`, `#file-save` (`Mod+S`) | A Shift-click on Save, or `Shift+Mod+S`, is Save As ([#48]) |
 | History | `#edit-undo` (`Mod+Z`), `#edit-redo` (`Shift+Mod+Z`) | Disabled when the stack is empty |
-| Tools | `#tool-calibration`, `#tool-sensor`, `#tool-car` | Only while a manifest is loaded; the active tool is `pressed` |
+| Tools | `#tool-calibration`, `#tool-track`, `#tool-sensor`, `#tool-car` | Only while a manifest is loaded, in the order they are used; the active tool is `pressed` |
 
 Save As is a modifier rather than a button of its own: on a browser without the File System Access
 API it does exactly what Save does. The tooltip **names the modifier only where the browser can
@@ -342,6 +359,15 @@ classifier (ADR 0004).
 
 ---
 
+### `rr-discard-dialog`
+
+Asks what to do with unsaved changes before New or Open replaces the archive. Opened imperatively
+with `ask()`, which resolves `'save'`, `'discard'` or `'cancel'`; closing the dialog any other way is
+`'cancel'`. `rr-app` goes ahead after a discard, or after a save that leaves the history clean, and
+stays otherwise.
+
+---
+
 ### `rr-sensor-dialog`
 
 Asks for a sensor's **optional** name. Opened imperatively with `show(name, { id })`, like
@@ -394,16 +420,22 @@ image pixel coordinates.
 | `detections` | `readonly Detection[]` | L0 for this frame: dashed oriented boxes at the model's **own** predicted width. Empty in the editor |
 | `cars` | `readonly CarLabel[]` | Car spans to draw: a chord inside its width rectangle. Per **image**, so switching images swaps the whole list; empty in the live view |
 | `pendingCar` | `PendingCar \| null` | The **rubber band** — `{ anchor, to }` for the chain in flight. The one thing here that is not in the manifest; empty in the live view |
-| `highlight` | `ViewerHighlight \| null` | The objects a reveal is pointing at — `{ cars, sensors, calibration }`, ids for the first two and **indices** for the third. Already resolved by `rr-editor-view`; the viewer draws it and decides nothing. `null` in the live view |
+| `tracks` | `readonly Track[]` | The layout's tracks ([#284]), drawn under everything else. Per layout, so the same on every image; empty in the live view |
+| `pendingTrack` | `Track \| null` | The line drawn blue ([#324]): the one a track chain is tracing, or one a drag of its click or an insert is changing. The editor leaves that line out of `tracks` |
+| `trackCues` | `TrackCues \| null` | What the track tool draws over the tracks ([#324]): the ring on the traced line's end, hollow end dots when none is traced, and the preview or hover at the pointer. `null` under another tool |
+| `trackDetail` | `boolean` | Whether tracks show their rails and click dots, or the centerline alone. The editor sets it while the track tool is chosen |
+| `highlight` | `ViewerHighlight \| null` | The objects a reveal is pointing at — `{ cars, sensors, calibration, trackClicks }`, ids for the first two, **indices** for the third and pixels for the fourth. Already resolved by `rr-editor-view`; the viewer draws it and decides nothing. `null` in the live view |
 | `zoom` | `Rect \| null` | The region of the **authored frame** on screen ([#44]). `null` is fit — the absence of a zoom, which is exactly what this element drew before the property existed. View state the editor owns; never in the manifest and never in the history. `null` in the live view |
 | `zoomPreview` | `Rect \| null` | The rect being dragged out — zoom's counterpart to `pendingCar`. Drawn in the overlay with a screen-constant stroke, never as an HTML box on the glass |
 | `dpt` | `number \| null` | The scale the **world-sized** symbols are drawn at. `null` falls them back to `symbolSize` |
 | `resolution` | `{ width, height }` | `camera.resolution` — the frame every coordinate is **authored** in. Not the viewBox: the viewBox is the media's own size, and this is scaled onto it |
 
-**Emits:** `rr-pointer-down`, `rr-pointer-move`, `rr-pointer-up`, `rr-pointer-cancel`
-(`ViewerPointerDetail`), `rr-pointer-contextmenu` (`ViewerContextMenuDetail`), `rr-media-frame`
+**Emits:** `rr-pointer-down`, `rr-pointer-move`, `rr-pointer-up`, `rr-pointer-cancel`,
+`rr-pointer-leave` (`ViewerPointerDetail`), `rr-pointer-contextmenu` (`ViewerContextMenuDetail`),
+`rr-pointer-dblclick` (`ViewerDoubleClickDetail`, after the pointer events of its two clicks), `rr-wheel`
+(`ViewerWheelDetail`, without `preventDefault`), `rr-media-frame`
 (`ViewerMediaFrameDetail`, once per media load) and `rr-viewport` (`ViewerViewportDetail`, whenever
-the measured viewport changes size). All seven fire in both `src` and `stream` mode. They are declared in `HTMLElementEventMap`, so a listener anywhere up
+the measured viewport changes size). All ten fire in both `src` and `stream` mode. They are declared in `HTMLElementEventMap`, so a listener anywhere up
 the tree gets the detail typed without a cast.
 
 | Detail field | Type | Description |
@@ -489,7 +521,7 @@ postage stamp is harder to aim at than a soft enlargement.
 **Scaling — two kinds, and mixing them up misdraws everything.** A `ResizeObserver` recomputes
 `symbolSize = SYMBOL_SIZE_SCREEN_PX / ctm.a` off the same transform the pointer path uses, keeping markers, crosshairs,
 car endpoint handles and every **label** a constant *screen* size at any zoom or window size. A
-**sensor's diamond** is not one of those: it is drawn one **track width** across, which in image
+**sensor's diamond** is not one of those: it is drawn two **track widths** across, and a track width in image
 pixels *is* `dpt` (`geometry.ts` § `trackWidthPx`), so it shrinks with the photograph exactly as the
 cars around it do. A **car's width rectangle** is the same kind of size, 2.09 track widths of it,
 which is what makes a sensor's footprint comparable to a car's.
@@ -532,8 +564,8 @@ covered today.
 
 | Export | Description |
 |---|---|
-| `trackWidthPx(dpt)` | Track width in image pixels — which **is** DPT, since `getDPT` returns px/mm × gauge_mm. A sensor is drawn one of these across |
-| `sensorDiameterPx(dpt, imagePxPerScreenPx)` | The diameter a sensor is **drawn** at: one track width, or the screen-constant size with no DPT. The renderer and the hit-test share it, so what you see is what you can grab |
+| `trackWidthPx(dpt)` | Track width in image pixels — which **is** DPT, since `getDPT` returns px/mm × gauge_mm. A sensor is drawn two of these across |
+| `sensorDiameterPx(dpt, imagePxPerScreenPx)` | The diameter a sensor is **drawn** at: two track widths, or the screen-constant size with no DPT. The renderer and the hit-test share it, so what you see is what you can grab |
 | `SYMBOL_SIZE_SCREEN_PX` | Size of a screen-constant symbol (markers, crosshairs, labels), in screen pixels |
 | `carWidthPx(dpt)` | Car width in image pixels: `dpt × STANDARD_WIDTH / STANDARD_GAUGE` — 2.09 track widths |
 | `carCorners(p0, p1, dpt)` | The four corners of the oriented rectangle, in polygon order from the `p0` side |
@@ -695,7 +727,7 @@ must be used together** — styles in the host's `static styles`, the renderer o
 | Export | Type | Description |
 |---|---|---|
 | `renderSensor(sensor, size, frame, highlighted?)` | `(Sensor, SensorSymbolSize, FrameSize, boolean?) => SVGTemplateResult` | A diamond centered on the sensor, a filled core at the exact pixel, and a `text` label. `frame` is `rr-viewer`'s `resolution`; `highlighted` adds `highlight.ts`'s class |
-| `SensorSymbolSize` | `{ diameterPx, labelPx }` | **Two independent sizes.** `diameterPx` is a *world* size — one track width, so the diamond shrinks with the photograph; `labelPx` is a *screen* size, from the viewer's `symbolSize` |
+| `SensorSymbolSize` | `{ diameterPx, labelPx }` | **Two independent sizes.** `diameterPx` is a *world* size — two track widths, so the diamond shrinks with the photograph; `labelPx` is a *screen* size, from the viewer's `symbolSize` |
 | `sensorLabelText(sensor)` | `(Sensor) => string` | The sensor's `name`, or its `id` when it has none |
 | `sensorMarkerStyles` | `CSSResult` | Diamond and label colors, the translucent fill, non-scaling strokes |
 
@@ -704,12 +736,12 @@ sensor and a calibration point are different objects with different tools, and `
 § Reference points requires them to be unmistakable. The symbol also *closes* around its pixel rather
 than extending arms, because a sensor is a single query point and nothing about it implies an extent.
 
-**The diamond is one track width across**, not a constant size on screen — the only honest sense of
+**The diamond is two track widths across**, not a constant size on screen — the only honest sense of
 how big a sensor is comes from the track it sits on, and a car is 2.09 of the same unit, so the two
 are directly comparable on the photograph. The **label is a screen size**, because it is annotation
 about the sensor rather than a measurement of it: a name scaled to the track is illegible at the
 DPT 18–19 the fixture corpus sits at. The centre dot has a **floor** (`MIN_CORE_RADIUS_PX`): it names
-the pixel the sensor *is*, and 12% of an 18-pixel diamond is not a visible dot.
+the pixel the sensor *is*, and 12% of a 36-pixel diamond is not a visible dot.
 
 **An unnamed sensor is labelled with its `id`.** Names are optional, free text, not unique, and never
 auto-generated (`../SPEC.md` § Occupancy Output): an invented "Sensor 3" is indistinguishable from a
@@ -719,6 +751,84 @@ name a human chose and stops matching as sensors come and go. A blank name is tr
 `placeLabel`.
 
 ---
+
+### `chain.ts`, `carChain.ts`, `trackChain.ts`
+
+A chain is what the car tool and the track tool share ([#33], [#284]): each click adds one segment —
+a car on the image on screen, or a gap of one track — as one history entry. `EditSession`
+holds at most one live `Chain` and runs click, undo, redo, right-click and drags the same way for
+both; each tool module supplies what differs.
+
+| Export | Description |
+|---|---|
+| `Chain` | A live chain: `view()`, `atStart()`, `extend(px, scale)`, `settle()`. It keeps where it started and what it wrote, and reads the dot it goes on from out of the manifest |
+| `ChainTool` | A tool's half of a click with no chain live: a `ChainHit` (a chain to start or continue, or an edit to run) or null, when the session asks the other objects |
+| `ChainView`, `ChainContext`, `ClickResult` | What the editor draws of a chain; what a tool reads and writes through the session, including `snap`, `refuse` and `notify`; what a click asks the editor for |
+| `NO_TRACK`, `NO_TRACK_NOTICE` | Why a sensor or car end was refused: no track within `SNAP_TRACK_WIDTHS` |
+| `carTool`, `ALREADY_LABELED` | A free car end continues a chain, a coupling is refused with `ALREADY_LABELED`, a click on a car's body splits it, and empty image starts a chain |
+| `trackTool`, `TrackChain` | A click on a line's first or last click continues it as a chain; on a click between them it notifies `MIDDLE_CLICK` ([#324]); within `TRACK_FIT.startDistance` of a line it inserts a click there ([#321]), or notifies `NO_CLICKS` on a line with no clicks; anywhere else it starts a chain ([#298]). Each click goes on the end the chain goes on from and writes the line's clicks with the nodes of their line (`lineOf`), as one entry; a click within the grab radius of that end adds nothing, and one the rule refuses writes nothing. A chain from a first click puts new clicks at the front of the stored clicks, and its `view()` draws the line reversed. `straighten(at, scale)` on the end asks for the next gap to be straight, which the next click writes with itself ([#320]). `hold`, `move` and `remove` take a click of the traced line, by stored index, while the chain is live: `hold` draws the line of the moved clicks, or the last line the rule took, and a move or delete builds the line again and writes one entry ([#303]). `atStart()` is true once every entry the chain wrote is undone |
+| `trackHover`, `TrackHover` | With no chain live, what a click at the pointer would act on: an end dot (its pixel, and whether it is square) or an insert at the pointer; null on a middle dot, near a line with no clicks, and where a click starts a line ([#324]). `trackTool` decides from the same lookup |
+| `TrackChain.preview`, `TrackPreview` | The next gap a click would add, from the end the chain goes on from, in the order traced: the nodes the rule builds, or a straight to the pointer with the reason it refuses. Null within the grab radius of that end ([#324]) |
+| `trackHitAt`, `clickHitAt` | The line or the click under the track tool's pointer, within the grab radius |
+| `lineOf`, `refitLine`, `recordLine`, `writeTrack` | Clicks with the nodes of their line (`buildLine`, `fitNodes`), or the rule's refusal; the same for an edit with no chain live, which refuses through the session; that edit written as one entry; and a line written at its index |
+| `markedClick`, `withClickAt`, `withClickIn`, `withoutClick`, `insertAt` | The click edits, which keep the marks: a click inserted into a gap takes the mark of the click before it, and a deleted click's two gaps become one, straight only if both were. `insertAt` is the line within the start distance of the pointer and the gap a click there goes in ([#321]) |
+
+---
+
+### `trackMarker.ts`
+
+A track's SVG ([#284], [#317]). The exports must be used together.
+
+| Export | Type | Description |
+|---|---|---|
+| `renderTrack(track, size, highlighted?)` | `(Track, TrackSymbolSize, Point[]?) => SVGTemplateResult` | The centerline as one cubic per node pair, and with `size.detail` the two rails at ±G/2 and a dot per click, a square at each end of a straight gap. No rails when `size.dpt` is `null`. A click at a pixel in `highlighted` takes `highlight.ts`'s class, and is drawn without `size.detail` too |
+| `renderPendingTrack(track, size, ring?)` | `(Track, TrackSymbolSize, boolean?) => SVGTemplateResult` | The line being traced or changed, blue ([#324]): rails, centerline and a dot per click, square at each end of a straight gap and on a last click marked straight. With `ring`, the last click has a ring twice a dot's size, square on a straight end |
+| `renderTrackCues(cues, size)` | `(TrackCues, TrackSymbolSize) => SVGTemplateResult` | The preview of the next gap, dashed blue, red where refused; a green ring on an end dot under the pointer; a half-opacity dot where a click would insert ([#324]) |
+| `TrackSymbolSize` | `{ dpt, strokePx, dotPx, detail, hollowEnds? }` | The DPT the rails are spaced by, screen-constant stroke and dot sizes, whether to draw the rails and dots or the centerline alone, and whether a line's two end dots are hollow |
+| `TrackCues` | `{ tracing, preview, hover }` | Whether a line is traced, `TrackChain.preview`'s `TrackPreview`, and `trackHover`'s `TrackHover` |
+| `trackMarkerStyles` | `CSSResult` | The green ink, blue for the line being traced or changed, red for a refused preview |
+
+### `track.ts`
+
+What the editor draws and hits on a track ([#284]): pure functions, tested in
+`tests/track.test.ts`. A `Track` is a list of `TrackNode`s (`x`, `y`, `heading` in radians,
+`atan2(dy, dx)` in image pixels). The curve between two nodes, a cubic Bézier, and the nearest
+point on a track are `@rails49/r49`'s (`segment`, `pointAt`, `headingAt`, `nearestOnTrack`;
+FORMAT.md § Node), and so is `wrapAngle`.
+
+| Export | Description |
+|---|---|
+| `segments(nodes)` | `@rails49/r49`'s `segment` between each consecutive pair of nodes |
+| `trackPath(nodes)` | An SVG path, one `C` per segment |
+| `offsetPoints(nodes, offset)` | Sampled points `offset` px to the right of the line; negative is left |
+| `hitTrack(tracks, at, radius)` | The line under the pointer: the one with a point nearest `at` within `radius`, or null |
+| `hitClick(tracks, at, radius)` | The click under the pointer: the nearest one within `radius`, as a line and an index, or null |
+| `nearestGap(track, at)` | The gap whose part of the line is nearest `at`, as the index of the click it starts from |
+| `squareAt(clicks, i)` | Whether click `i` ends a straight gap, and is drawn as a square |
+| `nearestOnTrack(tracks, at, maxPx)`, `SNAP_TRACK_WIDTHS` | `@rails49/r49`'s nearest point on any track, when it lies within `maxPx`, or null; and the reach sensors and car ends snap within, 1.5 track widths |
+
+### `trackFit.ts`
+
+Straights and circular arcs, tangent at every join, through the clicks traced along the middle of
+a track ([#317]): pure functions, tested in `tests/trackFit.test.ts` against synthetic lines from
+`tests/trackClicks.ts` and the click sets in `tests/clickSets/`. A click set is a `gauge`, `lines`
+of clicks and a `note`; a set recorded in the editor is a drop-in file. A fit is a start pose and a
+length and a curvature per part.
+
+| Export | Description |
+|---|---|
+| `TRACK_FIT` | The rule's constants in gauges: the tolerance (0.1), the minimum radius (10) and the start distance (1). `fitOptions(dpt)` gives the first two in pixels, as `FitOptions` |
+| `buildLine(clicks, opts)` | The line through two or more clicks with their marks, as a `Built`: `line` with the `Fit`, or `refused` with a `Refusal`. A click marked `straight` starts a straight gap. Each free click is on the line; each run of straight gaps is one straight within the tolerance of its clicks; the line is the same for the clicks and marks reversed |
+| `Refusal` | `behind`, a click not ahead of the click before it; `tight`, an arc under the minimum radius; `off-straight`, a click of a straight run more than the tolerance off it |
+| `fitNodes(fit)` | The fit as stored nodes: the start, each part's end, and an arc cut into equal pieces of at most 90° |
+| `Fit`, `Part`, `Pose` | A start pose and its parts, each a length and a curvature (0 for a straight) |
+
+### `trackHint.ts`
+
+| Export | Description |
+|---|---|
+| `trackHint(trace, refusal)` | The track tool's hint, one of three sentences: with a refusal, why and what to do; while tracing, how to click, mark a straight and end; otherwise how to start, continue or change a line. Tested in `tests/trackHint.test.ts` |
+| `refusalText(reason)` | The refusal sentence alone, which the session's notices toast ([#324]) |
 
 ### `carMarker.ts`
 
@@ -732,7 +842,7 @@ must be used together** — styles in the host's `static styles`, the renderers 
 | `renderPendingCar(pending, size)` | `(PendingCar, CarSymbolSize) => SVGTemplateResult` | The **rubber band**: the car the next click would write, dashed, rectangle and all |
 | `CarSymbolSize` | `{ dpt, handlePx, labelPx }` | The **DPT the rectangle is derived from** — not a width — plus screen-constant handle and warning-label sizes |
 | `CarWarning` | `{ text, frame }` | A class the vocabulary does not name: the offending class, and the image bounds the label flips inside |
-| `PendingCar` | `{ anchor, to }` | The chain in flight: the end already clicked, and where the pointer is |
+| `PendingCar` | `{ anchor, to, refused? }` | The chain in flight: the end already clicked, where the next click would land, and whether it would be refused (drawn red) |
 | `carMarkerStyles` | `CSSResult` | Rectangle, chord, handle, coupler and band colours; the translucent fill; the band's dashes; non-scaling strokes |
 
 **The rectangle is why the car tool is gated on calibration.** Two clicks say where the ends are and
@@ -863,7 +973,9 @@ undo, and blob URLs, and re-renders on every change the session reports.
 
 **Emits:** `rr-notify` (`{ message }`) when a click is refused, such as the **car tool** clicking
 inside a car already labelled ([#43]), or when an image add is refused ([#255], [#260]) — one event
-per pick, however many of its files were refused ([#262]). `rr-app` owns the toast.
+per pick, however many of its files were refused ([#262]). `rr-app` owns the toast. Each notice the
+session sends (`subscribeNotices`: a track refusal, or what to do instead of a track click that did
+nothing) goes up as `{ message, duration: 3000 }` ([#324]).
 
 * Makes a blob URL for each image when it first appears in the image list and revokes it when the
   image goes. A new session revokes them all.
@@ -917,9 +1029,10 @@ per pick, however many of its files were refused ([#262]). `rr-app` owns the toa
   * **Pointer capture** is `rr-viewer`'s (it takes it on `pointerdown`); what the editor owes it is
     not bailing on coordinates outside the image, so a drag that leaves the viewer still commits.
 * **Right-click** ([#29]). `rr-pointer-contextmenu` goes to `session.rightClick`, which ends a live
-  chain or names the object a menu acts on. The editor opens `rr-context-menu` at the cursor with
+  chain or names the object a menu acts on; a click of the line a track chain traces, other than its
+  last, is named and the chain goes on ([#303]). The editor opens `rr-context-menu` at the cursor with
   that subject's rows — **delete** for a reference point, **name and delete** for a sensor,
-  **delete and reclassify** for a car — and a chosen row calls `delete`, `reclassifyCar` or opens the
+  **delete and reclassify** for a car, **Delete click** and **Delete line** on a track's click, and on the rest of a track **Make straight** or **Make free** for the gap under the pointer and **Delete line** — and a chosen row calls `delete`, `deleteLine`, `markGap`, `reclassifyCar` or opens the
   name dialog. Empty image opens nothing.
   * **Reclassify is a submenu generated from the vocabulary in `@rails49/r49`'s data file** ([#35]), through
     `vocabulary.ts`. A new car is the taxonomy's root and refinement is an occasional act, not a
@@ -946,6 +1059,9 @@ per pick, however many of its files were refused ([#262]). `rr-app` owns the toa
     report button 0.
   * The press that **dismisses** the menu is swallowed by `rr-context-menu` and never reaches the
     viewer, so closing a menu over empty image does not place a point.
+* **Track hint** (`.track-hint`, [#298], [#313]). Under the DPT bar while the track tool is selected and DPT
+  resolves: `trackHint`'s sentence for the line being traced, or the session's `refusal`. While the
+  preview follows the pointer, the reason the rule refuses a click there, or none ([#324]).
 * **DPT readout** (`.dpt-bar`). `calibrationFit()`'s DPT to one decimal, or "Not calibrated" with a
   warning style when it is `null` — a real v4 state, reported rather than blocked on, and now with the click
   that fixes it. Two further states:
@@ -963,7 +1079,7 @@ per pick, however many of its files were refused ([#262]). `rr-app` owns the toa
   approximate. It **blocks nothing**, like a below-minimum DPT, and it is cleared when another image
   is selected: the next image reports its own size when it decodes, and one that never decodes must
   not inherit this verdict.
-* **Zoom** ([#44]). Two actions and a pan, over one nullable `Rect` of the **authored frame** handed
+* **Zoom** ([#44]). Three actions and a pan, over one nullable `Rect` of the **authored frame** handed
   to `rr-viewer`. `null` is fit. Nothing here writes to the manifest, so nothing here records a
   history entry — zoom is view state, which `../SPEC.md` § Undo and redo already named.
 
@@ -971,6 +1087,7 @@ per pick, however many of its files were refused ([#262]). `rr-app` owns the toa
   |---|---|---|
   | Plain primary drag from **empty image** | zoom to the rect drawn | pan |
   | **Shift** + primary drag, anywhere | zoom to the rect drawn | zoom to the rect drawn |
+  | Mouse **wheel** | toward the screen zooms in about the pointer | in or out about the pointer; out to fit at most |
   | Primary drag on an **object** | moves it (unchanged) | moves it (unchanged) |
   | Right-click | menu / end chain (unchanged) | unchanged |
 
@@ -1031,19 +1148,26 @@ it gets the objects the entry changed.
 | Member | Description |
 |---|---|
 | `archive`, `history` | The archive and its undo stack |
-| `image`, `imageIndex`, `tool`, `calibrated`, `anchor` | What is on screen, the tool, whether DPT resolves, and where a live chain's next car starts |
+| `image`, `imageIndex`, `tool`, `calibrated`, `chain` | What is on screen, the tool, whether DPT resolves, and the chain in progress as a `ChainView`: the dot its next segment starts from, and a track chain's line and trace |
 | `car(id)`, `sensor(id)` | The car on the image on screen, or the sensor, with this id; undefined once it is gone |
 | `selectTool`, `selectImage`, `endChain` | Changes to the editing state, none of them recorded |
-| `click(point, scale)` | Writes, or returns what the editor must ask for: a reference point's world position, a sensor's name, or a notice |
-| `beginDrag(point, scale)` | A `Drag` (`move`, `end`, `cancel`) on what is under the point, or null |
-| `rightClick(point, scale)` | Ends a live chain, or returns the `MenuSubject` a menu acts on |
-| `placeReferencePoint`, `editReferencePoint`, `nameSensor`, `delete`, `reclassifyCar`, `setComplete` | The answers to a dialog, a menu row or the checkbox |
+| `tracks` | The layout's tracks ([#284]) |
+| `refusal` | Why the last click or edit under the track tool was refused, a `Refusal`, or null; the hint says so until the next click or edit ([#313]) |
+| `previewCar(point)` | Where a click would put the next car of a live car chain: the nearest track, or null when none is near |
+| `previewTrack(point, scale)`, `hoverTrack(point, scale)` | What follows the pointer under the track tool ([#324]): the next gap a click would add to the traced line (`TrackChain.preview`), and with no chain live the end dot or insert a click would act on (`trackHover`). Each null otherwise |
+| `heldLine` | The line a drag of one of its clicks, or an insert into it, is changing, or null ([#324]) |
+| `click(point, scale)` | Writes, or returns what the editor must ask for: a reference point's world position, a sensor's name, or a notice. Under the track tool with no chain live, a click within the grab radius of the click before it, which inserted a click or said what to do, with the tracks unchanged since, is the second click of a double-click: it writes and says nothing ([#324]) |
+| `doubleClick(point, scale)` | After the two clicks of a double-click: on the click a live track chain goes on from, the next gap is to be straight (`TrackChain.straighten`, [#320]). Otherwise nothing |
+| `beginDrag(point, scale)` | A `Drag` (`move`, `end`, `cancel`) on what is under the point, or null. Under the track tool a click comes first, then a press within the start distance of a line, which inserts a click and drags it ([#321]); the line is built again on every move, keeps its last valid shape where the rule refuses, and on `end` is written as one entry, or the click springs back and `refusal` says why. While a track chain is live only a click of its line is grabbed, and the chain takes the move on `end` ([#303]) |
+| `rightClick(point, scale)` | Ends a live chain, or returns the `MenuSubject` a menu acts on. Under the track tool a click is `track-click` (Delete click, Delete line) and the rest of a line `track`, with the gap under the pointer and whether it is straight when the line has clicks. While a track chain is live a click of its line other than the one it goes on from is `track-click` and the chain goes on ([#303]) |
+| `placeReferencePoint`, `editReferencePoint`, `nameSensor`, `delete`, `deleteLine`, `markGap`, `reclassifyCar`, `setComplete` | The answers to a dialog, a menu row or the checkbox. `deleteLine` takes a `track-click` subject and deletes its line; `markGap(subject, straight)` makes a `track` subject's gap straight or free. A `delete` or `markGap` the rule refuses writes nothing and sets `refusal` |
 | `editLayout`, `setCameraHeight` | The settings dialog's edits, one `layout` entry each |
 | `addImage`, `deleteImage`, `reorderImages` | The image list. Deleting the image on screen shows its neighbour. `addImage` may set `camera.resolution` (`SPEC.md` § Images, [#254]) |
 | `addImages(images)` | A whole pick (`AddedImage[]`: `filename`, `bytes`, `size?`) as **one** entry, "add images", in the order given, showing the first ([#262]). A `filename` the archive already holds, or an earlier image of the same pick took, is stored under a generated `img_<id>` keeping its extension ([#256]) |
 | `requiredImageSize` | The size an added image must be, or null while nothing is positioned and the next image sets `camera.resolution` instead ([#254], [#260]). The editor asks before it adds, and words the refusal |
 | `undo`, `redo` | Select the image the entry is on, apply it, and report what changed |
 | `subscribe(listener)` | Returns a function that stops it |
+| `subscribeNotices(listener)` | Calls the listener with each toast the track tool asks for: a refusal's reason (`refusalText`), or what to do instead of a click that did nothing. Returns a function that stops it ([#324]) |
 
 Points arrive in image pixels with the pointer event's `imagePxPerScreenPx`, which converts the
 screen-pixel grab radius. The hit-test scene is the layout's reference points and sensors and the
@@ -1122,8 +1246,8 @@ screen-pixel grab radius. The hit-test scene is the layout's reference points an
   * Drag and delete reuse the calibration paths unchanged — that is the point of `dragHandles` and of
     the menu knowing nothing about its subject. Both are one `layout` entry.
 * **Car authoring** ([#32]). **Two clicks on the visible car ends**, and the straight chord between
-  them: no snapping, because v4 stores no track to snap to, and the photograph is what shows the
-  labeler where the car actually is. The first click takes an **anchor** and writes nothing; the
+  them. Each end lands on the nearest centerline within `SNAP_TRACK_WIDTHS`, and a click with none
+  near is refused with `NO_TRACK` ([#284]). The first click takes an **anchor** and writes nothing; the
   second writes `{ id, class: 'stock', provenance: 'human', p0, p1 }` into that image's `labels` as
   **one `history.record` entry targeting `{ kind: 'image', filename }`**. The `id` is a `make_id`
   snowflake from its own node id — label ids and sensor ids are separate namespaces — and
@@ -1361,7 +1485,7 @@ The editor's tools, in one list that drives both the rail's buttons and the sess
 
 | Export | Description |
 |---|---|
-| `EditorTool` | `'calibration' \| 'sensor' \| 'car'` |
+| `EditorTool` | `'calibration' \| 'sensor' \| 'car' \| 'track'` |
 | `TOOLS` | Each tool's icon, label and `needsDpt` |
 | `GATE_REASON` | The disabled tools' tooltip while DPT is unresolved |
 

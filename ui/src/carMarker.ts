@@ -132,7 +132,8 @@ export const carMarkerStyles: CSSResult = css`
      the label is *wrong*, not annotated, and the thing that has to be findable
      on a photograph of a whole layout is the car. One override of the ink
      literal recolours the chord, the rectangle and the handles together. */
-  .car.unknown-class {
+  .car.unknown-class,
+  .car-pending.refused {
     --car-ink: #ef4444;
   }
 
@@ -363,8 +364,10 @@ export function renderCoupler(at: Point, size: CarSymbolSize): SVGTemplateResult
 export interface PendingCar {
   /** The end already clicked — the last click of the chain, or its first. */
   readonly anchor: Point;
-  /** Where the pointer is now, in image pixels. Equals `anchor` before it moves. */
+  /** Where the next click would land, in image pixels. Equals `anchor` before the pointer moves. */
   readonly to: Point;
+  /** Whether a click there would be refused: drawn red, to the pointer. */
+  readonly refused?: boolean;
 }
 
 /**
@@ -382,11 +385,11 @@ export interface PendingCar {
  * point until the pointer moves, because a span with no length has no axis.
  */
 export function renderPendingCar(pending: PendingCar, size: CarSymbolSize): SVGTemplateResult {
-  const { anchor, to } = pending;
+  const { anchor, to, refused } = pending;
   const corners = size.dpt === null ? null : carCorners(anchor, to, size.dpt);
 
   return svg`
-    <g class="car-pending">
+    <g class="car-pending${refused ? ' refused' : ''}">
       ${
         corners
           ? svg`<polygon points="${corners.map(c => `${c.x},${c.y}`).join(' ')}" />`

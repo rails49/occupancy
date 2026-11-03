@@ -52,7 +52,7 @@ The box tested keeps the detector's centre, orientation and length and takes the
 >
 > All figures above assume `standard_width = 3000`.
 >
-> Projecting detections onto a track spline and testing overlap along it was rejected. Nearest-spline association is ambiguous where layouts are densest (parallel sidings ~60 px apart at DPT 20, turnouts, yard ladders), and a wrong association reports the wrong track occupied at a rate nothing bounds. It is also unbuildable, since v4 stores no track ([ADR 0010](docs/adr/0010-track-is-not-stored.md)).
+> Projecting detections onto a track spline and testing overlap along it was rejected. Nearest-spline association is ambiguous where layouts are densest (parallel sidings ~60 px apart at DPT 20, turnouts, yard ladders), and a wrong association reports the wrong track occupied at a rate nothing bounds.
 
 > ⚠️ Known limitation: a sensor on track the camera cannot see, such as inside a tunnel, reads clear whatever is there. Sensors go on visible track. Making such a sensor unknown would need a per-sensor field, which is a format change. It is not planned.
 
@@ -194,24 +194,71 @@ Validation is synthetic: the fixtures were shot on a tripod, so `tools/drift-ben
 
 ### Location Data: Cars and Sensors
 
-The format and the editor store two kinds of geometry, in pixel coordinates:
+The format and the editor store three kinds of geometry, in pixel coordinates:
 
 | | Geometry | Scope | Trained on? | Provenance? |
 |---|---|---|---|---|
 | Cars | A [span](GLOSSARY.md#cars-and-labels): two points along the car's centerline | Per image | Yes, the detector's only class | Yes |
 | Sensors | A single point | Per layout | No, an output specification | No |
+| [Tracks](#track-centerlines) | [Nodes](GLOSSARY.md#track), and the [clicks](GLOSSARY.md#track) and marks they were built from | Per layout | No, they place the classifier's patches | No |
 
 1. Cars. Width is not stored; every car is drawn at the [car width](GLOSSARY.md#cars-and-labels) (rails49/detector's [SPEC § Car width](https://github.com/rails49/detector/blob/main/SPEC.md#car-width-is-derived-from-dpt-never-stored)). [Trains and couplings](GLOSSARY.md#cars-and-labels) are derived from coincident ends and never labeled. Each car carries [provenance](#provenance-is-required-not-optional).
 
 2. [Sensors](GLOSSARY.md#occupancy) are where the deployed system must answer, and they never enter a loss. What they answer with is [Occupancy Output](#occupancy-output). They stay points, not spans: L0 carries full car pose, so block semantics can be derived later, and authoring intervals is UI for a consumer that does not exist yet. Sensors carry no provenance, since no model proposes where a person wants an answer.
 
-#### Track is not stored, and that is a deliberate deferral
+#### Track centerlines
 
-v4 stores no track geometry ([ADR 0010](docs/adr/0010-track-is-not-stored.md), [issue #13](https://github.com/rails49/occupancy/issues/13)). Cars are authored as two clicks on the visible car ends, with no snapping.
+Each archive stores its [tracks](GLOSSARY.md#track), drawn once and shared by every image ([ADR 0024](docs/adr/0024-a-track-passes-through-every-click-with-gaps-marked-straight.md)). The classifier places its patches on them, and sensors and car ends land on them. A track is one unbranched line of [parts](GLOSSARY.md#track), each a straight or a circular arc, tangent at every [join](GLOSSARY.md#track). Its [centerline](GLOSSARY.md#track) is that line as drawn. Turnouts and crossings are not traced.
 
-The cost: the empty-track training crops described in [issue #4](https://github.com/rails49/occupancy/issues/4) cannot be derived. That is owed back only if the ResNet returns.
+**The rule.** The line is a function of its [clicks](GLOSSARY.md#track) and their marks alone, and is built whole on every change ([#317](https://github.com/rails49/occupancy/issues/317)). The same clicks and marks give the same line in either order, on screen, in the archive and on reload. Each [gap](GLOSSARY.md#track) is a [free gap](GLOSSARY.md#track) unless the click that starts it is marked straight, which makes it a [straight gap](GLOSSARY.md#track). The rule works in image pixels ([research note](docs/research/track-arcs-in-image.md)); how it was chosen is in [`track-trace-local-curves.md`](docs/research/track-trace-local-curves.md).
 
-Track authoring returns as a new effort. The closed [issue #14](https://github.com/rails49/occupancy/issues/14) records the open questions: spline creation, control-point editing, Catmull-Rom against Bezier, turnouts, and whether track carries topology.
+* The line passes through every click that is not in a run of straight gaps.
+* Each such click takes a heading from its neighbours. With two clicks on each side, it mixes the headings there of the circle through it and the two clicks behind, and of the circle through it and the two clicks ahead, each weighted by how much the curvature changes on the other side, after Akima (1970). This is exact where the radius changes at a click. Next to the end of a stretch of free gaps, the heading is that of the circle through the click and its two neighbours. At an end of the line, the end gap is the one arc tangent at the inner click. Two clicks give a straight; three give the one arc through all three.
+* Each free gap is the equal-chord biarc between its two clicks and their headings: two arcs that meet tangentially on the perpendicular bisector of the chord.
+* A run of neighbouring straight gaps is the total least squares line through its clicks.
+* Next to a run, the circle through the two nearest free clicks that touches the run sets their headings and where the run starts or ends. It is used only if its radius is at least the minimum and it touches the run between the nearest free click and the run's second click. Otherwise the free gap next to the run is a biarc to the foot of the run's end click on the run's line. A curve therefore meets a straight tangentially with no click where the curve ends.
+* Moving, inserting or deleting a click outside a run changes the line within three gaps on each side of it. Moving a click of a run moves the whole run and the curves that meet it.
+* The tool never guesses which gaps are straight. At 0.1 G, a 50 G curve and a straight cannot be told apart over 9 G of track.
+* A free gap between two runs with no click inside it is a biarc between the run ends, which is not exact; a click on the curve fixes it. The first and last two clicks of a stretch of free gaps take the three-click circle's heading, so a change of radius at such a click is not exact; one more click past it fixes that. A broad curve clicked closely can show a radius that changes from gap to gap; clicking it less often avoids that.
+
+**Refusals.** The rule refuses a set of clicks when:
+
+* a click is not ahead of the click before it along that click's heading, or the click before it is not behind it along its own, or two neighbouring clicks are at one pixel, or a run of straight gaps ends before it starts;
+* any arc is tighter than the minimum radius;
+* a click of a run of straight gaps is more than the [tolerance](GLOSSARY.md#track) off the run's line.
+
+A refused click or edit writes nothing and leaves the line as it was. A toast says why and what to do, and so does the hint until the next click or edit.
+
+**The rule's constants** are the editor's, kept together and never stored, in gauges converted through DPT: the tolerance (0.1 G), the minimum radius (10 G) and the start distance (1 G). Being in gauges, they put the track tool behind the calibration gate. A change to them moves no stored track until its line is edited.
+
+**Tracing.** The person clicks along the middle of the track with the track tool, and the line follows at once. Each click takes well under a second.
+
+* A click farther than the start distance from every line starts a line, even on a sensor. The second click writes it.
+* While a line is being traced, every click extends it at the end it goes on from, even near another line or near the line itself. A click within the grab radius (14 screen px) of that end adds nothing.
+* A double-click marks the gap from the double-clicked click to the next click straight. Its first click places the click as usual, and its second adds nothing. Only that one gap is straight, so tracing goes back to free gaps with no mode switch. The mark is written with the next click, in that click's history entry; ending the line before then drops it.
+* Right-click or Escape ends the line, and ending changes nothing. A right-click on a click of the traced line other than the one it goes on from opens that click's menu instead, and tracing goes on.
+* While a line is being traced, a drag moves only a click of that line.
+
+**Editing.** With no line being traced:
+
+* A click on the first or last click of any line continues that line from there. A double-click on it continues the line with the next gap straight.
+* A click on a click between the ends writes nothing, and a toast says to drag it or right-click it.
+* A click within the start distance of a line inserts a click at the pointer, into the gap whose part of the line is nearest. A press there and a drag places the inserted click. A click inserted into a straight gap gives two straight gaps. Near a line with no clicks, a toast says it can only be deleted.
+* Any click can be dragged, and the line is built again on every pointer move. Where the rule refuses the clicks, the line keeps its last valid shape, the click follows the pointer, and the hint says why. A release there puts the click back and writes nothing.
+* The menu on a click offers Delete click and Delete line. The menu on the rest of a line offers Make straight or Make free for the gap under the pointer, and Delete line; on a line with no clicks, Delete line alone. Deleting a click merges its two gaps into one, straight only if both were. Deleting one of a line's last two clicks deletes the line.
+* Each click, insert, drag, delete and mark change is one history entry.
+
+**Drawing.** Under the track tool every line is drawn with its two rails at ±G/2, its centerline and a dot per click. Both ends of every straight gap are squares in place of dots. The line being traced, or changed by a drag or an insert, is blue; the others are green. Under any other tool a track is drawn as its centerline alone.
+
+* While tracing, the click the line goes on from has a ring, and a double-clicked last click is a square at once. A dashed blue preview runs from that click to the pointer: the gap a click there would add, as the rule builds it, or a red straight where the rule refuses it.
+* With no line being traced, the two end dots of each line are hollow, the end dot under the pointer has a ring, and a faint dot shows where a click would insert one.
+* A line above the photograph says what to do next. While tracing: "Click along the middle of the track. Double-click where a straight starts. Right-click or Escape ends." Otherwise: "Click to start a line, click an end dot to continue one, click a line to add a click. Right-click a gap to make it straight or free." While the preview follows the pointer, it says instead why a click there would be refused; with no preview, after a refused click or edit, why and what to do.
+
+**What a click writes.** Every change writes the line's clicks, their marks and the nodes of the line, as one history entry. The nodes are the start, every join, and the points that cut an arc of more than 90° into equal pieces of at most 90°. The curve between two nodes is the format's, computed by `@rails49/r49` (rails49/r49's [FORMAT § Node](https://github.com/rails49/r49/blob/main/FORMAT.md#node)). A save in the middle of a trace holds a valid line, and every other reader reads only the nodes. Undo takes back the last entry and shows the line as it was before it.
+
+**Loading.** An archive's lines are drawn from their stored nodes, with no rebuild on load. A line stored without clicks is drawn, takes sensors and cars, and can be deleted, but cannot be edited.
+
+**Sensors and cars.** A sensor or a car end lands on the nearest track within 1.5 track widths when it is placed or dragged, and is refused where there is none. An edit leaves sensors and car ends where they are; nothing lands them again.
 
 #### Labeling completeness
 
@@ -229,19 +276,18 @@ Each image carries `labeled_complete` ([labeled complete](GLOSSARY.md#cars-and-l
 The editor guides an order:
 
 1. Calibrate: two points minimum.
-2. Label all cars, per image.
+2. Trace the track, once per archive.
+3. Label all cars, per image.
 
-Sensors can be placed at any time.
+Sensors can be placed at any time after the track they sit on is traced.
 
-> The workflow had three stages until [issue #13](https://github.com/rails49/occupancy/issues/13) removed track from v4. The removed stage was labeling track.
-
-Stages are gated on existence, never on completion. Calibration gates car labeling, because car width is derived from DPT and the width rectangle is the only feedback that a label covers its car. Every stage can be re-entered. Nothing can verify that all cars are labeled, so the only claim of completeness is the person's, recorded as `labeled_complete`.
+Stages are gated on existence, never on completion. Calibration gates car labeling, because car width is derived from DPT and the width rectangle is the only feedback that a label covers its car. It gates tracing too, because the fit's constants are in gauges. Every stage can be re-entered. Nothing can verify that all cars are labeled, so the only claim of completeness is the person's, recorded as `labeled_complete`.
 
 A car-free image is no longer required. It is a useful all-background sample and nothing more.
 
 #### Authoring cars, and the trains they form
 
-A car is two clicks on the visible car ends, with no snapping.
+A car is two clicks on the visible car ends. Each end lands on the nearest centerline ([Track centerlines](#track-centerlines)).
 
 A span covers the part of a car the camera sees, whatever hides the rest. A car half inside a tunnel is labeled from its visible end to the portal. A car with something across its middle, such as a road bridge, gets one span per visible piece. A car fully hidden is not labeled. There is no minimum length: every piece the person can identify as a car gets a span, and a piece left unlabeled on a `labeled_complete` image is taught as background. [rails49/r49 FORMAT § Car label](https://github.com/rails49/r49/blob/main/FORMAT.md#car-label) owns the definition.
 
@@ -255,7 +301,7 @@ Dragging edits everything: car ends, couplings, calibration points and sensors.
 
 | State | Right-click |
 | :-- | :-- |
-| Chaining a train | Ends the chain |
+| Chaining a train or tracing track | Ends the chain, except on a traced click other than the last, which opens Delete click and Delete line |
 | Idle | Context menu on the object under the cursor |
 
 The context menu carries delete and reclassify, so the editor needs no delete mode. A dotted class nests there as a submenu (`stock › loco › steam`). A new car is `stock`; refinement goes through the menu.
@@ -271,9 +317,9 @@ Labels are not carried between images. Hand-labeling every image keeps provenanc
 The editor has undo and redo ([ADR 0012](docs/adr/0012-undo-is-scoped-snapshots.md), [issue #25](https://github.com/rails49/occupancy/issues/25)).
 
 * The history holds every change to the manifest and nothing else: car edits, sensors, calibration, `labeled_complete`, layout metadata, `layout.scale`, and adding, removing and reordering images. View state is not in it: selection, zoom, view mode, an uncommitted chain. Deleting an image keeps its bytes, so the deletion can be undone.
-* One entry is one gesture. A drag is captured at pointer-down and committed at pointer-up; a coupling drag is one entry covering both cars; a drag returned to its origin records nothing. Text fields commit on blur. Edits that change nothing are not recorded. A chained train records one entry per car.
+* One entry is one gesture. A drag is captured at pointer-down and committed at pointer-up; a coupling drag is one entry covering both cars; a drag returned to its origin records nothing. Text fields commit on blur. Edits that change nothing are not recorded. A chained train records one entry per car, and traced track one per click.
 * An undo or redo on another image selects that image first, then applies, then highlights what changed.
-* While a chain is live, undo removes the chain's last car and moves the anchor back. At the chain's start it clears the anchor. It cannot reach past the chain's start.
+* While a chain is live, undo removes the chain's last car and moves the anchor back, or removes the last click of traced track. At the chain's start it clears the anchor. It cannot reach past the chain's start.
 * Code finds labels by `id`, never by object identity.
 * The stack is bounded by bytes. Eviction removes the oldest entries only. Redo is linear: a new edit discards what was undone.
 * The history is never persisted or written into the `.r49`. New and Open replace it. Save records a marker, which gives a dirty flag. A dirty archive asks before New and Open, and a `beforeunload` guard asks before closing or reloading the tab ([issue #49](https://github.com/rails49/occupancy/issues/49)).
@@ -347,7 +393,6 @@ The first list is ruled out and will not be built here. The second is in scope b
 | | Why |
 | :--- | :--- |
 | Drift correction: homography estimation, re-alignment, fiducials | Out of scope by [ADR 0020](docs/adr/0020-only-the-live-view-measures-drift.md). Drift detection is built; see [Image Alignment](#image-alignment). |
-| Track geometry, and the spline authoring it implies | [ADR 0010](docs/adr/0010-track-is-not-stored.md). See [Track is not stored](#track-is-not-stored-and-that-is-a-deliberate-deferral) and the closed [issue #14](https://github.com/rails49/occupancy/issues/14). |
 | Populating car subtypes such as `stock.loco.steam` | The mechanism exists; no subtype is labeled here. Adding one is a vocabulary entry in a `@rails49/r49` release, a `detector.classes` entry and a retrain in rails49/detector, and a version bump of each package here, with no relabeling ([rails49/detector ADR 0009](https://github.com/rails49/detector/blob/main/docs/adr/0009-config-yaml-is-authored-and-classes-is-append-only.md)). |
 | Calibration provenance: authoring-image references, per-point names, content fingerprints | Settled in [issue #6](https://github.com/rails49/occupancy/issues/6). The general case is camera drift. |
 | Coupling as a class or a field | Derivable from L0 as two box endpoints coinciding. A 96 px crop cannot see the relation between two cars that defines a coupler, which is why hand-placed coupling markers never worked. |
@@ -361,7 +406,7 @@ The first list is ruled out and will not be built here. The second is in scope b
 * An independent second observer. [A total miss stays invisible](#confidence) to any single-model scheme. The candidates, a CNN verifier over the same points or change detection, are not specified and not worth building before the detector has numbers.
 * The proposal interaction. [Assisted Labeling](#assisted-labeling) settles provenance and completeness but not the UX: whether proposing is per image or per archive, whether proposals have a distinct pending look, whether an accept-all should exist given that it must never set `labeled_complete`, and how a wrong proposal is rejected without residue. It can be added later without changing the format.
 * L2: event and transition semantics. Rocrail-style enter and in sensors fire on transitions; L1 is per-frame state. Converting one to the other needs debouncing and hysteresis, which is where a phantom becomes a "train entered block" event a controller acts on. Deferred until a real controller is connected.
-* Block-span occupancy. Derivable from L0, but a named interval on track presupposes track, so it would bring spline authoring back with it.
+* Block-span occupancy. Derivable from L0, but a named interval on track needs names and bounds along the centerlines, which nothing stores.
 * What obliquity costs accuracy, and whether it earns a threshold. An HO car appears 2.6× its overhead width at the corner of a 2×1 m layout under a 1 m camera, but the effect on detection is unmeasured, so no constant is set. Two questions wait on that measurement: whether the capture advisory gains a threshold, and whether `spanToPolygon`'s constant car width needs an obliquity term ([issue #138](https://github.com/rails49/occupancy/issues/138)). A box that assumes an overhead view under-covers a corner car by up to 2.6×, and wrong labels hurt training in a way that distortion alone does not.
 
 ---

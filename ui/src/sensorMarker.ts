@@ -132,8 +132,8 @@ export function sensorLabelText(sensor: Sensor): string {
  * How big to draw a sensor, in image pixels — **two independent sizes, and the
  * split is the point.**
  *
- * The diamond is a **world** size: one track width across (`geometry.ts`'s
- * `trackWidthPx`), so it shrinks with the photograph and a sensor's footprint
+ * The diamond is a **world** size: two track widths across (`geometry.ts`'s
+ * `sensorDiameterPx`), so it shrinks with the photograph and a sensor's footprint
  * is directly comparable to the cars around it. The label is a **screen** size,
  * held constant by the viewer's `symbolSize`: it is annotation about the
  * sensor, not a measurement of it, and a name scaled to the track would be

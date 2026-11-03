@@ -227,11 +227,10 @@ describe('Tools', () => {
     expect(groups(await mount())).toContain('Tools');
   });
 
-  it('offers calibration point, sensor and car', async () => {
+  it('offers calibration point, track, sensor and car, in the order they are used', async () => {
     const el = await mount();
-    for (const tool of ['calibration', 'sensor', 'car']) {
-      expect(command(el, `tool-${tool}`), tool).not.toBeNull();
-    }
+    const tools = [...el.renderRoot.querySelectorAll('look-command[id^="tool-"]')].map(c => c.id);
+    expect(tools).toEqual(['tool-calibration', 'tool-track', 'tool-sensor', 'tool-car']);
   });
 
   it('marks the active tool, because a click means something different per tool', async () => {

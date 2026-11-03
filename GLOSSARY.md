@@ -118,12 +118,43 @@ The largest drift accepted, as a fraction of a track width. See [ADR 0020](docs/
 **Proposal**:
 A car label suggested by the detector for a person to accept, correct or reject. See [SPEC § Assisted Labeling](SPEC.md#assisted-labeling).
 
+### Track
+
 **Track**:
-The rails cars run on.
-_Avoid_: using it for a sensor or a block
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
 
 **Centerline**:
-The line along the middle of a track, drawn once per archive and shared by all its images.
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
+
+**Click**:
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
+
+**Gap**:
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
+
+**Straight gap**:
+`r49`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/r49/blob/main/GLOSSARY.md).
+
+**Free gap**:
+`r49`'s word, owned by its [GLOSSARY.md § Tracks](https://github.com/rails49/r49/blob/main/GLOSSARY.md#tracks).
+
+**Node**:
+A point of a stored track with the direction the track runs there. Each join is stored as a node. See rails49/r49's [FORMAT § Node](https://github.com/rails49/r49/blob/main/FORMAT.md#node).
+_Avoid_: control point, vertex
+
+**Part**:
+One straight or one arc of constant curvature in a track. Neighbouring parts are tangent where they meet. See [SPEC § Track centerlines](SPEC.md#track-centerlines).
+_Avoid_: segment, section
+
+**Join**:
+Where two neighbouring parts of a track meet, with one heading shared by both. Each join is stored as a node.
+_Avoid_: part boundary, break
+
+**Tolerance**:
+How far a click of a run of straight gaps may lie off the run's line. See [SPEC § Track centerlines](SPEC.md#track-centerlines).
+
+**Chain**:
+A run of clicks under the car tool or the track tool, each one going on from the last: the next car of a train, or more of a track. See [docs/UI.md § Chaining](docs/UI.md#chaining-33).
 
 ### Occupancy
 
@@ -160,7 +191,7 @@ An L1 state: no car on the sensor's track comes within the margin of the sensor.
 How far beyond a car's end, along the track, a sensor still reads occupied: two gauges.
 
 **Unknown**:
-An L1 state: the system could not look, because no model is loaded, DPT is unresolved, the sensor is outside the frame, the classifier finds no centerline under the sensor, or the camera has drifted. Not a confidence outcome. See [SPEC § The vocabulary](SPEC.md#the-vocabulary).
+An L1 state: the system could not look, because no model is loaded, DPT is unresolved, the sensor is outside the frame, the classifier finds no track under the sensor, or the camera has drifted. Not a confidence outcome. See [SPEC § The vocabulary](SPEC.md#the-vocabulary).
 
 **Phantom**:
 `detector`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/detector/blob/main/GLOSSARY.md).

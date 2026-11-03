@@ -109,7 +109,8 @@ opens a bump pull request here
   resolves and the image on screen from the session, and a press calls `session.selectTool`.
 * Status text is a toast, `rr-app`'s own `sl-alert`. There is no unsaved mark and no source link.
 * The settings, calibration and sensor dialogs are `look-dialog`s (`medium`, `small`, `small`),
-  still opened with `show()`. The discard confirm stays `window.confirm`.
+  still opened with `show()`. The unsaved-changes dialog before New and Open is a `small`
+  `look-dialog` too, opened with `ask()`.
 * Every component puts `lookTheme` first in its `static styles`: a `::part()` rule reaches only the
   widgets in its own shadow root.
 * `look-check` in `bin/test.sh` fails on a selector naming a `look-` element, on setting a look
