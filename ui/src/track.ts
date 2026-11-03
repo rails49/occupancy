@@ -1,4 +1,4 @@
-import type { Point, Track, TrackNode } from '@rails49/r49';
+import type { Click, Point, Track, TrackNode } from '@rails49/r49';
 
 export type { Track, TrackNode };
 
@@ -184,6 +184,11 @@ export function nearestGap(track: Track, at: Point): number {
   const clicks = track.clicks!;
   const passed = clicks.slice(1).filter(p => place(p) < along).length;
   return Math.min(passed, clicks.length - 2);
+}
+
+/** Whether click `i` of `clicks` ends a straight gap, and is drawn as a square. */
+export function squareAt(clicks: readonly Click[], i: number): boolean {
+  return !!(clicks[i].straight || clicks[i - 1]?.straight);
 }
 
 /** A pointer on a click: click `index` of track `line`. */

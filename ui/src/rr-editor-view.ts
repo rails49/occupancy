@@ -445,7 +445,7 @@ const NOTICE_MS = 3000;
  * whenever the session changes. See ADR 0017.
  *
  * Takes `session`. Emits `rr-notify` (`NotifyDetail`) when a click is refused,
- * and for 3 s with each notice the session sends (`subscribeNotices`).
+ * and for `NOTICE_MS` with each notice the session sends (`subscribeNotices`).
  *
  * It owns the zoom (#44): a drag on empty image draws a rect to zoom to, or
  * pans once zoomed, a Shift-drag draws a rect wherever it begins, and the

@@ -150,6 +150,7 @@ rr-app                          ← shell: owns the editing session and the view
 > [#307]: https://github.com/rails49/occupancy/issues/307
 > [#311]: https://github.com/rails49/occupancy/issues/311
 > [#313]: https://github.com/rails49/occupancy/issues/313
+> [#321]: https://github.com/rails49/occupancy/issues/321
 > [#324]: https://github.com/rails49/occupancy/issues/324
 
 ## State and data flow
@@ -757,10 +758,12 @@ both; each tool module supplies what differs.
 |---|---|
 | `Chain` | A live chain: `view()`, `atStart()`, `extend(px, scale)`, `settle()`. It keeps where it started and what it wrote, and reads the dot it goes on from out of the manifest |
 | `ChainTool` | A tool's half of a click with no chain live: a `ChainHit` (a chain to start or continue, or an edit to run) or null, when the session asks the other objects |
-| `ChainView`, `ChainContext`, `ClickResult` | What the editor draws of a chain; what a tool reads and writes through the session, including `snap`; what a click asks the editor for |
+| `ChainView`, `ChainContext`, `ClickResult` | What the editor draws of a chain; what a tool reads and writes through the session, including `snap`, `refuse` and `notify`; what a click asks the editor for |
 | `NO_TRACK`, `NO_TRACK_NOTICE` | Why a sensor or car end was refused: no centerline within `SNAP_TRACK_WIDTHS` |
 | `carTool`, `ALREADY_LABELED` | A free car end continues a chain, a coupling is refused with `ALREADY_LABELED`, a click on a car's body splits it, and empty image starts a chain |
-| `trackTool`, `TrackChain` | A click on a line's first or last click continues it as a chain; on a click between them it notifies `MIDDLE_CLICK` ([#324]); anywhere else it starts a chain ([#298]). Each click goes on the end of the chain's trace (`trackTrace.ts`) and writes the line's clicks with the nodes of the line as drawn (`fitNodes`). A chain from a first click traces backwards and writes back in stored order, its nodes turned round. `hold`, `move` and `remove` take a click of the traced line, by stored index, while the chain is live: a drag draws it held, and a move or delete builds the line again from its clicks and writes one entry ([#303]). `atStart()` is true once every entry the chain wrote is undone |
+| `trackTool`, `TrackChain` | A click on a line's first or last click continues it as a chain; on a click between them it notifies `MIDDLE_CLICK` ([#324]); within `TRACK_FIT.startDistance` of a line it inserts a click there ([#321]), or notifies `NO_CLICKS` on a line with no clicks; anywhere else it starts a chain ([#298]). Each click goes on the end of the chain's trace (`trackTrace.ts`) and writes the line's clicks with the nodes of the line as drawn (`fitNodes`). A chain from a first click traces backwards and writes back in stored order, its nodes turned round. `hold`, `move` and `remove` take a click of the traced line, by stored index, while the chain is live: a drag draws it held, and a move or delete builds the line again from its clicks and writes one entry ([#303]). `atStart()` is true once every entry the chain wrote is undone |
+| `trackHover`, `TrackHover` | With no chain live, what a click at the pointer would act on: an end dot (its pixel, and whether it is square) or an insert at the pointer; null on a middle dot, near a line with no clicks, and where a click starts a line ([#324]). `trackTool` decides from the same lookup |
+| `TrackChain.preview`, `TrackPreview` | The next gap a click would add, from the end the chain goes on from, in the order traced: the nodes the rule builds, or a straight to the pointer with the reason it refuses. Null within the grab radius of that end ([#324]) |
 | `trackHitAt`, `clickHitAt`, `refitLine` | The line or the click under the track tool's pointer, within the grab radius; a line with given clicks and the nodes of their fit, traced in stored order (`Trace.rebuilt`): an edit with no chain live. Null, and the session's `refused`, when a click of the rebuilt line would add nothing or need an arc tighter than the minimum; the hint shows the refusal sentence for both |
 
 ---
@@ -831,6 +834,7 @@ clicks and is refused when a click then does not go on it.
 | Export | Description |
 |---|---|
 | `trackHint(trace, refused)` | The track tool's hint, one of three sentences: with the last click or edit refused, why and what to do; while tracing, click ahead and how to end; otherwise how to start a line or go on with one. Tested in `tests/trackHint.test.ts` |
+| `refusalText(reason)` | The refusal sentence alone, which the session's notices toast ([#324]) |
 
 ### `carMarker.ts`
 
@@ -1062,7 +1066,8 @@ nothing) goes up as `{ message, duration: 3000 }` ([#324]).
   * The press that **dismisses** the menu is swallowed by `rr-context-menu` and never reaches the
     viewer, so closing a menu over empty image does not place a point.
 * **Track hint** (`.track-hint`, [#298], [#313]). Under the DPT bar while the track tool is selected and DPT
-  resolves: `trackHint`'s sentence for the line being traced, or the session's `refused`.
+  resolves: `trackHint`'s sentence for the line being traced, or the session's `refused`. While the
+  preview follows the pointer, the reason the rule refuses a click there, or none ([#324]).
 * **DPT readout** (`.dpt-bar`). `calibrationFit()`'s DPT to one decimal, or "Not calibrated" with a
   warning style when it is `null` — a real v4 state, reported rather than blocked on, and now with the click
   that fixes it. Two further states:
@@ -1155,6 +1160,8 @@ it gets the objects the entry changed.
 | `tracks` | The layout's centerlines ([#284]) |
 | `refused` | Whether the last click or edit under the track tool was refused: it needed an arc tighter than the minimum, and the hint says so until the next click or edit ([#313]) |
 | `previewCar(point)` | Where a click would put the next car of a live car chain: the nearest track, or null when none is near |
+| `previewTrack(point, scale)`, `hoverTrack(point, scale)` | What follows the pointer under the track tool ([#324]): the next gap a click would add to the traced line (`TrackChain.preview`), and with no chain live the end dot or insert a click would act on (`trackHover`). Each null otherwise |
+| `heldLine` | The line a drag of one of its clicks, or an insert into it, is changing, or null ([#324]) |
 | `click(point, scale)` | Writes, or returns what the editor must ask for: a reference point's world position, a sensor's name, or a notice |
 | `beginDrag(point, scale)` | A `Drag` (`move`, `end`, `cancel`) on what is under the point, or null. Under the track tool a click comes first; its line refits on `end` ([#302]), or the click springs back and `refused` says why. While a track chain is live only a click of its line is grabbed, and the chain takes the move on `end` ([#303]); a chain still at its start gives way to a drag of another line's click, and ends |
 | `rightClick(point, scale)` | Ends a live chain, or returns the `MenuSubject` a menu acts on. Under the track tool a click is `track-click` (Delete click, Delete line) and the rest of a line `track` (Delete line). While a track chain is live a click of its line other than the last is `track-click` and the chain goes on ([#303]) |
@@ -1165,6 +1172,7 @@ it gets the objects the entry changed.
 | `requiredImageSize` | The size an added image must be, or null while nothing is positioned and the next image sets `camera.resolution` instead ([#254], [#260]). The editor asks before it adds, and words the refusal |
 | `undo`, `redo` | Select the image the entry is on, apply it, and report what changed |
 | `subscribe(listener)` | Returns a function that stops it |
+| `subscribeNotices(listener)` | Calls the listener with each toast the track tool asks for: a refusal's reason (`refusalText`), or what to do instead of a click that did nothing. Returns a function that stops it ([#324]) |
 
 Points arrive in image pixels with the pointer event's `imagePxPerScreenPx`, which converts the
 screen-pixel grab radius. The hit-test scene is the layout's reference points and sensors and the

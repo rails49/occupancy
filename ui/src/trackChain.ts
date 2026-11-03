@@ -2,7 +2,7 @@ import type { Click, Point, TrackNode } from '@rails49/r49';
 import { DEFAULT_GRAB_RADIUS_SCREEN_PX } from './geometry.js';
 import { pixel, NONE } from './chain.js';
 import type { Chain, ChainContext, ChainHit, ChainTool, ChainView, ClickResult } from './chain.js';
-import { hitClick, hitTrack, nearestGap, wrapAngle } from './track.js';
+import { hitClick, hitTrack, nearestGap, squareAt, wrapAngle } from './track.js';
 import type { ClickHit, Track, TrackHit } from './track.js';
 import { TRACK_FIT, buildLine, fitNodes, fitOptions } from './trackFit.js';
 import type { FitOptions, Refusal } from './trackFit.js';
@@ -119,6 +119,31 @@ export function withoutClick(clicks: readonly Click[], index: number): Click[] {
   return out;
 }
 
+/** What the track tool's pointer is on with no chain live. */
+type Under =
+  /** A line's first or last click. */
+  | { readonly kind: 'end'; readonly line: number; readonly index: number }
+  /** A click between a line's first and last. */
+  | { readonly kind: 'middle' }
+  /** Within the start distance of a line, in gap `gap`. */
+  | { readonly kind: 'insert'; readonly line: number; readonly gap: number }
+  /** Within the start distance of a line with no clicks. */
+  | { readonly kind: 'no-clicks' }
+  /** Anywhere else. */
+  | { readonly kind: 'start' };
+
+function under(ctx: ChainContext, at: Point, scale: number): Under {
+  const lines = tracks(ctx);
+  const click = clickHitAt(lines, at, scale);
+  if (click) {
+    const last = lines[click.line].clicks!.length - 1;
+    return click.index === 0 || click.index === last ? { kind: 'end', ...click } : { kind: 'middle' };
+  }
+  const insert = insertAt(ctx, at);
+  if (!insert) return { kind: 'start' };
+  return insert.gap === null ? { kind: 'no-clicks' } : { kind: 'insert', line: insert.line, gap: insert.gap };
+}
+
 /**
  * The track tool's click with no chain live (#298, #302, #311, #321). A click
  * on a line's first or last click continues the line as a chain from there;
@@ -128,24 +153,27 @@ export function withoutClick(clicks: readonly Click[], index: number): Click[] {
  * starts, even on a sensor.
  */
 export const trackTool: ChainTool = (ctx, at, scale) => {
-  const lines = tracks(ctx);
-  const click = clickHitAt(lines, at, scale);
-  if (click) {
-    const last = lines[click.line].clicks!.length - 1;
-    if (click.index !== 0 && click.index !== last) return notice(ctx, MIDDLE_CLICK);
-    return { kind: 'chain', chain: TrackChain.continuing(ctx, click.line, click.index === 0) };
+  const hit = under(ctx, at, scale);
+  switch (hit.kind) {
+    case 'end':
+      return { kind: 'chain', chain: TrackChain.continuing(ctx, hit.line, hit.index === 0) };
+    case 'middle':
+      return notice(ctx, MIDDLE_CLICK);
+    case 'no-clicks':
+      return notice(ctx, NO_CLICKS);
+    case 'start':
+      return { kind: 'chain', chain: TrackChain.starting(ctx, pixel(at)) };
+    case 'insert': {
+      const clicks = tracks(ctx)[hit.line].clicks!;
+      return {
+        kind: 'edit',
+        run: async () => {
+          await recordLine(ctx, 'insert click', hit.line, withClickIn(clicks, hit.gap, pixel(at)));
+          return NONE;
+        },
+      };
+    }
   }
-  const insert = insertAt(ctx, at);
-  if (!insert) return { kind: 'chain', chain: TrackChain.starting(ctx, pixel(at)) };
-  const { line, gap } = insert;
-  if (gap === null) return notice(ctx, NO_CLICKS);
-  return {
-    kind: 'edit',
-    run: async () => {
-      await recordLine(ctx, 'insert click', line, withClickIn(lines[line].clicks!, gap, pixel(at)));
-      return NONE;
-    },
-  };
 };
 
 /** An edit that writes nothing and says `message`. */
@@ -165,16 +193,18 @@ function notice(ctx: ChainContext, message: string): ChainHit {
  * dot, near a line with no clicks, and where a click starts a line.
  */
 export function trackHover(ctx: ChainContext, at: Point, scale: number): TrackHover | null {
-  const lines = tracks(ctx);
-  const click = clickHitAt(lines, at, scale);
-  if (click) {
-    const clicks = lines[click.line].clicks!;
-    const i = click.index;
-    if (i !== 0 && i !== clicks.length - 1) return null;
-    return { kind: 'end', at: { x: clicks[i].x, y: clicks[i].y }, square: !!(clicks[i].straight || clicks[i - 1]?.straight) };
+  const hit = under(ctx, at, scale);
+  switch (hit.kind) {
+    case 'end': {
+      const clicks = tracks(ctx)[hit.line].clicks!;
+      const p = clicks[hit.index];
+      return { kind: 'end', at: { x: p.x, y: p.y }, square: squareAt(clicks, hit.index) };
+    }
+    case 'insert':
+      return { kind: 'insert', at: pixel(at) };
+    default:
+      return null;
   }
-  const insert = insertAt(ctx, at);
-  return insert && insert.gap !== null ? { kind: 'insert', at: pixel(at) } : null;
 }
 
 /**

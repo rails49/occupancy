@@ -1,9 +1,9 @@
 import { svg, css } from 'lit';
 import type { SVGTemplateResult, CSSResult } from 'lit';
-import type { Click, Point } from '@rails49/r49';
+import type { Point } from '@rails49/r49';
 import { HIGHLIGHT_CLASS } from './highlight.js';
 import { samePoint } from './geometry.js';
-import { offsetPoints, trackPath } from './track.js';
+import { offsetPoints, squareAt, trackPath } from './track.js';
 import type { Track } from './track.js';
 import type { TrackHover, TrackPreview } from './trackChain.js';
 
@@ -126,11 +126,6 @@ function renderMark(p: Point, sizePx: number, strokePx: number, cls: string, squ
     r="${sizePx / 2}"
     stroke-width="${strokePx}"
   />`;
-}
-
-/** Whether click `i` of `clicks` ends a straight gap, and is drawn as a square. */
-function squareAt(clicks: readonly Click[], i: number): boolean {
-  return !!(clicks[i].straight || clicks[i - 1]?.straight);
 }
 
 /**
