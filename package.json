@@ -18,8 +18,7 @@
   },
   "pnpm": {
     "overrides": {
-      "lit": "^3.3.2",
-      "@rails49/r49": "file:../r49/packages/r49"
+      "lit": "^3.3.2"
     }
   }
 }
