@@ -251,7 +251,11 @@ function joinCircle(
   return best;
 }
 
-/** Where a circle from two free clicks touches a run, and its heading, in the direction of travel, at the click next to the run (`near`) and the one beyond (`far`). */
+/**
+ * Where a circle through two free clicks touches a run, and its heading, in
+ * the direction of travel, at the click next to the run (`near`) and the
+ * one beyond (`far`).
+ */
 interface Join {
   readonly touch: Point;
   readonly near: number;
