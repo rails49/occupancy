@@ -333,6 +333,7 @@ export interface ViewerContextMenuDetail extends Omit<ViewerPointerDetail, 'orig
  * @fires rr-pointer-up - Gesture finished. Detail: {@link ViewerPointerDetail}
  * @fires rr-pointer-cancel - Gesture abandoned by the browser. Detail: {@link ViewerPointerDetail}
  * @fires rr-pointer-contextmenu - Right-click. Detail: {@link ViewerContextMenuDetail}
+ * @fires rr-pointer-dblclick - Double-click, after the pointer events of its two clicks. Detail: {@link ViewerContextMenuDetail}
  * @fires rr-wheel - Mouse wheel over the image. Detail: {@link ViewerWheelDetail}
  * @fires rr-media-frame - Media loaded, with its size against the archive's. Detail: {@link ViewerMediaFrameDetail}
  * @fires rr-viewport - The viewport was measured at a new size. Detail: {@link ViewerViewportDetail}
@@ -755,7 +756,7 @@ export class RrViewer extends LitElement {
    *          nothing was emitted.
    */
   private reportGesture(name: ViewerPointerEventName, originalEvent: PointerEvent): boolean;
-  private reportGesture(name: 'rr-pointer-contextmenu', originalEvent: MouseEvent): boolean;
+  private reportGesture(name: 'rr-pointer-contextmenu' | 'rr-pointer-dblclick', originalEvent: MouseEvent): boolean;
   private reportGesture(name: 'rr-wheel', originalEvent: WheelEvent): boolean;
   private reportGesture(name: string, originalEvent: PointerEvent | MouseEvent): boolean {
     const converted = this.toImagePoint(originalEvent.clientX, originalEvent.clientY);
@@ -805,6 +806,10 @@ export class RrViewer extends LitElement {
 
   private onContextMenu(e: MouseEvent) {
     this.reportGesture('rr-pointer-contextmenu', e);
+  }
+
+  private onDoubleClick(e: MouseEvent) {
+    this.reportGesture('rr-pointer-dblclick', e);
   }
 
   /** Reported without `preventDefault`: whether the wheel zooms is the consumer's call. */
@@ -944,6 +949,7 @@ export class RrViewer extends LitElement {
           @pointerup=${this.onPointerUp}
           @pointercancel=${this.onPointerCancel}
           @contextmenu=${this.onContextMenu}
+          @dblclick=${this.onDoubleClick}
           @wheel=${this.onWheel}
         >
           <g class="frame" transform="scale(${fit.sx}, ${fit.sy})">
@@ -1037,6 +1043,7 @@ declare global {
     'rr-pointer-up': CustomEvent<ViewerPointerDetail>;
     'rr-pointer-cancel': CustomEvent<ViewerPointerDetail>;
     'rr-pointer-contextmenu': CustomEvent<ViewerContextMenuDetail>;
+    'rr-pointer-dblclick': CustomEvent<ViewerContextMenuDetail>;
     'rr-wheel': CustomEvent<ViewerWheelDetail>;
     'rr-media-frame': CustomEvent<ViewerMediaFrameDetail>;
     'rr-viewport': CustomEvent<ViewerViewportDetail>;

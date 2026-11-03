@@ -972,6 +972,26 @@ describe('rr-editor-view', () => {
       expect(el.shadowRoot!.querySelector('rr-viewer')!.tracks).to.have.length(0);
     });
 
+    it('marks the gap from a double-clicked click straight, written with the next click', async () => {
+      const el = await mountWithTool('track');
+      await laid(el);
+      const at = { x: 500, y: 100 };
+      await clickAt(el, at);
+      await clickAt(el, at);
+      el.shadowRoot!.querySelector('rr-viewer')!.dispatchEvent(
+        new CustomEvent('rr-pointer-dblclick', {
+          detail: { point: at, imagePxPerScreenPx: 1, originalEvent: new MouseEvent('dblclick') },
+          bubbles: true,
+          composed: true,
+        })
+      );
+      await el.updateComplete;
+      expect(pending(el)!.clicks!.at(-1)).to.deep.equal({ ...at, straight: true });
+
+      await clickAt(el, { x: 700, y: 100 });
+      expect(el.session!.tracks[0].clicks!.slice(-2)).to.deep.equal([{ ...at, straight: true }, { x: 700, y: 100 }]);
+    });
+
     it('shows what to do next under the track tool alone', async () => {
       const el = await mountWithTool('track');
       const hint = () => el.shadowRoot!.querySelector('.track-hint')?.textContent?.trim();

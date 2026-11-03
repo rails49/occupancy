@@ -947,6 +947,17 @@ describe('rr-viewer', () => {
       expect(event.defaultPrevented).to.be.false;
     });
 
+    it('reports a double-click in image pixels', () => {
+      const seen: ViewerContextMenuDetail[] = [];
+      el.addEventListener('rr-pointer-dblclick', e => {
+        seen.push(e.detail);
+      });
+      svg.dispatchEvent(new MouseEvent('dblclick', { clientX: 140, clientY: 110, bubbles: true, cancelable: true }));
+
+      expect(seen.length).to.equal(1);
+      expect(seen[0].point).to.deep.equal({ x: 200, y: 200 });
+    });
+
     it('reports the wheel in image pixels, leaving the page scroll to the consumer', () => {
       const seen: ViewerWheelDetail[] = [];
       el.addEventListener('rr-wheel', e => {

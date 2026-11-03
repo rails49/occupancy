@@ -1214,6 +1214,14 @@ export class RREditorView extends LitElement {
     );
   }
 
+  /**
+   * Double-click, after its two clicks have run: on the click a live track
+   * chain goes on from, the gap to the next click is to be straight.
+   */
+  private _onViewerDoubleClick(e: CustomEvent<ViewerContextMenuDetail>) {
+    this.session?.doubleClick(e.detail.point, e.detail.imagePxPerScreenPx);
+  }
+
   /** A row was chosen. The menu has closed itself by the time this runs. */
   private async _onContextMenuSelect(e: CustomEvent<ContextMenuSelectDetail>) {
     const subject = this._menuSubject;
@@ -1457,6 +1465,7 @@ export class RREditorView extends LitElement {
                 @rr-pointer-up=${this._onViewerPointerUp}
                 @rr-pointer-cancel=${this._onViewerPointerCancel}
                 @rr-pointer-contextmenu=${this._onViewerContextMenu}
+                @rr-pointer-dblclick=${this._onViewerDoubleClick}
                 @rr-wheel=${this._onViewerWheel}
                 @rr-media-frame=${this._onMediaFrame}
                 @rr-viewport=${this._onViewport}
