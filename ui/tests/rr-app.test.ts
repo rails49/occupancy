@@ -356,6 +356,87 @@ describe('rr-app', () => {
     });
   });
 
+  describe('Cmd/Ctrl+S (#326)', () => {
+    async function mount() {
+      const el = await fixture<RRApp>(html`<rr-app></rr-app>`);
+      (el as any)._open(archive);
+      const save = vi.spyOn(el as any, '_onFileSave').mockResolvedValue(undefined);
+      return { el, save };
+    }
+
+    function press(init: KeyboardEventInit, target: EventTarget = window): KeyboardEvent {
+      const event = new KeyboardEvent('keydown', {
+        key: 's', bubbles: true, composed: true, cancelable: true, ...init,
+      });
+      target.dispatchEvent(event);
+      return event;
+    }
+
+    it('saves on Cmd+S and Ctrl+S, in place of the browser', async () => {
+      const { save } = await mount();
+      expect(press({ metaKey: true }).defaultPrevented).toBe(true);
+      expect(press({ ctrlKey: true }).defaultPrevented).toBe(true);
+      expect(save.mock.calls).toEqual([[false], [false]]);
+    });
+
+    it('does Save As on Cmd+Shift+S', async () => {
+      const { save } = await mount();
+      expect(press({ key: 'S', metaKey: true, shiftKey: true }).defaultPrevented).toBe(true);
+      expect(save).toHaveBeenCalledWith(true);
+    });
+
+    it('saves while a field has focus', async () => {
+      const { save } = await mount();
+      const input = document.createElement('input');
+      document.body.append(input);
+      onTestFinished(() => input.remove());
+      press({ metaKey: true }, input);
+      expect(save).toHaveBeenCalledWith(false);
+    });
+
+    it('saves nothing from inside an open dialog, and still cancels the browser', async () => {
+      const { save } = await mount();
+      const dialog = document.createElement('dialog');
+      dialog.setAttribute('open', '');
+      const input = document.createElement('input');
+      dialog.append(input);
+      document.body.append(dialog);
+      onTestFinished(() => dialog.remove());
+      expect(press({ metaKey: true }, input).defaultPrevented).toBe(true);
+      expect(save).not.toHaveBeenCalled();
+    });
+
+    it('ignores a key repeat', async () => {
+      const { save } = await mount();
+      expect(press({ metaKey: true, repeat: true }).defaultPrevented).toBe(true);
+      expect(save).not.toHaveBeenCalled();
+    });
+
+    // The save branch runs before the field check, so undo must still leave
+    // a field's own Cmd+Z alone.
+    it('still leaves Cmd+Z in a field to the field', async () => {
+      const { el } = await mount();
+      const undo = vi.spyOn(el as any, '_undo');
+      const input = document.createElement('input');
+      document.body.append(input);
+      onTestFinished(() => input.remove());
+      expect(press({ key: 'z', metaKey: true }, input).defaultPrevented).toBe(false);
+      expect(undo).not.toHaveBeenCalled();
+    });
+
+    it('leaves the key to the browser with no archive open', async () => {
+      await fixture<RRApp>(html`<rr-app></rr-app>`);
+      expect(press({ metaKey: true }).defaultPrevented).toBe(false);
+    });
+
+    it('leaves the key to the browser outside the editor view', async () => {
+      const { el, save } = await mount();
+      (el as any)._viewMode = 'diagnostics';
+      expect(press({ metaKey: true }).defaultPrevented).toBe(false);
+      expect(save).not.toHaveBeenCalled();
+    });
+  });
+
   it('reports a save failure', async () => {
     const el = await fixture<RRApp>(html`<rr-app></rr-app>`);
     (el as any)._open(archive);
