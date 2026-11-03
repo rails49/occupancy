@@ -2432,12 +2432,13 @@ describe('EditSession finished track lines (#302)', () => {
     }));
 
     await clicks(s, at[0]);
-    expect(trackChain(s)).toEqual({ line: 0, clicks: at });
+    // Drawn in the order traced, from the line's last click to its first.
+    expect(trackChain(s)).toEqual({ line: 0, clicks: [...at].reverse() });
     expect(s.chain?.end).toEqual(at[0]);
     await clicks(s, ...before);
 
     const stored = [...[...before].reverse(), ...at];
-    expect(trackChain(s)?.clicks).toEqual(stored);
+    expect(trackChain(s)?.clicks).toEqual([...stored].reverse());
     expect(line(s).clicks).toEqual(stored);
     expect(line(s).nodes).toEqual(fitOf(s, stored));
     expect(s.chain?.end).toEqual(before[1]);
@@ -2450,7 +2451,7 @@ describe('EditSession finished track lines (#302)', () => {
     await clicks(s, at[0], { x: Math.round(at[0].x - 300 * Math.cos(0.3)), y: Math.round(at[0].y - 300 * Math.sin(0.3)) });
     expect(line(s).clicks).toHaveLength(at.length + 1);
     await s.undo();
-    expect(trackChain(s)).toEqual({ line: 0, clicks: at });
+    expect(trackChain(s)).toEqual({ line: 0, clicks: [...at].reverse() });
     await s.undo();
     expect(trackChain(s)).toBeNull();
     expect(s.history.size).toBe(entries + 1);
@@ -2774,7 +2775,8 @@ describe('EditSession track edits while tracing (#303)', () => {
 
     const moved = at.map((p, i) => (i === 3 ? to : p));
     expect(line(s).clicks).toEqual(moved);
-    expect(trackChain(s)).toEqual({ line: 0, clicks: moved });
+    // Drawn in the order traced.
+    expect(trackChain(s)).toEqual({ line: 0, clicks: [...moved].reverse() });
   });
 });
 
@@ -3247,5 +3249,145 @@ describe('EditSession inserting and dragging clicks (#321)', () => {
     expect(s.tracks).toHaveLength(2);
     expect(line(s, 1).clicks).toEqual([a, { x: a.x + Math.round(10 * G * k), y: a.y }, b]);
     expect(line(s, 0).clicks).toEqual(at);
+  });
+});
+
+describe('EditSession straight gaps while tracing (#320)', () => {
+  function line(s: EditSession): Track {
+    return s.archive.getManifest().layout.tracks![0];
+  }
+
+  /** A double-click at `at` as the browser sends it: click, click, double-click. */
+  async function doubleClick(s: EditSession, at: Point) {
+    await s.click(at, SCALE);
+    await s.click(at, SCALE);
+    await s.doubleClick(at, SCALE);
+  }
+
+  /** The clicks drawn as squares in the line being traced, by index in the order traced. */
+  function squares(s: EditSession): number[] {
+    const clicks = pendingTrack(s)!.clicks!;
+    return clicks.flatMap((p, i) => (p.straight || clicks[i - 1]?.straight ? [i] : []));
+  }
+
+  /** A finished line of four clicks along y = 100, 300 px apart. */
+  async function finished(): Promise<EditSession> {
+    const s = session({ tool: 'track', rows: false });
+    await clicks(s, ...[100, 400, 700, 1000].map(x => ({ x, y: 100 })));
+    s.endChain();
+    return s;
+  }
+
+  it('places a click on a double-click, and writes the mark with the next click as one entry', async () => {
+    const s = session({ tool: 'track', rows: false });
+    await clicks(s, { x: 100, y: 100 }, { x: 400, y: 100 });
+    const entries = s.history.size;
+
+    await doubleClick(s, { x: 700, y: 100 });
+    expect(s.history.size).toBe(entries + 1);
+    expect(line(s).clicks).toEqual([{ x: 100, y: 100 }, { x: 400, y: 100 }, { x: 700, y: 100 }]);
+    expect(squares(s)).toEqual([2]);
+
+    await clicks(s, { x: 1000, y: 100 });
+    expect(s.history.size).toBe(entries + 2);
+    expect(line(s).clicks).toEqual([{ x: 100, y: 100 }, { x: 400, y: 100 }, { x: 700, y: 100, straight: true }, { x: 1000, y: 100 }]);
+    expect(line(s).nodes).toEqual(nodesOf(s, line(s).clicks!));
+    expect(squares(s)).toEqual([2, 3]);
+
+    // Only the one gap is straight.
+    await clicks(s, { x: 1300, y: 120 });
+    expect(line(s).clicks!.map(p => p.straight === true)).toEqual([false, false, true, false, false]);
+
+    await s.undo();
+    await s.undo();
+    expect(line(s).clicks).toEqual([{ x: 100, y: 100 }, { x: 400, y: 100 }, { x: 700, y: 100 }]);
+    expect(squares(s)).toEqual([]);
+  });
+
+  it('marks the first gap straight on a double-click that starts a line', async () => {
+    const s = session({ tool: 'track', rows: false });
+    await doubleClick(s, { x: 100, y: 100 });
+    expect(s.history.size).toBe(0);
+    expect(squares(s)).toEqual([0]);
+    await clicks(s, { x: 400, y: 100 });
+    expect(line(s).clicks).toEqual([{ x: 100, y: 100, straight: true }, { x: 400, y: 100 }]);
+    expect(s.history.size).toBe(1);
+  });
+
+  it('continues a line from its last click with a straight on a double-click there', async () => {
+    const s = await finished();
+    const entries = s.history.size;
+    await doubleClick(s, { x: 1000, y: 100 });
+    expect(s.history.size).toBe(entries);
+    expect(trackChain(s)?.line).toBe(0);
+    expect(squares(s)).toEqual([3]);
+
+    await clicks(s, { x: 1300, y: 100 });
+    expect(s.history.size).toBe(entries + 1);
+    expect(line(s).clicks!.slice(-2)).toEqual([{ x: 1000, y: 100, straight: true }, { x: 1300, y: 100 }]);
+    await s.undo();
+    expect(line(s).clicks!.at(-1)).toEqual({ x: 1000, y: 100 });
+  });
+
+  it('continues a line from its first click with a straight on a double-click there', async () => {
+    const s = await finished();
+    const entries = s.history.size;
+    await doubleClick(s, { x: 100, y: 100 });
+    expect(s.chain?.end).toEqual({ x: 100, y: 100 });
+    // The square is at the click the chain goes on from, the last as traced.
+    expect(pendingTrack(s)!.clicks!.at(-1)).toMatchObject({ x: 100, y: 100 });
+    expect(squares(s)).toEqual([3]);
+
+    await clicks(s, { x: -200, y: 100 });
+    expect(s.history.size).toBe(entries + 1);
+    expect(line(s).clicks!.slice(0, 2)).toEqual([{ x: -200, y: 100, straight: true }, { x: 100, y: 100 }]);
+    expect(squares(s)).toEqual([3, 4]);
+  });
+
+  it('marks nothing on a double-click away from the click the chain goes on from', async () => {
+    const s = await finished();
+    await doubleClick(s, { x: 400, y: 100 });
+    expect(s.chain).toBeNull();
+    await clicks(s, { x: 1000, y: 100 });
+    await s.doubleClick({ x: 700, y: 100 }, SCALE);
+    expect(squares(s)).toEqual([]);
+  });
+
+  it('keeps the pending straight drawn while a traced click is dragged, and after', async () => {
+    const s = session({ tool: 'track', rows: false });
+    await clicks(s, { x: 100, y: 100 }, { x: 400, y: 100 });
+    await doubleClick(s, { x: 700, y: 100 });
+
+    const d = s.beginDrag({ x: 400, y: 100 }, SCALE)!;
+    expect(d).not.toBeNull();
+    d.move({ x: 400, y: 110 });
+    expect(pendingTrack(s)!.clicks![1]).toEqual({ x: 400, y: 110 });
+    expect(squares(s)).toEqual([2]);
+    await d.end();
+    expect(squares(s)).toEqual([2]);
+
+    await clicks(s, { x: 1000, y: 100 });
+    expect(line(s).clicks![2]).toEqual({ x: 700, y: 100, straight: true });
+  });
+
+  it('refuses a click that puts a straight run more than 0.1 G off one of its clicks, and keeps the line', async () => {
+    const s = session({ tool: 'track', rows: false });
+    const dpt = dptOf(s);
+    await doubleClick(s, { x: 100, y: 100 });
+    await clicks(s, { x: 400, y: 100 });
+    await doubleClick(s, { x: 400, y: 100 });
+    const before = structuredClone(line(s));
+    const entries = s.history.size;
+
+    // A third of the way off a run of three clicks: 0.2 G off its line.
+    await clicks(s, { x: 700, y: 100 + Math.round(0.6 * dpt) });
+    expect(s.refusal).toBe('off-straight');
+    expect(s.history.size).toBe(entries);
+    expect(line(s)).toEqual(before);
+    expect(squares(s)).toEqual([0, 1]);
+
+    await clicks(s, { x: 700, y: 100 });
+    expect(s.refusal).toBeNull();
+    expect(line(s).clicks!.map(p => p.straight === true)).toEqual([true, true, false]);
   });
 });

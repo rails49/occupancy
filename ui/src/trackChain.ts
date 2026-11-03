@@ -2,7 +2,7 @@ import type { Click, Point } from '@rails49/r49';
 import { DEFAULT_GRAB_RADIUS_SCREEN_PX } from './geometry.js';
 import { pixel, NONE } from './chain.js';
 import type { Chain, ChainContext, ChainTool, ChainView, ClickResult } from './chain.js';
-import { hitClick, hitTrack, nearestGap } from './track.js';
+import { hitClick, hitTrack, nearestGap, wrapAngle } from './track.js';
 import type { ClickHit, Track, TrackHit } from './track.js';
 import { TRACK_FIT, buildLine, fitNodes, fitOptions } from './trackFit.js';
 import type { FitOptions, Refusal } from './trackFit.js';
@@ -134,6 +134,8 @@ export class TrackChain implements Chain {
   private _before: Track[] = [];
   /** What the chain draws: the line, with a click where a drag holds it. */
   private _view: Track;
+  /** Whether a double-click asked for the gap to the next click to be straight. */
+  private _straight = false;
 
   /** A new line from `start`. */
   static starting(ctx: ChainContext, start: Point): TrackChain {
@@ -161,8 +163,16 @@ export class TrackChain implements Chain {
     return this._index;
   }
 
+  /**
+   * The line as drawn, in the order it is traced, so the click it goes on
+   * from is the last; that click carries the straight mark a double-click
+   * asked for.
+   */
   view(): ChainView {
-    return { tool: 'track', end: this._end(), line: this._index, trace: this._view };
+    const trace = this._fromFirst ? reversed(this._view) : this._view;
+    const clicks = trace.clicks!;
+    const shown = this._straight ? { ...trace, clicks: [...clicks.slice(0, -1), { ...clicks.at(-1)!, straight: true }] } : trace;
+    return { tool: 'track', end: this._end(), line: this._index, trace: shown };
   }
 
   /** Whether every entry this chain wrote, click or edit, has been undone. */
@@ -178,11 +188,26 @@ export class TrackChain implements Chain {
    */
   async extend(at: Point, scale: number): Promise<ClickResult> {
     const p = pixel(at);
-    const end = this._end();
-    if (Math.hypot(p.x - end.x, p.y - end.y) <= DEFAULT_GRAB_RADIUS_SCREEN_PX * scale) return NONE;
+    if (this._atEnd(p, scale)) return NONE;
     const clicks = this._line.clicks!;
-    await this._write(this._index === null ? 'place track' : 'extend track', this._fromFirst ? [p, ...clicks] : [...clicks, p]);
+    const label = this._index === null ? 'place track' : 'extend track';
+    if (this._fromFirst) {
+      if (await this._write(label, [this._straight ? { ...p, straight: true } : p, ...clicks])) this._straight = false;
+      return NONE;
+    }
+    const last = clicks[clicks.length - 1];
+    const marked = this._straight ? [...clicks.slice(0, -1), { ...last, straight: true }] : clicks;
+    if (await this._write(label, [...marked, p])) this._straight = false;
     return NONE;
+  }
+
+  /**
+   * A double-click at `at`, on the click the chain goes on from: the gap to
+   * the next click is to be straight. The next click writes the mark with
+   * itself as one entry. Elsewhere it does nothing.
+   */
+  straighten(at: Point, scale: number) {
+    if (this._atEnd(pixel(at), scale)) this._straight = true;
   }
 
   /**
@@ -207,9 +232,9 @@ export class TrackChain implements Chain {
     await this._write('move click', withClickAt(this._line.clicks!, index, to));
   }
 
-  /** Deletes click `index` the same way. */
+  /** Deletes click `index` the same way, and drops a straight asked for. */
   async remove(index: number) {
-    await this._write('delete click', withoutClick(this._line.clicks!, index));
+    if (await this._write('delete click', withoutClick(this._line.clicks!, index))) this._straight = false;
   }
 
   /** The click the chain goes on from. */
@@ -218,16 +243,23 @@ export class TrackChain implements Chain {
     return this._fromFirst ? clicks[0] : clicks[clicks.length - 1];
   }
 
+  /** Whether `p` is within the grab radius of the click the chain goes on from. */
+  private _atEnd(p: Point, scale: number): boolean {
+    const end = this._end();
+    return Math.hypot(p.x - end.x, p.y - end.y) <= DEFAULT_GRAB_RADIUS_SCREEN_PX * scale;
+  }
+
   /**
    * Builds the line of `clicks`, keeping the line as it was for an undo, and
    * writes it as one entry. The second click of a new line writes a new
    * track. Clicks the rule refuses write nothing, and the hint says why.
+   * Returns whether it wrote.
    */
-  private async _write(label: string, clicks: readonly Click[]) {
+  private async _write(label: string, clicks: readonly Click[]): Promise<boolean> {
     const line = lineOf(clicks, this._opts);
     if (typeof line === 'string') {
       this._ctx.refuse(line);
-      return;
+      return false;
     }
     this._before.push(this._line);
     this._line = line;
@@ -237,12 +269,14 @@ export class TrackChain implements Chain {
     lines[index] = line;
     this._index = index;
     await this._ctx.record(label, { kind: 'layout' }, () => this._ctx.writeLayout({ tracks: lines }));
+    return true;
   }
 
   /**
    * Takes the stored line when it differs from the chain's. A new line an
    * undo removed takes the chain back to its first click; a continued line
-   * that is gone ends the chain. Track outlives an image change.
+   * that is gone ends the chain, and a straight asked for is dropped.
+   * Track outlives an image change.
    */
   settle(): boolean {
     let line = this._index === null ? undefined : tracks(this._ctx)[this._index];
@@ -256,8 +290,22 @@ export class TrackChain implements Chain {
     if (!before || !sameClicks(line.clicks!, before.clicks!)) this._before = [];
     this._line = line;
     this._view = line;
+    this._straight = false;
     return true;
   }
+}
+
+/** `line` the other way round: a gap's mark goes to the click that now starts it. */
+function reversed(line: Track): Track {
+  const clicks = line.clicks!;
+  const n = clicks.length;
+  return {
+    nodes: line.nodes.map(p => ({ ...p, heading: wrapAngle(p.heading + Math.PI) })).reverse(),
+    clicks: clicks.map((_, j) => {
+      const { x, y } = clicks[n - 1 - j];
+      return j < n - 1 && clicks[n - 2 - j].straight ? { x, y, straight: true } : { x, y };
+    }),
+  };
 }
 
 /** Whether two click lists hold the same clicks with the same marks. */

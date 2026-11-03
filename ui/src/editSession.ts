@@ -281,6 +281,17 @@ export class EditSession {
     }
   }
 
+  /**
+   * A double-click at `at`, after the two clicks the browser sends before
+   * it. On the click a live track chain goes on from, the gap to the next
+   * click is to be straight (`TrackChain.straighten`). Otherwise nothing.
+   */
+  doubleClick(at: Point, scale: number) {
+    if (!(this._chain instanceof TrackChain)) return;
+    this._chain.straighten(at, scale);
+    this._changed();
+  }
+
   /** A click on an object: a reference point's position or a sensor's name. */
   private _clickOn(hit: HitTarget): ClickResult {
     switch (hit.kind) {

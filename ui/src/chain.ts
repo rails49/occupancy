@@ -49,7 +49,11 @@ export type ChainView =
       readonly end: Point;
       /** The track the chain writes, which the trace draws in its place; null before the second click. */
       readonly line: number | null;
-      /** The line as drawn: no nodes before the second click. */
+      /**
+       * The line as drawn, in the order traced: no nodes before the second
+       * click. A straight mark on its last click, the one the chain goes on
+       * from, says a double-click asked for the next gap to be straight.
+       */
       readonly trace: Track;
     };
 
