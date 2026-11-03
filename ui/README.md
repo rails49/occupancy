@@ -138,6 +138,7 @@ rr-app                          ← shell: owns the editing session and the view
 > [#262]: https://github.com/rails49/occupancy/issues/262
 > [#265]: https://github.com/rails49/occupancy/issues/265
 > [#274]: https://github.com/rails49/occupancy/issues/274
+> [#326]: https://github.com/rails49/occupancy/issues/326
 
 ## State and data flow
 
@@ -208,8 +209,10 @@ shows its message as text, never as HTML. It is raised at `warning`, never `dang
 reaches it is the editor **declining** to author something, which is the editor working rather than
 failing. It stays up until the user closes it ([#265]).
 
-**Keyboard:** Cmd/Ctrl+Z and Cmd+Shift+Z / Ctrl+Y, bound on `window`, **editor view only**. The
-handler bails when a field has focus, testing `event.composedPath()[0]` rather than `event.target` —
+**Keyboard:** Cmd/Ctrl+Z and Cmd+Shift+Z / Ctrl+Y, and Cmd/Ctrl+S and Cmd/Ctrl+Shift+S for Save
+and Save As, bound on `window`, **editor view only**. Save cancels the browser's Save Page even in
+a field, and saves nothing from inside an open dialog or on a key repeat ([#326]). Undo and redo
+bail when a field has focus, testing `event.composedPath()[0]` rather than `event.target` —
 Shoelace inputs are custom elements, so `target` is retargeted to the host and the naive check would
 hijack Cmd+Z mid-typing. A press with a drag still live does nothing (see `history.ts`).
 
@@ -270,7 +273,7 @@ the editor adds three command groups:
 
 | Group | Commands | |
 |---|---|---|
-| File | `#file-new`, `#file-open`, `#file-save` | A Shift-click on Save is Save As ([#48]) |
+| File | `#file-new`, `#file-open`, `#file-save` (`Mod+S`) | A Shift-click on Save is Save As ([#48]) |
 | History | `#edit-undo` (`Mod+Z`), `#edit-redo` (`Shift+Mod+Z`) | Disabled when the stack is empty |
 | Tools | `#tool-calibration`, `#tool-sensor`, `#tool-car` | Only while a manifest is loaded; the active tool is `pressed` |
 
