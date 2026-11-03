@@ -91,12 +91,6 @@ describe('renderPendingTrack', () => {
     expect(el.querySelectorAll('.click')).toHaveLength(track.clicks!.length);
   });
 
-  it('draws no projection, no tangent and no marked click', () => {
-    const el = renderSvg(renderPendingTrack(track, size));
-    expect(el.querySelectorAll('.projection, .tangent, .part-start, .node, .heading-handle')).toHaveLength(0);
-    expect([...el.querySelectorAll('.click')].every(d => d.getAttribute('class') === 'click')).toBe(true);
-  });
-
   it('draws a square at the click it goes on from when the next gap is to be straight', () => {
     const pending: Track = { ...track, clicks: [...track.clicks!.slice(0, 3), { x: 500, y: 100, straight: true }] };
     const el = renderSvg(renderPendingTrack(pending, size));

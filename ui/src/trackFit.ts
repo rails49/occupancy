@@ -78,21 +78,6 @@ export function fitNodes(fit: Fit): TrackNode[] {
   return nodes;
 }
 
-/** Points along the line every `step` px, `offset` px to its left (negative is right). */
-export function sampleFit(fit: Fit, step: number, offset: number): Point[] {
-  const out: Point[] = [];
-  let pose: Pose = fit.start;
-  const push = (p: Pose) =>
-    out.push({ x: p.x - offset * Math.sin(p.heading), y: p.y + offset * Math.cos(p.heading) });
-  push(pose);
-  for (const part of fit.parts) {
-    const n = Math.max(1, Math.ceil(part.length / step));
-    for (let i = 1; i <= n; i++) push(advance(pose, (part.length * i) / n, part.curvature));
-    pose = advance(pose, part.length, part.curvature);
-  }
-  return out;
-}
-
 /** `TRACK_FIT`'s constants in image pixels, for a layout whose DPT (a gauge in pixels) is `dpt`. */
 export function fitOptions(dpt: number): FitOptions {
   return { tolerance: TRACK_FIT.tolerance * dpt, minRadius: TRACK_FIT.minRadius * dpt };

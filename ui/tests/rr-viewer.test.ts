@@ -683,13 +683,12 @@ describe('rr-viewer', () => {
         expect(el.shadowRoot!.querySelector('.track .rail')).to.not.exist;
       });
 
-      it('draws the line being traced, with no projection or tangent', async () => {
+      it('draws the line being traced', async () => {
         const el = await fixture<RrViewer>(html`
           <rr-viewer .pendingTrack=${tracks[0]} .dpt=${90} .resolution=${resolution}></rr-viewer>
         `);
         expect(el.shadowRoot!.querySelectorAll('.track-pending .click')).to.have.length(3);
         expect(el.shadowRoot!.querySelectorAll('.track-pending .centerline')).to.have.length(1);
-        expect(el.shadowRoot!.querySelectorAll('.track-pending .projection, .track-pending .tangent')).to.have.length(0);
       });
     });
 

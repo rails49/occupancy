@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Click, Point } from '@rails49/r49';
-import { buildLine, fitNodes, fitOptions, sampleFit, type Fit } from '../src/trackFit.js';
+import { buildLine, fitNodes, fitOptions, type Fit, type Pose } from '../src/trackFit.js';
 import {
   G,
   along,
@@ -24,9 +24,27 @@ function lineOf(clicks: readonly Click[]): Fit {
   return built.fit;
 }
 
-/** Points along the line every pixel. */
+/** Points along the line every pixel or a little less. */
 function samples(fit: Fit): Point[] {
-  return sampleFit(fit, 1, 0);
+  const out: Pose[] = [fit.start];
+  let pose: Pose = fit.start;
+  for (const { length, curvature } of fit.parts) {
+    const n = Math.max(1, Math.ceil(length));
+    const at = (s: number): Pose => {
+      if (Math.abs(curvature) < 1e-12) {
+        return { x: pose.x + s * Math.cos(pose.heading), y: pose.y + s * Math.sin(pose.heading), heading: pose.heading };
+      }
+      const h = pose.heading + curvature * s;
+      return {
+        x: pose.x + (Math.sin(h) - Math.sin(pose.heading)) / curvature,
+        y: pose.y - (Math.cos(h) - Math.cos(pose.heading)) / curvature,
+        heading: h,
+      };
+    };
+    for (let i = 1; i <= n; i++) out.push(at((length * i) / n));
+    pose = at(length);
+  }
+  return out.map(({ x, y }) => ({ x, y }));
 }
 
 /** How far `p` lies from the polyline through `points`. */
