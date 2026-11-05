@@ -17,7 +17,10 @@ MSR-TR-98-71 / TPAMI 2000; Abdel-Aziz & Karara 1971 (the original DLT paper, rep
 definitions quoted verbatim from the spec PDF); the W3C MediaStream Image Capture spec; USGS
 orthoimagery definitions; and derivations worked here with every step shown. Numbers use this
 repo's constants: HO model gauge 1435/87 ≈ 16.49 mm, `min_dpt` 20,
-`MAX_DRIFT_TRACK_FRACTION` 0.25 (`ui/src/driftSession.ts`).*
+`MAX_DRIFT_TRACK_FRACTION` 0.5 (`ui/src/driftSession.ts`; it was 0.25 when this note was written, and
+moved in [#338](https://github.com/rails49/occupancy/issues/338) —
+`drift-tolerance-measured.md`). Figures below that divide by the tolerance are stated against the
+current value.*
 
 ---
 
@@ -29,7 +32,7 @@ repo's constants: HO model gauge 1435/87 ≈ 16.49 mm, `min_dpt` 20,
    radius ρ from the nadir maps onto the z=0 plane **displaced outward by `ρ·z/(h−z)`** —
    photogrammetry's *relief displacement*. For the ticket's case (h ≈ 1 m, track z 0–85 mm,
    scenery to 230 mm): **scale +9.3% at track height, +30% at scenery height**, and a corner of a
-   2×1 m layout at z = 85 mm is mapped **104 mm (6.3 track gauges, ~126 px at DPT 20) off** — 25×
+   2×1 m layout at z = 85 mm is mapped **104 mm (6.3 track gauges, ~126 px at DPT 20) off** — 13×
    the drift gate's whole budget. Focal length cancels from every ratio; camera height is the
    lever (h = 2 m halves everything). The formula usable as a warning threshold is
    `ε(z) = z/(h−z)`, and `getDPTResidual` already fires on mixed-height calibration sets at ~40×
@@ -140,7 +143,7 @@ Scale error `ε(z) = z/(h−z)`:
 | **h = 2.0 m** | +1.8% | +4.4% | +13.0% |
 
 Relief displacement `Δρ = ρ·z/(h−z)`, camera over the layout center (ρ_max = 1118 mm), expressed
-against this repo's units — one HO track gauge = 16.49 mm, drift refusal at 0.25 gauge
+against this repo's units — one HO track gauge = 16.49 mm, drift refusal at 0.5 gauge
 (`MAX_DRIFT_TRACK_FRACTION`) **[REPO]**:
 
 | position, h = 1 m | z = 85 mm | z = 230 mm |
@@ -148,8 +151,8 @@ against this repo's units — one HO track gauge = 16.49 mm, drift refusal at 0.
 | mid-frame (ρ = 500 mm) | 46 mm = 2.8 gauges | 149 mm = 9.0 gauges |
 | corner (ρ = 1118 mm) | **104 mm = 6.3 gauges ≈ 126 px @ DPT 20** | 334 mm = 20.2 gauges |
 
-The radius inside which track-height displacement stays under the drift gate's 0.25-gauge budget
-is `ρ ≤ 0.25·gauge·(h−z)/z` = **44 mm** at h = 1 m — effectively nowhere. At h = 2 m the corner
+The radius inside which track-height displacement stays under the drift gate's 0.5-gauge budget
+is `ρ ≤ 0.5·gauge·(h−z)/z` = **89 mm** at h = 1 m — effectively nowhere. At h = 2 m the corner
 displacement is still 3.0 gauges. **[DER]**
 
 Two readings of these numbers matter for how alarming they are:

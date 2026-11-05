@@ -182,9 +182,12 @@ export function makeScratch(grid: BlockGrid): CorrelationScratch {
  * score *exactly* zero rather than a small non-zero number: the benchmark's 230
  * legitimate cases all read 0.00000 (#92), and a threshold placed under a hard
  * zero is a different kind of claim from one placed under a noise floor. The
- * cost is a quantum of one working pixel — well inside the tolerance
- * the UI's `MAX_DRIFT_TRACK_FRACTION` sets, which is a quarter of a track width
- * and so tens of times larger at any realistic DPT.
+ * cost is a quantum of one working pixel, scaled back to the reference frame,
+ * and it is not always small against the tolerance the UI's
+ * `MAX_DRIFT_TRACK_FRACTION` sets — half a track width. On an 8064-px-wide
+ * capture of an N-scale layout the quantum is 0.257 of a track width, so that
+ * tolerance admits one step and refuses two
+ * (`docs/research/drift-tolerance-measured.md`).
  */
 function blockShift(
   frame: BlockSpectra,
