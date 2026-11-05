@@ -53,10 +53,16 @@ interpretable: `flag:translate-10px` reads a median of 10.00000.
 
 That gap is the check's **detection floor** — it says how little the check can
 resolve, not how much occupancy tolerates. The tolerance is
-`MAX_DRIFT_TRACK_FRACTION` in `ui/src/driftSession.ts`, a quarter of a track
-width, and it is deliberately far above this: the number that matters is the
-displacement at which a sensor stops sitting on the car it reads. Its comment
-there gives the derivation.
+`MAX_DRIFT_TRACK_FRACTION` in `ui/src/driftSession.ts`, half a track width, and
+it sits above this floor on purpose: the number that matters is the displacement
+at which a sensor stops sitting on the car it reads.
+
+How far above is not as comfortable as these fixtures suggest. The floor is
+reported in reference-frame pixels, so it scales with the frame: on the user's
+8064-px ceiling captures one step of the check is 0.257 of a track width, which
+is why the tolerance is 0.5 and not less. The readings are in
+[`docs/research/drift-tolerance-measured.md`](../../docs/research/drift-tolerance-measured.md);
+the constant's comment says where the number came from.
 
 ## Running
 

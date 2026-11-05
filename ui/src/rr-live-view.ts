@@ -148,11 +148,12 @@ export class RRLiveView extends LitElement {
   /**
    * Whether the user has overridden the refusal for this session.
    *
-   * The override exists because the check's false-positive rate is young: every
-   * number behind `MAX_DRIFT_TRACK_FRACTION` comes from synthetic warps,
-   * and a live camera brings rolling shutter and autofocus that no warp
-   * reproduces (#89 § Notes). It is deliberately **not** sticky across a
-   * remount — a new session should start by telling the truth again.
+   * The override exists because the check's false-positive rate is young:
+   * `MAX_DRIFT_TRACK_FRACTION` is set from one rig's stills
+   * (`docs/research/drift-tolerance-measured.md`) and the bench's grades are
+   * synthetic warps, while a live camera brings rolling shutter and autofocus
+   * that neither reproduces (#89 § Notes). It is deliberately **not** sticky
+   * across a remount — a new session should start by telling the truth again.
    */
   @state() private _overrideDrift = false;
   /** When recording started and the drift rows since, or `null` when not recording (#217). */
