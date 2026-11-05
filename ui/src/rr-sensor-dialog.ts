@@ -12,7 +12,7 @@ import type { SlInput } from '@shoelace-style/shoelace';
  * `name` is **absent** when unset (`SPEC.md` § Occupancy Output), and a stored
  * `""` would be a name that displays as nothing.
  */
-export interface SensorNameCommitDetail {
+export interface SensorCommitDetail {
   readonly name: string | null;
 }
 
@@ -33,7 +33,7 @@ export interface SensorNameCommitDetail {
  * `rr-calibration-dialog`, because the value it starts from belongs to the
  * gesture rather than to any parent state.
  *
- * @fires rr-sensor-name-commit - The user confirmed. Detail: {@link SensorNameCommitDetail}
+ * @fires rr-sensor-commit - The user confirmed. Detail: {@link SensorCommitDetail}
  */
 @customElement('rr-sensor-dialog')
 export class RRSensorDialog extends LitElement {
@@ -97,7 +97,7 @@ export class RRSensorDialog extends LitElement {
     const text = this._field.value.trim();
     this.hide();
     this.dispatchEvent(
-      new CustomEvent<SensorNameCommitDetail>('rr-sensor-name-commit', {
+      new CustomEvent<SensorCommitDetail>('rr-sensor-commit', {
         detail: { name: text === '' ? null : text },
         bubbles: true,
         composed: true,
@@ -114,7 +114,7 @@ export class RRSensorDialog extends LitElement {
 
   render() {
     return html`
-      <look-dialog label="Name sensor" size="small">
+      <look-dialog label="Sensor" size="small">
         <div class="hint">
           Optional. Names are free text and need not be unique — consumers key on the
           sensor's id${this._id ? html`, <span class="identity">${this._id}</span>` : ''}, which is
@@ -128,10 +128,10 @@ export class RRSensorDialog extends LitElement {
           @keydown=${this._onKeyDown}
         ></sl-input>
 
-        <sl-button id="sensor-name-cancel" slot="footer" @click=${() => this.hide()}>
+        <sl-button id="sensor-cancel" slot="footer" @click=${() => this.hide()}>
           Cancel
         </sl-button>
-        <sl-button id="sensor-name-confirm" slot="footer" variant="primary" @click=${this._onConfirm}>
+        <sl-button id="sensor-confirm" slot="footer" variant="primary" @click=${this._onConfirm}>
           Save
         </sl-button>
       </look-dialog>
@@ -145,6 +145,6 @@ declare global {
   }
 
   interface HTMLElementEventMap {
-    'rr-sensor-name-commit': CustomEvent<SensorNameCommitDetail>;
+    'rr-sensor-commit': CustomEvent<SensorCommitDetail>;
   }
 }

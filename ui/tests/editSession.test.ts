@@ -536,7 +536,7 @@ describe('EditSession', () => {
       s.selectTool('calibration');
 
       expect(await s.click({ x: 322, y: 241 }, SCALE)).toEqual({
-        kind: 'name-sensor',
+        kind: 'edit-sensor',
         id: sensors(s)[0].id,
         name: null,
       });
@@ -548,7 +548,7 @@ describe('EditSession', () => {
       const s = session({ tool: 'sensor' });
       await clicks(s, { x: 600, y: 400 });
 
-      expect((await s.click({ x: 640, y: 400 }, SCALE)).kind).toBe('name-sensor');
+      expect((await s.click({ x: 640, y: 400 }, SCALE)).kind).toBe('edit-sensor');
       expect(sensors(s)).toHaveLength(1);
     });
 
@@ -557,7 +557,7 @@ describe('EditSession', () => {
       await clicks(s, { x: 320, y: 240 });
       const { id } = sensors(s)[0];
 
-      await s.nameSensor(id, 'Yard throat');
+      await s.editSensor(id, 'Yard throat');
       expect(sensors(s)[0].name).toBe('Yard throat');
       expect(s.history.undoLabel).toContain('sensor');
 
@@ -570,8 +570,8 @@ describe('EditSession', () => {
       await clicks(s, { x: 320, y: 240 });
       const { id } = sensors(s)[0];
 
-      await s.nameSensor(id, 'Yard throat');
-      await s.nameSensor(id, null);
+      await s.editSensor(id, 'Yard throat');
+      await s.editSensor(id, null);
 
       expect('name' in sensors(s)[0]).toBe(false);
     });
@@ -580,17 +580,17 @@ describe('EditSession', () => {
       const s = session({ tool: 'sensor' });
       await clicks(s, { x: 320, y: 240 });
       const { id } = sensors(s)[0];
-      await s.nameSensor(id, 'Yard throat');
+      await s.editSensor(id, 'Yard throat');
       const size = s.history.size;
 
-      await s.nameSensor(id, 'Yard throat');
+      await s.editSensor(id, 'Yard throat');
 
       expect(s.history.size).toBe(size);
     });
 
     it('drops a name for a sensor that is gone', async () => {
       const s = session({ tool: 'sensor' });
-      await s.nameSensor('S1abcdefghi', 'Yard throat');
+      await s.editSensor('S1abcdefghi', 'Yard throat');
       expect(s.history.size).toBe(0);
     });
 
@@ -598,7 +598,7 @@ describe('EditSession', () => {
       const s = session({ tool: 'sensor' });
       await clicks(s, { x: 320, y: 200 });
       const { id } = sensors(s)[0];
-      await s.nameSensor(id, 'Yard throat');
+      await s.editSensor(id, 'Yard throat');
       const size = s.history.size;
       const before = structuredClone(points(s));
 
@@ -683,7 +683,7 @@ describe('EditSession', () => {
     it('survives a save and reopen', async () => {
       const s = session({ tool: 'sensor' });
       await clicks(s, { x: 320, y: 240 });
-      await s.nameSensor(sensors(s)[0].id, 'Yard throat');
+      await s.editSensor(sensors(s)[0].id, 'Yard throat');
 
       const reopened = await R49Archive.load(await s.archive.export());
 

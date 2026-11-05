@@ -371,7 +371,7 @@ export class EditSession {
       case 'sensor': {
         const sensor = this.sensor(hit.id);
         if (!sensor) return NONE;
-        return { kind: 'name-sensor', id: sensor.id, name: sensor.name ?? null };
+        return { kind: 'edit-sensor', id: sensor.id, name: sensor.name ?? null };
       }
       case 'car-endpoint':
       case 'coupler':
@@ -612,9 +612,9 @@ export class EditSession {
   }
 
   /** Names a sensor, or removes its name for `null`. Does nothing if it is gone. */
-  async nameSensor(id: string, name: string | null) {
+  async editSensor(id: string, name: string | null) {
     if (!this.sensor(id)) return;
-    await this._record('name sensor', { kind: 'layout' }, () => {
+    await this._record('edit sensor', { kind: 'layout' }, () => {
       this._writeLayout({
         sensors: this._sensors().map(sensor => {
           if (sensor.id !== id) return sensor;
