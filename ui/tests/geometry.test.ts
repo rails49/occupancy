@@ -4,6 +4,7 @@ import {
   coupledEnds,
   samePoint,
   carWidthPx,
+  sourceDpt,
   carCorners,
   carCovering,
   carUnderPointer,
@@ -65,6 +66,13 @@ describe('trackWidthPx', () => {
     // comparable on the photograph — which is the point of drawing either at a
     // world size rather than a screen one.
     expect(carWidthPx(20) / trackWidthPx(20)).to.be.closeTo(2.0906, 1e-4);
+  });
+});
+
+describe('sourceDpt', () => {
+  it("is the layout's DPT in a picture's own pixels", () => {
+    // A 1280-wide capture of a layout authored at 1920 and DPT 18.
+    expect(sourceDpt(18, 1280, 1920)).to.equal(12);
   });
 });
 

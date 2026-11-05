@@ -14,7 +14,7 @@ const detections: Detection[] = [
   { centre: { x: 50, y: 50 }, length: 60, width: 42, angle: 0, class: 'stock', confidence: 0.9 },
 ];
 
-const detect = vi.fn(async (_source: unknown, _frame: unknown) => detections);
+const detect = vi.fn(async (_source: unknown, _frame: unknown, _dpt: number) => detections);
 const dispose = vi.fn(async () => {});
 const loadDetector = vi.fn(async (_source: string) => ({ detect, dispose }));
 
@@ -93,7 +93,9 @@ describe('localModelResultSource', () => {
     expect(detect).toHaveBeenCalledTimes(1);
     // `camera.resolution`, not the frame's own 1280x720: the frame sensors and
     // labels are authored in (`SPEC.md` § Output encoding).
-    expect(detect).toHaveBeenCalledWith(frame.source, { width: 100, height: 100 });
+    // The DPT in the source's own pixels: it is 1280 wide against the 100 the
+    // layout's DPT is measured in.
+    expect(detect).toHaveBeenCalledWith(frame.source, { width: 100, height: 100 }, DPT * 12.8);
     expect(result.detections).toEqual(detections);
     expect(result.sensorStates.get('S1abcdefghi')).toEqual({
       state: 'occupied',
@@ -157,6 +159,16 @@ describe('localModelResultSource', () => {
     expect([...result.sensorStates.values()]).toEqual([
       { state: 'unknown', reason: 'no-calibration' },
     ]);
+  });
+
+  it('does not run the detector with no DPT to resample by', async () => {
+    const source = localModelResultSource(archive);
+    await source.open();
+
+    const result = await source.resultFor(frame, { drifted: false, dpt: null });
+
+    expect(detect).not.toHaveBeenCalled();
+    expect(result.detections).toEqual([]);
   });
 
   it('reads the sensors per frame, so one authored later is answered', async () => {

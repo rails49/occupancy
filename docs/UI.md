@@ -565,8 +565,8 @@ would otherwise fall back to — so an unset path fails on a hashed filename wit
 editor needs inference.
 
 Vite copies the model into the bundle only if `@rails49/detector/model` resolves to a file, so
-builds and typechecks must keep working with no model present — `0.0.1` carries none, and a linked
-checkout may have none. Without it the live view starts, shows the no-model banner and reports every sensor
+builds and typechecks must keep working with no model present — a release may carry none
+(`docs/SYSTEM.md` § The model), and a linked checkout may have none. Without it the live view starts, shows the no-model banner and reports every sensor
 `unknown`.
 
 ## L1 lives in `occupancy.ts` (#231)

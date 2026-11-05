@@ -571,10 +571,9 @@ export class RRLiveView extends LitElement {
 
       ${this._dpt === null
         ? html`<div class="notice">
-            This layout has no calibration, so no DPT resolves and every sensor reads
-            <strong>unknown</strong>. Cars are still detected — the boxes below are real; only the
-            per-sensor answer needs the car width DPT derives. Place calibration points in the
-            editor.
+            This layout has no calibration, so no DPT resolves. The detector needs it, so no cars
+            are detected and every sensor reads <strong>unknown</strong>. Place calibration points
+            in the editor.
           </div>`
         : ''}
 

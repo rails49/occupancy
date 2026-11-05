@@ -18,6 +18,7 @@ import type { R49Archive } from '@rails49/r49';
 import type { Detection } from '@rails49/detector';
 import type { Detector } from '@rails49/detector/browser';
 import { openDetector, DETECTOR_SOURCE } from './detectorSession.js';
+import { sourceDpt } from './geometry.js';
 import { occupancy } from './occupancy.js';
 import type { FrameResult, ResultContext, ResultSource, SourceFrame } from './liveSources.js';
 
@@ -66,8 +67,8 @@ export function localModelResultSource(archive: R49Archive): ResultSource {
       const manifest = archive.getManifest();
       // The frame every coordinate is authored in (`SPEC.md` § Output
       // encoding). `detect` is asked to answer in it, so the capture's own
-      // pixel count — a phone that ignored the requested 1920x1080 — never
-      // reaches this file.
+      // pixel count — a phone that ignored the requested 1920x1080 — reaches
+      // this file only to put the DPT in the capture's pixels.
       const authored = manifest.camera.resolution;
 
       // `null` is the distinction `occupancy` reads: no model at all, rather
@@ -75,18 +76,29 @@ export function localModelResultSource(archive: R49Archive): ResultSource {
       // sensor `clear`, which is the confident-looking miss SPEC forbids.
       let detections: readonly Detection[] | null = null;
       let inference: number | undefined;
+      const { dpt } = context;
       if (detector) {
-        const before = performance.now();
-        try {
-          detections = await detector.detect(frame.source, authored);
-          // The detect call alone — preprocessing, the session, the decode. Not
-          // the whole frame: L1 and the render are the part that scales with
-          // the layout, and folding them in would hide which one is slow.
-          inference = performance.now() - before;
-        } catch (err) {
-          // A frame that fails is one frame. The loop stays alive and this
-          // frame reads `unknown`.
-          console.error('Detection failed for this frame', err);
+        if (dpt === null) {
+          // `detect` resamples by the DPT, so with none there are no boxes. An
+          // empty list, so that `occupancy` gets past `no-model` to `no-calibration`.
+          detections = [];
+        } else {
+          const before = performance.now();
+          try {
+            detections = await detector.detect(
+              frame.source,
+              authored,
+              sourceDpt(dpt, frame.width, authored.width)
+            );
+            // The detect call alone — preprocessing, the session, the decode. Not
+            // the whole frame: L1 and the render are the part that scales with
+            // the layout, and folding them in would hide which one is slow.
+            inference = performance.now() - before;
+          } catch (err) {
+            // A frame that fails is one frame. The loop stays alive and this
+            // frame reads `unknown`.
+            console.error('Detection failed for this frame', err);
+          }
         }
       }
 
@@ -100,7 +112,7 @@ export function localModelResultSource(archive: R49Archive): ResultSource {
         sensorStates: occupancy({
           detections,
           sensors: manifest.layout.sensors,
-          dpt: context.dpt,
+          dpt,
           frame: authored,
           // Read here rather than on entry: a drift sample that landed while
           // the inference above was running refuses this frame. See

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { fixture, html } from '@open-wc/testing';
-import { R49Archive } from '@rails49/r49';
+import { getDPT, R49Archive } from '@rails49/r49';
 import { CONFIDENCE_THRESHOLD } from '@rails49/detector';
 import type { Detection } from '@rails49/detector';
 import '../src/rr-diagnostics-view.js';
@@ -247,6 +247,23 @@ describe('rr-diagnostics-view', () => {
     expect(detect).toHaveBeenCalledTimes(3);
   });
 
+  it("gives detect the layout's DPT, scaled to the image's own pixels", async () => {
+    // The fixture declares 200 x 100, and this image is twice that.
+    HTMLImageElement.prototype.decode = async function decode(this: HTMLImageElement) {
+      Object.defineProperty(this, 'naturalWidth', { value: 400, configurable: true });
+      Object.defineProperty(this, 'naturalHeight', { value: 200, configurable: true });
+    };
+    const archive = await archiveOf(1);
+    const el = await fixture<RRDiagnosticsView>(
+      html`<rr-diagnostics-view .archive=${archive}></rr-diagnostics-view>`
+    );
+    await waitFor(el, () => detect.mock.calls.length === 1);
+
+    const [, frame, dpt] = detect.mock.calls[0]!;
+    expect(frame).to.deep.equal({ width: 200, height: 100 });
+    expect(dpt).to.equal(2 * getDPT(archive.getManifest())!);
+  });
+
   it("reports at the detector's own threshold until the user moves it", async () => {
     // The live view takes `detect`'s default, which is this constant; the
     // report has to start from the same number to describe what ships (#232).
@@ -292,7 +309,7 @@ describe('rr-diagnostics-view', () => {
     );
     await waitFor(el, () => detect.mock.calls.length === 2);
 
-    for (const [, , options] of detect.mock.calls) {
+    for (const [, , , options] of detect.mock.calls) {
       expect(options.minConfidence).to.be.lessThan(report(el)!.threshold);
     }
     // The archive's own resolution, not the fallback.

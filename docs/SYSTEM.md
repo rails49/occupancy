@@ -52,7 +52,7 @@ The drift tolerance is `MAX_DRIFT_TRACK_FRACTION`, a constant in
 
 The model ships inside `@rails49/detector`, so the package version names it
 ([rails49/detector `docs/SYSTEM.md` § Model files](https://github.com/rails49/detector/blob/main/docs/SYSTEM.md#model-files)).
-`0.0.1` carries none. The package exposes the model as its `./model` exports
+`0.0.2` carries none. The package exposes the model as its `./model` exports
 entry (ADR 0019). Vite resolves that entry and copies the file into the bundle
 only if it exists. A package with no `./model` entry, or an entry with no file
 behind it, builds without one, and the live view shows a no-model banner and
