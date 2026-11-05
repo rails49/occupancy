@@ -183,7 +183,9 @@ export class RRSensorDialog extends LitElement {
               placeholder="e.g. c3.a"
               @sl-input=${this._onIdInput}
             ></sl-input>
-            ${this._refusal ? html`<div class="refusal">${this._refusal}</div>` : ''}
+            ${this._refusal
+              ? html`<div class="refusal" role="alert">${this._refusal}</div>`
+              : ''}
           </div>
 
           <sl-input
