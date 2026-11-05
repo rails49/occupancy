@@ -2,6 +2,7 @@ import { LitElement, html, css, svg } from 'lit';
 import { lookTheme } from '@rails49/look';
 import type { SVGTemplateResult } from 'lit';
 import { customElement, property, state, query } from 'lit/decorators.js';
+import { live } from 'lit/directives/live.js';
 import { renderCalibrationPoint, calibrationMarkerStyles } from './calibrationMarker.js';
 import { renderSensor, sensorMarkerStyles } from './sensorMarker.js';
 import type { SensorSymbolSize } from './sensorMarker.js';
@@ -955,7 +956,7 @@ export class RrViewer extends LitElement {
         ${this.src ? html`<img .src=${this.src} @load=${this.onMediaLoad} />` : ''}
         ${this.stream
           ? html`<video
-              .srcObject=${this.stream}
+              .srcObject=${live(this.stream)}
               autoplay
               playsinline
               @loadedmetadata=${this.onMediaLoad}

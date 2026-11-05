@@ -1,5 +1,5 @@
 import { fixture, html, expect } from '@open-wc/testing';
-import { vi, describe, it, beforeEach } from 'vitest';
+import { vi, describe, it, beforeEach, afterEach } from 'vitest';
 import '../src/rr-viewer.js';
 import { RrViewer } from '../src/rr-viewer.js';
 import type {
@@ -89,6 +89,60 @@ describe('rr-viewer', () => {
     `);
     expect(el.shadowRoot!.querySelector('video')).to.exist;
     expect(el.shadowRoot!.querySelector('img')).to.not.exist;
+  });
+
+  describe('setting srcObject (#343)', () => {
+    // jsdom has no `srcObject`. In a browser each set restarts the element's load.
+    let sets: unknown[];
+
+    beforeEach(() => {
+      sets = [];
+      Object.defineProperty(HTMLMediaElement.prototype, 'srcObject', {
+        configurable: true,
+        get(this: HTMLMediaElement & { _srcObject?: unknown }) {
+          return this._srcObject ?? null;
+        },
+        set(this: HTMLMediaElement & { _srcObject?: unknown }, value: unknown) {
+          this._srcObject = value;
+          sets.push(value);
+        },
+      });
+    });
+
+    afterEach(() => {
+      delete (HTMLMediaElement.prototype as { srcObject?: unknown }).srcObject;
+    });
+
+    it('sets it once across renders with the same stream', async () => {
+      const stream = {} as MediaStream;
+      const el = await fixture<RrViewer>(html`
+        <rr-viewer .stream=${stream} .resolution=${resolution}></rr-viewer>
+      `);
+      const video = el.shadowRoot!.querySelector('video')!;
+      Object.defineProperty(video, 'videoWidth', { value: 1280, configurable: true });
+      Object.defineProperty(video, 'videoHeight', { value: 720, configurable: true });
+
+      video.dispatchEvent(new Event('loadedmetadata'));
+      await el.updateComplete;
+      el.detections = [];
+      await el.updateComplete;
+
+      expect(sets).to.deep.equal([stream]);
+    });
+
+    it('sets it again when the stream changes', async () => {
+      const first = {} as MediaStream;
+      const second = {} as MediaStream;
+      const el = await fixture<RrViewer>(html`
+        <rr-viewer .stream=${first} .resolution=${resolution}></rr-viewer>
+      `);
+
+      el.stream = second;
+      await el.updateComplete;
+
+      expect(sets).to.have.length(2);
+      expect(sets[1]).to.equal(second);
+    });
   });
 
   it('sets SVG viewBox correctly', async () => {

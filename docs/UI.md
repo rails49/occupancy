@@ -350,6 +350,8 @@ The same component backs the editor (`src` → `<img>`) and the live view (`stre
   the crop); the defined answer is that the frame is **stretched** to cover the photograph, and the
   viewer emits `rr-media-frame` so the editor can warn (`.frame-warning`, which blocks nothing).
   Silently absorbing the mismatch is forbidden (#41).
+* `srcObject` is set only when the stream changes (#343). Lit sets an object-valued property on every
+  render and each set restarts the video's load, so the binding goes through `live()`.
 * The viewer **reports pointer gestures and authors nothing**. It emits `rr-pointer-down`/`-move`/
   `-up`/`-cancel`/`-contextmenu` with coordinates already converted to **image pixels**, via
   `createSVGPoint` + the inverse of the **content group's** `getScreenCTM` (the group's user space
