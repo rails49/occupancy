@@ -54,6 +54,14 @@ export function trackWidthPx(dpt: number): number {
 export const SYMBOL_SIZE_SCREEN_PX = 36;
 
 /**
+ * The layout's DPT in a picture's own pixels, which is what `detect` takes. The
+ * layout's is measured in `camera.resolution`.
+ */
+export function sourceDpt(dpt: number, sourceWidth: number, authoredWidth: number): number {
+  return (dpt * sourceWidth) / authoredWidth;
+}
+
+/**
  * The diameter a sensor is **drawn** at, in image pixels — the one place that
  * decides it.
  *

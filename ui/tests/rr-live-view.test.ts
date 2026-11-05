@@ -190,7 +190,9 @@ describe('rr-live-view', () => {
     // worse than none.
     const el = await fixture<RRLiveView>(html`<rr-live-view .archive=${archive}></rr-live-view>`);
 
-    expect(el.shadowRoot!.textContent).to.contain('no calibration');
+    const notice = el.shadowRoot!.textContent!.replace(/\s+/g, ' ');
+    expect(notice).to.contain('no calibration');
+    expect(notice).to.contain('no cars are detected');
   });
 
   it("sets no zoom: the capability is there, the control is the editor's (#44)", async () => {

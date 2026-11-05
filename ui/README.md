@@ -1396,14 +1396,14 @@ Camera stream under the two layers of the occupancy output ([#85]).
   gone.
 * `detect` is asked to answer in **`camera.resolution`**, the frame sensors and labels are authored
   in — by `localModelResultSource.ts`, which is the only thing in the live path that reads the
-  manifest per frame. The capture's own pixel count, the model grid and the letterbox bars stay
-  inside `@rails49/detector`; nothing here scales a coordinate.
+  manifest per frame. It also gives `detect` the layout's DPT in the capture's own pixels. The
+  resample and the tiles stay inside `@rails49/detector`; nothing here scales a coordinate.
 * **The loop runs whether or not a model loaded.** `occupancy()` is total, and with `detections:
   null` it answers every sensor `unknown` / `no-model` — a state SPEC names and the user needs to
   see. Suppressing the loop would leave the previous frame's answers on screen instead.
 * Three banners, and each says what it costs: **no model** (every sensor `unknown`, with the command
-  that builds one), **no calibration** (every sensor `unknown`, but *cars are still detected* —
-  L0 needs no DPT), and **drift** (below). The calibration one is resolved when the archive arrives
+  that builds one), **no calibration** (every sensor `unknown` and no cars detected, because
+  `detect` needs the DPT), and **drift** (below). The calibration one is resolved when the archive arrives
   rather than in the loop, so a session where no frame ever runs still shows it.
 * **Refuses to classify on camera drift, with an override** ([#94]). A drift check built from the
   archive's **reference image**, `images[0]` ([#118], `driftSession.ts`), is sampled every `DRIFT_SAMPLE_INTERVAL_MS` (3 s) rather

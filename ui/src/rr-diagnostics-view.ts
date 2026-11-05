@@ -9,6 +9,7 @@ import type { Detector } from '@rails49/detector/browser';
 import { openDetector, DETECTOR_SOURCE } from './detectorSession.js';
 import { diagnoseImage, rollUp } from './diagnostics.js';
 import type { ArchiveDiagnostics } from './diagnostics.js';
+import { sourceDpt } from './geometry.js';
 import './rr-diagnostics-report.js';
 import './rr-diagnostics-queue.js';
 import '@shoelace-style/shoelace/dist/components/button/button.js';
@@ -180,7 +181,8 @@ export class RRDiagnosticsView extends LitElement {
    */
   private async _sweep() {
     const archive = this.archive;
-    if (!archive) return;
+    const dpt = this._dpt;
+    if (!archive || dpt === null) return;
 
     const abandon = new AbortController();
     this._abandon = abandon;
@@ -238,9 +240,12 @@ export class RRDiagnosticsView extends LitElement {
         // leak. `releaseUrls` is idempotent for exactly that reason.
         if (abandon.signal.aborted) return releaseUrls(urls);
 
-        const detections = await this._detector.detect(element, frame, {
-          minConfidence: SWEEP_MIN_CONFIDENCE,
-        });
+        const detections = await this._detector.detect(
+          element,
+          frame,
+          sourceDpt(dpt, element.naturalWidth, frame.width),
+          { minConfidence: SWEEP_MIN_CONFIDENCE }
+        );
 
         raw.push({ filename: image.filename, detections });
         this._raw = [...raw];
