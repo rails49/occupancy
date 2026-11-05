@@ -4,11 +4,10 @@ import { customElement, property, state, query } from 'lit/decorators.js';
 import type { R49Archive } from '@rails49/r49';
 import { getDPT } from '@rails49/r49';
 import type { Detection, Frame } from '@rails49/detector';
-import type { Detector } from '@rails49/detector/browser';
 import type { DriftResult } from '@occupancy/drift';
-import { getCameraStream } from './capture.js';
-import { openDetector, DETECTOR_SOURCE } from './detectorSession.js';
-import { occupancy } from './occupancy.js';
+import { cameraFrameSource } from './cameraFrameSource.js';
+import { localModelResultSource } from './localModelResultSource.js';
+import type { FrameSource, LiveSources, ResultSource, SourceFrame } from './liveSources.js';
 import type { SensorState } from './occupancy.js';
 import {
   MAX_DRIFT_TRACK_FRACTION,
@@ -47,8 +46,8 @@ const DEFAULT_RESOLUTION: Frame = { width: 1920, height: 1080 };
 const DRIFT_SAMPLE_INTERVAL_MS = 3000;
 
 /**
- * The live view: camera stream, detector, and the two layers of the occupancy
- * output drawn over it.
+ * The live view: a frame, its occupancy answer, and the two layers of that
+ * output drawn over the frame.
  *
  * **This is the occupancy contract, not a demo.** What stood here before ran
  * the CNN once per sensor point and emitted marker glyphs — SPEC's "Testing and
@@ -78,11 +77,29 @@ const DRIFT_SAMPLE_INTERVAL_MS = 3000;
  * appended as a row, and turning it off or leaving the view downloads the rows
  * as a CSV. Recording goes on while refusing, as sampling does.
  *
- * **Properties:** `archive`.
+ * **The frames and the answers come from sources** (#330). The loop asks a
+ * `FrameSource` for a frame and a `ResultSource` for that frame's L0 and L1, so
+ * a video file or a service can stand in for either without this file knowing
+ * (#286, #331). `sources` is `null` for the camera and the model in this page,
+ * and what stays here is the drift check, the notices, the recording, `_dpt`
+ * and the frame rate — the view's own judgement, which is the same whatever is
+ * answering.
+ *
+ * **Properties:** `archive`, `sources`.
  */
 @customElement('rr-live-view')
 export class RRLiveView extends LitElement {
   @property({ attribute: false }) archive: R49Archive | null = null;
+  /**
+   * Where frames and results come from, or `null` for the camera and the model
+   * in this page.
+   *
+   * Read **on connect**, like the camera it replaces: the loop, the drift
+   * check and the result source's lifetime all hang off one mount, and
+   * swapping a source mid-session would mean tearing down and rebuilding all
+   * three. A different source is a different session.
+   */
+  @property({ attribute: false }) sources: LiveSources | null = null;
 
   @state() private _stream: MediaStream | null = null;
   /** L0 for the frame on screen. Empty, not stale, when no model is loaded. */
@@ -103,14 +120,15 @@ export class RRLiveView extends LitElement {
    */
   @state() private _dpt: number | null = null;
   /**
-   * Why the detector is not loaded, or `null` when it is.
+   * Why the result source cannot answer, or `null` when it can.
    *
    * Held as the message rather than a boolean: the causes are different jobs —
    * the published package holds no model yet, a deployed bundle that 404s
    * was built without the model — and the sensors all read `unknown` either
-   * way, which says nothing about which.
+   * way, which says nothing about which. The notice still names the local
+   * model, which is the only source that reports an error today.
    */
-  @state() private _modelError: string | null = null;
+  @state() private _sourceError: string | null = null;
   /**
    * The most recent drift measurement, or `null` before the first one lands.
    *
@@ -142,7 +160,8 @@ export class RRLiveView extends LitElement {
 
   @query('rr-viewer') private _viewer!: RrViewer;
 
-  private _detector: Detector | null = null;
+  private _frames: FrameSource | null = null;
+  private _results: ResultSource | null = null;
   private _driftSession: DriftSession | null = null;
   private _driftInFlight = false;
   private _driftSampledAt = 0;
@@ -210,57 +229,43 @@ export class RRLiveView extends LitElement {
 
   async connectedCallback() {
     super.connectedCallback();
-    await this._startCamera();
-    this._startDetection();
+    // The frames are acquired whatever else happens, as the camera was: a
+    // layout that is not loaded yet still shows what the camera sees.
+    this._frames = this.sources?.frames ?? cameraFrameSource(() => this._viewer);
+    this._results =
+      this.sources?.results ?? (this.archive ? localModelResultSource(this.archive) : null);
+    await this._frames.start();
+    this._stream = this._frames.stream;
+    void this._run();
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    this._stopCamera();
     this._running = false;
+    this._frames?.stop();
+    this._stream = null;
     // Leaving the view mid-recording downloads the rows rather than dropping them.
     this._stopRecording();
-    void this._detector?.dispose();
-    this._detector = null;
+    this._results?.close();
     // Nothing to dispose — a drift check holds only JS memory — but dropping it
     // is what stops an in-flight sample from writing state into a detached view.
     this._driftSession = null;
   }
 
-  private async _startCamera() {
-    try {
-      this._stream = await getCameraStream();
-    } catch (err) {
-      console.error('Failed to access camera', err);
-    }
-  }
-
-  private _stopCamera() {
-    if (this._stream) {
-      this._stream.getTracks().forEach(track => track.stop());
-      this._stream = null;
-    }
-  }
-
-  private async _startDetection() {
-    if (!this.archive) return;
+  /** Open the result source, prepare the drift check, then run the loop. */
+  private async _run() {
+    if (!this.archive || !this._results) return;
+    // Set before the awaits, so that leaving the view while a model is still
+    // loading stops the loop before it starts.
     this._running = true;
 
-    try {
-      // The runtime path and the crossOriginIsolated warning live in
-      // `detectorSession.ts`, which the diagnostics view shares (#87).
-      this._detector = await openDetector();
-      this._modelError = null;
-    } catch (err) {
-      // Not fatal, and deliberately so — see the class comment. The loop starts
-      // anyway and every sensor reports `unknown` / `no-model`.
-      this._modelError = err instanceof Error ? err.message : String(err);
-      console.error(`Failed to load the detector from ${DETECTOR_SOURCE}`, err);
-    }
+    // A source that cannot answer is not fatal, and deliberately so — see the
+    // class comment. The loop starts anyway and every sensor reports `unknown`.
+    this._sourceError = await this._results.open();
 
     await this._openDriftCheck();
 
-    this._loop();
+    await this._loop();
   }
 
   /**
@@ -289,39 +294,6 @@ export class RRLiveView extends LitElement {
       this._driftError = err instanceof Error ? err.message : String(err);
       console.error('Failed to prepare the camera-drift check', err);
     }
-  }
-
-  /**
-   * The media element the frame is read from, once it has one to read, with the
-   * intrinsic size it decoded at.
-   *
-   * The readiness check is here rather than inside `detect`, which throws on a
-   * source with no dimensions: a video before its metadata arrives is the
-   * normal first few frames of a session, not an error to report.
-   *
-   * The size comes out with it because the drift check needs to grab the frame
-   * into a canvas, and the *intrinsic* size is the one to grab at — not
-   * `camera.resolution`. A phone that ignored the requested 1920x1080 hands back
-   * whatever it felt like; the drift check normalizes resolution internally, so
-   * feeding it the real pixels loses nothing, where scaling them to a declared
-   * frame first would resample twice.
-   */
-  private _readySource(): { source: CanvasImageSource; width: number; height: number } | null {
-    const video = this._viewer?.getVideoElement();
-    if (video) {
-      return video.readyState >= 2 && video.videoWidth > 0
-        ? { source: video, width: video.videoWidth, height: video.videoHeight }
-        : null;
-    }
-
-    const img = this._viewer?.getImageElement();
-    if (img) {
-      return img.complete && img.naturalWidth > 0
-        ? { source: img, width: img.naturalWidth, height: img.naturalHeight }
-        : null;
-    }
-
-    return null;
   }
 
   /**
@@ -374,7 +346,7 @@ export class RRLiveView extends LitElement {
    * the camera back is the fix, and a gate that stopped measuring the moment it
    * fired could not see it happen.
    */
-  private _maybeSampleDrift(source: CanvasImageSource, width: number, height: number) {
+  private _maybeSampleDrift(frame: SourceFrame) {
     const session = this._driftSession;
     if (!session || this._driftInFlight) return;
     if (this._drift !== null && performance.now() - this._driftSampledAt < DRIFT_SAMPLE_INTERVAL_MS) {
@@ -388,7 +360,7 @@ export class RRLiveView extends LitElement {
         // first would measure whatever the camera was pointing at by the time
         // the check got round to it.
         const at = new Date();
-        const plane = grabPlane(source, width, height);
+        const plane = grabPlane(frame.source, frame.width, frame.height);
         const result = await session.check.check(plane);
         // A view that was disconnected mid-check, or handed a different archive,
         // must not take the answer: it is about references this view no longer
@@ -398,8 +370,8 @@ export class RRLiveView extends LitElement {
           this._driftError = null;
           // A frame grabbed before recording started is not part of the recording.
           if (this._recording && at >= this._recording.started) {
-            const stream = this._stream?.getVideoTracks()[0]?.getSettings() ?? {};
-            const row = driftRow(at, result.displacementPx, this._dpt, this._overrideDrift, stream);
+            const settings = this._frames?.settings ?? {};
+            const row = driftRow(at, result.displacementPx, this._dpt, this._overrideDrift, settings);
             this._recording = { ...this._recording, rows: [...this._recording.rows, row] };
           }
         }
@@ -442,62 +414,56 @@ export class RRLiveView extends LitElement {
     </div>`;
   }
 
+  /**
+   * One frame at a time: ask the frame source for pixels, then the result
+   * source for what they mean.
+   *
+   * The loop's one way out is the `null` a stopped source gives, which is why
+   * `next()` is awaited rather than polled — the pacing belongs to the source
+   * (an animation frame for the camera, a poll for a service), and the view
+   * runs exactly as fast as it is fed.
+   */
   private async _loop() {
-    if (!this._running || !this.archive) return;
+    const frames = this._frames;
+    const results = this._results;
+    if (!frames || !results) return;
+    // Captured once: the context below reads the refusal off the view, and an
+    // object literal's getter cannot see `this`.
+    const view = this;
 
-    const ready = this._readySource();
-    if (!ready) {
-      requestAnimationFrame(() => this._loop());
-      return;
+    while (this._running) {
+      const frame = await frames.next();
+      if (frame === null || !this._running) return;
+
+      this._maybeSampleDrift(frame);
+
+      const startTime = performance.now();
+      if (this._lastFrameTime) this._fps = 1000 / (startTime - this._lastFrameTime);
+      this._lastFrameTime = startTime;
+
+      // `drifted` is the refusal and `_dpt` is resolved from the archive rather
+      // than per frame, so #166 stays one fix. The source turns the two into
+      // one state per sensor: this view never builds an `unknown` of its own.
+      //
+      // A getter, not a value: drift lands beside the loop, and a sample that
+      // arrives while this frame is being answered refuses this frame rather
+      // than the next one — see `ResultContext.drifted`.
+      const result = await results.resultFor(frame, {
+        get drifted() {
+          return view._refusing;
+        },
+        dpt: this._dpt,
+      });
+      // An answer that lands after the view was left is about a session that is
+      // over.
+      if (!this._running) return;
+
+      this._detections = result.detections;
+      this._sensorStates = result.sensorStates;
+      // Absent is "nothing inferred", so the readout keeps the last real
+      // measurement rather than dropping to zero for a frame.
+      if (result.inference !== undefined) this._inference = result.inference;
     }
-    const { source } = ready;
-
-    this._maybeSampleDrift(source, ready.width, ready.height);
-
-    const startTime = performance.now();
-    if (this._lastFrameTime) this._fps = 1000 / (startTime - this._lastFrameTime);
-    this._lastFrameTime = startTime;
-
-    const manifest = this.archive.getManifest();
-    // The frame every coordinate is authored in (`SPEC.md` § Output encoding).
-    // `detect` is asked to answer in it, so the capture's own pixel count — a
-    // phone that ignored the requested 1920x1080 — never reaches this file.
-    const frame = manifest.camera.resolution ?? DEFAULT_RESOLUTION;
-
-    // `null` is the distinction `occupancy` reads: no model at all, rather than
-    // a model that found nothing. An empty array would report every sensor
-    // `clear`, which is the confident-looking miss SPEC forbids.
-    let detections: readonly Detection[] | null = null;
-    if (this._detector) {
-      const before = performance.now();
-      try {
-        detections = await this._detector.detect(source, frame);
-        // The detect call alone — preprocessing, the session, the decode. Not
-        // the whole frame: L1 and the render are the part that scales with the
-        // layout, and folding them in would hide which one is slow.
-        this._inference = performance.now() - before;
-      } catch (err) {
-        // A frame that fails is one frame. Keep the loop alive and report
-        // `unknown` for it rather than freezing the last answer on screen.
-        console.error('Detection failed for this frame', err);
-      }
-    }
-
-    this._detections = detections ?? [];
-    // L0 is handed over as found even while refusing — the boxes are true of the
-    // frame they were computed in. `drifted` is what withholds L1, and it is
-    // `occupancy()` that turns it into one `unknown` per sensor, so this view
-    // never builds an unknown-map of its own (the whole reason that function is
-    // total).
-    this._sensorStates = occupancy({
-      detections,
-      sensors: manifest.layout.sensors,
-      dpt: this._dpt,
-      frame,
-      drifted: this._refusing,
-    });
-
-    requestAnimationFrame(() => this._loop());
   }
 
   /** How many sensors read `occupied` — the number a controller would act on. */
@@ -579,11 +545,11 @@ export class RRLiveView extends LitElement {
         .alignmentTolerance=${this._driftTolerancePx}
       ></rr-stats-bar>
 
-      ${this._modelError
+      ${this._sourceError
         ? html`<div class="notice">
             No detector loaded, so every sensor reads <strong>unknown</strong>. No model has been
             published yet; to run one, link a rails49/detector checkout that has one, then rebuild
-            the UI. (${this._modelError})
+            the UI. (${this._sourceError})
           </div>`
         : ''}
 

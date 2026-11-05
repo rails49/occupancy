@@ -498,8 +498,9 @@ because `tests/ortAssets.test.ts` reads the `wasmPaths` assignment as source tex
 
 `ui/src/detectorSession.ts` is the sole place that calls `loadDetector`. It points
 `ort.env.wasm.wasmPaths` at `/ort/` — the same path everywhere, deployed or not (#15) — then
-loads `DETECTOR_MODEL_URL`. **Two views open a session through it**: `rr-live-view` per camera
-frame, and `rr-diagnostics-view` over an archive's stills.
+loads `DETECTOR_MODEL_URL`. **Two views open a session through it**: the live view's local result
+source (`localModelResultSource.ts`, #330), which runs it per camera frame, and
+`rr-diagnostics-view` over an archive's stills.
 
 It used to live in the live view, which was the only caller. Two callers make the extraction
 load-bearing rather than tidy: `ort.env` is module-global, so a second view setting the path would
@@ -578,7 +579,62 @@ width it substitutes for the predicted one. `covers`, the strict point-in-orient
 beside `occupancy()` because nothing else calls it.
 
 It is pure and total — one state per sensor, always — so the live view hands `rr-viewer`'s sensor
-markers one answer and never builds an `unknown` itself.
+markers one answer and never builds an `unknown` itself. Its one caller in the live path is
+`localModelResultSource.ts` (#330); the view passes `drifted` and `dpt` in and reads the map back.
+
+## Frames and results come from sources (#330)
+
+`rr-live-view` owns a loop; it no longer owns a camera or a model. The loop asks a **frame source**
+for a frame and then a **result source** for that frame's L0 and L1, both declared in
+`ui/src/liveSources.ts`:
+
+* `FrameSource` — `start()`, `stop()`, `next()`, plus the `stream` `rr-viewer` shows and the
+  `settings` the drift rows record. `next()` resolves with the next frame to run on and with `null`
+  once the source has stopped, which is the loop's **one** way out. It is also the loop's pacing:
+  the camera waits one animation frame per frame, exactly as the `requestAnimationFrame` loop in the
+  view did, and a service would wait on its poll instead. A source that resolved synchronously would
+  spin the loop in microtasks and starve every timer on the page.
+* `ResultSource` — `open()` answers with the message to show or `null`, `close()` releases the model,
+  and `resultFor(frame, { drifted, dpt })` answers with L0, L1 and an optional inference time.
+  It **never rejects**: a frame that fails is one frame, and the loop must keep running and report
+  `unknown` for it rather than freezing the last answer on screen.
+
+The two implementations are the local ones. `cameraFrameSource.ts` holds the `MediaStream` and reads
+the frame back out of the `<video>` **`rr-viewer` mounted** — the viewer is what the user is looking
+at, and a second element would decode the same stream twice; it is handed a getter because `@query`
+resolves after the first render and the camera is acquired before it. `localModelResultSource.ts`
+holds the detector's lifetime, the inference time and the load error, and is the only caller of
+`occupancy()` in the live path.
+
+**What stays in the view is its own judgement**: the drift check and the refusal, the three notices,
+the recording, `_dpt` — resolved once from the archive, so #166 stays one fix — the frame rate, and
+showing the source's error and inference time. None of it changes with what is answering, which is
+the whole point: a video file or a service (#286, #331, rails49/detector#64) reaches the same gate.
+
+**`sources` is read on connect.** The loop, the drift check and the result source's lifetime all hang
+off one mount; swapping a source mid-session would mean tearing down and rebuilding all three, and a
+different source is a different session.
+
+**`ResultContext` is live, and that is load-bearing.** `drifted` is a *getter* over the view's
+refusal, so a source reads it when it is about to answer rather than when it was called. Drift is
+sampled beside the loop and lands whenever the check finishes, so a sample that lands while this
+frame is being inferred refuses *this* frame — which is what the gate did while the loop and the
+model were one file. Destructuring `drifted` in a parameter list reads it on entry and costs the
+refusal a frame; `tests/rr-live-view.test.ts` is what catches that.
+
+**One object may be both sources.** A service answers with a frame and its results together, so #331
+hands the same object in twice; a frame may carry data only its own source reads, which is why
+`SourceFrame` is a floor and not a ceiling.
+
+The frame check used to have an image branch, reading `rr-viewer`'s `getImageElement()`. It is gone:
+the live view never sets `src`, so it could not run. `getImageElement()` itself stays on the viewer
+with no caller.
+
+`tests/rr-live-view.sources.test.ts` drives the view with **fake** sources — each result reaching the
+viewer and the stats bar, `drifted` and `dpt` reaching `resultFor`, leaving the view stopping both —
+and `tests/rr-live-view.test.ts` is unchanged, which is the evidence that the camera and the shipped
+detector still behave the way they did through the same loop. jsdom decodes no video, so the camera
+path is driven there with a stand-in `<video>` and measured by hand in Chromium.
 
 ## Camera drift lives in `driftSession.ts`, and only the live view measures it (#89, #252)
 

@@ -67,11 +67,24 @@ export interface FrameSource {
   readonly settings: MediaTrackSettings;
 }
 
-/** What the view needs to know about a frame to answer it. */
+/**
+ * What the view needs to know about a frame to answer it.
+ *
+ * **Live, not a snapshot.** The view hands over a view onto its own state, and
+ * a source reads each field when it is about to answer rather than when it was
+ * called — see {@link ResultContext.drifted}.
+ */
 export interface ResultContext {
   /**
    * Whether the view is refusing on camera drift, in which case L1 is withheld
    * (#94). The view measures drift and decides; the source applies it.
+   *
+   * **Read it when answering, not on entry.** Drift is sampled beside the loop
+   * and lands whenever the check finishes, so a sample that lands while this
+   * frame is still being inferred refuses *this* frame — which is how the gate
+   * behaved while the loop and the model were one file, and what
+   * `rr-live-view.test.ts` pins. Destructuring it in the parameter list reads
+   * it on entry and costs the refusal a frame.
    */
   readonly drifted: boolean;
   /**
