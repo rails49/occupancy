@@ -85,7 +85,9 @@ That frame is the only stable one. The model's input size changes on re-export. 
 
 Off-track detections pass through unchanged. A box far from any track contains no sensor and cannot change L1. Filtering would need the spline association rejected above, would make L0 not raw, and would hide real information: a box around a car in the scenery may be a false positive, a derailment, a hand over the layout, or a car on unlabeled track. Confidence is the filter for junk.
 
-Consumers key sensors on `id`. `name` is optional passthrough, absent when unset and never generated. Names are free text and not unique, and a controller mapping keyed on one breaks when someone renames it. A generated "Sensor 3" cannot be told apart from a name a person chose. The UI shows the `id` when there is no name. Uniqueness is not enforced.
+Consumers key sensors on `id`, which is what a controller knows the sensor by. It is generated when the sensor is placed, and a person can set it to the name the controller already uses ([#335](https://github.com/rails49/occupancy/issues/335)). It is unique within the layout, and the format refuses a duplicate. It may not contain `/`, `+`, `#`, `"`, `<` or `&`: `+` and `#` are MQTT's wildcards and are illegal in a topic, `/` is its level separator and would split one id into two levels, and `"`, `<` and `&` are markup in the Rocrail profile's XML. Every other character is allowed, inner spaces included, so an id can be the name a controller already uses. The refusal is the editor's and not the format's, which still allows any non-empty string: an archive holding an id the editor would refuse still loads, and that sensor's name stays editable.
+
+`name` is optional passthrough, absent when unset and never generated. Names are free text and **not** unique, and a controller mapping keyed on one breaks when someone renames it. A generated "Sensor 3" cannot be told apart from a name a person chose. The UI shows the `id` when there is no name. Uniqueness is not enforced for names.
 
 Couplings are not reported. They can be derived from L0 as two box endpoints that coincide.
 
