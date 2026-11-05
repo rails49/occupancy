@@ -31,7 +31,7 @@ export type ClickResult =
       readonly world: WorldPoint;
     }
   /** Ask for a sensor's name. */
-  | { readonly kind: 'name-sensor'; readonly id: string; readonly name: string | null };
+  | { readonly kind: 'edit-sensor'; readonly id: string; readonly name: string | null };
 
 export const NONE: ClickResult = { kind: 'none' };
 

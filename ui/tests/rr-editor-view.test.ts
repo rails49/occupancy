@@ -863,7 +863,7 @@ describe('rr-editor-view', () => {
     /** What the sensor dialog emits when the user confirms a name. */
     async function commitName(el: RREditorView, name: string | null) {
       el.shadowRoot!.querySelector('rr-sensor-dialog')!.dispatchEvent(
-        new CustomEvent('rr-sensor-name-commit', {
+        new CustomEvent('rr-sensor-commit', {
           detail: { name },
           bubbles: true,
           composed: true,
@@ -892,9 +892,9 @@ describe('rr-editor-view', () => {
       const show = stubSensorDialog(el);
 
       await rightClickAt(el, { x: 32, y: 74 });
-      expect(menuItems(el)).to.deep.equal(['name', 'delete']);
+      expect(menuItems(el)).to.deep.equal(['edit', 'delete']);
 
-      await choose(el, 'name');
+      await choose(el, 'edit');
       expect(show).toHaveBeenCalledWith(null, { id: sensors()[0].id });
 
       await commitName(el, 'Yard throat');

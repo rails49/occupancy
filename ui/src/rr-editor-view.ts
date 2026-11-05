@@ -48,7 +48,7 @@ import type {
   ViewerViewportDetail,
 } from './rr-viewer.js';
 import type { CalibrationCommitDetail, RRCalibrationDialog } from './rr-calibration-dialog.js';
-import type { SensorNameCommitDetail, RRSensorDialog } from './rr-sensor-dialog.js';
+import type { SensorCommitDetail, RRSensorDialog } from './rr-sensor-dialog.js';
 import type {
   ContextMenuItem,
   ContextMenuSelectDetail,
@@ -85,11 +85,11 @@ const CALIBRATION_ITEMS: readonly ContextMenuItem[] = [
 ];
 
 /**
- * A sensor's verbs. Naming is here as well as on a click, because a name is
- * optional and an unnamed sensor gives a click nothing to discover.
+ * A sensor's verbs. Edit is here as well as on a click, because a click on an
+ * object is not a verb anyone can see, and the menu is where one is looked for.
  */
 const SENSOR_ITEMS: readonly ContextMenuItem[] = [
-  { id: 'name', label: 'Name sensor…' },
+  { id: 'edit', label: 'Edit sensor…' },
   { id: 'delete', label: 'Delete sensor' },
 ];
 
@@ -483,8 +483,8 @@ export class RREditorView extends LitElement {
   private _unsubscribeNotices: (() => void) | null = null;
   /** The reference point a dialog is open on, or null when none is. */
   private _pendingCalibration: PendingCalibration | null = null;
-  /** The sensor whose name dialog is open, by `id`, or null when none is. */
-  private _pendingSensorName: { readonly id: string } | null = null;
+  /** The sensor the dialog is open on, by `id`, or null when none is. */
+  private _pendingSensor: { readonly id: string } | null = null;
   /** The press in flight, or null between gestures. At most one at a time. */
   private _gesture: LiveGesture | null = null;
   /** What the context menu is open on, or null when it is closed. */
@@ -1202,17 +1202,17 @@ export class RREditorView extends LitElement {
         this._pendingCalibration = result;
         await this._calibrationDialog.show(result.world, { mode: 'edit' });
         return;
-      case 'name-sensor':
-        await this._openSensorName(result.id);
+      case 'edit-sensor':
+        await this._openSensorDialog(result.id);
         return;
     }
   }
 
-  /** Opens the name dialog on a sensor, if it is still there. */
-  private async _openSensorName(id: string) {
+  /** Opens the dialog on a sensor, if it is still there. */
+  private async _openSensorDialog(id: string) {
     const sensor = this.session?.sensor(id);
     if (!sensor) return;
-    this._pendingSensorName = { id };
+    this._pendingSensor = { id };
     await this._sensorDialog.show(sensor.name ?? null, { id });
   }
 
@@ -1284,8 +1284,8 @@ export class RREditorView extends LitElement {
       case 'make-free':
         if (subject.kind === 'track') await this.session.markGap(subject, e.detail.id === 'make-straight');
         return;
-      case 'name':
-        if (subject.kind === 'sensor') await this._openSensorName(subject.id);
+      case 'edit':
+        if (subject.kind === 'sensor') await this._openSensorDialog(subject.id);
         return;
     }
   }
@@ -1327,11 +1327,11 @@ export class RREditorView extends LitElement {
   }
 
   /** The name came back: write it, or remove it for `null`. */
-  private async _onSensorNameCommit(e: CustomEvent<SensorNameCommitDetail>) {
-    const pending = this._pendingSensorName;
-    this._pendingSensorName = null;
+  private async _onSensorCommit(e: CustomEvent<SensorCommitDetail>) {
+    const pending = this._pendingSensor;
+    this._pendingSensor = null;
     if (!pending) return;
-    await this.session?.nameSensor(pending.id, e.detail.name);
+    await this.session?.editSensor(pending.id, e.detail.name);
   }
 
   /**
@@ -1562,7 +1562,7 @@ export class RREditorView extends LitElement {
             ></rr-calibration-dialog>
 
             <rr-sensor-dialog
-              @rr-sensor-name-commit=${this._onSensorNameCommit}
+              @rr-sensor-commit=${this._onSensorCommit}
             ></rr-sensor-dialog>
 
             <rr-context-menu

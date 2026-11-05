@@ -9,7 +9,7 @@ function field(el: RRSensorDialog): SlInput {
 }
 
 function confirm(el: RRSensorDialog) {
-  (el.shadowRoot!.querySelector('#sensor-name-confirm') as HTMLElement).click();
+  (el.shadowRoot!.querySelector('#sensor-confirm') as HTMLElement).click();
 }
 
 describe('rr-sensor-dialog', () => {
@@ -19,7 +19,7 @@ describe('rr-sensor-dialog', () => {
   beforeEach(async () => {
     el = await fixture<RRSensorDialog>(html`<rr-sensor-dialog></rr-sensor-dialog>`);
     committed = [];
-    el.addEventListener('rr-sensor-name-commit', e => committed.push((e as CustomEvent).detail));
+    el.addEventListener('rr-sensor-commit', e => committed.push((e as CustomEvent).detail));
   });
 
   it('opens blank for a sensor with no name', async () => {
@@ -69,7 +69,7 @@ describe('rr-sensor-dialog', () => {
 
   it('commits nothing when dismissed', async () => {
     await el.show('Yard throat');
-    (el.shadowRoot!.querySelector('#sensor-name-cancel') as HTMLElement).click();
+    (el.shadowRoot!.querySelector('#sensor-cancel') as HTMLElement).click();
 
     expect(committed).to.have.length(0);
   });

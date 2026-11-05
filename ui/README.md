@@ -377,7 +377,7 @@ stays otherwise.
 Asks for a sensor's **optional** name. Opened imperatively with `show(name, { id })`, like
 `rr-calibration-dialog`, because the value it starts from belongs to the gesture.
 
-**Emits:** `rr-sensor-name-commit` `{ name: string | null }`. `null` is "no name" — a cleared field
+**Emits:** `rr-sensor-commit` `{ name: string | null }`. `null` is "no name" — a cleared field
 is how a name is *removed*, and the editor writes that as the absence of the key rather than as `""`.
 
 Naming is separate from placing, because a sensor with no name is complete: consumers key on `id`,
@@ -1016,7 +1016,7 @@ nothing) goes up as `{ message, duration: 3000 }` ([#324]).
   `CLICK_SLOP_SCREEN_PX`, on the same `pointerId` — goes to `session.click` with the **press**
   position and the press's `imagePxPerScreenPx`. What comes back is a dialog to open
   (`rr-calibration-dialog` blank or prefilled, `rr-sensor-dialog`), a notice for `rr-notify`, or
-  nothing. The dialog's commit calls `placeReferencePoint`, `editReferencePoint` or `nameSensor`;
+  nothing. The dialog's commit calls `placeReferencePoint`, `editReferencePoint` or `editSensor`;
   a dismissed dialog calls nothing.
   * Motion past the slop makes the press a **drag**, decided once from the press position: Shift
     draws a zoom rect; otherwise `session.beginDrag` grabs whatever is under the press, and empty
@@ -1166,7 +1166,7 @@ it gets the objects the entry changed.
 | `doubleClick(point, scale)` | After the two clicks of a double-click: on the click a live track chain goes on from, the next gap is to be straight (`TrackChain.straighten`, [#320]). Otherwise nothing |
 | `beginDrag(point, scale)` | A `Drag` (`move`, `end`, `cancel`) on what is under the point, or null. Under the track tool a click comes first, then a press within the start distance of a line, which inserts a click and drags it ([#321]); the line is built again on every move, keeps its last valid shape where the rule refuses, and on `end` is written as one entry, or the click springs back and `refusal` says why. While a track chain is live only a click of its line is grabbed, and the chain takes the move on `end` ([#303]) |
 | `rightClick(point, scale)` | Ends a live chain, or returns the `MenuSubject` a menu acts on. Under the track tool a click is `track-click` (Delete click, Delete line) and the rest of a line `track`, with the gap under the pointer and whether it is straight when the line has clicks. While a track chain is live a click of its line other than the one it goes on from is `track-click` and the chain goes on ([#303]) |
-| `placeReferencePoint`, `editReferencePoint`, `nameSensor`, `delete`, `deleteLine`, `markGap`, `reclassifyCar`, `setComplete` | The answers to a dialog, a menu row or the checkbox. `deleteLine` takes a `track-click` subject and deletes its line; `markGap(subject, straight)` makes a `track` subject's gap straight or free. A `delete` or `markGap` the rule refuses writes nothing and sets `refusal` |
+| `placeReferencePoint`, `editReferencePoint`, `editSensor`, `delete`, `deleteLine`, `markGap`, `reclassifyCar`, `setComplete` | The answers to a dialog, a menu row or the checkbox. `deleteLine` takes a `track-click` subject and deletes its line; `markGap(subject, straight)` makes a `track` subject's gap straight or free. A `delete` or `markGap` the rule refuses writes nothing and sets `refusal` |
 | `editLayout`, `setCameraHeight` | The settings dialog's edits, one `layout` entry each |
 | `addImage`, `deleteImage`, `reorderImages` | The image list. Deleting the image on screen shows its neighbour. `addImage` may set `camera.resolution` (`SPEC.md` § Images, [#254]) |
 | `addImages(images)` | A whole pick (`AddedImage[]`: `filename`, `bytes`, `size?`) as **one** entry, "add images", in the order given, showing the first ([#262]). A `filename` the archive already holds, or an earlier image of the same pick took, is stored under a generated `img_<id>` keeping its extension ([#256]) |
@@ -1246,7 +1246,7 @@ screen-pixel grab radius. The hit-test scene is the layout's reference points an
   `make_id` snowflake, so it is unique within the layout by construction. Sensors carry **no
   provenance**: no model can propose where a human wants an answer.
   * A click on a sensor asks the editor for its name, as does the menu's "Name sensor…".
-    `nameSensor(id, null)` **removes** the key; retyping the same name records nothing,
+    `editSensor(id, null)` **removes** the key; retyping the same name records nothing,
     suppressed by `EditHistory`'s value comparison. The sensor is found by `id`, so one deleted while
     the dialog was open is simply gone.
   * Drag and delete reuse the calibration paths unchanged — that is the point of `dragHandles` and of
