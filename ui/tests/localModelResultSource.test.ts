@@ -193,6 +193,21 @@ describe('localModelResultSource', () => {
     expect(dispose).toHaveBeenCalledTimes(1);
   });
 
+  it('opens again after a close, for a source handed back on a remount', async () => {
+    // A source the app holds across mounts — which is what #331's service is —
+    // would otherwise answer `unknown` for the whole second session, with no
+    // error to show for it.
+    const source = localModelResultSource(archive);
+    await source.open();
+    source.close();
+
+    expect(await source.open()).toBeNull();
+    const result = await source.resultFor(frame, { drifted: false, dpt: DPT });
+
+    expect(result.detections).toEqual(detections);
+    expect(dispose).toHaveBeenCalledTimes(1);
+  });
+
   it('answers unknown after it has been closed, rather than on a disposed session', async () => {
     const source = localModelResultSource(archive);
     await source.open();

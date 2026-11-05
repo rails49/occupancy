@@ -33,6 +33,11 @@ export function localModelResultSource(archive: R49Archive): ResultSource {
 
   return {
     async open() {
+      // Reopening is a new session, not a reversal: a source the app holds
+      // across mounts is handed back on the next one, and a latched `closed`
+      // would make it answer `unknown` for the whole of it with no error to
+      // show for it.
+      closed = false;
       try {
         // The runtime path and the crossOriginIsolated warning live in
         // `detectorSession.ts`, which the diagnostics view shares (#87).

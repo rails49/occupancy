@@ -50,17 +50,20 @@ vi.mock('../src/driftSession.js', async importOriginal => {
 });
 
 /** A frame source that hands over a frame per `next()`, and counts its lifetime. */
-function fakeFrames() {
+function fakeFrames({ held = false } = {}) {
   let running = false;
   const source = {
     starts: 0,
     stops: 0,
     delivered: 0,
+    /** Let a `start()` that was held finish, as a granted permission does. */
+    grant: () => {},
     stream: null as MediaStream | null,
     settings: {} as MediaTrackSettings,
     async start() {
-      running = true;
       source.starts++;
+      if (held) await new Promise<void>(resolve => (source.grant = resolve));
+      running = true;
     },
     stop() {
       running = false;
@@ -91,8 +94,14 @@ function fakeResults() {
     close() {
       source.closes++;
     },
+    /** Set to make the next `resultFor` reject, which the contract forbids. */
+    failNext: false,
     async resultFor(_frame: SourceFrame, context: ResultContext) {
       source.asked.push(context);
+      if (source.failNext) {
+        source.failNext = false;
+        throw new Error('the source broke its contract');
+      }
       return { detections, sensorStates, inference: 7 };
     },
   };
@@ -236,6 +245,43 @@ describe('rr-live-view with sources of its own', () => {
     // The loop ends on the `null` the stopped source gives, so nothing goes on
     // asking for results against a detached view.
     expect(results.asked.length).toBe(asked);
+  });
+
+  it('opens nothing when the view is left while the frames are being acquired', async () => {
+    // Leaving Live while the permission prompt is up: loading a model and
+    // decoding the drift reference for a detached element costs a WASM heap and
+    // hundreds of milliseconds, and leaves a loop running on nothing.
+    const frames = fakeFrames({ held: true });
+    const results = fakeResults();
+
+    const el = await fixture<RRLiveView>(
+      html`<rr-live-view .archive=${archive} .sources=${{ frames, results }}></rr-live-view>`,
+    );
+    el.remove();
+    frames.grant();
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    expect(results.opens).toBe(0);
+    expect(results.asked).toHaveLength(0);
+    expect(openDriftCheck).not.toHaveBeenCalled();
+  });
+
+  it('survives a result source that rejects, rather than freezing the screen', async () => {
+    // `resultFor` is contracted never to reject; a loop that died on one would
+    // leave the last answers on screen for the rest of the session, which is
+    // the one outcome worse than saying nothing.
+    const frames = fakeFrames();
+    const results = fakeResults();
+    results.failNext = true;
+
+    const el = await fixture<RRLiveView>(
+      html`<rr-live-view .archive=${archive} .sources=${{ frames, results }}></rr-live-view>`,
+    );
+    await waitFor(el, () => results.asked.length > 1);
+
+    expect(results.asked.length).toBeGreaterThan(1);
+    const viewer = el.shadowRoot!.querySelector('rr-viewer')!;
+    expect(viewer.sensorStates).toBe(sensorStates);
   });
 
   it('runs on the camera and the shipped model when given none', async () => {

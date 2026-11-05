@@ -59,7 +59,12 @@ export function cameraFrameSource(host: () => VideoHost | null | undefined): Fra
     async start() {
       running = true;
       try {
-        stream = await getCameraStream();
+        const granted = await getCameraStream();
+        // Stopped while the permission prompt was still up. The grant lands on
+        // a source nobody is reading, and an unstopped track holds the camera
+        // until the page is reloaded.
+        if (running) stream = granted;
+        else granted.getTracks().forEach(track => track.stop());
       } catch (err) {
         // Not fatal: the notices, the drift readout and the sensor states are
         // still the view's job, and `next()` simply never reports a frame.

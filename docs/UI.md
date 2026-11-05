@@ -597,7 +597,16 @@ for a frame and then a **result source** for that frame's L0 and L1, both declar
 * `ResultSource` — `open()` answers with the message to show or `null`, `close()` releases the model,
   and `resultFor(frame, { drifted, dpt })` answers with L0, L1 and an optional inference time.
   It **never rejects**: a frame that fails is one frame, and the loop must keep running and report
-  `unknown` for it rather than freezing the last answer on screen.
+  `unknown` for it rather than freezing the last answer on screen. The loop does not bet the session
+  on that contract either — a rejection is logged and the frame skipped, because a loop that died
+  there would leave the last answers on screen for the rest of the session. `open()` after a
+  `close()` is a **new session**, not a reversal: a source the app holds across mounts is handed
+  back on the next one.
+
+**Nothing is acquired for a session that is over.** The camera is awaited before the loop starts, and
+the permission prompt is a dialog the user can walk away from — so `connectedCallback` re-checks
+`isConnected` before opening the result source or the drift check, and `cameraFrameSource` stops a
+stream granted after its `stop()`. An unstopped track holds the camera until the page is reloaded.
 
 The two implementations are the local ones. `cameraFrameSource.ts` holds the `MediaStream` and reads
 the frame back out of the `<video>` **`rr-viewer` mounted** — the viewer is what the user is looking
