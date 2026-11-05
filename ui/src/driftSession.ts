@@ -24,14 +24,17 @@ import type { R49Archive } from '@rails49/r49';
  * fraction of one track width (ADR 0020,
  * `docs/adr/0020-only-the-live-view-measures-drift.md`).
  *
- * Why 0.25: a sensor fails when it slides off its car or onto a neighbouring
- * track's, and both sit about one track width away, so a quarter is roughly a
- * 4x margin — ~4.7 px at the fixture corpus's DPT 18-19, which ordinary
- * mounting holds. Unmeasured: validation is synthetic warps of tripod shots,
- * so nothing says how often a real camera drifts this far, which is why the
- * live view's refusal carries an override.
+ * Why 0.5: a sensor fails when it slides off its car or onto a neighbouring
+ * track's, and both sit about one track width away, so half a track width is
+ * the most that can still be read as the pose. The number is a reading rather
+ * than a derivation — on the ceiling rig one step of the check is 0.257 of a
+ * track width, and the tolerance this replaced refused 18 of 32 frames from a
+ * camera nobody had touched (`docs/research/drift-tolerance-measured.md`).
+ * Provisional: what would settle it is a second rig's readings
+ * (rails49/occupancy-service#12), which is why the live view's refusal still
+ * carries an override.
  */
-export const MAX_DRIFT_TRACK_FRACTION = 0.25;
+export const MAX_DRIFT_TRACK_FRACTION = 0.5;
 
 /**
  * How far the camera may appear to have moved before it counts as drift, in
