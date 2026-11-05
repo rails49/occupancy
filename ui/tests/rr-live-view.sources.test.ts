@@ -194,7 +194,7 @@ describe('rr-live-view with sources of its own', () => {
   });
 
   it('asks it to withhold L1 once the camera has drifted past the tolerance', async () => {
-    check.mockImplementation(async () => ({ displacementPx: 40, refIndex: 0 }));
+    check.mockImplementation(async () => ({ displacementPx: 60, refIndex: 0 }));
     const frames = fakeFrames();
     const results = fakeResults();
 
@@ -213,7 +213,7 @@ describe('rr-live-view with sources of its own', () => {
     // frame — which is how the gate behaved while the loop and the model were
     // one file. The context the source is handed is a view onto the view's
     // state, not a copy taken on entry.
-    check.mockImplementation(async () => ({ displacementPx: 40, refIndex: 0 }));
+    check.mockImplementation(async () => ({ displacementPx: 60, refIndex: 0 }));
     const frames = fakeFrames();
     const results = fakeResults();
 

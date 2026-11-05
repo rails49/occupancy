@@ -1,16 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { driftCsv, driftCsvName, driftRow } from '../src/driftRecording.ts';
 
-// DPT 89.6875 puts the tolerance at 22.421875 px, as in `driftSession.test.ts`.
+// DPT 89.6875 puts the tolerance at 44.84375 px, as in `driftSession.test.ts`.
 const DPT = 89.6875;
 const AT = new Date('2026-10-18T14:32:05.250Z');
 
 describe('driftRow', () => {
   it('records the reading against the tolerance and the stream size', () => {
-    expect(driftRow(AT, 40.5, DPT, true, { width: 1280, height: 720 })).toEqual({
+    expect(driftRow(AT, 60.5, DPT, true, { width: 1280, height: 720 })).toEqual({
       time: '2026-10-18T14:32:05.250Z',
-      px: 40.5,
-      tolerancePx: 22.421875,
+      px: 60.5,
+      tolerancePx: 44.84375,
       dpt: DPT,
       past: true,
       overridden: true,
@@ -37,7 +37,7 @@ describe('driftCsv', () => {
     ];
     expect(driftCsv(rows)).toBe(
       'time,px,tolerance_px,dpt,past,overridden,stream_width,stream_height\n' +
-        '2026-10-18T14:32:05.250Z,4.25,22.421875,89.6875,false,false,1920,1080\n' +
+        '2026-10-18T14:32:05.250Z,4.25,44.84375,89.6875,false,false,1920,1080\n' +
         '2026-10-18T14:32:08.500Z,3,,,,false,,\n',
     );
   });

@@ -211,13 +211,13 @@ describe('rr-live-view', () => {
      * The tolerance is a fraction of a track width, so these tests need a DPT.
      *
      * 100 px over 10 model mm in N scale (gauge 1435/160) resolves DPT 89.6875,
-     * so `MAX_DRIFT_TRACK_FRACTION` of 0.25 puts the tolerance at 22.42 px. The
+     * so `MAX_DRIFT_TRACK_FRACTION` of 0.5 puts the tolerance at 44.84 px. The
      * archive the outer suite builds is deliberately uncalibrated — one test up
      * there asserts the "no calibration" notice — so calibration is added here
      * rather than shared.
      */
     const DPT = 89.6875;
-    const TOLERANCE_PX = 0.25 * DPT;
+    const TOLERANCE_PX = 0.5 * DPT;
 
     function calibrate(pixelSpan = 100) {
       archive.getManifest().layout.calibration = {
@@ -240,14 +240,14 @@ describe('rr-live-view', () => {
       // The correction this replaced an absolute `max_drift_px` for: the same
       // displacement is fine on a layout the camera sees close up and drift on
       // one it sees from further away, because what fails is a sensor leaving the
-      // car it reads — a geometric condition. 15 px is inside a quarter track at
+      // car it reads — a geometric condition. 30 px is inside half a track at
       // DPT 89.7 and outside it at DPT 44.8.
-      check.mockImplementation(async () => ({ displacementPx: 15, refIndex: 0 }));
+      check.mockImplementation(async () => ({ displacementPx: 30, refIndex: 0 }));
 
       const near = await fixture<RRLiveView>(html`<rr-live-view .archive=${archive}></rr-live-view>`);
       standInReadySource(near);
       await waitFor(near, () => check.mock.calls.length > 0);
-      expect(15).to.be.lessThan(TOLERANCE_PX);
+      expect(30).to.be.lessThan(TOLERANCE_PX);
       expect(near.shadowRoot!.querySelector('.notice.refusing')).to.be.null;
 
       // Half the pixels per track: the same camera motion is now half a track.
@@ -306,7 +306,7 @@ describe('rr-live-view', () => {
     });
 
     it('refuses to classify once the camera has moved past the tolerance', async () => {
-      check.mockImplementation(async () => ({ displacementPx: 40, refIndex: 0 }));
+      check.mockImplementation(async () => ({ displacementPx: 60, refIndex: 0 }));
 
       const el = await fixture<RRLiveView>(html`<rr-live-view .archive=${archive}></rr-live-view>`);
       standInReadySource(el);
@@ -322,10 +322,10 @@ describe('rr-live-view', () => {
       expect(notice).to.match(/refusing to classify/i);
       // The number, not just the verdict: it is what tells a nudged tripod from
       // a camera re-aimed at a different layout.
-      expect(notice).to.contain('40.0 px');
+      expect(notice).to.contain('60.0 px');
       // In track widths too, which is the unit the tolerance is set in and the
       // one that says whether a sensor can still sit on the car it reads.
-      expect(notice).to.contain('0.45 track widths');
+      expect(notice).to.contain('0.67 track widths');
       expect(notice).to.contain(TOLERANCE_PX.toFixed(1));
       // And which image it was measured against — one reference now (#118), so
       // this is the archive's first image rather than a closest match.
@@ -337,7 +337,7 @@ describe('rr-live-view', () => {
       // moved camera invalidates is their mapping onto sensors authored in the
       // archive's frame. Sensor diamonds off the track beside correct boxes is
       // the clearest statement of why the view is refusing.
-      check.mockImplementation(async () => ({ displacementPx: 55, refIndex: 0 }));
+      check.mockImplementation(async () => ({ displacementPx: 70, refIndex: 0 }));
 
       const el = await fixture<RRLiveView>(html`<rr-live-view .archive=${archive}></rr-live-view>`);
       standInReadySource(el);
@@ -348,7 +348,7 @@ describe('rr-live-view', () => {
     });
 
     it('classifies again when the user overrides, and says that it is doing so', async () => {
-      check.mockImplementation(async () => ({ displacementPx: 40, refIndex: 0 }));
+      check.mockImplementation(async () => ({ displacementPx: 60, refIndex: 0 }));
 
       const el = await fixture<RRLiveView>(html`<rr-live-view .archive=${archive}></rr-live-view>`);
       standInReadySource(el);
@@ -371,7 +371,7 @@ describe('rr-live-view', () => {
 
     it('goes on measuring while refusing, so putting the camera back clears it', async () => {
       // A gate that stopped measuring the moment it fired could not see the fix.
-      check.mockImplementation(async () => ({ displacementPx: 40, refIndex: 0 }));
+      check.mockImplementation(async () => ({ displacementPx: 60, refIndex: 0 }));
 
       const el = await fixture<RRLiveView>(html`<rr-live-view .archive=${archive}></rr-live-view>`);
       standInReadySource(el);
@@ -450,7 +450,7 @@ describe('rr-live-view', () => {
         el.shadowRoot!.querySelector<HTMLButtonElement>('.recorder button')!;
 
       it('downloads one row per sample when stopped, and keeps recording while refusing', async () => {
-        check.mockImplementation(async () => ({ displacementPx: 40, refIndex: 0 }));
+        check.mockImplementation(async () => ({ displacementPx: 60, refIndex: 0 }));
 
         const el = await fixture<RRLiveView>(html`<rr-live-view .archive=${archive}></rr-live-view>`);
         recordButton(el).click();
@@ -469,7 +469,7 @@ describe('rr-live-view', () => {
         const [header, row, end] = (await readBlob(blobs[0])).split('\n');
         expect(header).to.equal('time,px,tolerance_px,dpt,past,overridden,stream_width,stream_height');
         expect(row).to.match(
-          new RegExp(`^\\d{4}-\\d\\d-\\d\\dT[\\d:.]+Z,40,${TOLERANCE_PX},${DPT},true,false,1280,720$`),
+          new RegExp(`^\\d{4}-\\d\\d-\\d\\dT[\\d:.]+Z,60,${TOLERANCE_PX},${DPT},true,false,1280,720$`),
         );
         expect(end).to.equal('');
         expect(recordButton(el).getAttribute('aria-pressed')).to.equal('false');
