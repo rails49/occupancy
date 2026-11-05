@@ -42,8 +42,11 @@ import { nearestGap, nearestOnTrack, SNAP_TRACK_WIDTHS } from './track.js';
 import type { ClickHit, Track, TrackHit, TrackNode } from './track.js';
 import type { EditorTool } from './tools.js';
 import { refusalText } from './trackHint.js';
+import { sensorId, sensorIdRefusal } from './sensorId.js';
+import type { SensorFields } from './sensorId.js';
 
 export type { ChainView, ClickResult } from './chain.js';
+export type { SensorFields } from './sensorId.js';
 
 /**
  * Node ids for the snowflakes this session mints. Image filenames use 2 here
@@ -360,7 +363,7 @@ export class EditSession {
     this._changed();
   }
 
-  /** A click on an object: a reference point's position or a sensor's name. */
+  /** A click on an object: a reference point's position or a sensor's fields. */
   private _clickOn(hit: HitTarget): ClickResult {
     switch (hit.kind) {
       case 'calibration': {
@@ -611,15 +614,36 @@ export class EditSession {
     });
   }
 
-  /** Names a sensor, or removes its name for `null`. Does nothing if it is gone. */
-  async editSensor(id: string, name: string | null) {
-    if (!this.sensor(id)) return;
+  /**
+   * Writes a sensor's id and name as **one** entry, so one Save is one Cmd+Z
+   * covering both (#335). `name` of `null` removes the key.
+   *
+   * The id is judged by `sensorId.ts`'s rule — the same one the dialog shows
+   * under its field — and a refused id writes **nothing**: the rule has to be
+   * true of the archive however the session is driven, not only of what the
+   * dialog let through. An id the sensor already holds is never refused, so a
+   * name stays editable on an archive holding an id this rule would refuse.
+   *
+   * Does nothing if the sensor is gone, found by `id` like every other write
+   * here: one deleted while the dialog was open is simply gone.
+   */
+  async editSensor(id: string, fields: SensorFields) {
+    const sensor = this.sensor(id);
+    if (!sensor) return;
+
+    const refusal = sensorIdRefusal(fields.id, {
+      current: sensor.id,
+      taken: this._sensors().map(other => other.id),
+    });
+    if (refusal !== null) return;
+
+    const next = sensorId(fields.id);
     await this._record('edit sensor', { kind: 'layout' }, () => {
       this._writeLayout({
-        sensors: this._sensors().map(sensor => {
-          if (sensor.id !== id) return sensor;
-          const renamed: Sensor = { id: sensor.id, x: sensor.x, y: sensor.y };
-          return name === null ? renamed : { ...renamed, name };
+        sensors: this._sensors().map(other => {
+          if (other.id !== id) return other;
+          const edited: Sensor = { id: next, x: other.x, y: other.y };
+          return fields.name === null ? edited : { ...edited, name: fields.name };
         }),
       });
     });

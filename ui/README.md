@@ -53,7 +53,7 @@ rr-app                          ← shell: owns the editing session and the view
 │   │   └── trackMarker.ts      ← module: a track's centerline and its two rails
 │   ├── rr-thumbnail-bar        ← horizontal image selector strip
 │   ├── rr-calibration-dialog   ← asks for a point's x/y/z in mm (look-dialog)
-│   ├── rr-sensor-dialog        ← asks for a sensor's optional name (look-dialog)
+│   ├── rr-sensor-dialog        ← edits a sensor's id and optional name (look-dialog)
 │   └── rr-context-menu         ← right-click verbs on one object (sl-menu)
 ├── rr-live-view                ← live mode; owns the L0→L1 loop, over a frame and a result source
 │   ├── rr-stats-bar            ← FPS / cars / occupied / inference / drift overlay
@@ -156,6 +156,7 @@ rr-app                          ← shell: owns the editing session and the view
 > [#324]: https://github.com/rails49/occupancy/issues/324
 > [#326]: https://github.com/rails49/occupancy/issues/326
 > [#330]: https://github.com/rails49/occupancy/issues/330
+> [#335]: https://github.com/rails49/occupancy/issues/335
 
 ## State and data flow
 
@@ -374,15 +375,25 @@ stays otherwise.
 
 ### `rr-sensor-dialog`
 
-Asks for a sensor's **optional** name. Opened imperatively with `show(name, { id })`, like
-`rr-calibration-dialog`, because the value it starts from belongs to the gesture.
+Edits a sensor's **`id`** and its **optional** name ([#335]). Opened imperatively with
+`show({ id, name }, { taken })`, like `rr-calibration-dialog`, because the values it starts from
+belong to the gesture. `taken` is every sensor id in the layout — uniqueness is a property of the
+layout, which the dialog cannot otherwise see; this sensor's own id may be among them.
 
-**Emits:** `rr-sensor-commit` `{ name: string | null }`. `null` is "no name" — a cleared field
-is how a name is *removed*, and the editor writes that as the absence of the key rather than as `""`.
+**Emits:** `rr-sensor-commit` `{ id: string, name: string | null }`, both trimmed. The `id` has
+already passed `sensorId.ts`'s rule, so the dialog commits nothing the session would refuse.
+`name`'s `null` is "no name" — a cleared field is how a name is *removed*, and the editor writes
+that as the absence of the key rather than as `""`.
 
-Naming is separate from placing, because a sensor with no name is complete: consumers key on `id`,
-and `name` is optional passthrough that is never auto-generated (`../SPEC.md` § Occupancy Output).
-The dialog shows the id it is naming, which is what the editor displays in its place.
+**The id is judged and the name is not.** The id is what a controller knows the sensor by, so a
+refusal from `sensorIdRefusal` appears under the field as the person types, and Save and Enter do
+nothing until it is fixed. There is **no toast**: the field the refusal is about is on screen, and
+the dialog stays open. Names stay free text and not unique, because a controller mapping keyed on a
+name breaks the moment someone renames it (`../SPEC.md` § Occupancy Output).
+
+Editing is separate from placing, because a sensor is complete the moment it is placed: it has a
+generated `id`, which it keeps until a person changes it, and `name` is optional passthrough that is
+never auto-generated.
 
 ---
 
@@ -836,6 +847,32 @@ length and a curvature per part.
 | `trackHint(trace, refusal)` | The track tool's hint, one of three sentences: with a refusal, why and what to do; while tracing, how to click, mark a straight and end; otherwise how to start, continue or change a line. Tested in `tests/trackHint.test.ts` |
 | `refusalText(reason)` | The refusal sentence alone, which the session's notices toast ([#324]) |
 
+### `sensorId.ts`
+
+The rule for a sensor's `id`, in **one** place ([#335]). `rr-sensor-dialog` shows its refusal under
+the field and `EditSession.editSensor` refuses the write, so a message a person reads and a write
+the archive refuses are the same rule rather than two that can drift.
+
+| Export | Description |
+|---|---|
+| `sensorId(text)` | The id a typed string means: the text with its **ends** trimmed. Inner spaces are kept — they are part of a name a controller may already use |
+| `sensorIdRefusal(text, context)` | Why the trimmed text cannot be this sensor's id, as one sentence, or `null`. `context` is `{ current, taken }`: the id the sensor holds now, and every sensor id in the layout |
+| `REFUSED_SENSOR_ID_CHARACTERS` | The six characters an id may not contain, for a test or a document to enumerate |
+| `SensorFields` | `{ id: string, name: string \| null }` — a sensor's editable fields, which the dialog commits and the session writes |
+| `SensorIdContext` | `{ current: string \| null, taken: readonly string[] }` |
+
+Refused: a **blank** id, one another sensor in the layout **holds**, and any of `/ + # " < &` —
+`+` and `#` are MQTT's wildcards and are illegal in a topic, `/` is its level separator and would
+split one id into two levels, and `"`, `<` and `&` are markup in the Rocrail profile's XML. Every
+other character is allowed. Matching is **case-sensitive**, because a controller tells `c3.a` and
+`C3.A` apart.
+
+**The sensor's own `current` id is never refused**, whatever it holds. This is the *editor's*
+narrower rule and not the format's, which still allows any non-empty string: an archive authored
+before this rule, or by another tool, can hold an id with a refused character, and it must still
+open with that sensor's name editable. Refusing it would break the dialog on exactly the archives
+that need fixing.
+
 ### `carMarker.ts`
 
 The car's own SVG, with the same shape and the same rules as the two markers above. **The exports
@@ -1037,7 +1074,7 @@ nothing) goes up as `{ message, duration: 3000 }` ([#324]).
 * **Right-click** ([#29]). `rr-pointer-contextmenu` goes to `session.rightClick`, which ends a live
   chain or names the object a menu acts on; a click of the line a track chain traces, other than its
   last, is named and the chain goes on ([#303]). The editor opens `rr-context-menu` at the cursor with
-  that subject's rows — **delete** for a reference point, **name and delete** for a sensor,
+  that subject's rows — **delete** for a reference point, **edit and delete** for a sensor,
   **delete and reclassify** for a car, **Delete click** and **Delete line** on a track's click, and on the rest of a track **Make straight** or **Make free** for the gap under the pointer and **Delete line** — and a chosen row calls `delete`, `deleteLine`, `markGap`, `reclassifyCar` or opens the
   name dialog. Empty image opens nothing.
   * **Reclassify is a submenu generated from the vocabulary in `@rails49/r49`'s data file** ([#35]), through
@@ -1162,11 +1199,11 @@ it gets the objects the entry changed.
 | `previewCar(point)` | Where a click would put the next car of a live car chain: the nearest track, or null when none is near |
 | `previewTrack(point, scale)`, `hoverTrack(point, scale)` | What follows the pointer under the track tool ([#324]): the next gap a click would add to the traced line (`TrackChain.preview`), and with no chain live the end dot or insert a click would act on (`trackHover`). Each null otherwise |
 | `heldLine` | The line a drag of one of its clicks, or an insert into it, is changing, or null ([#324]) |
-| `click(point, scale)` | Writes, or returns what the editor must ask for: a reference point's world position, a sensor's name, or a notice. Under the track tool with no chain live, a click within the grab radius of the click before it, which inserted a click or said what to do, with the tracks unchanged since, is the second click of a double-click: it writes and says nothing ([#324]) |
+| `click(point, scale)` | Writes, or returns what the editor must ask for: a reference point's world position, a sensor's fields, or a notice. Under the track tool with no chain live, a click within the grab radius of the click before it, which inserted a click or said what to do, with the tracks unchanged since, is the second click of a double-click: it writes and says nothing ([#324]) |
 | `doubleClick(point, scale)` | After the two clicks of a double-click: on the click a live track chain goes on from, the next gap is to be straight (`TrackChain.straighten`, [#320]). Otherwise nothing |
 | `beginDrag(point, scale)` | A `Drag` (`move`, `end`, `cancel`) on what is under the point, or null. Under the track tool a click comes first, then a press within the start distance of a line, which inserts a click and drags it ([#321]); the line is built again on every move, keeps its last valid shape where the rule refuses, and on `end` is written as one entry, or the click springs back and `refusal` says why. While a track chain is live only a click of its line is grabbed, and the chain takes the move on `end` ([#303]) |
 | `rightClick(point, scale)` | Ends a live chain, or returns the `MenuSubject` a menu acts on. Under the track tool a click is `track-click` (Delete click, Delete line) and the rest of a line `track`, with the gap under the pointer and whether it is straight when the line has clicks. While a track chain is live a click of its line other than the one it goes on from is `track-click` and the chain goes on ([#303]) |
-| `placeReferencePoint`, `editReferencePoint`, `editSensor`, `delete`, `deleteLine`, `markGap`, `reclassifyCar`, `setComplete` | The answers to a dialog, a menu row or the checkbox. `deleteLine` takes a `track-click` subject and deletes its line; `markGap(subject, straight)` makes a `track` subject's gap straight or free. A `delete` or `markGap` the rule refuses writes nothing and sets `refusal` |
+| `placeReferencePoint`, `editReferencePoint`, `editSensor`, `delete`, `deleteLine`, `markGap`, `reclassifyCar`, `setComplete` | The answers to a dialog, a menu row or the checkbox. `editSensor(id, { id, name })` writes a sensor's **both** fields as one entry, and writes nothing when `sensorId.ts` refuses the new id ([#335]). `deleteLine` takes a `track-click` subject and deletes its line; `markGap(subject, straight)` makes a `track` subject's gap straight or free. A `delete` or `markGap` the rule refuses writes nothing and sets `refusal` |
 | `editLayout`, `setCameraHeight` | The settings dialog's edits, one `layout` entry each |
 | `addImage`, `deleteImage`, `reorderImages` | The image list. Deleting the image on screen shows its neighbour. `addImage` may set `camera.resolution` (`SPEC.md` § Images, [#254]) |
 | `addImages(images)` | A whole pick (`AddedImage[]`: `filename`, `bytes`, `size?`) as **one** entry, "add images", in the order given, showing the first ([#262]). A `filename` the archive already holds, or an earlier image of the same pick took, is stored under a generated `img_<id>` keeping its extension ([#256]) |
@@ -1184,7 +1221,7 @@ screen-pixel grab radius. The hit-test scene is the layout's reference points an
   the second click of a car is what completes it. Otherwise a click on **empty image** runs the tool
   (calibration opens the dialog, sensor places a point, car takes an anchor) and a click **on an
   object** edits that object *whatever the tool is*, because the thing under the cursor is less
-  ambiguous than the mode: a coordinate for a calibration point, a name for a sensor, and **nothing
+  ambiguous than the mode: a coordinate for a calibration point, the two fields for a sensor, and **nothing
   at all** for a car end, whose position is the drag's business and whose class is the menu's.
   * The gate reads `needsDpt` in `tools.ts` and is checked after every change, not at the one place a
     point is deleted: **the DPT can also vanish through an undo or a drag**. A gated tool drops back
@@ -1243,12 +1280,22 @@ screen-pixel grab radius. The hit-test scene is the layout's reference points an
 * **Sensor authoring** ([#31]). A click with the sensor tool writes `{ id, x, y }` into
   `layout.sensors` as **one `history.record` entry targeting `layout`** — unnamed, which is a
   complete sensor: consumers key on `id`, and `name` is never auto-generated. The `id` is a
-  `make_id` snowflake, so it is unique within the layout by construction. Sensors carry **no
+  `make_id` snowflake, so it is unique within the layout by construction, and the sensor keeps it
+  until a person edits it ([#335]). Sensors carry **no
   provenance**: no model can propose where a human wants an answer.
-  * A click on a sensor asks the editor for its name, as does the menu's "Name sensor…".
-    `editSensor(id, null)` **removes** the key; retyping the same name records nothing,
-    suppressed by `EditHistory`'s value comparison. The sensor is found by `id`, so one deleted while
-    the dialog was open is simply gone.
+  * A click on a sensor asks the editor to **edit** it, as does the menu's "Edit sensor…".
+    One Save is **one** entry covering both fields, so one Cmd+Z restores both ([#335]). A `name`
+    of `null` **removes** the key; a Save that changes neither field records nothing, suppressed by
+    `EditHistory`'s value comparison. The sensor is found by `id`, so one deleted while the dialog
+    was open is simply gone.
+  * **An id the rule refuses writes nothing**, judged by `sensorId.ts` here as well as under the
+    dialog's field: the rule has to be true of the archive however the session is driven, not only
+    of what the dialog let through. The id the sensor already holds is never refused, so a name
+    stays editable on an archive holding an id this rule would refuse — the format still allows any
+    non-empty string.
+  * An id change makes the entry name **both** ids, since the highlights are a diff of its
+    snapshots. The editor resolves them against the manifest as it stands, where exactly one is
+    there, so the glow lands on the sensor the undo or redo left behind.
   * Drag and delete reuse the calibration paths unchanged — that is the point of `dragHandles` and of
     the menu knowing nothing about its subject. Both are one `layout` entry.
 * **Car authoring** ([#32]). **Two clicks on the visible car ends**, and the straight chord between

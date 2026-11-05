@@ -396,7 +396,7 @@ describe('rr-editor-view', () => {
     return vi.spyOn(dialog, 'show').mockResolvedValue(undefined);
   }
 
-  /** The same, for the sensor name dialog. */
+  /** The same, for the sensor dialog. */
   function stubSensorDialog(el: RREditorView) {
     const dialog = el.shadowRoot!.querySelector<RRSensorDialog>('rr-sensor-dialog')!;
     return vi.spyOn(dialog, 'show').mockResolvedValue(undefined);
@@ -860,11 +860,11 @@ describe('rr-editor-view', () => {
   });
 
   describe('sensors', () => {
-    /** What the sensor dialog emits when the user confirms a name. */
-    async function commitName(el: RREditorView, name: string | null) {
+    /** What the sensor dialog emits when the user saves: both fields. */
+    async function commit(el: RREditorView, fields: { id: string; name: string | null }) {
       el.shadowRoot!.querySelector('rr-sensor-dialog')!.dispatchEvent(
         new CustomEvent('rr-sensor-commit', {
-          detail: { name },
+          detail: fields,
           bubbles: true,
           composed: true,
         })
@@ -886,30 +886,64 @@ describe('rr-editor-view', () => {
       expect(viewer.dpt).to.equal(getDPT(archive.getManifest()));
     });
 
-    it('names a sensor from the context menu', async () => {
+    it('edits a sensor from the context menu', async () => {
       const el = await mountWithTool('sensor');
       await clickAt(el, { x: 32, y: 74 });
       const show = stubSensorDialog(el);
+      const { id } = sensors()[0];
 
       await rightClickAt(el, { x: 32, y: 74 });
       expect(menuItems(el)).to.deep.equal(['edit', 'delete']);
 
       await choose(el, 'edit');
-      expect(show).toHaveBeenCalledWith(null, { id: sensors()[0].id });
+      expect(show).toHaveBeenCalledWith({ id, name: null }, { taken: [id] });
 
-      await commitName(el, 'Yard throat');
-      expect(sensors()[0].name).to.equal('Yard throat');
+      await commit(el, { id: 'c3.a', name: 'Yard throat' });
+      expect(sensors()[0]).to.include({ id: 'c3.a', name: 'Yard throat' });
     });
 
-    it('names a sensor from a click on it, whatever the tool is', async () => {
+    it('labels an unnamed sensor with the id the edit gave it', async () => {
+      // `name` is absent, so the label is the `id` (`sensorLabelText`) — which
+      // means an id edit is what the editor shows on the photograph.
+      const el = await mountWithTool('sensor');
+      await clickAt(el, { x: 32, y: 74 });
+      const { id } = sensors()[0];
+
+      await el.session!.editSensor(id, { id: 'c3.a', name: null });
+      await el.updateComplete;
+
+      const viewer = el.shadowRoot!.querySelector('rr-viewer')!;
+      await viewer.updateComplete;
+      const labels = [...viewer.shadowRoot!.querySelectorAll('text')].map(text =>
+        text.textContent!.trim()
+      );
+      expect(labels).to.include('c3.a');
+      expect(labels).to.not.include(id);
+    });
+
+    it('opens the dialog on every sensor id, so a taken one can be refused', async () => {
+      const el = await mountWithTool('sensor');
+      await clickAt(el, { x: 32, y: 74 });
+      await clickAt(el, { x: 60, y: 74 });
+      const show = stubSensorDialog(el);
+      const ids = sensors().map(sensor => sensor.id);
+
+      await rightClickAt(el, { x: 32, y: 74 });
+      await choose(el, 'edit');
+
+      expect(show).toHaveBeenCalledWith({ id: ids[0], name: null }, { taken: ids });
+    });
+
+    it('edits a sensor from a click on it, whatever the tool is', async () => {
       const el = await mountWithTool('sensor');
       await clickAt(el, { x: 32, y: 74 });
       el.session!.selectTool('calibration');
       const show = stubSensorDialog(el);
       const calibrationShow = stubDialog(el);
+      const { id } = sensors()[0];
 
       await clickAt(el, { x: 34, y: 75 });
-      await commitName(el, null);
+      await commit(el, { id, name: null });
 
       expect(show).toHaveBeenCalledOnce();
       expect(calibrationShow).not.toHaveBeenCalled();
@@ -2099,6 +2133,24 @@ describe('rr-editor-view', () => {
 
       expect(highlightOf(el)!.sensors).to.deep.equal([id]);
       expect(el.shadowRoot!.querySelector('rr-thumbnail-bar')!.selectedIndex).to.equal(1);
+    });
+
+    it('lights the sensor an id change touched, in both directions', async () => {
+      // The entry names both ids — it is a diff of its snapshots — and the one
+      // the apply left behind is dropped here, so the glow lands on the sensor
+      // that is actually there.
+      const el = await mountWithTool('sensor');
+      await clickAt(el, { x: 50, y: 100 });
+      const { id } = sensors()[0];
+      await el.session!.editSensor(id, { id: 'c3.a', name: null });
+
+      await el.session!.undo();
+      await el.updateComplete;
+      expect(highlightOf(el)!.sensors).to.deep.equal([id]);
+
+      await el.session!.redo();
+      await el.updateComplete;
+      expect(highlightOf(el)!.sensors).to.deep.equal(['c3.a']);
     });
 
     it('lights the clicks an undo brought back, by pixel', async () => {

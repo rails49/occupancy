@@ -530,7 +530,7 @@ describe('EditSession', () => {
       expect(sensors(s)).toHaveLength(1);
     });
 
-    it('asks for the name of a sensor under a click, whatever the tool', async () => {
+    it('asks for the fields of a sensor under a click, whatever the tool', async () => {
       const s = session({ tool: 'sensor' });
       await clicks(s, { x: 320, y: 240 });
       s.selectTool('calibration');
@@ -552,17 +552,32 @@ describe('EditSession', () => {
       expect(sensors(s)).toHaveLength(1);
     });
 
-    it('names a sensor as one layout entry, and undo removes the name', async () => {
+    it('writes both fields as one layout entry, and undo and redo restore both', async () => {
       const s = session({ tool: 'sensor' });
       await clicks(s, { x: 320, y: 240 });
       const { id } = sensors(s)[0];
+      const size = s.history.size;
 
-      await s.editSensor(id, 'Yard throat');
-      expect(sensors(s)[0].name).toBe('Yard throat');
+      await s.editSensor(id, { id: 'c3.a', name: 'Yard throat' });
+      expect(sensors(s)[0]).toEqual({ id: 'c3.a', x: 320, y: 200, name: 'Yard throat' });
+      expect(s.history.size).toBe(size + 1);
       expect(s.history.undoLabel).toContain('sensor');
+      expect(s.history.undoEntry!.target).toEqual({ kind: 'layout' });
 
       await s.undo();
-      expect(sensors(s)[0].name).toBeUndefined();
+      expect(sensors(s)[0]).toEqual({ id, x: 320, y: 200 });
+
+      await s.redo();
+      expect(sensors(s)[0]).toEqual({ id: 'c3.a', x: 320, y: 200, name: 'Yard throat' });
+    });
+
+    it('trims the id it writes', async () => {
+      const s = session({ tool: 'sensor' });
+      await clicks(s, { x: 320, y: 240 });
+
+      await s.editSensor(sensors(s)[0].id, { id: '  c3.a  ', name: null });
+
+      expect(sensors(s)[0].id).toBe('c3.a');
     });
 
     it('removes the name key for a blank name', async () => {
@@ -570,27 +585,72 @@ describe('EditSession', () => {
       await clicks(s, { x: 320, y: 240 });
       const { id } = sensors(s)[0];
 
-      await s.editSensor(id, 'Yard throat');
-      await s.editSensor(id, null);
+      await s.editSensor(id, { id, name: 'Yard throat' });
+      await s.editSensor(id, { id, name: null });
 
       expect('name' in sensors(s)[0]).toBe(false);
     });
 
-    it('writes nothing for a name that did not change', async () => {
+    it('writes nothing when neither field changed', async () => {
       const s = session({ tool: 'sensor' });
       await clicks(s, { x: 320, y: 240 });
       const { id } = sensors(s)[0];
-      await s.editSensor(id, 'Yard throat');
+      await s.editSensor(id, { id, name: 'Yard throat' });
       const size = s.history.size;
 
-      await s.editSensor(id, 'Yard throat');
+      await s.editSensor(id, { id, name: 'Yard throat' });
 
       expect(s.history.size).toBe(size);
     });
 
-    it('drops a name for a sensor that is gone', async () => {
+    it('writes nothing for an id the rule refuses: blank, taken or a bad character', async () => {
+      // The same rule the dialog shows under its field, applied again here, so
+      // it is true of the archive however the session is driven.
       const s = session({ tool: 'sensor' });
-      await s.editSensor('S1abcdefghi', 'Yard throat');
+      await clicks(s, { x: 320, y: 240 }, { x: 320, y: 440 });
+      const [first, second] = sensors(s).map(sensor => sensor.id);
+      await s.editSensor(second, { id: 'c3.a', name: null });
+      const size = s.history.size;
+
+      for (const id of ['', '   ', 'c3.a', 'c3/a', 'c3+a', 'c3#a', 'c3"a', 'c3<a', 'c3&a']) {
+        await s.editSensor(first, { id, name: 'Yard throat' });
+        expect(sensors(s)[0], id).toEqual({ id: first, x: 320, y: 200 });
+        expect(s.history.size, id).toBe(size);
+      }
+    });
+
+    it('keeps the id a sensor already holds, so its name stays editable', async () => {
+      // An archive may hold an id this rule refuses: the format allows any
+      // non-empty string. Naming such a sensor must still work.
+      const s = session();
+      s.archive.getManifest().layout.sensors = [{ id: 'c3/a', x: 320, y: 240 }];
+
+      await s.editSensor('c3/a', { id: 'c3/a', name: 'Yard throat' });
+
+      expect(sensors(s)).toEqual([{ id: 'c3/a', x: 320, y: 240, name: 'Yard throat' }]);
+    });
+
+    it('lights the sensor after an id change, in both directions', async () => {
+      // The entry's highlights are a diff of its snapshots, so an id change
+      // names both ids; the editor resolves them against the manifest as it
+      // stands, where exactly one of them is there.
+      const s = session({ tool: 'sensor' });
+      await clicks(s, { x: 320, y: 240 });
+      const { id } = sensors(s)[0];
+      await s.editSensor(id, { id: 'c3.a', name: null });
+      const reveals: (Reveal | null)[] = [];
+      s.subscribe(reveal => reveals.push(reveal));
+
+      await s.undo();
+      expect(reveals.at(-1)!.highlights).toContainEqual({ kind: 'sensor', id });
+
+      await s.redo();
+      expect(reveals.at(-1)!.highlights).toContainEqual({ kind: 'sensor', id: 'c3.a' });
+    });
+
+    it('drops an edit of a sensor that is gone', async () => {
+      const s = session({ tool: 'sensor' });
+      await s.editSensor('S1abcdefghi', { id: 'c3.a', name: 'Yard throat' });
       expect(s.history.size).toBe(0);
     });
 
@@ -598,7 +658,7 @@ describe('EditSession', () => {
       const s = session({ tool: 'sensor' });
       await clicks(s, { x: 320, y: 200 });
       const { id } = sensors(s)[0];
-      await s.editSensor(id, 'Yard throat');
+      await s.editSensor(id, { id, name: 'Yard throat' });
       const size = s.history.size;
       const before = structuredClone(points(s));
 
@@ -680,14 +740,15 @@ describe('EditSession', () => {
       expect(sensors(s)).toEqual(before);
     });
 
-    it('survives a save and reopen', async () => {
+    it('survives a save and reopen, with the id that was typed', async () => {
       const s = session({ tool: 'sensor' });
       await clicks(s, { x: 320, y: 240 });
-      await s.editSensor(sensors(s)[0].id, 'Yard throat');
+      await s.editSensor(sensors(s)[0].id, { id: 'West yard throat', name: 'Yard throat' });
 
       const reopened = await R49Archive.load(await s.archive.export());
 
       expect(reopened.getManifest().layout.sensors).toEqual(sensors(s));
+      expect(reopened.getManifest().layout.sensors[0].id).toBe('West yard throat');
     });
   });
 

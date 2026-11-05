@@ -1208,12 +1208,23 @@ export class RREditorView extends LitElement {
     }
   }
 
-  /** Opens the dialog on a sensor, if it is still there. */
+  /**
+   * Opens the dialog on a sensor, if it is still there.
+   *
+   * The layout's sensor ids go with it: the dialog refuses an id another sensor
+   * holds as the person types, and uniqueness is a property of the layout,
+   * which the dialog does not otherwise see. This sensor's own id is among them
+   * and is never refused (`sensorId.ts`).
+   */
   private async _openSensorDialog(id: string) {
-    const sensor = this.session?.sensor(id);
-    if (!sensor) return;
+    const session = this.session;
+    const sensor = session?.sensor(id);
+    if (!session || !sensor) return;
     this._pendingSensor = { id };
-    await this._sensorDialog.show(sensor.name ?? null, { id });
+    await this._sensorDialog.show(
+      { id: sensor.id, name: sensor.name ?? null },
+      { taken: session.archive.getManifest().layout.sensors.map(other => other.id) }
+    );
   }
 
   /**
@@ -1326,12 +1337,12 @@ export class RREditorView extends LitElement {
     }
   }
 
-  /** The name came back: write it, or remove it for `null`. */
+  /** The fields came back: write both as one entry, the name removed for `null`. */
   private async _onSensorCommit(e: CustomEvent<SensorCommitDetail>) {
     const pending = this._pendingSensor;
     this._pendingSensor = null;
     if (!pending) return;
-    await this.session?.editSensor(pending.id, e.detail.name);
+    await this.session?.editSensor(pending.id, e.detail);
   }
 
   /**

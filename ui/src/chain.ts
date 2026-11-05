@@ -30,7 +30,7 @@ export type ClickResult =
       readonly px: Point;
       readonly world: WorldPoint;
     }
-  /** Ask for a sensor's name. */
+  /** Ask for a sensor's id and name (#335). */
   | { readonly kind: 'edit-sensor'; readonly id: string; readonly name: string | null };
 
 export const NONE: ClickResult = { kind: 'none' };
