@@ -57,7 +57,7 @@ export function localModelResultSource(archive: R49Archive): ResultSource {
       detector = null;
     },
 
-    async resultFor(frame: SourceFrame, { drifted, dpt }: ResultContext): Promise<FrameResult> {
+    async resultFor(frame: SourceFrame, context: ResultContext): Promise<FrameResult> {
       const manifest = archive.getManifest();
       // The frame every coordinate is authored in (`SPEC.md` § Output
       // encoding). `detect` is asked to answer in it, so the capture's own
@@ -95,9 +95,12 @@ export function localModelResultSource(archive: R49Archive): ResultSource {
         sensorStates: occupancy({
           detections,
           sensors: manifest.layout.sensors,
-          dpt,
+          dpt: context.dpt,
           frame: authored,
-          drifted,
+          // Read here rather than on entry: a drift sample that landed while
+          // the inference above was running refuses this frame. See
+          // `ResultContext.drifted`.
+          drifted: context.drifted,
         }),
         inference,
       };

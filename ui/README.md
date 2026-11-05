@@ -55,7 +55,7 @@ rr-app                          ← shell: owns the editing session and the view
 │   ├── rr-calibration-dialog   ← asks for a point's x/y/z in mm (look-dialog)
 │   ├── rr-sensor-dialog        ← asks for a sensor's optional name (look-dialog)
 │   └── rr-context-menu         ← right-click verbs on one object (sl-menu)
-├── rr-live-view                ← live mode; owns the detector and the L0→L1 loop
+├── rr-live-view                ← live mode; owns the L0→L1 loop, over a frame and a result source
 │   ├── rr-stats-bar            ← FPS / cars / occupied / inference / drift overlay
 │   └── rr-viewer               ← SAME component, video source instead of img
 │       ├── sensorMarker.ts     ← the diamond, coloured by occupied / clear / unknown
@@ -155,6 +155,7 @@ rr-app                          ← shell: owns the editing session and the view
 > [#321]: https://github.com/rails49/occupancy/issues/321
 > [#324]: https://github.com/rails49/occupancy/issues/324
 > [#326]: https://github.com/rails49/occupancy/issues/326
+> [#330]: https://github.com/rails49/occupancy/issues/330
 
 ## State and data flow
 
@@ -185,8 +186,11 @@ rr-app ─────────── rr-editor-view ────────
   change and a live chain, New and Open drop it, and a **reveal pans to keep what an undo changed on
   screen** — panning at the same zoom level where the changed objects fit, and fitting where they do
   not.
-* **`rr-live-view` owns:** the camera stream, the detector, and the detection loop. It never
-  mutates the archive.
+* **`rr-live-view` owns:** the loop, the drift check and what it decides, the recording, the
+  layout's DPT and the frame rate. **The frames and the answers are a source's** ([#330],
+  `liveSources.ts`): a `FrameSource` hands over a frame and a `ResultSource` answers it, which is
+  the camera and the shipped detector unless the view is given others. It never mutates the
+  archive.
 * **`rr-diagnostics-view` owns:** one sweep of the archive — a detector session, blob URLs, the raw
   detections per image, the confidence floor, and which image (if any) is being reviewed. It never
   mutates the archive either; diagnostics is read-only by construction, so nothing it shows can
@@ -491,8 +495,10 @@ arithmetic it needs is in `geometry.ts`. The right-click is **not** `preventDefa
 whether the native menu is suppressed depends on editor state: `rr-editor-view` suppresses every
 right-click it hears, and `rr-live-view` does not listen at all.
 
-**Methods:** `getVideoElement()`, `getImageElement()` — `rr-live-view` uses these to feed the
-detector the live frame source.
+**Methods:** `getVideoElement()` — `cameraFrameSource.ts` reads the live frame back out of the
+`<video>` this element mounted, rather than decoding the stream a second time ([#330]).
+`getImageElement()` has no caller since the live view's frame check dropped its image branch, which
+could not run: the live view never sets `src`.
 
 **Why one component for both modes.** `<img>`/`<video>` and the SVG both **cover the container**,
 and both fit their content into it by the same rule — `object-fit: contain` against
@@ -1326,9 +1332,15 @@ Camera stream under the two layers of the occupancy output ([#85]).
 | Property | Type |
 |---|---|
 | `archive` | `R49Archive \| null` |
+| `sources` | `LiveSources \| null` |
 
-* Opens the camera via `getCameraStream()` and runs a `requestAnimationFrame` loop, skipping frames
-  until the video reports usable dimensions.
+* **Frames come from a frame source and results from a result source** ([#330], `liveSources.ts`).
+  The loop asks `FrameSource.next()` for a frame and `ResultSource.resultFor()` for that frame's L0
+  and L1; `null` sources are the camera (`cameraFrameSource.ts`, which reads the `<video>`
+  `rr-viewer` mounted) and the model in this page (`localModelResultSource.ts`). Read **on
+  connect**: a different source is a different session. The `null` the frame source gives after
+  `stop()` is what ends the loop, and the source's pacing is the loop's — one animation frame per
+  frame for the camera.
 * **This is the occupancy contract, not a demo.** The detector runs **once per frame** — not once per
   sensor — and every sensor is derived from its output by pure geometry, which is `../SPEC.md`
   § Occupancy Output: L1 is a function of L0 and never calls a second model, so it cannot contradict
@@ -1336,8 +1348,9 @@ Camera stream under the two layers of the occupancy output ([#85]).
   before (the CNN at each sensor point, emitting marker glyphs) was § Testing and Demo, and it is
   gone.
 * `detect` is asked to answer in **`camera.resolution`**, the frame sensors and labels are authored
-  in. The capture's own pixel count, the model grid and the letterbox bars stay inside
-  `@rails49/detector`; nothing here scales a coordinate.
+  in — by `localModelResultSource.ts`, which is the only thing in the live path that reads the
+  manifest per frame. The capture's own pixel count, the model grid and the letterbox bars stay
+  inside `@rails49/detector`; nothing here scales a coordinate.
 * **The loop runs whether or not a model loaded.** `occupancy()` is total, and with `detections:
   null` it answers every sensor `unknown` / `no-model` — a state SPEC names and the user needs to
   see. Suppressing the loop would leave the previous frame's answers on screen instead.
@@ -1358,11 +1371,13 @@ Camera stream under the two layers of the occupancy output ([#85]).
   silence, which would read as "no drift found".
 * **"Record drift"** ([#217], `driftRecording.ts`) appends one row per drift sample while on, and
   turning it off downloads them as `drift-YYYYMMDD-HHMMSS.csv`: `time` (ISO 8601), `px`,
-  `tolerance_px`, `dpt`, `past`, `overridden`, `stream_width`, `stream_height` (the camera track's
-  `getSettings()`). The verdict cells are empty on an uncalibrated layout. Recording continues while
-  refusing. Leaving the live view mid-recording downloads the rows recorded so far.
-* Disposes the detector session and stops all camera tracks on disconnect; the drift check is dropped
-  with it, which is also what keeps an in-flight sample from writing into a detached view.
+  `tolerance_px`, `dpt`, `past`, `overridden`, `stream_width`, `stream_height` (the frame source's
+  `settings`, which is the camera track's `getSettings()`). The verdict cells are empty on an
+  uncalibrated layout. Recording continues while refusing. Leaving the live view mid-recording
+  downloads the rows recorded so far.
+* Stops the frame source and closes the result source on disconnect — which releases the detector
+  session and the camera tracks — and the drift check is dropped with it, which is also what keeps
+  an in-flight sample from writing into a detached view.
 
 ---
 
