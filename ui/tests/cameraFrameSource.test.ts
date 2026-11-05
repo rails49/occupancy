@@ -112,6 +112,24 @@ describe('cameraFrameSource', () => {
     expect(source.stream).toBeNull();
   });
 
+  it('releases a camera granted after it was stopped', async () => {
+    // Leaving the view while the permission prompt is still up: the grant
+    // lands on a source nobody is reading, and an unstopped track holds the
+    // camera until the page is reloaded.
+    const { track, stream } = fakeStream();
+    let grant!: (stream: MediaStream) => void;
+    getCameraStream.mockImplementation(() => new Promise(resolve => (grant = resolve)));
+
+    const source = cameraFrameSource(() => host);
+    const starting = source.start();
+    source.stop();
+    grant(stream);
+    await starting;
+
+    expect(track.stop).toHaveBeenCalledTimes(1);
+    expect(source.stream).toBeNull();
+  });
+
   it('reports the track settings the drift rows record', async () => {
     getCameraStream.mockResolvedValue(fakeStream({ width: 640, height: 480 }).stream);
 

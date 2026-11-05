@@ -235,6 +235,12 @@ export class RRLiveView extends LitElement {
     this._results =
       this.sources?.results ?? (this.archive ? localModelResultSource(this.archive) : null);
     await this._frames.start();
+    // Left again while the frames were being acquired — the permission prompt
+    // is a dialog the user can walk away from. `disconnectedCallback` has
+    // already stopped the source; opening a model and decoding the drift
+    // reference for a detached element would cost a WASM heap and hundreds of
+    // milliseconds for a session that is over.
+    if (!this.isConnected) return;
     this._stream = this._frames.stream;
     void this._run();
   }
@@ -448,12 +454,22 @@ export class RRLiveView extends LitElement {
       // A getter, not a value: drift lands beside the loop, and a sample that
       // arrives while this frame is being answered refuses this frame rather
       // than the next one — see `ResultContext.drifted`.
-      const result = await results.resultFor(frame, {
-        get drifted() {
-          return view._refusing;
-        },
-        dpt: this._dpt,
-      });
+      let result;
+      try {
+        result = await results.resultFor(frame, {
+          get drifted() {
+            return view._refusing;
+          },
+          dpt: this._dpt,
+        });
+      } catch (err) {
+        // `resultFor` is contracted never to reject, and the session is not
+        // bet on that: a loop that died here would leave the last frame's
+        // answers on screen for the rest of it, which is the one outcome worse
+        // than saying nothing. Skip the frame and ask again.
+        console.error('The result source rejected this frame', err);
+        continue;
+      }
       // An answer that lands after the view was left is about a session that is
       // over.
       if (!this._running) return;
