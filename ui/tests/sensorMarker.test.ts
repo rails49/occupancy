@@ -196,7 +196,7 @@ describe('renderSensor() — L1 state (#85)', () => {
     for (const state of ['occupied', 'clear', 'unknown'] as const) {
       const value: SensorState =
         state === 'occupied'
-          ? { state, detection }
+          ? { state, confidence: detection.confidence, detection }
           : state === 'clear'
             ? { state }
             : { state, reason: 'no-model' };
@@ -207,7 +207,7 @@ describe('renderSensor() — L1 state (#85)', () => {
 
   it('keeps the diamond whatever the state — shape is identity, colour is state', () => {
     const occupied = renderSvg(
-      renderSensor(sensor(), size(40), frame, false, { state: 'occupied', detection })
+      renderSensor(sensor(), size(40), frame, false, { state: 'occupied', confidence: detection.confidence, detection })
     );
     const clear = renderSvg(renderSensor(sensor(), size(40), frame, false, { state: 'clear' }));
 
@@ -218,7 +218,7 @@ describe('renderSensor() — L1 state (#85)', () => {
 
   it('names the covering detection\'s confidence when occupied', () => {
     const el = renderSvg(
-      renderSensor(sensor(), size(40), frame, false, { state: 'occupied', detection })
+      renderSensor(sensor(), size(40), frame, false, { state: 'occupied', confidence: detection.confidence, detection })
     );
     expect(el.querySelector('title')!.textContent).toContain('91%');
   });
@@ -232,12 +232,38 @@ describe('renderSensor() — L1 state (#85)', () => {
     expect(el.querySelector('title')!.textContent).not.toMatch(/\d/);
   });
 
+  it('names the confidence of a state that came with no box', () => {
+    // An occupancy service's classifier answers P(occupied) and no box at all
+    // (ADR 0022, #331). The number is the part every `occupied` state has, so
+    // the tooltip reads it rather than the detection.
+    const el = renderSvg(
+      renderSensor(sensor(), size(40), frame, false, { state: 'occupied', confidence: 0.73 })
+    );
+    expect(el.querySelector('title')!.textContent).toContain('73%');
+  });
+
+  it("shows a service's unknown reason as sent, rather than rewording it", () => {
+    // The closed set below is this page's causes. A service's cause is the
+    // service's, and this page cannot enumerate it (#331).
+    const el = renderSvg(
+      renderSensor(sensor(), size(40), frame, false, {
+        state: 'unknown',
+        serviceReason: 'the classifier found no track under this sensor',
+      })
+    );
+    expect(el.querySelector('title')!.textContent).toBe(
+      'unknown — the classifier found no track under this sensor'
+    );
+  });
+
   it('says why it could not answer, which the colour cannot', () => {
     const reasons: Record<UnknownReason, RegExp> = {
       'no-model': /no model/i,
       'no-calibration': /calibration/i,
       'outside-frame': /frame/i,
       drift: /drift/i,
+      'no-service': /cannot reach the occupancy service/i,
+      'not-reported': /did not report/i,
     };
     for (const [reason, pattern] of Object.entries(reasons) as [UnknownReason, RegExp][]) {
       const el = renderSvg(renderSensor(sensor(), size(40), frame, false, { state: 'unknown', reason }));

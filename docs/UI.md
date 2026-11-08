@@ -584,6 +584,19 @@ It is pure and total — one state per sensor, always — so the live view hands
 markers one answer and never builds an `unknown` itself. Its one caller in the live path is
 `localModelResultSource.ts` (#330); the view passes `drifted` and `dpt` in and reads the map back.
 
+**`occupied` carries `confidence`, and the covering `detection` only where there is one.** Geometry
+over L0 answers with a box; a classifier answers with P(occupied) and no box at all (ADR 0022), so
+the number is the part every occupied state has and the box is the extra. `clear` still carries
+nothing.
+
+**`unknown` has two shapes, and that is a compile-time check.** A cause *this page* found is one of
+the closed `UnknownReason` set, which `sensorMarker.ts` words in a total `Record` — adding a cause
+is a type error there. That set includes the two causes this page finds about a service: its answer
+cannot be read (`no-service`), or it named no state for a sensor (`not-reported`). A cause an
+occupancy service found arrives as `serviceReason` and is shown as sent (#331): this page cannot
+enumerate the service's causes, and rewording them would be inventing a vocabulary for somebody
+else's measurement.
+
 ## Frames and results come from sources (#330)
 
 `rr-live-view` owns a loop; it no longer owns a camera or a model. The loop asks a **frame source**
@@ -622,6 +635,35 @@ the recording, `_dpt` — resolved once from the archive, so #166 stays one fix 
 showing the source's error and inference time. None of it changes with what is answering, which is
 the whole point: a video file or a service (#286, #331, rails49/detector#64) reaches the same gate.
 
+**A source may show a picture, and may bring its own layout** (#331). Two optional fields carry
+that, and both exist because a service is one object answering both halves:
+
+* `SourceFrame.src` is an object URL `rr-viewer` shows through its `src`. The **source** created it
+  and the source releases it; the view holds only what to show, and nothing reads pixels back out of
+  the viewer. A stream source sets nothing and `FrameSource.stream` is the handover as before.
+* `ResultSource.layout` is the sensors, the `resolution` and the DPT the answers are about, and it
+  is a **getter the view reads every frame**. A service re-reads its manifest whenever its event
+  stream reconnects, and a sensor that moved has to reach the viewer along with the state keyed on
+  it. With a layout present the view takes sensors, resolution and DPT from there instead of from
+  `archive` — which is why an unsaved edit in the editor cannot move what the live view draws.
+
+**`SourceFrame.fresh: false` is a turn that carried no new picture.** The service answered, and the
+answer held no frame: it has none, or the request failed. The last picture stays up, the rate reads
+**0** rather than the last measurement, no drift sample is grabbed from it — there are no new pixels
+to measure — and the answers that came with it are written as usual. That last part is the point:
+every sensor reads `unknown` with the source's reason instead of the previous frame's answers
+freezing on screen, which is the failure mode #341 named for a source that cannot answer.
+`FrameResult.notice` is the reason, rendered as a notice and cleared by the next answer, and
+`FrameResult.detections` **absent** means no L0 was published at all — no boxes and no car count —
+where an empty list means a model looked and found none.
+
+**Service mode is sources handed in with no archive** (#331, `_judging`). In it the view runs no
+drift check and shows no drift banner, recorder, alignment readout, or model and DPT notices, and the
+stats bar shows Cars only with L0 and never Inference: the service publishes states this page cannot
+withhold (drift in service mode is #336). The camera path, with or without an archive, is as it was.
+Opening or creating an archive leaves a service behind in `rr-app`. The source's `open()` error is
+still shown either way, in the words that fit who failed.
+
 **`sources` is read on connect.** The loop, the drift check and the result source's lifetime all hang
 off one mount; swapping a source mid-session would mean tearing down and rebuilding all three, and a
 different source is a different session.
@@ -642,10 +684,74 @@ the live view never sets `src`, so it could not run. `getImageElement()` itself 
 with no caller.
 
 `tests/rr-live-view.sources.test.ts` drives the view with **fake** sources — each result reaching the
-viewer and the stats bar, `drifted` and `dpt` reaching `resultFor`, leaving the view stopping both —
-and `tests/rr-live-view.test.ts` is unchanged, which is the evidence that the camera and the shipped
-detector still behave the way they did through the same loop. jsdom decodes no video, so the camera
+viewer and the stats bar, `drifted` and `dpt` reaching `resultFor`, leaving the view stopping both,
+and (since #331) a source shaped like a service: the picture through `src`, the layout re-read every
+frame, a turn with no new frame, and none of the page's own notices — and
+`tests/rr-live-view.test.ts` is unchanged but for the `SensorState` shape, which is the evidence that
+the camera and the shipped detector still behave the way they did through the same loop. jsdom decodes no video, so the camera
 path is driven there with a stand-in `<video>` and measured by hand in Chromium.
+
+## An occupancy service is found at `/live` and read in one place (#331)
+
+The page asks `/live/archive/manifest.json` once, when `rr-app` connects. **Only a JSON content type
+counts as a service**: the deployed copy answers every unknown path with 200 `text/html`, so
+`response.ok` alone would find one on a static host. Any other answer, and any network failure, is no
+service and the page is what it has always been, with no toast. `liveContract.ts`'s `findService`
+returns the **`Response`**, not a boolean, so #333 can read its `ETag` and open the manifest it
+already fetched.
+
+`/live` is one constant and not a setting. A cross-origin service is out of scope, everything the app
+fetches comes from origin anyway (ADR 0006), and a base somebody could type would be a second way for
+the page to be wrong about what it is watching.
+
+**`liveContract.ts` is the only file that names the wire.** The paths, the part names (`json` and
+`frame`), the field names, the version and the five-second timeout are there, and `readLatest` is one
+function over `response.formData()` — the browser already has a multipart parser, and the hand-rolled
+one in rails49/control#950 exists only because WebKit refused that type there. If `formData()` turns
+out to fail on a real iPhone (#331's human step) that function is the one place that changes. It
+throws a `LiveError` naming what was wrong, and the payload is validated field by field: this is the
+network, and a field of the wrong type otherwise reaches a sensor marker or a box drawn at `NaN`.
+
+**`occupancyService.ts` is one object that is both sources.** The service answers a frame and that
+frame's L1 together, so two sources would mean two requests for one answer and L1 that could belong
+to a different frame than the picture under it. The rules it keeps:
+
+* **It never rejects.** Every failure — a non-2xx, an answer that is not the multipart form (this
+  page's own HTML from a proxy whose service is down), a malformed body, a wrong version, a request
+  with no answer in five seconds, a frame that will not decode — becomes one answer in which every
+  sensor reads `unknown` (`no-service`) under the notice "Cannot reach the occupancy service". The
+  detail goes to the console, and it asks again after about a second. The frame it hands over is the
+  one already on screen, marked `fresh: false`.
+* **An answer with only the `json` part is the service having no frame.** The picture on screen
+  stays, with no boxes, under the notice "No picture from the camera", and each sensor reads
+  `unknown` with the reason the service sent for it. `LIVE.md` has the service wait about a second
+  before answering so, and has `after` wait up to about a second for a new frame, so the service
+  paces the loop and this object adds no pause of its own.
+* **A frame is new when its id *differs* from the last, not when it is greater.** The id is the
+  service's token, sent back as `after` unchanged, never parsed or ordered — so a service that
+  restarted and numbered from scratch recovers on its next answer rather than being ignored for the
+  rest of the session. An answer repeating the id is not a frame and it asks again.
+* **`next()` resolves only once the frame has decoded**, so asks cannot outrun a slow device. Each
+  object URL is released when the next frame replaces it on screen, and on leaving. Nothing reads
+  pixels back out of `rr-viewer`: the frame goes in through `src`.
+* **L1 on screen comes only from `latest`**, so it always belongs to the frame shown. One
+  `/live/events` connection is held and **no message is read from it** — L1 arriving there would be
+  about another frame. What the stream is for is the *connect*: every connect after the first
+  re-reads the manifest, because occupancy-service#7 drops every event client after a save and a
+  connect is therefore the full list of sensors. A failed re-read keeps the held manifest, which was
+  true a moment ago. A connection that closed for good — which a non-200 answer does, and
+  `EventSource` does not retry — is reopened after a few seconds.
+* **The manifest is the service's**, validated by `R49Archive.setManifest`, and it is what
+  `ResultSource.layout` reports. So an unsaved edit in the editor cannot move what the live view
+  draws, and a sensor the manifest does not have is not drawn and so is not answered.
+
+**The service is left behind by New and Open, for good.** Both pass through `rr-app._open`, and
+`_leftService` also ignores a manifest answer that arrives afterwards. Only a reload finds the
+service again.
+
+`bin/live-stub.mjs` is a stand-in service for checking this by hand on a device, and serves the built
+page from the same origin because `/live` has to be. It is not the service — rails49/occupancy-service
+is — and `README.md` § Checking the live view against a service has the commands.
 
 ## Camera drift lives in `driftSession.ts`, and only the live view measures it (#89, #252)
 

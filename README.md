@@ -29,6 +29,7 @@ Requires [pnpm](https://pnpm.io/) and Node at the version in `.nvmrc`, and [uv](
 | Watch mode (ui) | `pnpm --filter @occupancy/ui test:watch` |
 | The chrome check alone | `ui/node_modules/.bin/look-check ui/src ui/index.html` |
 | UI dev server | `pnpm --filter @occupancy/ui dev` (`dev:http` for plain HTTP) |
+| Serve the built page with a stand-in occupancy service | `node bin/live-stub.mjs` (see below) |
 | Build the UI | `pnpm build` |
 | Run the gate against an unreleased detector | `bin/with-detector.sh` (needs a [rails49/detector](https://github.com/rails49/detector/blob/main/README.md) checkout at `../detector`; puts the pinned version back on exit) |
 | Run the UI against an unreleased detector | `bin/with-detector.sh pnpm --filter @occupancy/ui dev` (shows detections only if `../detector/detector/models` holds an exported model) |
@@ -38,6 +39,40 @@ Requires [pnpm](https://pnpm.io/) and Node at the version in `.nvmrc`, and [uv](
 The dev server serves HTTPS with a self-signed certificate, because `getUserMedia` needs a secure context; a phone on the LAN needs the HTTPS URL. It also sets the COOP/COEP headers that ONNX Runtime's threaded WASM needs.
 
 `bin/deploy.sh` reads Cloudflare credentials from the environment or from 1Password (`op://rails49/Cloudflare Pages/…`), and runs only from a clean `origin/main`.
+
+## 🛰 Checking the live view against a service
+
+The page looks for an [occupancy service](GLOSSARY.md#occupancy) at `/live` on its own origin when
+it loads ([#331](https://github.com/rails49/occupancy/issues/331)). Where it finds one, pressing
+Live shows that service's frames, its sensor states, its L0 where it sends any, and the rate the
+page is getting — no camera, no model loaded here, and no drift check. The page only shows what the
+service decided; the detection that runs the railroad happens in the service. The deployed site
+serves no service, so it behaves as it always has.
+
+`bin/live-stub.mjs` is a stand-in for checking that by hand. It is **not** the service — that is
+[rails49/occupancy-service](https://github.com/rails49/occupancy-service), whose `LIVE.md` is the
+contract — but it answers the same three paths with a real JPEG and a car moving along a length of
+track, which is enough to see frames, states, boxes and a frame rate on a device. It serves the
+built page from the same origin, because `/live` is on the page's own origin and there is no setting
+for anything else.
+
+```sh
+pnpm --filter @occupancy/ui build     # the page it serves
+node bin/live-stub.mjs                # port 8080, bound on every interface
+```
+
+Then open `http://<this machine's IP>:8080/` on the phone or tablet and press Live. Plain HTTP is
+enough: service mode uses no camera, so it needs no secure context. Flags worth knowing:
+`--port`, `--fps`, `--no-frames` (the service saying it has no frame: the last picture should stay
+under "No picture from the camera", every sensor should read `unknown` with the reason, and the rate
+should drop to 0) and `--churn` (drops the event-stream clients every 20 s, as the real service does
+after a save, so the page re-reads the manifest).
+
+`occupancy-service`'s conformance check passes against the stand-in, with frames on and off:
+
+```sh
+uvx --from git+https://github.com/rails49/occupancy-service live-check http://localhost:8080/live
+```
 
 ## 📷 Capture
 

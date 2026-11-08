@@ -191,10 +191,16 @@ An L1 state: no car on the sensor's track comes within the margin of the sensor.
 How far beyond a car's end, along the track, a sensor still reads occupied: two gauges.
 
 **Unknown**:
-An L1 state: the system could not look, because no model is loaded, DPT is unresolved, the sensor is outside the frame, the classifier finds no track under the sensor, or the camera has drifted. Not a confidence outcome. See [SPEC § The vocabulary](SPEC.md#the-vocabulary).
+An L1 state: the system could not look, because no model is loaded, DPT is unresolved, the sensor is outside the frame, the classifier finds no track under the sensor, the camera has drifted, or an occupancy service the page is watching has no frames to send. Not a confidence outcome. A cause the page found is one of a closed set; a cause a service found is the service's own words. See [SPEC § The vocabulary](SPEC.md#the-vocabulary).
 
 **Phantom**:
 `detector`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/detector/blob/main/GLOSSARY.md).
 
 **Miss**:
 `detector`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/detector/blob/main/GLOSSARY.md).
+
+**Occupancy service**:
+`occupancy-service`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/occupancy-service/blob/main/GLOSSARY.md).
+
+**Live contract**:
+`occupancy-service`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/occupancy-service/blob/main/GLOSSARY.md).

@@ -147,12 +147,16 @@ export interface SensorSymbolSize {
 }
 
 /**
- * Why the system could not answer, in words.
+ * Why this page could not answer, in words.
  *
  * A total `Record` rather than a `switch` with a default: `UnknownReason` grows,
  * and a default would render a new reason as whatever the fallback string says
  * while typechecking cleanly. This way adding one is a compile error here — as
  * `drift` was when it landed (#94), which is the mechanism working.
+ *
+ * An occupancy service's reason is not in here and cannot be: it is the
+ * service's wording for a cause this page does not enumerate, so it arrives as
+ * `serviceReason` and is shown as sent (#331).
  */
 const UNKNOWN_REASONS: Record<UnknownReason, string> = {
   'no-model': 'no model loaded',
@@ -162,24 +166,29 @@ const UNKNOWN_REASONS: Record<UnknownReason, string> = {
   // the answer is withheld because the camera moved. The banner carries the
   // number and the override; a tooltip is not where a user acts on either.
   drift: 'camera has drifted — refusing to classify',
+  'no-service': 'cannot reach the occupancy service',
+  'not-reported': 'the occupancy service did not report this sensor',
 };
 
 /**
  * The state as a tooltip: the word, and for `unknown` what stopped it.
  *
- * `occupied` names its evidence — a covering detection's confidence — and
+ * `occupied` names its evidence — the confidence of whatever answered it — and
  * `clear` deliberately names none. That asymmetry is `SPEC.md` § Confidence
  * verbatim: `clear` is the *absence* of evidence and nothing scored it, so a
  * number here would be the confident-looking miss the spec exists to prevent.
+ *
+ * `unknown` reads the closed set through {@link UNKNOWN_REASONS} where this page
+ * found the cause, and the service's own words where it did not (#331).
  */
 function stateTooltip(state: SensorState): string {
   switch (state.state) {
     case 'occupied':
-      return `occupied — ${Math.round(state.detection.confidence * 100)}% confidence`;
+      return `occupied — ${Math.round(state.confidence * 100)}% confidence`;
     case 'clear':
       return 'clear';
     case 'unknown':
-      return `unknown — ${UNKNOWN_REASONS[state.reason]}`;
+      return `unknown — ${'reason' in state ? UNKNOWN_REASONS[state.reason] : state.serviceReason}`;
   }
 }
 

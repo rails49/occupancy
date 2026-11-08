@@ -43,7 +43,7 @@ describe('the vocabulary', () => {
     const car = detection({});
     const states = occupancy({ detections: [car], sensors, dpt: DPT, frame: FRAME });
 
-    expect(states.get('a')).toEqual({ state: 'occupied', detection: car });
+    expect(states.get('a')).toEqual({ state: 'occupied', confidence: car.confidence, detection: car });
   });
 
   it('reports clear when nothing covers it, with no confidence attached', () => {
@@ -69,7 +69,11 @@ describe('unknown', () => {
     // band below it.
     const faint = detection({ confidence: 0.26 });
     const states = occupancy({ detections: [faint], sensors, dpt: DPT, frame: FRAME });
-    expect(states.get('a')).toEqual({ state: 'occupied', detection: faint });
+    expect(states.get('a')).toEqual({
+      state: 'occupied',
+      confidence: faint.confidence,
+      detection: faint,
+    });
   });
 
   it('says no-model when no detector is loaded', () => {
@@ -157,7 +161,11 @@ describe('width normalization', () => {
       frame: FRAME,
     });
 
-    expect(states.get('a')).toEqual({ state: 'occupied', detection: underPredicted });
+    expect(states.get('a')).toEqual({
+      state: 'occupied',
+      confidence: underPredicted.confidence,
+      detection: underPredicted,
+    });
   });
 
   it('hands back the raw detection, not the normalized box', () => {
@@ -172,7 +180,7 @@ describe('width normalization', () => {
 
     const state = states.get('a');
     expect(state?.state).toBe('occupied');
-    expect(state?.state === 'occupied' && state.detection.width).toBe(25);
+    expect(state?.state === 'occupied' && state.detection?.width).toBe(25);
   });
 
   it('narrows an over-predicted box too — the constant replaces, not widens', () => {
@@ -202,7 +210,11 @@ describe('overlapping boxes', () => {
       frame: FRAME,
     });
 
-    expect(states.get('a')).toEqual({ state: 'occupied', detection: strong });
+    expect(states.get('a')).toEqual({
+      state: 'occupied',
+      confidence: strong.confidence,
+      detection: strong,
+    });
   });
 });
 
@@ -217,8 +229,16 @@ describe('couplers', () => {
     const sensors = [sensor('just-left', 1109.9, 540), sensor('just-right', 1110.1, 540)];
 
     const states = occupancy({ detections: [left, right], sensors, dpt: DPT, frame: FRAME });
-    expect(states.get('just-left')).toEqual({ state: 'occupied', detection: left });
-    expect(states.get('just-right')).toEqual({ state: 'occupied', detection: right });
+    expect(states.get('just-left')).toEqual({
+      state: 'occupied',
+      confidence: left.confidence,
+      detection: left,
+    });
+    expect(states.get('just-right')).toEqual({
+      state: 'occupied',
+      confidence: right.confidence,
+      detection: right,
+    });
   });
 
   it('leaves a real gap between uncoupled cars reading clear', () => {

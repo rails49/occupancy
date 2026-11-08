@@ -501,6 +501,144 @@ describe('rr-app', () => {
     });
   });
 
+  describe('the occupancy service on this origin (#331)', () => {
+    const originalFetch = global.fetch;
+    // jsdom has no EventSource. The live view opens the service's stream; these
+    // tests never connect it.
+    beforeEach(() => {
+      vi.stubGlobal(
+        'EventSource',
+        class {
+          close() {}
+        }
+      );
+    });
+    afterEach(() => {
+      // Remove the views first, so none is still opening the service when the
+      // stub goes.
+      fixtureCleanup();
+      global.fetch = originalFetch;
+      vi.unstubAllGlobals();
+    });
+
+    const served = {
+      version: 4,
+      layout: { name: 'Served', scale: 'N', calibration: { points: [] }, sensors: [] },
+      camera: { resolution: { width: 640, height: 480 } },
+      images: [],
+    };
+
+    /**
+     * Answer the manifest path with `manifest` and hold every `latest` open.
+     *
+     * Holding rather than answering keeps the loop parked on its first request:
+     * what these tests are about is whether the page found a service, not what
+     * it does with its frames.
+     */
+    function serve(manifest: Response | Error) {
+      global.fetch = vi.fn(async (url: string) => {
+        if (String(url).includes('manifest.json')) {
+          if (manifest instanceof Error) throw manifest;
+          return manifest.clone();
+        }
+        return new Promise<Response>(() => {});
+      }) as unknown as typeof fetch;
+    }
+
+    const jsonManifest = () =>
+      new Response(JSON.stringify(served), { headers: { 'content-type': 'application/json' } });
+
+    /** Mount, let the check settle, and hand back the app and its toasts. */
+    async function mounted() {
+      const el = await fixture<RRApp>(html`<rr-app></rr-app>`);
+      const notify = vi.spyOn(el as unknown as { _notify: () => void }, '_notify');
+      await new Promise(resolve => setTimeout(resolve, 0));
+      await el.updateComplete;
+      return { el, notify };
+    }
+
+    const liveSources = (el: RRApp) => {
+      (el as unknown as { _viewMode: string })._viewMode = 'live';
+      return el.updateComplete.then(() => el.shadowRoot!.querySelector('rr-live-view'));
+    };
+
+    it('hands a service it found to the live view, as both of its sources', async () => {
+      serve(jsonManifest());
+      const { el, notify } = await mounted();
+
+      const view = (await liveSources(el))!;
+      expect(view.sources).to.not.be.null;
+      // One object answers a frame and that frame's L1 together, so it is both.
+      expect(view.sources!.frames).toBe(view.sources!.results);
+      // And no archive: the page starts with none, and opening one is what
+      // leaves the service behind.
+      expect(view.archive).to.be.null;
+      expect(notify).not.toHaveBeenCalled();
+    });
+
+    // The page still opens in the editor; the check only decides what Live
+    // shows when the person presses it.
+    it('still starts in the editor', async () => {
+      serve(jsonManifest());
+      const { el } = await mounted();
+
+      expect(el.shadowRoot!.querySelector('rr-editor-view')).to.exist;
+      expect(el.shadowRoot!.querySelector('rr-live-view')).to.be.null;
+    });
+
+    const noService: [string, () => Response | Error][] = [
+      // The cloud copy of this page answers every unknown path with its own
+      // HTML, so `response.ok` alone would find a service on a static host.
+      ['a 200 text/html answer', () => new Response('<!doctype html>', { headers: { 'content-type': 'text/html' } })],
+      ['a 404', () => new Response('nope', { status: 404, headers: { 'content-type': 'application/json' } })],
+      ['a request that failed', () => new TypeError('Failed to fetch')],
+    ];
+
+    for (const [what, answer] of noService) {
+      it(`finds no service in ${what}, and says nothing about it`, async () => {
+        serve(answer());
+        const { el, notify } = await mounted();
+
+        const view = (await liveSources(el))!;
+        expect(view.sources).to.be.null;
+        // Silent: a page with no service is the page as it has always been,
+        // and a toast on every load of the deployed site would be noise.
+        expect(notify).not.toHaveBeenCalled();
+      });
+    }
+
+    it('leaves the service behind when an archive is created', async () => {
+      serve(jsonManifest());
+      const { el } = await mounted();
+      expect((await liveSources(el))!.sources).to.not.be.null;
+
+      (el as unknown as { _viewMode: string })._viewMode = 'editor';
+      await (el as unknown as { _onFileNew(): Promise<void> })._onFileNew();
+      await el.updateComplete;
+
+      const view = (await liveSources(el))!;
+      expect(view.sources).to.be.null;
+      expect(view.archive).to.not.be.null;
+    });
+
+    it('ignores a service that answers after an archive has been opened', async () => {
+      // The race the check's own latency opens: the person pressed New before
+      // the manifest came back.
+      let answer!: (response: Response) => void;
+      global.fetch = vi.fn(
+        async () => new Promise<Response>(resolve => (answer = resolve))
+      ) as unknown as typeof fetch;
+
+      const el = await fixture<RRApp>(html`<rr-app></rr-app>`);
+      await (el as unknown as { _onFileNew(): Promise<void> })._onFileNew();
+      answer(jsonManifest());
+      await new Promise(resolve => setTimeout(resolve, 0));
+      await el.updateComplete;
+
+      expect((await liveSources(el))!.sources).to.be.null;
+    });
+  });
+
   it('reports a save failure', async () => {
     const el = await fixture<RRApp>(html`<rr-app></rr-app>`);
     (el as any)._open(archive);

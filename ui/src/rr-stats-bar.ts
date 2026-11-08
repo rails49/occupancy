@@ -17,6 +17,12 @@ import { customElement, property } from 'lit/decorators.js';
  * to the model. It is the number that moves when the device changes, which is
  * the whole reason to watch it (see the map's hardware note).
  *
+ * `cars`, `inference` and `l0Age` are absent, not zero, when nobody measured
+ * them (#331). An occupancy service that publishes no L0 has no car count and
+ * no detector of this page's to time, and a row reading `0` would be a claim
+ * that it looked and found nothing — the same confident-looking miss `clear`
+ * refuses to make. An absent row says nothing instead.
+ *
  * **`alignment` is an instrument, which is why it is here and not in a banner.**
  * The refusal banner is an *event* — it appears when something is wrong and it
  * has to be read. Alignment is a *continuous measurement*, and a user aiming a
@@ -28,12 +34,33 @@ import { customElement, property } from 'lit/decorators.js';
 @customElement('rr-stats-bar')
 export class RRStatsBar extends LitElement {
   @property({ type: Number }) fps = 0;
-  /** L0: detections above the confidence threshold in the frame on screen. */
-  @property({ type: Number }) cars = 0;
+  /**
+   * L0: detections above the confidence threshold in the frame on screen, or
+   * `null` where no L0 was published at all.
+   *
+   * `null` is not `0`. An empty list is a frame that was inferred and held no
+   * cars; `null` is a source that reported no L0 for it (#331), and the row is
+   * withheld rather than reporting a count nothing counted.
+   */
+  @property({ type: Number }) cars: number | null = null;
   /** L1: how many sensors read `occupied`. */
   @property({ type: Number }) occupied = 0;
-  /** Milliseconds in `detect` — preprocessing, the session, the decode. */
-  @property({ type: Number }) inference = 0;
+  /**
+   * Milliseconds in `detect` — preprocessing, the session, the decode — or
+   * `null` where this page ran no model (#331).
+   */
+  @property({ type: Number }) inference: number | null = null;
+  /**
+   * How far behind the picture on screen the L0 drawn over it is, in
+   * milliseconds, or `null` where there is no L0 to be behind.
+   *
+   * An occupancy service infers on its own cadence and may draw the newest L0
+   * it has over a newer frame, so the boxes can belong to an earlier moment
+   * than the photograph (#331). Both times are the service's clock, so this
+   * page's clock plays no part. It is the readout that says whether a box
+   * sitting off a car is a bad box or an old one.
+   */
+  @property({ type: Number }) l0Age: number | null = null;
   /**
    * Estimated camera misalignment against the archive's images, in
    * `camera.resolution` pixels, or `null` when nothing has measured it yet.
@@ -114,24 +141,30 @@ export class RRStatsBar extends LitElement {
     `;
   }
 
+  /** One row, or nothing at all where the number was never measured. */
+  private _renderMeasured(label: string, value: number | null, text: (value: number) => string) {
+    if (value === null) return '';
+    return html`
+      <div class="stat">
+        <span class="label">${label}</span>
+        <span>${text(value)}</span>
+      </div>
+    `;
+  }
+
   render() {
     return html`
       <div class="stat">
         <span class="label">FPS:</span>
         <span>${this.fps.toFixed(1)}</span>
       </div>
-      <div class="stat">
-        <span class="label">Cars:</span>
-        <span>${this.cars}</span>
-      </div>
+      ${this._renderMeasured('Cars:', this.cars, cars => `${cars}`)}
       <div class="stat">
         <span class="label">Occupied:</span>
         <span>${this.occupied}</span>
       </div>
-      <div class="stat">
-        <span class="label">Inference:</span>
-        <span>${this.inference.toFixed(1)}ms</span>
-      </div>
+      ${this._renderMeasured('Inference:', this.inference, ms => `${ms.toFixed(1)}ms`)}
+      ${this._renderMeasured('L0 age:', this.l0Age, ms => `${ms.toFixed(0)}ms`)}
       ${this._renderAlignment()}
     `;
   }

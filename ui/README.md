@@ -2,8 +2,11 @@
 
 Web app for configuring track occupancy detection, plus a live view for real-time observation.
 
-Everything runs client-side: `.r49` archives are opened and saved through the file picker, and
-classification runs in the browser via ONNX Runtime. There is no backend.
+`.r49` archives are opened and saved through the file picker, and classification runs in the browser
+via ONNX Runtime. There is no backend of this package's; where an
+[occupancy service](../GLOSSARY.md#occupancy) answers at `/live` on the page's own origin, the live
+view can show that service's frames and answers instead ([#331], `liveContract.ts`,
+`occupancyService.ts`). The deployed site serves none, and the editor is client-side either way.
 
 * **`../SPEC.md`** — what the system is *for*, and the requirements it is working toward. Covers the
   whole project, not just this package. Much of it is not built yet; treat it as the target, not a
@@ -56,7 +59,7 @@ rr-app                          ← shell: owns the editing session and the view
 │   ├── rr-sensor-dialog        ← edits a sensor's id and optional name (look-dialog)
 │   └── rr-context-menu         ← right-click verbs on one object (sl-menu)
 ├── rr-live-view                ← live mode; owns the L0→L1 loop, over a frame and a result source
-│   ├── rr-stats-bar            ← FPS / cars / occupied / inference / drift overlay
+│   ├── rr-stats-bar            ← FPS / cars / occupied / inference / L0 age / drift overlay
 │   └── rr-viewer               ← SAME component, video source instead of img
 │       ├── sensorMarker.ts     ← the diamond, coloured by occupied / clear / unknown
 │       └── carMarker.ts        ← renderDetection: the dashed L0 box
@@ -156,7 +159,11 @@ rr-app                          ← shell: owns the editing session and the view
 > [#324]: https://github.com/rails49/occupancy/issues/324
 > [#326]: https://github.com/rails49/occupancy/issues/326
 > [#330]: https://github.com/rails49/occupancy/issues/330
+> [#331]: https://github.com/rails49/occupancy/issues/331
+> [#333]: https://github.com/rails49/occupancy/issues/333
 > [#335]: https://github.com/rails49/occupancy/issues/335
+> [#336]: https://github.com/rails49/occupancy/issues/336
+> [#341]: https://github.com/rails49/occupancy/pull/341
 
 ## State and data flow
 
@@ -172,7 +179,11 @@ rr-app ─────────── rr-editor-view ────────
    └─────────────── rr-live-view ───────────── rr-viewer / rr-stats-bar
 ```
 
-* **`rr-app` owns:** the session, the view mode, the band and the rail, and file new/open/save.
+* **`rr-app` owns:** the session, the view mode, the band and the rail, file new/open/save, and the
+  occupancy service it found on this origin ([#331], `liveContract.ts` § `findService`). The check
+  runs once at page start and is silent either way; the service is handed to `rr-live-view` as both
+  of its sources, and New and Open leave it behind for good — including an answer that arrives
+  after them.
 * **The `EditSession` owns:** the archive and its **undo history**, the image on screen, **the
   active tool**, the **chain in progress**, and the open drag. Every manifest write the editor and
   the settings dialog make is one of its methods, and each goes through `history.record` (or one
@@ -190,7 +201,8 @@ rr-app ─────────── rr-editor-view ────────
 * **`rr-live-view` owns:** the loop, the drift check and what it decides, the recording, the
   layout's DPT and the frame rate. **The frames and the answers are a source's** ([#330],
   `liveSources.ts`): a `FrameSource` hands over a frame and a `ResultSource` answers it, which is
-  the camera and the shipped detector unless the view is given others. It never mutates the
+  the camera and the shipped detector unless the view is given others. A source may bring its own
+  layout, and then the view draws from that and not from the archive ([#331]). It never mutates the
   archive.
 * **`rr-diagnostics-view` owns:** one sweep of the archive — a detector session, blob URLs, the raw
   detections per image, the confidence floor, and which image (if any) is being reviewed. It never
@@ -1381,6 +1393,9 @@ Camera stream under the two layers of the occupancy output ([#85]).
 | `archive` | `R49Archive \| null` |
 | `sources` | `LiveSources \| null` |
 
+An occupancy service is handed in as **both** sources at once, by `rr-app`, with `archive` left
+`null` ([#331]) — see `occupancyService.ts`.
+
 * **Frames come from a frame source and results from a result source** ([#330], `liveSources.ts`).
   The loop asks `FrameSource.next()` for a frame and `ResultSource.resultFor()` for that frame's L0
   and L1; `null` sources are the camera (`cameraFrameSource.ts`, which reads the `<video>`
@@ -1388,6 +1403,22 @@ Camera stream under the two layers of the occupancy output ([#85]).
   connect**: a different source is a different session. The `null` the frame source gives after
   `stop()` is what ends the loop, and the source's pacing is the loop's — one animation frame per
   frame for the camera.
+* **A source may hand over a picture instead of a stream, and may bring its own layout** ([#331]).
+  `SourceFrame.src` is shown through `rr-viewer`'s `src` — the source owns the object URL and
+  releases it, and nothing reads pixels back out of the viewer — and `ResultSource.layout` gives the
+  sensors, the resolution and the DPT the answers are keyed on, read **every frame** so a manifest
+  the source re-read reaches the viewer. With a layout the view takes all three from there rather
+  than from `archive`, which is why an unsaved edit in the editor cannot move what it draws.
+* **A turn with `fresh: false` carried no new picture.** The last one stays on screen, the rate
+  drops to **0** rather than going stale, no drift sample is taken from it, and the answers that
+  came with it are taken as usual — which is how every sensor reads `unknown` while a service is
+  quiet instead of the last good answers freezing. `FrameResult.notice` is the reason, shown as a
+  notice and cleared by the next answer; `FrameResult.detections` absent means no L0 was published
+  at all (no boxes, no car count), where an empty list means a model looked and found none.
+* **Service mode is `sources` set with no `archive`** ([#331]). It shows no drift banner,
+  recorder, alignment readout, or model and DPT notices, and no Inference row (drift in service mode
+  is [#336]). The camera path, with or without an archive, is as it was. A service's `open()`
+  failure is still shown, in its own words.
 * **This is the occupancy contract, not a demo.** The detector runs **once per frame** — not once per
   sensor — and every sensor is derived from its output by pure geometry, which is `../SPEC.md`
   § Occupancy Output: L1 is a function of L0 and never calls a second model, so it cannot contradict
@@ -1423,8 +1454,9 @@ Camera stream under the two layers of the occupancy output ([#85]).
   uncalibrated layout. Recording continues while refusing. Leaving the live view mid-recording
   downloads the rows recorded so far.
 * Stops the frame source and closes the result source on disconnect — which releases the detector
-  session and the camera tracks — and the drift check is dropped with it, which is also what keeps
-  an in-flight sample from writing into a detached view.
+  session and the camera tracks, or aborts a service's request in flight and closes its event
+  stream — and the drift check is dropped with it, which is also what keeps an in-flight sample from
+  writing into a detached view.
 
 ---
 
@@ -1521,14 +1553,23 @@ camera still lines up with the archive.
 | Property | Type | Description |
 |---|---|---|
 | `fps` | `number` | Frames per second |
-| `cars` | `number` | **L0**: detections above the confidence threshold in this frame |
+| `cars` | `number \| null` | **L0**: detections above the confidence threshold in this frame. `null` where no L0 was published at all, and the row is then not rendered |
 | `occupied` | `number` | **L1**: how many sensors read `occupied` |
-| `inference` | `number` | Milliseconds in `detect` — preprocessing, session, decode. Not the whole frame: L1 is pure geometry, and folding it in would attribute the render to the model |
+| `inference` | `number \| null` | Milliseconds in `detect` — preprocessing, session, decode. Not the whole frame: L1 is pure geometry, and folding it in would attribute the render to the model. `null` where this page ran no model, and the row is then not rendered |
+| `l0Age` | `number \| null` | How far behind the picture on screen the L0 drawn over it is, in milliseconds ([#331]). `null` where there is no L0 to be behind, and the row is then not rendered |
 | `alignment` | `number \| null` | Estimated camera misalignment in `camera.resolution` pixels, or `null` before the first sample |
 | `alignmentTolerance` | `number \| null` | What that is judged against — `maxDriftPx(dpt)`. `null` when no DPT resolves, and the row is then not rendered at all |
 
 Both counts are shown because the pair is the readout: cars with no occupied sensor is either an
 empty siding or a sensor in the wrong place, and one number cannot say which.
+
+**`cars`, `inference` and `l0Age` are absent, not zero, when nobody measured them** ([#331]). A
+service that publishes no L0 has no car count and no detector of this page's to time, and a row
+reading `0` would claim a frame was inferred and held no cars — the same confident-looking miss
+`clear` refuses to make. An empty detection list is a different fact and still reads `0`. The L0 age
+is the readout that says whether a box sitting off a car is a bad box or an old one: a service
+infers on its own cadence and may draw the newest L0 it has over a newer frame, and both times are
+the service's clock.
 
 **The alignment row is an instrument, and that is why it is here rather than in a banner.** The live
 view's refusal banner is an *event*; alignment is a continuous measurement, and someone aiming a camera
@@ -1538,6 +1579,74 @@ measurement against tolerance rather than a red/green dot, because the ratio is 
 `null` renders as `—`, never `0.0`: "not measured yet" and "measured, and the camera has not moved" are
 different facts, and this is the one readout where a zero is a claim. Past the tolerance the row turns
 amber, not red — the refusal banner is already red and carries the button that acts on it.
+
+---
+
+### `liveContract.ts`
+
+The live contract an occupancy service answers, read in one place ([#331]). The contract is
+`occupancy-service`'s, stated in its `LIVE.md`; this is the only file here that names a path, a part
+or a field of it.
+
+| Export | Description |
+|---|---|
+| `LIVE_BASE` | `'/live'`, on the page's own origin. One constant, not a setting |
+| `LIVE_VERSION`, `LATEST_TIMEOUT_MS` | The one contract version this reads, and how long a `latest` may take |
+| `manifestUrl`, `latestUrl`, `eventsUrl` | The three paths. `latestUrl(base, after)` sends the previous `frame_id` back **unchanged** |
+| `findService(base?)` | The service check: the manifest `Response` where this origin serves a service, else `null` |
+| `readLatest(response)` | One answer: `{ payload, frame }`, with `frame` `null` for an answer with only the `json` part. Throws `LiveError` |
+| `parsePayload(data)`, `l0AgeMs(payload)` | The JSON part validated field by field, and the L0 age in the service's own clock |
+| `LivePayload`, `LiveSensorState`, `LiveL0`, `LiveAnswer`, `LiveError` | The wire's shapes |
+
+**`findService` returns the answer, not a boolean**, so [#333] can read its `ETag` and open the
+manifest it already fetched. **Only a JSON content type counts**: the cloud copy of this page answers
+every unknown path with 200 `text/html`, so `response.ok` alone would find a service on a static
+host. Any other answer, and any network failure, is "no service", with no toast.
+
+**`readLatest` uses `response.formData()`.** The browser already has a multipart parser; the
+hand-rolled one in rails49/control#950 exists only because WebKit refused that type there, and if
+`formData()` turns out to fail on a real iPhone ([#331]'s human step) this function is the one place
+that changes. It throws rather than returning a partial answer, and the caller turns the throw into
+`unknown` for every sensor.
+
+---
+
+### `occupancyService.ts`
+
+An occupancy service as the live view's source — both halves of it ([#331]).
+
+| Export | Description |
+|---|---|
+| `occupancyService(base?)` | One object that is the `FrameSource` **and** the `ResultSource`, for the service at `base` |
+
+**One object, because the service answers a frame and that frame's L1 together.** Two sources would
+mean two requests for one answer, and L1 that could belong to a different frame than the picture
+under it. `rr-app` hands it to `rr-live-view` as both.
+
+**It never rejects.** A request that failed, a body that will not parse, a version it does not read —
+each becomes one answer in which every sensor reads `unknown` (`no-service`) under the notice "Cannot
+reach the occupancy service", the picture on screen stays (`fresh: false`), and it asks again after
+about a second. An answer with no frame keeps the picture too, under the notice "No picture from the
+camera", with each sensor `unknown` and the service's reason as its `serviceReason`. A source that rejected would leave the last good answers frozen under a live-looking
+screen, which is what [#341] named.
+
+**A frame is new when its id *differs* from the last, not when it is greater.** The id is the
+service's token, sent back as `after` unchanged; a service that restarted and numbered from scratch
+recovers on its next answer. An answer repeating the id is not a frame and it asks again. `next()`
+resolves only once the frame has **decoded**, so asks cannot outrun a slow device, and each object
+URL is released when the next frame replaces it on screen and on leaving.
+
+**The manifest is the service's.** Read from `<base>/archive/manifest.json` at `open()` and validated
+by `R49Archive.setManifest`, it is what `ResultSource.layout` reports and therefore what the view
+draws — so an unsaved edit in the editor cannot move it. One `<base>/events` connection is held and
+**no L1 is read from it**: L1 on screen comes only from `latest`, so it always belongs to the frame
+shown. Every connect after the first re-reads the manifest, because occupancy-service#7 drops every
+event client after a save; a failed re-read keeps the held manifest. A connection that closed for
+good — which a non-200 answer does, and `EventSource` does not retry — is reopened after a few
+seconds.
+
+**It loads no detector and measures no drift.** The service publishes states this page cannot
+withhold, and drift in service mode is [#336].
 
 ---
 

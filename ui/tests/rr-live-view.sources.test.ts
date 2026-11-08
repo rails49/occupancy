@@ -1,9 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, onTestFinished } from 'vitest';
 import { fixture, html } from '@open-wc/testing';
 import { R49Archive } from '@rails49/r49';
 import type { Detection } from '@rails49/detector';
 import '../src/rr-live-view.js';
 import { RRLiveView } from '../src/rr-live-view.js';
+import { RRStatsBar } from '../src/rr-stats-bar.js';
 import type { FrameSource, ResultContext, ResultSource, SourceFrame } from '../src/liveSources.js';
 import type { SensorState } from '../src/occupancy.js';
 
@@ -20,7 +21,7 @@ const detections: Detection[] = [
 ];
 
 const sensorStates = new Map<string, SensorState>([
-  ['S1abcdefghi', { state: 'occupied', detection: detections[0] }],
+  ['S1abcdefghi', { state: 'occupied', confidence: 0.9, detection: detections[0] }],
 ]);
 
 const loadDetector = vi.fn(async (_source: string) => ({
@@ -282,6 +283,267 @@ describe('rr-live-view with sources of its own', () => {
     expect(results.asked.length).toBeGreaterThan(1);
     const viewer = el.shadowRoot!.querySelector('rr-viewer')!;
     expect(viewer.sensorStates).toBe(sensorStates);
+  });
+
+  describe('a source that brings its own frames and its own layout (#331)', () => {
+    const SENSORS = [{ id: 'Sservice001', x: 10, y: 20 }];
+    const LAYOUT = {
+      sensors: SENSORS,
+      resolution: { width: 640, height: 480 },
+      dpt: 20,
+    };
+
+    /**
+     * A source that is both, as an occupancy service is: it hands over a
+     * picture through `src`, answers it, and declares the layout the answers
+     * are keyed on.
+     */
+    function fakeService(
+      answers: {
+        src?: string;
+        fresh?: boolean;
+        detections?: Detection[];
+        l0Age?: number;
+        notice?: string;
+        states?: ReadonlyMap<string, SensorState>;
+      }[],
+      { openError = null as string | null, layoutLate = false } = {}
+    ) {
+      let turn = -1;
+      // `layoutLate` stands in for a manifest that would not read at `open()`
+      // and read on the next reconnect.
+      let layout: typeof LAYOUT | null = layoutLate ? null : LAYOUT;
+      const source = {
+        asked: 0,
+        stream: null as MediaStream | null,
+        settings: {} as MediaTrackSettings,
+        get layout() {
+          return layout;
+        },
+        /** Stand in for a reconnect that re-read the manifest with a sensor moved. */
+        moveSensor(x: number) {
+          layout = { ...LAYOUT, sensors: [{ id: 'Sservice001', x, y: 20 }] };
+        },
+        /** Stand in for a reconnect that read the manifest `open()` could not. */
+        readLayout() {
+          layout = LAYOUT;
+        },
+        async start() {},
+        stop() {},
+        async open() {
+          return openError;
+        },
+        close() {},
+        async next(): Promise<SourceFrame | null> {
+          await new Promise(resolve => setTimeout(resolve, 0));
+          // The last answer repeats for the rest of the session, as a service
+          // with nothing new to send would.
+          turn = Math.min(turn + 1, answers.length - 1);
+          const answer = answers[turn];
+          return {
+            source: {} as CanvasImageSource,
+            width: 640,
+            height: 480,
+            ...(answer.src !== undefined ? { src: answer.src } : {}),
+            ...(answer.fresh !== undefined ? { fresh: answer.fresh } : {}),
+          };
+        },
+        async resultFor() {
+          const answer = answers[Math.max(turn, 0)];
+          source.asked++;
+          return {
+            ...(answer.detections !== undefined ? { detections: answer.detections } : {}),
+            ...(answer.l0Age !== undefined ? { l0Age: answer.l0Age } : {}),
+            ...(answer.notice !== undefined ? { notice: answer.notice } : {}),
+            sensorStates: answer.states ?? new Map<string, SensorState>(),
+          };
+        },
+      };
+      return source satisfies FrameSource & ResultSource;
+    }
+
+    const mount = (source: FrameSource & ResultSource) =>
+      fixture<RRLiveView>(
+        html`<rr-live-view .sources=${{ frames: source, results: source }}></rr-live-view>`
+      );
+
+    it('shows the frame through src and draws the layout the source declares', async () => {
+      const states = new Map<string, SensorState>([
+        ['Sservice001', { state: 'occupied', confidence: 0.8 }],
+        ['Sclear00001', { state: 'clear' }],
+        ['Sunreported', { state: 'unknown', reason: 'not-reported' }],
+        ['Srefused001', { state: 'unknown', serviceReason: 'camera cannot see this sensor' }],
+      ]);
+      const source = fakeService([{ src: 'blob:one', detections, l0Age: 120, states }]);
+
+      const el = await mount(source);
+      const viewer = el.shadowRoot!.querySelector('rr-viewer')!;
+      const stats = el.shadowRoot!.querySelector('rr-stats-bar')!;
+      await waitFor(el, () => viewer.src !== null);
+
+      expect(viewer.src).toBe('blob:one');
+      // Nothing reads pixels back: the viewer is handed the URL, not asked for
+      // its element.
+      expect(viewer.stream).to.be.null;
+      // The source's layout, not this view's archive — which it has none of.
+      expect(viewer.sensors.map(s => s.id)).toEqual(['Sservice001']);
+      expect(viewer.resolution).toEqual({ width: 640, height: 480 });
+      expect(viewer.dpt).toBe(20);
+      // Each L1 state and reason reaches the viewer as the source gave it.
+      expect(viewer.sensorStates).toEqual(states);
+      expect(stats.cars).toBe(1);
+      expect(stats.l0Age).toBe(120);
+    });
+
+    it('draws no boxes and shows no car count where the source published no L0', async () => {
+      const source = fakeService([{ src: 'blob:one' }]);
+
+      const el = await mount(source);
+      const viewer = el.shadowRoot!.querySelector('rr-viewer')!;
+      const stats = el.shadowRoot!.querySelector('rr-stats-bar')!;
+      await waitFor(el, () => viewer.src !== null);
+
+      expect(viewer.detections).toEqual([]);
+      // `null`, not 0: nothing counted cars for this frame.
+      expect(stats.cars).to.be.null;
+      expect(stats.l0Age).to.be.null;
+    });
+
+    it('shows 0 cars for an L0 that found none', async () => {
+      const source = fakeService([{ src: 'blob:one', detections: [] }]);
+
+      const el = await mount(source);
+      await waitFor(el, () => el.shadowRoot!.querySelector('rr-viewer')!.src !== null);
+
+      expect(el.shadowRoot!.querySelector('rr-stats-bar')!.cars).toBe(0);
+    });
+
+    it('times the first frame after a gap from nothing, not from before the gap', async () => {
+      // Two new frames with a gap between them make no rate: each is the first
+      // of its run.
+      const rates: [RRStatsBar, number][] = [];
+      const setFps = Object.getOwnPropertyDescriptor(RRStatsBar.prototype, 'fps')!.set!;
+      const spy = vi
+        .spyOn(RRStatsBar.prototype, 'fps', 'set')
+        .mockImplementation(function (this: RRStatsBar, value) {
+          rates.push([this, value]);
+          setFps.call(this, value);
+        });
+      onTestFinished(() => spy.mockRestore());
+      const source = fakeService([
+        { src: 'blob:one' },
+        { fresh: false },
+        { src: 'blob:two' },
+        { fresh: false },
+      ]);
+
+      const el = await mount(source);
+      const viewer = el.shadowRoot!.querySelector('rr-viewer')!;
+      await waitFor(el, () => viewer.src === 'blob:two' && source.asked > 4);
+
+      // Only this view's bar: views left running by earlier tests set theirs too.
+      const stats = el.shadowRoot!.querySelector('rr-stats-bar')!;
+      const ours = rates.filter(([bar]) => bar === stats).map(([, rate]) => rate);
+      expect(ours.filter(rate => rate !== 0)).toEqual([]);
+    });
+
+    it('keeps the last picture, drops the rate to 0 and shows the notice on a turn with no frame', async () => {
+      const shown = new Map<string, SensorState>([['Sservice001', { state: 'clear' }]]);
+      const blind = new Map<string, SensorState>([
+        ['Sservice001', { state: 'unknown', serviceReason: 'no frames' }],
+      ]);
+      const source = fakeService([
+        { src: 'blob:one', detections, states: shown },
+        { fresh: false, notice: 'No picture from the camera', states: blind },
+      ]);
+
+      const el = await mount(source);
+      const viewer = el.shadowRoot!.querySelector('rr-viewer')!;
+      const stats = el.shadowRoot!.querySelector('rr-stats-bar')!;
+      await waitFor(el, () => viewer.src === 'blob:one');
+      await waitFor(el, () => stats.fps === 0 && source.asked > 1);
+
+      // The picture stays up — it is still the last thing the service sent.
+      expect(viewer.src).toBe('blob:one');
+      // And nothing else does: no boxes, every sensor unknown with the
+      // service's own reason, no rate, and the reason on screen.
+      expect(viewer.detections).toEqual([]);
+      expect(viewer.sensorStates!.get('Sservice001')).toEqual({
+        state: 'unknown',
+        serviceReason: 'no frames',
+      });
+      expect(stats.fps).toBe(0);
+      expect(stats.cars).to.be.null;
+      expect(el.shadowRoot!.textContent).to.contain('No picture from the camera');
+    });
+
+    it('re-reads the layout every frame, so a sensor that moved reaches the viewer', async () => {
+      const source = fakeService([{ src: 'blob:one' }]);
+
+      const el = await mount(source);
+      const viewer = el.shadowRoot!.querySelector('rr-viewer')!;
+      await waitFor(el, () => viewer.sensors.length > 0);
+      expect(viewer.sensors[0].x).toBe(10);
+
+      source.moveSensor(99);
+      await waitFor(el, () => viewer.sensors[0]?.x === 99);
+      expect(viewer.sensors[0].x).toBe(99);
+    });
+
+    it("shows the source's own error, not the local model's story", async () => {
+      // "Link a rails49/detector checkout" is actionable for this build's
+      // model and nonsense for a service whose manifest would not read.
+      const source = fakeService([{ src: 'blob:one' }], {
+        openError: 'the manifest answered 503',
+        layoutLate: true,
+      });
+
+      const el = await mount(source);
+      await waitFor(el, () => (el.shadowRoot!.textContent ?? '').includes('503'));
+
+      const text = el.shadowRoot!.textContent ?? '';
+      expect(text).to.contain('503');
+      expect(text).to.not.contain('rails49/detector');
+    });
+
+    it('drops that error once the source answers from a layout after all', async () => {
+      // A service whose manifest failed at `open()` and read on the next
+      // reconnect was prepared after all, and must not keep the notice saying
+      // it could not be read.
+      const source = fakeService([{ src: 'blob:one' }], {
+        openError: 'the manifest answered 503',
+        layoutLate: true,
+      });
+
+      const el = await mount(source);
+      await waitFor(el, () => (el.shadowRoot!.textContent ?? '').includes('503'));
+
+      source.readLayout();
+      await waitFor(el, () => !(el.shadowRoot!.textContent ?? '').includes('503'));
+
+      expect(el.shadowRoot!.textContent).to.not.contain('503');
+      expect(el.shadowRoot!.querySelector('rr-viewer')!.sensors).toHaveLength(1);
+    });
+
+    it('measures no drift and shows none of the page\'s own notices', async () => {
+      // The drift check, the recorder, the alignment readout and the model and
+      // DPT notices are about this page running a model over an archive it
+      // holds. A service does that elsewhere, and this page cannot withhold
+      // what it publishes (#331; drift in service mode is #336).
+      const source = fakeService([{ src: 'blob:one' }]);
+
+      const el = await mount(source);
+      await waitFor(el, () => el.shadowRoot!.querySelector('rr-viewer')!.src !== null);
+
+      expect(openDriftCheck).not.toHaveBeenCalled();
+      expect(check).not.toHaveBeenCalled();
+      expect(loadDetector).not.toHaveBeenCalled();
+      expect(el.shadowRoot!.querySelector('.recorder')).to.be.null;
+      expect(el.shadowRoot!.querySelector('.notice')).to.be.null;
+      const stats = el.shadowRoot!.querySelector('rr-stats-bar')!;
+      expect(stats.alignment).to.be.null;
+      expect(stats.alignmentTolerance).to.be.null;
+    });
   });
 
   it('runs on the camera and the shipped model when given none', async () => {

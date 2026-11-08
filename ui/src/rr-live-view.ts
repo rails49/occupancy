@@ -7,7 +7,13 @@ import type { Detection, Frame } from '@rails49/detector';
 import type { DriftResult } from '@occupancy/drift';
 import { cameraFrameSource } from './cameraFrameSource.js';
 import { localModelResultSource } from './localModelResultSource.js';
-import type { FrameSource, LiveSources, ResultSource, SourceFrame } from './liveSources.js';
+import type {
+  FrameSource,
+  LiveSources,
+  ResultSource,
+  SourceFrame,
+  SourceLayout,
+} from './liveSources.js';
 import type { SensorState } from './occupancy.js';
 import {
   MAX_DRIFT_TRACK_FRACTION,
@@ -85,6 +91,10 @@ const DRIFT_SAMPLE_INTERVAL_MS = 3000;
  * and the frame rate — the view's own judgement, which is the same whatever is
  * answering.
  *
+ * In service mode (sources handed in, no archive, #331) the view runs no drift
+ * check and shows no recorder, alignment readout, or model and DPT notices: the
+ * service publishes states this page cannot withhold. See `_judging`.
+ *
  * **Properties:** `archive`, `sources`.
  */
 @customElement('rr-live-view')
@@ -102,14 +112,47 @@ export class RRLiveView extends LitElement {
   @property({ attribute: false }) sources: LiveSources | null = null;
 
   @state() private _stream: MediaStream | null = null;
-  /** L0 for the frame on screen. Empty, not stale, when no model is loaded. */
-  @state() private _detections: readonly Detection[] = [];
+  /**
+   * The picture on screen, for a source whose frames arrive one at a time
+   * (#331), or `null` for a stream and before the first frame.
+   *
+   * The URL is the source's: it created it and it releases it, and this holds
+   * only what to show.
+   */
+  @state() private _src: string | null = null;
+  /**
+   * L0 for the frame on screen. Empty, not stale, when a model looked and found
+   * nothing; `null` where the source published no L0 at all (#331) — then no
+   * boxes are drawn and the stats bar shows no car count.
+   */
+  @state() private _detections: readonly Detection[] | null = null;
   /** L1 for the same frame, keyed by sensor id — total, one entry per sensor. */
   @state() private _sensorStates: ReadonlyMap<string, SensorState> = new Map();
   @state() private _fps = 0;
-  @state() private _inference = 0;
+  /** Milliseconds in the last inference, or `null` where nothing has run one. */
+  @state() private _inference: number | null = null;
+  /** How far behind the picture the boxes over it are, or `null` without L0 (#331). */
+  @state() private _l0Age: number | null = null;
   /**
-   * The layout's DPT, or `null` when calibration resolves none.
+   * What the source says about the answers it just gave, or `null` when it says
+   * nothing (#331).
+   *
+   * Separate from `_sourceError`, which is why it cannot answer at all: this
+   * one comes and goes with the frames — a service with nothing to send, a
+   * request of its that failed — and has to clear itself when the next answer
+   * lands.
+   */
+  @state() private _notice: string | null = null;
+  /**
+   * The layout the source answers against, or `null` where `archive` is it
+   * (#331).
+   *
+   * Re-read on every frame, not once: a service re-reads its manifest when its
+   * event stream reconnects, and a sensor that moved has to reach the viewer.
+   */
+  @state() private _sourceLayout: SourceLayout | null = null;
+  /**
+   * The archive's DPT, or `null` when its calibration resolves none.
    *
    * Resolved when the archive arrives rather than once per frame, and that is
    * what makes the "no calibration" notice honest: computed in the loop it
@@ -118,7 +161,7 @@ export class RRLiveView extends LitElement {
    * 2 — and accuse a perfectly calibrated layout. The live view never edits the
    * manifest, so nothing else can move it.
    */
-  @state() private _dpt: number | null = null;
+  @state() private _archiveDpt: number | null = null;
   /**
    * Why the result source cannot answer, or `null` when it can.
    *
@@ -224,8 +267,33 @@ export class RRLiveView extends LitElement {
   protected willUpdate(changed: Map<string, unknown>) {
     if (changed.has('archive')) {
       const manifest = this.archive?.getManifest();
-      this._dpt = manifest ? getDPT(manifest) : null;
+      this._archiveDpt = manifest ? getDPT(manifest) : null;
     }
+  }
+
+  /**
+   * The DPT everything here reads: the source's layout where it brings one,
+   * this view's archive otherwise.
+   *
+   * A service's DPT is the service's manifest's, and it is what the service's
+   * own boxes are sized by (#331). Nothing in this file resolves it twice, so
+   * #166 stays one fix either way.
+   */
+  private get _dpt(): number | null {
+    return this._sourceLayout ? this._sourceLayout.dpt : this._archiveDpt;
+  }
+
+  /**
+   * Whether this page runs the model itself: the camera path, with or without
+   * an archive. False in service mode, which is sources handed in with no
+   * archive (#331).
+   *
+   * The drift check, the recorder, the alignment readout, Cars and Inference
+   * before a first answer, and the notices about a missing model or DPT belong
+   * to the camera path only.
+   */
+  private get _judging(): boolean {
+    return this.sources === null || this.archive !== null;
   }
 
   async connectedCallback() {
@@ -259,9 +327,16 @@ export class RRLiveView extends LitElement {
     this._driftSession = null;
   }
 
-  /** Open the result source, prepare the drift check, then run the loop. */
+  /**
+   * Open the result source, prepare the drift check, then run the loop.
+   *
+   * The result source is the one requirement, not the archive (#331): an
+   * occupancy service brings its own layout, and the page holds none while it
+   * is watching one. Without a source there is nothing to ask — no archive and
+   * no service — and the frames go on showing with nothing read off them.
+   */
   private async _run() {
-    if (!this.archive || !this._results) return;
+    if (!this._results) return;
     // Set before the awaits, so that leaving the view while a model is still
     // loading stops the loop before it starts.
     this._running = true;
@@ -269,6 +344,9 @@ export class RRLiveView extends LitElement {
     // A source that cannot answer is not fatal, and deliberately so — see the
     // class comment. The loop starts anyway and every sensor reports `unknown`.
     this._sourceError = await this._results.open();
+    // Before the first frame, so the viewer draws the service's sensors rather
+    // than none while the first `latest` is in flight.
+    this._sourceLayout = this._results.layout ?? null;
 
     await this._openDriftCheck();
 
@@ -442,15 +520,30 @@ export class RRLiveView extends LitElement {
       const frame = await frames.next();
       if (frame === null || !this._running) return;
 
-      this._maybeSampleDrift(frame);
-
+      // A turn that carried no new picture carries no new pixels either, so
+      // there is nothing to measure drift against and nothing to count toward
+      // the rate — and the rate is 0 rather than stale, because none is what
+      // the view is getting (#331). The answers that came with it are still
+      // taken below: that is how every sensor reads `unknown` while a service
+      // is quiet instead of the last good answers staying frozen on screen.
+      const fresh = frame.fresh !== false;
       const startTime = performance.now();
-      if (this._lastFrameTime) this._fps = 1000 / (startTime - this._lastFrameTime);
-      this._lastFrameTime = startTime;
+      if (fresh) {
+        this._maybeSampleDrift(frame);
+        if (this._lastFrameTime) this._fps = 1000 / (startTime - this._lastFrameTime);
+        this._lastFrameTime = startTime;
+        if (frame.src !== undefined) this._src = frame.src;
+      } else {
+        // The next new frame starts the count again rather than being timed
+        // from before the gap.
+        this._fps = 0;
+        this._lastFrameTime = 0;
+      }
 
-      // `drifted` is the refusal and `_dpt` is resolved from the archive rather
-      // than per frame, so #166 stays one fix. The source turns the two into
-      // one state per sensor: this view never builds an `unknown` of its own.
+      // `drifted` is the refusal and `_dpt` is resolved once — from the source's
+      // layout where it brings one, from the archive otherwise — rather than per
+      // frame, so #166 stays one fix. The source turns the two into one state
+      // per sensor: this view never builds an `unknown` of its own.
       //
       // A getter, not a value: drift lands beside the loop, and a sample that
       // arrives while this frame is being answered refuses this frame rather
@@ -475,11 +568,24 @@ export class RRLiveView extends LitElement {
       // over.
       if (!this._running) return;
 
-      this._detections = result.detections;
+      // Absent is "no L0 at all", which draws no boxes and shows no car count;
+      // an empty list is a model that looked and found none, which shows 0.
+      this._detections = result.detections ?? null;
       this._sensorStates = result.sensorStates;
+      this._l0Age = result.l0Age ?? null;
+      // Per answer, so it clears itself when the next one lands.
+      this._notice = result.notice ?? null;
       // Absent is "nothing inferred", so the readout keeps the last real
       // measurement rather than dropping to zero for a frame.
       if (result.inference !== undefined) this._inference = result.inference;
+      // Read every frame: a service that re-read its manifest on a reconnect
+      // has new sensor positions, and the states below are keyed on them.
+      this._sourceLayout = results.layout ?? null;
+      // A source answering from a layout was prepared, whatever `open()`
+      // said: a service whose manifest failed then and succeeded on a reconnect
+      // must not keep the notice saying it could not be read. The local model
+      // brings no layout, so its own error is untouched.
+      if (this._sourceLayout !== null) this._sourceError = null;
     }
   }
 
@@ -548,29 +654,55 @@ export class RRLiveView extends LitElement {
     </div>`;
   }
 
+  /**
+   * Why the source cannot answer at all, in the words that fit who it is.
+   *
+   * The local case names the one job that failed and the command that fixes it:
+   * the model is this build's, so "link a rails49/detector checkout" is
+   * actionable. A service's failure is its own — a manifest that would not read
+   * — and inventing a local cause for it would send the reader to the wrong
+   * place (#331).
+   */
+  private _renderSourceError() {
+    if (this._sourceError === null) return '';
+    if (!this._judging) {
+      return html`<div class="notice">
+        The occupancy service could not be read, so every sensor reads
+        <strong>unknown</strong>. (${this._sourceError})
+      </div>`;
+    }
+    return html`<div class="notice">
+      No detector loaded, so every sensor reads <strong>unknown</strong>. No model has been
+      published yet; to run one, link a rails49/detector checkout that has one, then rebuild
+      the UI. (${this._sourceError})
+    </div>`;
+  }
+
   render() {
     const manifest = this.archive?.getManifest();
-    const resolution = manifest?.camera.resolution ?? DEFAULT_RESOLUTION;
+    // The source's layout wins where it brings one: a service answers from a
+    // manifest it read from the service, so an unsaved edit in the editor
+    // cannot move what this view draws (#331).
+    const layout = this._sourceLayout;
+    const sensors = layout?.sensors ?? manifest?.layout.sensors ?? [];
+    const resolution = layout?.resolution ?? manifest?.camera.resolution ?? DEFAULT_RESOLUTION;
 
     return html`
       <rr-stats-bar
         .fps=${this._fps}
-        .cars=${this._detections.length}
+        .cars=${this._detections?.length ?? (this._judging ? 0 : null)}
         .occupied=${this._occupiedCount}
-        .inference=${this._inference}
-        .alignment=${this._drift?.displacementPx ?? null}
-        .alignmentTolerance=${this._driftTolerancePx}
+        .inference=${this._judging ? this._inference ?? 0 : null}
+        .l0Age=${this._l0Age}
+        .alignment=${this._judging ? this._drift?.displacementPx ?? null : null}
+        .alignmentTolerance=${this._judging ? this._driftTolerancePx : null}
       ></rr-stats-bar>
 
-      ${this._sourceError
-        ? html`<div class="notice">
-            No detector loaded, so every sensor reads <strong>unknown</strong>. No model has been
-            published yet; to run one, link a rails49/detector checkout that has one, then rebuild
-            the UI. (${this._sourceError})
-          </div>`
-        : ''}
+      ${this._renderSourceError()}
 
-      ${this._dpt === null
+      ${this._notice ? html`<div class="notice">${this._notice}</div>` : ''}
+
+      ${this._judging && this._dpt === null
         ? html`<div class="notice">
             This layout has no calibration, so no DPT resolves. The detector needs it, so no cars
             are detected and every sensor reads <strong>unknown</strong>. Place calibration points
@@ -578,14 +710,15 @@ export class RRLiveView extends LitElement {
           </div>`
         : ''}
 
-      ${this._renderDriftNotice()}
+      ${this._judging ? this._renderDriftNotice() : ''}
 
-      ${this._renderRecorder()}
+      ${this._judging ? this._renderRecorder() : ''}
 
       <rr-viewer
+        .src=${this._src}
         .stream=${this._stream}
-        .detections=${this._detections}
-        .sensors=${manifest?.layout.sensors ?? []}
+        .detections=${this._detections ?? []}
+        .sensors=${sensors}
         .sensorStates=${this._sensorStates}
         .dpt=${this._dpt}
         .resolution=${resolution}
