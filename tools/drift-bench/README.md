@@ -61,7 +61,7 @@ How far above is not as comfortable as these fixtures suggest. The floor is
 reported in reference-frame pixels, so it scales with the frame: on the user's
 8064-px ceiling captures one step of the check is 0.257 of a track width. The
 readings are in
-[`docs/research/drift-tolerance-measured.md`](../../docs/research/drift-tolerance-measured.md);
+[`docs/research/drift-tolerance-basis.md`](../../docs/research/drift-tolerance-basis.md);
 the constant's comment says where the number came from.
 
 ## Running

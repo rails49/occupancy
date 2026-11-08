@@ -198,7 +198,7 @@ export class RRLiveView extends LitElement {
    *
    * The override exists because the check's false-positive rate is young:
    * `MAX_DRIFT_TRACK_FRACTION` is set from one rig's stills
-   * (`docs/research/drift-tolerance-measured.md`) and the bench's grades are
+   * (`docs/research/drift-tolerance-basis.md`) and the bench's grades are
    * synthetic warps, while a live camera brings rolling shutter and autofocus
    * that neither reproduces (#89 § Notes). It is deliberately **not** sticky
    * across a remount — a new session should start by telling the truth again.

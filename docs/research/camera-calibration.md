@@ -17,9 +17,10 @@ MSR-TR-98-71 / TPAMI 2000; Abdel-Aziz & Karara 1971 (the original DLT paper, rep
 definitions quoted verbatim from the spec PDF); the W3C MediaStream Image Capture spec; USGS
 orthoimagery definitions; and derivations worked here with every step shown. Numbers use this
 repo's constants: HO model gauge 1435/87 ≈ 16.49 mm, `min_dpt` 20,
-`MAX_DRIFT_TRACK_FRACTION` (`ui/src/driftSession.ts`). It was 0.25 when this note was written; the
-figures below that divide by it are stated at 0.5, the tolerance from
-[#338](https://github.com/rails49/occupancy/issues/338) (`drift-tolerance-measured.md`).*
+`MAX_DRIFT_TRACK_FRACTION` 0.5 (`ui/src/driftSession.ts`; it was 0.25 when this note was written, and
+moved in [#338](https://github.com/rails49/occupancy/issues/338) —
+`drift-tolerance-measured.md`). Figures below that divide by the tolerance are stated against the
+current value.*
 
 ---
 

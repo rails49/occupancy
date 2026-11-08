@@ -30,7 +30,7 @@ describe('driftVerdict', () => {
 
   it('passes a reading of half a track width, and refuses one just above it', () => {
     // Both sides of the line the measured readings put it on
-    // (`docs/research/drift-tolerance-measured.md`): half a track width is the
+    // (`docs/research/drift-tolerance-basis.md`): half a track width is the
     // tolerance, so it is accepted, and the next hair of displacement is not.
     expect(driftVerdict(0.5 * DPT, DPT)!.past).toBe(false);
     expect(driftVerdict(0.5 * DPT + 0.01, DPT)!.past).toBe(true);

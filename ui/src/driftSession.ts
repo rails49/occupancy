@@ -24,12 +24,8 @@ import type { R49Archive } from '@rails49/r49';
  * fraction of one track width (ADR 0020,
  * `docs/adr/0020-only-the-live-view-measures-drift.md`).
  *
- * Why 0.5: at half a track width of shift the classifier's worst fold keeps
- * false clear inside a train under 1%, and all 32 photos from a camera nobody
- * touched read within it (`docs/research/drift-tolerance-measured.md`, #336).
- * Provisional until the occupancy service's readings on `gleis49`
- * (rails49/occupancy-service#12), which is why the live view's refusal still
- * carries an override.
+ * Measured in `docs/research/drift-tolerance-basis.md`; provisional, so the
+ * live view's refusal keeps an override.
  */
 export const MAX_DRIFT_TRACK_FRACTION = 0.5;
 

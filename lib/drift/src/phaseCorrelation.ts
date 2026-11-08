@@ -186,7 +186,7 @@ export function makeScratch(grid: BlockGrid): CorrelationScratch {
  * and it is not always small against the tolerance the UI's
  * `MAX_DRIFT_TRACK_FRACTION` sets. On an 8064-px-wide capture of an N-scale
  * layout the quantum is 0.257 of a track width
- * (`docs/research/drift-tolerance-measured.md`).
+ * (`docs/research/drift-tolerance-basis.md`).
  */
 function blockShift(
   frame: BlockSpectra,
