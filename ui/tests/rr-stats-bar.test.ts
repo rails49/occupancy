@@ -39,6 +39,42 @@ describe('rr-stats-bar', () => {
     expect(rows.find(r => r.includes('Occupied'))).to.contain('0');
   });
 
+  describe('the rows nobody measured', () => {
+    const rows = (el: RRStatsBar) =>
+      [...el.shadowRoot!.querySelectorAll('.stat')].map(r => r.textContent ?? '');
+
+    it('shows no car count where no L0 was published', async () => {
+      // An occupancy service may send frames and L1 with no L0 at all (#331).
+      // `0` there would claim a frame was inferred and held no cars, which is
+      // the confident-looking miss the encoding exists to prevent.
+      const el = await fixture<RRStatsBar>(html`
+        <rr-stats-bar .cars=${null} .occupied=${2}></rr-stats-bar>
+      `);
+
+      expect(rows(el).find(r => r.includes('Cars'))).to.be.undefined;
+      expect(rows(el).find(r => r.includes('Occupied'))).to.contain('2');
+    });
+
+    it('shows 0 cars for an L0 that found none', async () => {
+      // An empty list is a frame that *was* inferred, which is a different fact.
+      const el = await fixture<RRStatsBar>(html`<rr-stats-bar .cars=${0}></rr-stats-bar>`);
+      expect(rows(el).find(r => r.includes('Cars'))).to.contain('0');
+    });
+
+    it('shows no inference row where this page ran no model', async () => {
+      const el = await fixture<RRStatsBar>(html`<rr-stats-bar .inference=${null}></rr-stats-bar>`);
+      expect(rows(el).find(r => r.includes('Inference'))).to.be.undefined;
+    });
+
+    it('shows the L0 age only where there is an L0 to be behind', async () => {
+      const without = await fixture<RRStatsBar>(html`<rr-stats-bar></rr-stats-bar>`);
+      expect(rows(without).find(r => r.includes('L0 age'))).to.be.undefined;
+
+      const withAge = await fixture<RRStatsBar>(html`<rr-stats-bar .l0Age=${420}></rr-stats-bar>`);
+      expect(rows(withAge).find(r => r.includes('L0 age'))).to.contain('420ms');
+    });
+  });
+
   describe('the alignment readout', () => {
     const driftRow = (el: RRStatsBar) =>
       [...el.shadowRoot!.querySelectorAll('.stat')].find(r => r.textContent?.includes('Drift:'));

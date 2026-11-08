@@ -17,7 +17,8 @@
  * view falls back to when it is given no sources.
  */
 
-import type { Detection } from '@rails49/detector';
+import type { Detection, Frame } from '@rails49/detector';
+import type { Sensor } from '@rails49/r49';
 import type { SensorState } from './occupancy.js';
 
 /**
@@ -40,6 +41,31 @@ export interface SourceFrame {
   readonly width: number;
   /** The height it decoded at, in its own pixels. */
   readonly height: number;
+  /**
+   * What `rr-viewer` shows through `src`, for a source whose frames are
+   * pictures rather than a stream (#331).
+   *
+   * Absent for a stream, where {@link FrameSource.stream} is the handover
+   * instead, and absent on a turn that carried no new picture. The source owns
+   * the URL and releases it; the view only shows it.
+   */
+  readonly src?: string;
+  /**
+   * Whether this turn carried a picture the view has not shown.
+   *
+   * Absent is `true` — a camera hands over the frame it just read. `false` is
+   * an answer that carried **no new frame**: an occupancy service with nothing
+   * to send, or a request of its that failed (#331). The view keeps the picture
+   * already on screen, stops counting the turn toward the rate, and takes the
+   * answers that came with it — which is how every sensor reads `unknown` and
+   * the rate reads 0 while the service is quiet, instead of the last good
+   * answers staying frozen on screen.
+   *
+   * **Nothing may read pixels from a turn that is not fresh.** `source` is then
+   * whatever picture is still up, or an empty image where there has never been
+   * one, and the view skips the drift grab for it.
+   */
+  readonly fresh?: boolean;
 }
 
 /**
@@ -61,7 +87,10 @@ export interface FrameSource {
    * a stopped source cannot leave the view running on frames nobody owns.
    */
   next(): Promise<SourceFrame | null>;
-  /** What `rr-viewer` shows, or `null` when the source is not a stream. */
+  /**
+   * What `rr-viewer` shows, or `null` when the source is not a stream —
+   * a service's frames arrive one at a time as {@link SourceFrame.src} (#331).
+   */
   readonly stream: MediaStream | null;
   /** The camera settings the drift rows record (#217), empty when there are none. */
   readonly settings: MediaTrackSettings;
@@ -102,8 +131,15 @@ export interface ResultContext {
  * building `unknown`s of its own.
  */
 export interface FrameResult {
-  /** L0 for this frame. Empty, never stale, when nothing was inferred. */
-  readonly detections: readonly Detection[];
+  /**
+   * L0 for this frame, or **absent** where the source publishes no L0 at all.
+   *
+   * Empty, never stale, when a model looked and found nothing. Absent is the
+   * other fact: an occupancy service that has no DPT produces no boxes to
+   * publish (#331), and nothing counted cars for this frame — so no boxes are
+   * drawn and the stats bar shows no car count, where an empty list shows 0.
+   */
+  readonly detections?: readonly Detection[];
   /** L1 for the same frame, keyed by sensor id — one entry per sensor. */
   readonly sensorStates: ReadonlyMap<string, SensorState>;
   /**
@@ -113,6 +149,25 @@ export interface FrameResult {
    * a frame with no model behind it has not measured a faster one.
    */
   readonly inference?: number;
+  /**
+   * How far behind the frame on screen the L0 drawn over it is, in
+   * milliseconds, or absent where the two are the same frame.
+   *
+   * A service infers on its own cadence and draws the newest L0 it has over the
+   * frame it served, so the boxes may belong to an earlier moment than the
+   * picture (#331). Both times are the source's clock; this page's plays no
+   * part.
+   */
+  readonly l0Age?: number;
+  /**
+   * What to tell the user about **this** answer, or absent when there is
+   * nothing to say.
+   *
+   * Distinct from {@link ResultSource.open}'s message, which is why the source
+   * cannot answer at all. This one comes and goes with the answers: a service
+   * with no frames says why, and a request that failed says that it did (#331).
+   */
+  readonly notice?: string;
 }
 
 /**
@@ -122,6 +177,25 @@ export interface FrameResult {
  * keep running and report `unknown` for it rather than freezing the last
  * answer on screen.
  */
+/**
+ * The layout a result source answers against, where it is not the view's
+ * archive (#331).
+ *
+ * An occupancy service holds its own manifest, read from the service and not
+ * from anything this page has open, and it is the sensors in *that* manifest
+ * that its answers are keyed on and whose positions are drawn. The view takes
+ * all three from here rather than from `archive`, which is also why an unsaved
+ * edit in the editor cannot move what the live view draws.
+ */
+export interface SourceLayout {
+  /** The sensors answered, in {@link resolution} pixels. */
+  readonly sensors: readonly Sensor[];
+  /** The frame those sensors and the detections are expressed in. */
+  readonly resolution: Frame;
+  /** Dots per track, or `null` where the layout resolves none. */
+  readonly dpt: number | null;
+}
+
 export interface ResultSource {
   /**
    * Prepare to answer.
@@ -136,6 +210,15 @@ export interface ResultSource {
   close(): void;
   /** L0 and L1 for one frame. Never rejects. */
   resultFor(frame: SourceFrame, context: ResultContext): Promise<FrameResult>;
+  /**
+   * The layout these answers are about, or `null`/absent where the view's
+   * `archive` is it.
+   *
+   * A **getter**, read by the view on every frame rather than once at `open()`:
+   * a service re-reads its manifest whenever its event stream reconnects, and a
+   * sensor that moved has to reach the viewer with the state keyed on it (#331).
+   */
+  readonly layout?: SourceLayout | null;
 }
 
 /**

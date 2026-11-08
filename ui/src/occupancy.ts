@@ -17,17 +17,27 @@ export type UnknownReason = 'no-model' | 'no-calibration' | 'outside-frame' | 'd
 /**
  * One sensor's L1 state.
  *
- * `occupied` carries the covering detection rather than a bare confidence:
- * nothing is lost (`detection.confidence`) and a consumer debugging a phantom
- * can highlight *which* box answered. `clear` carries no confidence at all —
- * absent, not `0.0` and not `1.0` — because nothing scored it; that is what
- * keeps a miss from arriving as a confident-looking number with no measurement
- * behind it.
+ * `occupied` carries **`confidence`**, and the covering `detection` where there
+ * is one: geometry over L0 answers with a box, and a classifier answers with
+ * P(occupied) and no box at all (ADR 0022), so the number is the part every
+ * occupied state has. Where the box is there too nothing is lost, and a
+ * consumer debugging a phantom can still highlight *which* box answered.
+ * `clear` carries no confidence at all — absent, not `0.0` and not `1.0` —
+ * because nothing scored it; that is what keeps a miss from arriving as a
+ * confident-looking number with no measurement behind it.
+ *
+ * `unknown` comes in two shapes, and the split is a compile-time check rather
+ * than a style. A cause **this page** found is one of a closed set, so
+ * `sensorMarker.ts` words each one in a total `Record` and a new cause is a
+ * type error there. A cause an occupancy service found is the service's, which
+ * this page cannot enumerate and must not reword, so it arrives as `message`
+ * and is shown as sent (#331).
  */
 export type SensorState =
-  | { readonly state: 'occupied'; readonly detection: Detection }
+  | { readonly state: 'occupied'; readonly confidence: number; readonly detection?: Detection }
   | { readonly state: 'clear' }
-  | { readonly state: 'unknown'; readonly reason: UnknownReason };
+  | { readonly state: 'unknown'; readonly reason: UnknownReason }
+  | { readonly state: 'unknown'; readonly message: string };
 
 /**
  * L1: per-sensor occupancy, as a pure function of L0.
@@ -118,7 +128,12 @@ export function occupancy(input: {
       if (best === null || detection.confidence > best.confidence) best = detection;
     }
 
-    states.set(sensor.id, best === null ? { state: 'clear' } : { state: 'occupied', detection: best });
+    states.set(
+      sensor.id,
+      best === null
+        ? { state: 'clear' }
+        : { state: 'occupied', confidence: best.confidence, detection: best }
+    );
   }
 
   return states;

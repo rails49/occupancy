@@ -19,7 +19,7 @@ Three ways to establish occupancy were considered:
 2. CNN. A ResNet or MobileNet that judges whether a train is present at one point. Block detection only.
 3. Object detector. A detector such as YOLO that finds the location and orientation of every car on the layout.
 
-The live path loads option 3 only ([ADR 0004](docs/adr/0004-one-model-in-the-live-path.md)). Option 2 is kept retrainable and nothing loads it. The detector is evaluated offline in the UI's archive diagnostics view ([#87](https://github.com/rails49/occupancy/issues/87)), not by running both models live. The detector itself is specified in rails49/detector's [SPEC § The detector is YOLO26n-OBB](https://github.com/rails49/detector/blob/main/SPEC.md#the-detector-is-yolo26n-obb).
+The live path runs option 3 and option 2, the classifier from rails49/classifier ([ADR 0022](docs/adr/0022-the-classifier-joins-the-live-path.md), which supersedes [ADR 0004](docs/adr/0004-one-model-in-the-live-path.md)). Where both run, a sensor is occupied if either says so. The detector is evaluated offline in the UI's archive diagnostics view ([#87](https://github.com/rails49/occupancy/issues/87)), against labels rather than against the classifier. The detector itself is specified in rails49/detector's [SPEC § The detector is YOLO26n-OBB](https://github.com/rails49/detector/blob/main/SPEC.md#the-detector-is-yolo26n-obb).
 
 ### Image change is not a candidate for occupancy
 
@@ -29,7 +29,7 @@ It is cheap, needs no labels, and works below the minimum DPT. It is used for jo
 
 ## Occupancy Output
 
-Occupancy is reported as L0 and L1 ([glossary](GLOSSARY.md#occupancy)) and nothing more. L1 is computed from L0 by geometry and calls no second model ([ADR 0005](docs/adr/0005-l1-is-geometry-over-l0-biased-toward-occupied.md), [issue #7](https://github.com/rails49/occupancy/issues/7)). The detector runs once per frame however many sensors a layout has.
+Occupancy is reported as L0 and L1 ([glossary](GLOSSARY.md#occupancy)) and nothing more. Where L1 is computed from L0 it is pure geometry over the boxes ([ADR 0005](docs/adr/0005-l1-is-geometry-over-l0-biased-toward-occupied.md), [issue #7](https://github.com/rails49/occupancy/issues/7)), and the detector runs once per frame however many sensors a layout has. The classifier also reports L1, from the patch at each sensor and with no L0 at all ([ADR 0022](docs/adr/0022-the-classifier-joins-the-live-path.md)), so an L1 state does not imply a box behind it — and an [occupancy service](GLOSSARY.md#occupancy) may publish L1 with no L0 for the same reason.
 
 Everything above L1 is unspecified: event and transition semantics (Rocrail's enter and in sensors fire on transitions, not on per-frame state) and block-span occupancy. L0 carries full car pose, so both can be computed later from archives recorded today.
 
@@ -58,13 +58,13 @@ The box tested keeps the detector's centre, orientation and length and takes the
 
 ### The vocabulary
 
-L1 states are occupied, clear and unknown, as [`GLOSSARY.md`](GLOSSARY.md#occupancy) defines them. A detection above the confidence threshold counts when it covers the sensor, including a low-confidence one. Errors lean toward occupied, and a persistent phantom can deadlock a controller's schedule; both are accepted in [ADR 0005](docs/adr/0005-l1-is-geometry-over-l0-biased-toward-occupied.md). Camera drift as a reason for unknown comes from [issue #12](https://github.com/rails49/occupancy/issues/12).
+L1 states are occupied, clear and unknown, as [`GLOSSARY.md`](GLOSSARY.md#occupancy) defines them. A detection above the confidence threshold counts when it covers the sensor, including a low-confidence one. Errors lean toward occupied, and a persistent phantom can deadlock a controller's schedule; both are accepted in [ADR 0005](docs/adr/0005-l1-is-geometry-over-l0-biased-toward-occupied.md). Camera drift as a reason for unknown comes from [issue #12](https://github.com/rails49/occupancy/issues/12). A page watching an occupancy service reports every sensor unknown while the service has no frames to send, or while its answer cannot be read, and the reason is the service's own words rather than one of this page's ([#331](https://github.com/rails49/occupancy/issues/331)).
 
 The bias reduces the consequence of the worse error. It does not make this a safety interlock.
 
 ### Confidence
 
-Every L0 detection carries its confidence. An occupied L1 state carries the confidence of the covering detection, the maximum where several overlap.
+Every L0 detection carries its confidence. An occupied L1 state carries a confidence, whatever answered it: geometry over L0 carries the covering detection's, the maximum where several overlap, and the classifier carries its P(occupied) ([ADR 0022](docs/adr/0022-the-classifier-joins-the-live-path.md)). The number is therefore the part every occupied state has, and the covering box the part only the geometric answer has.
 
 Clear carries no confidence: the field is absent, not `0.0` and not `1.0`. Nothing scored a clear. A phantom arrives with a confidence a consumer can threshold; a miss arrives as a clear with nothing behind it, and an absent field keeps that visible.
 
@@ -95,7 +95,7 @@ Couplings are not reported. They can be derived from L0 as two box endpoints tha
 
 The UI creates, displays and edits `.r49` files through `@rails49/r49`. The sections below are its requirements.
 
-The detector runs entirely in the browser via ONNX Runtime; the application is fully client-side with no backend.
+The detector runs entirely in the browser via ONNX Runtime, over archives the file picker opens. The page can also **view an [occupancy service](GLOSSARY.md#occupancy) on its own origin**: where one answers at `/live`, the live view shows that service's frames, its L1, and its L0 where it sends any, and loads no model of its own ([#331](https://github.com/rails49/occupancy/issues/331)). Opening or creating an archive leaves the service behind. There is no backend of this project's: the service is a separate program ([rails49/occupancy-service](https://github.com/rails49/occupancy-service)) a person chooses to run, the deployed site serves none, and the editor remains entirely client-side.
 
 ### Images
 
@@ -188,6 +188,7 @@ Camera [drift](GLOSSARY.md#drift) is detected, and classification is refused pas
 * The tolerance is `MAX_DRIFT_TRACK_FRACTION` in `ui/src/driftSession.ts`, a fraction of a track width. The number lives in that constant and nowhere else. It is a tolerance, not a detection floor — but on a wide frame of a low-DPT layout the two come close, and that is what set it. On the ceiling rig one step of the check is 0.257 of a track width, and the tolerance before this one, 0.25, refused 18 of 32 frames from a camera nobody had moved: the readings and the derivation are in [`docs/research/drift-tolerance-measured.md`](docs/research/drift-tolerance-measured.md) ([#336](https://github.com/rails49/occupancy/issues/336), [#338](https://github.com/rails49/occupancy/issues/338)). The value is provisional until the occupancy service's own check has run ([rails49/occupancy-service#12](https://github.com/rails49/occupancy-service/issues/12)).
 * Past the tolerance the live view reports every sensor as unknown with reason `drift`, with a visible override.
 * The editor does not measure drift ([ADR 0020](docs/adr/0020-only-the-live-view-measures-drift.md)). Moving a thumbnail to the front changes the reference image the live view measures against.
+* **While the page is viewing an occupancy service it runs no drift check of its own and shows no drift notice** ([#331](https://github.com/rails49/occupancy/issues/331)), until [#336](https://github.com/rails49/occupancy/issues/336). There is no archive to measure a pose against, and the page cannot withhold what the service publishes. A bumped camera therefore gives wrong answers with no warning unless the service itself refuses, which it reports as an unknown reason like any other.
 * Correction is out of scope.
 
 How well the check *scores* is validated synthetically: the fixtures were shot on a tripod, so `tools/drift-bench` warps them. Where the tolerance *sits* is validated on one rig's readings, which is one rig. That is why the override exists.

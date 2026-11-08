@@ -99,6 +99,7 @@ describe('localModelResultSource', () => {
     expect(result.detections).toEqual(detections);
     expect(result.sensorStates.get('S1abcdefghi')).toEqual({
       state: 'occupied',
+      confidence: detections[0].confidence,
       detection: detections[0],
     });
     expect(result.inference).toBeTypeOf('number');

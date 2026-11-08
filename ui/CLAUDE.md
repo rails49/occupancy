@@ -2,10 +2,18 @@
 
 Guidance for Claude Code (claude.ai/code) when working in `ui/`.
 
-A static, fully client-side webapp: [Lit](https://lit.dev/) elements, [Shoelace](https://shoelace.style/)
-components, Vite, TypeScript. It edits `.r49` layout archives through the file picker and runs the
-detector in the browser via ONNX Runtime WASM. **There is no backend — do not introduce one
-without discussion.**
+A static webapp: [Lit](https://lit.dev/) elements, [Shoelace](https://shoelace.style/) components,
+Vite, TypeScript. It edits `.r49` layout archives through the file picker and runs the detector in
+the browser via ONNX Runtime WASM.
+
+**This package has no backend of its own, and must not grow one — do not introduce one without
+discussion.** What it does have, since #331, is a **client**: where an
+[occupancy service](../GLOSSARY.md#occupancy) answers at `/live` on the page's own origin, the live
+view shows that service's frames, L1 and L0 and loads no model. The service is a separate program
+(rails49/occupancy-service) a person chooses to run, the deployed site serves none, and the editor is
+unchanged. `/live` is one constant, not a setting, and `src/liveContract.ts` is the only file that
+names a path, a part or a field of the contract — see [`../docs/UI.md`](../docs/UI.md) § An occupancy
+service is found at `/live`.
 
 ## The three documents, and which one is true
 
@@ -45,6 +53,7 @@ you are touching:
 | `base` in `vite.config.ts`, `/ort/`, `/shoelace`, `modelAssets.ts` | Absolute asset paths |
 | `detectorSession.ts`, the model | Model loading lives in `detectorSession.ts` |
 | the live loop, `liveSources.ts`, a frame or result source | Frames and results come from sources |
+| `liveContract.ts`, `occupancyService.ts`, `/live` | An occupancy service is found at `/live` |
 | `occupancy.ts`, `SensorState` | L1 lives in `occupancy.ts` |
 | `driftSession.ts`, drift readouts | Camera drift lives in `driftSession.ts` |
 | `diagnostics.ts`, `rr-diagnostics-view` | Diagnostics reads the model against the labels |
@@ -163,6 +172,15 @@ caught none of the six. Two more things follow, and both are load-bearing:
   the second must be stubbed *per test* when a test needs to tell handles apart — the global in
   `setup.ts` returns `undefined` for every call, which is enough to pass a handle along and useless
   for asserting one came back. Reach for a stub before concluding a module is untestable.
+
+* **jsdom's `File` is not the one Node's multipart parser accepts.** `Response.formData()` in these
+  tests is Node's — jsdom implements no fetch — and its parser builds each part with the global
+  `File` and then brand-checks it. So the two suites that read a real multipart body
+  (`tests/liveContract.test.ts`, `tests/occupancyService.test.ts`) swap Node's `File` and `Blob` in
+  for their duration, through `tests/liveFixture.ts`'s `useNodeFileGlobals`. Nothing under test is
+  replaced: the bodies are real multipart bytes built from the format, and the parser is the one a
+  browser would run. It is scoped to those two files rather than put in `setup.ts` because every
+  other test file wants jsdom's two.
 
 * **jsdom has no File System Access API**, which is the honest baseline — it is the fallback path,
   and it is what Safari and every phone run. `tests/persistence.test.ts` covers the write-back

@@ -12,6 +12,9 @@ import { openArchive, supportsFileSystemAccess, writeArchive, type FileBinding }
 // see `keyboard.ts` for why the rule has one home.
 import { isInsideOpenDialog, isTypingTarget } from './keyboard.js';
 import { GATE_REASON, TOOLS } from './tools.js';
+import { findService } from './liveContract.js';
+import { occupancyService } from './occupancyService.js';
+import type { LiveSources } from './liveSources.js';
 import './rr-editor-view.js';
 import type { NotifyDetail } from './rr-editor-view.js';
 import './rr-live-view.js';
@@ -73,6 +76,25 @@ export class RRApp extends LitElement {
    */
   @state() private _binding: FileBinding | null = null;
 
+  /**
+   * The occupancy service this origin serves, or `null` where there is none
+   * (#331).
+   *
+   * Looked for **once, at page start**, and handed to the live view as both of
+   * its sources. The page still opens in the editor; this only decides what
+   * Live shows when the person presses it.
+   */
+  @state() private _service: LiveSources | null = null;
+  /**
+   * Whether an archive of the person's own has taken over.
+   *
+   * New and Open leave the service behind — the person is editing a layout of
+   * theirs, and a view of somebody else's running layout is no longer what they
+   * asked for. This also swallows an answer that arrives *after* that, which is
+   * the race the check's own latency opens.
+   */
+  private _leftService = false;
+
   static styles = [
     lookTheme,
     css`
@@ -118,6 +140,34 @@ export class RRApp extends LitElement {
     super.connectedCallback();
     window.addEventListener('keydown', this._onKeyDown);
     window.addEventListener('beforeunload', this._onBeforeUnload);
+    void this._lookForService();
+  }
+
+  /**
+   * Ask whether this origin serves an occupancy service, and hold it if it
+   * does (#331).
+   *
+   * **Silent either way.** The deployed copy of this page serves none, and a
+   * toast on every load saying so would be noise about a feature that is not
+   * missing. The check itself is `liveContract.ts`'s, and #333 reuses it.
+   */
+  private async _lookForService() {
+    if ((await findService()) === null || this._leftService) return;
+    const service = occupancyService();
+    this._service = { frames: service, results: service };
+  }
+
+  /**
+   * Stop watching the service, for good.
+   *
+   * Not a toggle: there is no way back to it short of a reload, and offering
+   * one would mean a page that is sometimes showing a layout the person has
+   * open and sometimes one they have not. `_leftService` also ignores an answer
+   * still in flight from `_lookForService`.
+   */
+  private _leaveService() {
+    this._leftService = true;
+    this._service = null;
   }
 
   disconnectedCallback() {
@@ -201,6 +251,10 @@ export class RRApp extends LitElement {
   private _open(archive: R49Archive) {
     this._session = new EditSession(archive);
     this._session.subscribe(() => this.requestUpdate());
+    // The one chokepoint both New and Open go through, and the act that leaves
+    // an occupancy service behind (#331). A cancelled New or Open opens
+    // nothing and reaches neither this nor `_leaveService`.
+    this._leaveService();
   }
 
   /**
@@ -478,7 +532,10 @@ export class RRApp extends LitElement {
                   @rr-notify=${this._onNotify}
                 ></rr-editor-view>`
             : this._viewMode === 'live'
-              ? html`<rr-live-view .archive=${this._session?.archive ?? null}></rr-live-view>`
+              ? html`<rr-live-view
+                  .archive=${this._session?.archive ?? null}
+                  .sources=${this._service}
+                ></rr-live-view>`
               // Each mode is torn down when it leaves: the live view stops the
               // camera, the diagnostics view abandons an in-flight sweep and
               // releases its ORT session. Keeping them alive to preserve state

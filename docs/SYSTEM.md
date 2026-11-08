@@ -25,7 +25,18 @@ load time, and the live view gates on them (#89). The editor does not (#252).
                 └─▶ @rails49/detector     loadDetector → L0
                         │
                         └─▶ ui/           occupancy() → L1; rr-live-view: L0 boxes, sensors   #85
+
+an occupancy service on this origin (rails49/occupancy-service)
+        │
+        └─▶ ui/rr-live-view              /live: its frames, its L1, its L0   #331
 ```
+
+The second path is the one that does not start from an archive the page holds. Where `/live` answers
+with a JSON manifest the live view shows that service's frames and answers instead, loads no model
+and measures no drift; `ui/src/liveContract.ts` is the only reader of the wire and
+`ui/src/occupancyService.ts` the source the view runs on. Opening or creating an archive leaves the
+service behind. The deployed site serves none, and `bin/live-stub.mjs` is a stand-in for checking it
+by hand (`README.md` § Checking the live view against a service).
 
 The archives live in [`rails49/r49`](https://github.com/rails49/r49), not here
 (#63). Its `fixtures/` tree holds six archives, 46 images with calibration and
