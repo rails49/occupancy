@@ -653,7 +653,10 @@ describe('rr-live-view with sources of its own', () => {
             { px: { x: 100, y: 0 }, world: { x: 10, y: 0, z: 0 } },
           ],
         },
-        sensors: [{ id: ID, x: 10, y: 20 }],
+        sensors: [
+          { id: ID, x: 10, y: 20 },
+          { id: 'C3.B', x: 60, y: 20 },
+        ],
         tracks: [TRACK],
       },
       camera: { resolution: { width: 640, height: 480 } },
@@ -695,10 +698,16 @@ describe('rr-live-view with sources of its own', () => {
             version: 1,
             frame_id: `f-${++frame}`,
             captured_at: '2026-11-05T10:00:01.500Z',
-            l1: { [ID]: { state: 'clear' } },
+            l1: { [ID]: { state: 'clear' }, 'C3.B': { state: 'clear' } },
             scores: { [ID]: 0.02 },
-            camera: { state: 'ok' },
-            ...(patches ? { patches: { [ID]: 'patch-0' } } : {}),
+            threshold: 0.45,
+            changes: { [ID]: 7 },
+            timings: { classify_ms: 31, rate_fps: 14.5 },
+            camera: { state: 'ok', frame_age_ms: 20 },
+            drift: { px: 2, tolerance_px: 9.75, past: false },
+            last_messages: { [ID]: { occupancy: { message: 'ON', time: '2026-11-05T10:15:30Z' } } },
+            // `C3.B` names a part the answer lacks, so its cell is empty.
+            ...(patches ? { patches: { [ID]: 'patch-0', 'C3.B': 'patch-9' } } : {}),
             ...extra,
           };
           const parts = patches ? [{ name: 'patch-0', bytes: new Uint8Array([1, 2, 3]) }] : [];
@@ -730,10 +739,24 @@ describe('rr-live-view with sources of its own', () => {
       el.shadowRoot!.querySelector<HTMLButtonElement>('.details-bar button')!.click();
       await waitFor(el, () => patchImg(el) !== null);
 
-      const details = el.shadowRoot!.querySelector('rr-service-details')!;
+      const panel = el.shadowRoot!.querySelector('rr-service-details')!.shadowRoot!;
       expect(patchImg(el)!.getAttribute('src')).to.match(/^blob:made-/);
-      expect(details.shadowRoot!.textContent).to.contain('0.02');
-      expect(details.shadowRoot!.textContent).to.contain('ok');
+      // One patch: `C3.B`'s part is missing.
+      expect(panel.querySelectorAll('img')).toHaveLength(1);
+      const text = panel.textContent!.replace(/\s+/g, ' ');
+      for (const sent of [
+        '0.02', // scores
+        '0.45', // threshold
+        '7', // changes
+        'classify 31.0 ms',
+        'service 14.5 fps',
+        'ok', // camera
+        '20 ms', // frame age
+        '2.0 px, within 9.8 px',
+        'occupancy: ON',
+      ]) {
+        expect(text).to.contain(sent);
+      }
       expect(el.shadowRoot!.querySelector('rr-viewer')!.tracks).toEqual([TRACK]);
 
       el.shadowRoot!.querySelector<HTMLButtonElement>('.details-bar button')!.click();

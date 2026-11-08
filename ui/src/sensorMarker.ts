@@ -171,8 +171,8 @@ const UNKNOWN_REASONS: Record<UnknownReason, string> = {
 };
 
 /**
- * The state in words: the word, and for `unknown` what stopped it. The
- * marker's tooltip and `rr-service-details`' State column (#332).
+ * The state in words: the word, and for `unknown` what stopped it. Shown as
+ * the marker's tooltip, and wherever else a state is written out (#332).
  *
  * `occupied` names its evidence — the confidence of whatever answered it — and
  * `clear` deliberately names none. That asymmetry is `SPEC.md` § Confidence

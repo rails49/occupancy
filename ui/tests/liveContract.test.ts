@@ -334,6 +334,12 @@ describe('the optional fields (#332)', () => {
     expect(warned).not.toHaveBeenCalled();
   });
 
+  it('reads a detector\'s timings beside the classifier\'s', async () => {
+    const timings = { detect_ms: 80, l0_rate_fps: 3, l0_age_ms: 250, rate_fps: 15 };
+    const { details } = await readLatest(multipartAnswer({ ...BARE, timings }));
+    expect(details.timings).toEqual(timings);
+  });
+
   it('reads drift that could not be measured, with its reason', async () => {
     const { details } = await readLatest(multipartAnswer({ ...BARE, drift: { unmeasured: 'no reference' } }));
     expect(details.drift).toEqual({ unmeasured: 'no reference' });
@@ -350,6 +356,9 @@ describe('the optional fields (#332)', () => {
       ['camera', { state: 'sleeping' }],
       ['drift', { px: 2 }],
       ['drift', { unmeasured: '' }],
+      // `past` disagrees with the numbers: `LIVE.md`'s `optional/drift`.
+      ['drift', { px: 12, tolerance_px: 9.75, past: false }],
+      ['drift', { px: 9.75, tolerance_px: 9.75, past: true }],
       ['last_messages', { Soccupied01: { occupancy: { message: 7, time: 'now' } } }],
       ['last_messages', { Soccupied01: [] }],
     ];

@@ -269,8 +269,9 @@ function scores() {
  *                 empty unless `?patches=1` was asked.
  */
 function payload(patchIds) {
-  // `LIVE.md`: these three do not come from the served frame, so an answer
-  // with no frame may carry them.
+  // What an answer with no frame still carries. `LIVE.md`: `last_messages`
+  // and `drift` do not come from the served frame; `camera` reports the
+  // camera, which is what says it is lost.
   const optional = {
     last_messages: lastMessages,
     camera: NO_FRAMES ? { state: 'lost' } : { state: 'ok', rate_fps: FPS, frame_age_ms: 12 },

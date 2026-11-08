@@ -124,6 +124,11 @@ describe('rr-service-details', () => {
     expect(b.State.textContent!.trim()).toBe('clear');
   });
 
+  it('shows a detector\'s rate and L0 age', async () => {
+    const el = await mount({ timings: { l0_rate_fps: 3, l0_age_ms: 250 } });
+    expect(lines(el)).toEqual({ Rate: 'page 4.0 fps · detector 3.0 fps', 'L0 age': '250 ms' });
+  });
+
   it('shows a reading past the tolerance, and an unmeasured drift with its reason', async () => {
     const past = await mount({ drift: { px: 12, tolerance_px: 9.75, past: true } });
     expect(lines(past).Drift).toBe('12.0 px, past 9.8 px');

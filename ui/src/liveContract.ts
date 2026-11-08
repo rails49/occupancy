@@ -252,9 +252,9 @@ export async function readLatest(response: Response): Promise<LiveAnswer> {
 const OPTIONAL_FIELDS: {
   readonly [K in Exclude<keyof LiveDetails, 'patches'>]: (value: unknown) => LiveDetails[K];
 } = {
-  scores: value => idMap(value, fraction),
+  scores: value => mapOf(value, fraction),
   threshold: fraction,
-  changes: value => idMap(value, count),
+  changes: value => mapOf(value, count),
   timings: value =>
     knownNumbers<LiveTimings>(value, [
       'capture_ms',
@@ -268,7 +268,7 @@ const OPTIONAL_FIELDS: {
     ]),
   camera: parseCamera,
   drift: parseDrift,
-  last_messages: value => idMap(value, profiles => idMap(profiles, parseMessage)),
+  last_messages: value => mapOf(value, profiles => mapOf(profiles, parseMessage)),
 };
 
 /**
@@ -294,7 +294,7 @@ function parseDetails(data: Record<string, unknown>, form: FormData): LiveDetail
 
 /** Sensor id to its patch part, or `undefined` for a `patches` of the wrong shape. */
 function parsePatches(value: unknown, form: FormData): ReadonlyMap<string, Blob> | undefined {
-  const names = idMap(value, name => (typeof name === 'string' && name !== '' ? name : undefined));
+  const names = mapOf(value, name => (typeof name === 'string' && name !== '' ? name : undefined));
   if (names === undefined) return undefined;
   const patches = new Map<string, Blob>();
   for (const [id, name] of names) {
@@ -305,7 +305,7 @@ function parsePatches(value: unknown, form: FormData): ReadonlyMap<string, Blob>
 }
 
 /** An object's entries as a map, or `undefined` where it is not an object or any value fails `parse`. */
-function idMap<T>(value: unknown, parse: (entry: unknown) => T | undefined): Map<string, T> | undefined {
+function mapOf<T>(value: unknown, parse: (entry: unknown) => T | undefined): Map<string, T> | undefined {
   if (!isRecord(value)) return undefined;
   const map = new Map<string, T>();
   for (const [key, entry] of Object.entries(value)) {
@@ -329,8 +329,9 @@ function knownNumbers<T>(value: unknown, keys: readonly string[]): T | undefined
 }
 
 function parseCamera(value: unknown): LiveCamera | undefined {
+  if (!isRecord(value)) return undefined;
   const numbers = knownNumbers<LiveCamera>(value, ['rate_fps', 'frame_age_ms']);
-  if (numbers === undefined || !isRecord(value)) return undefined;
+  if (numbers === undefined) return undefined;
   if (value.state === undefined) return numbers;
   if (value.state !== 'ok' && value.state !== 'lost') return undefined;
   return { state: value.state, ...numbers };
@@ -343,8 +344,9 @@ function parseDrift(value: unknown): LiveDrift | undefined {
       ? { unmeasured: value.unmeasured }
       : undefined;
   }
+  // `past` is whether `px` is above `tolerance_px`; one that disagrees is the wrong shape.
   const { px, tolerance_px: tolerance, past } = value;
-  if (!nonNegative(px) || !nonNegative(tolerance) || typeof past !== 'boolean') return undefined;
+  if (!nonNegative(px) || !nonNegative(tolerance) || past !== px > tolerance) return undefined;
   return { px, tolerance_px: tolerance, past };
 }
 
