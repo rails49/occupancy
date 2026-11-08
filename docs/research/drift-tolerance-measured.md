@@ -1,5 +1,7 @@
 # What a camera nobody touched reads on the drift check
 
+*Superseded by [drift-tolerance-basis.md](drift-tolerance-basis.md).*
+
 Research note for [#338](https://github.com/rails49/occupancy/issues/338), recording the readings
 taken in [#336](https://github.com/rails49/occupancy/issues/336). Written 2026-11-05.
 
