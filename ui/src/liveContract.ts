@@ -45,10 +45,10 @@ export const LIVE_VERSION = 1;
  * How long to wait for a complete `latest` answer before calling the request
  * failed.
  *
- * The service long-polls, so a wait is normal and a *silence* is not. Five
- * seconds is long enough that a slow frame on a slow link still lands and short
- * enough that a service that died mid-answer is reported rather than leaving the
- * screen on the last frame indefinitely.
+ * `latest` with `after` waits up to about 1 s for a new frame (`LIVE.md`), so a
+ * wait is normal and a *silence* is not. Five seconds is long enough that a slow
+ * frame on a slow link still lands and short enough that a service that died
+ * mid-answer is reported rather than leaving the screen on the last frame.
  */
 export const LATEST_TIMEOUT_MS = 5000;
 
@@ -68,43 +68,41 @@ export type LiveSensorState =
  *
  * `detections` is `Detection` as this page already has it, in
  * `camera.resolution` pixels (`SPEC.md` § Output encoding) — the same six
- * fields, so nothing is converted on the way in.
+ * fields, so nothing is converted on the way in. `LIVE.md` leaves everything in
+ * `l0` but the two ids to rails49/occupancy-service#8, so a service may send
+ * `l0` without `detections`; then no boxes are drawn and no cars counted.
  */
 export interface LiveL0 {
   readonly frame_id: string;
   readonly captured_at: string;
-  readonly detections: readonly Detection[];
+  readonly detections?: readonly Detection[];
 }
 
 /**
- * The JSON part of a `latest` answer.
+ * The JSON part of a `latest` answer, as `LIVE.md` § The JSON part states it.
  *
- * Every field but `version` is optional, and that is the contract rather than
- * defensiveness: an answer with no frames carries a `reason` and no `frame_id`,
- * a service with no DPT publishes no `l0` at all, and `occupancy-service#8` is
- * the issue that lands `l0` — so a service may be running that does not send
- * the field yet.
+ * With no frame, `frame_id` and `captured_at` are `null` and every sensor is
+ * `unknown` with the service's reason. `l0` is optional: a service with no DPT
+ * publishes none. Optional fields this page does not read are ignored.
  */
 export interface LivePayload {
   readonly version: number;
-  /** The served frame's id, sent back unchanged as `after`. Absent with no frames. */
-  readonly frame_id?: string;
-  /** When the service captured the served frame, ISO 8601 on its own clock. */
-  readonly captured_at?: string;
+  /** The served frame's id, sent back unchanged as `after`. `null` with no frame. */
+  readonly frame_id: string | null;
+  /** When the served frame reached the service, RFC 3339 on its own clock. `null` with no frame. */
+  readonly captured_at: string | null;
   /** L1, keyed by sensor id, as the service answered it. */
-  readonly sensors?: Readonly<Record<string, LiveSensorState>>;
+  readonly l1: Readonly<Record<string, LiveSensorState>>;
   /** L0 for the newest frame inferred, absent where the service publishes none. */
   readonly l0?: LiveL0;
-  /** Why there are no frames, in the service's words. */
-  readonly reason?: string;
 }
 
 /** A `latest` answer: the JSON part, and the frame where there was one. */
 export interface LiveAnswer {
   readonly payload: LivePayload;
   /**
-   * The `frame` part, or `null` for a **JSON-only** answer — which is how the
-   * service says it has no frames to send.
+   * The `frame` part, or `null` for an answer with only the `json` part —
+   * which is how the service says it has no frame to send.
    */
   readonly frame: Blob | null;
 }
@@ -199,19 +197,13 @@ export function eventsUrl(base: string = LIVE_BASE): string {
  * to fail on a real iPhone (#331's human step), this function is the one place
  * that changes.
  *
- * @throws {LiveError} a non-2xx answer, a content type that is neither the
- *         multipart form nor JSON — the door answers with this page's HTML when
- *         the service behind it is down — a body that will not parse, a missing
- *         part, or a `version` this page does not read.
+ * @throws {LiveError} a non-2xx answer, a content type other than the
+ *         multipart form — the door answers with this page's HTML when the
+ *         service behind it is down — a body that will not parse, a missing
+ *         `json` part, or a `version` this page does not read.
  */
 export async function readLatest(response: Response): Promise<LiveAnswer> {
   if (!response.ok) throw new LiveError(`the service answered ${response.status}`);
-
-  // A JSON answer with no multipart around it is the service saying it has no
-  // frame to send. It still carries L1 and a reason.
-  if (isJson(response)) {
-    return { payload: parsePayload(await readJson(response)), frame: null };
-  }
 
   if (!isMultipart(response)) {
     throw new LiveError(
@@ -226,12 +218,12 @@ export async function readLatest(response: Response): Promise<LiveAnswer> {
     throw new LiveError(`the multipart answer could not be read: ${message(err)}`);
   }
 
-  // The part names are `LIVE.md`'s.
+  // The part names are `LIVE.md`'s. With no frame the answer is only `json`.
   const json = form.get('json');
   const frame = form.get('frame');
   if (json === null) throw new LiveError('the multipart answer carried no `json` part');
-  if (!(frame instanceof Blob)) {
-    throw new LiveError('the multipart answer carried no `frame` part');
+  if (frame !== null && !(frame instanceof Blob)) {
+    throw new LiveError('the `frame` part is not a file');
   }
 
   // A part with a filename arrives as a `File` and one without as a string,
@@ -249,20 +241,10 @@ export async function readLatest(response: Response): Promise<LiveAnswer> {
  * off still reports the right age.
  */
 export function l0AgeMs(payload: LivePayload): number | null {
-  const frame = payload.captured_at === undefined ? NaN : Date.parse(payload.captured_at);
+  const frame = payload.captured_at === null ? NaN : Date.parse(payload.captured_at);
   const l0 = payload.l0 === undefined ? NaN : Date.parse(payload.l0.captured_at);
   if (Number.isNaN(frame) || Number.isNaN(l0)) return null;
   return frame - l0;
-}
-
-async function readJson(response: Response): Promise<unknown> {
-  let text: string;
-  try {
-    text = await response.text();
-  } catch (err) {
-    throw new LiveError(`the answer could not be read: ${message(err)}`);
-  }
-  return parseJson(text);
 }
 
 function parseJson(text: string): unknown {
@@ -298,34 +280,31 @@ export function parsePayload(data: unknown): LivePayload {
     );
   }
 
-  const payload: {
-    version: number;
-    frame_id?: string;
-    captured_at?: string;
-    sensors?: Record<string, LiveSensorState>;
-    l0?: LiveL0;
-    reason?: string;
-  } = { version: LIVE_VERSION };
+  const frameId = nullableString(data, 'frame_id');
+  const capturedAt = nullableString(data, 'captured_at');
 
-  for (const field of ['frame_id', 'captured_at', 'reason'] as const) {
-    const value = data[field];
-    if (value === undefined || value === null) continue;
-    if (typeof value !== 'string') throw new LiveError(`\`${field}\` is not a string`);
-    payload[field] = value;
+  if (!isRecord(data.l1)) throw new LiveError('`l1` is not an object');
+  const l1: Record<string, LiveSensorState> = {};
+  for (const [id, entry] of Object.entries(data.l1)) {
+    l1[id] = parseSensorState(id, entry);
   }
 
-  if (data.sensors !== undefined && data.sensors !== null) {
-    if (!isRecord(data.sensors)) throw new LiveError('`sensors` is not an object');
-    const sensors: Record<string, LiveSensorState> = {};
-    for (const [id, entry] of Object.entries(data.sensors)) {
-      sensors[id] = parseSensorState(id, entry);
-    }
-    payload.sensors = sensors;
+  return {
+    version: LIVE_VERSION,
+    frame_id: frameId,
+    captured_at: capturedAt,
+    l1,
+    ...(data.l0 === undefined ? {} : { l0: parseL0(data.l0) }),
+  };
+}
+
+function nullableString(data: Record<string, unknown>, field: string): string | null {
+  const value = data[field];
+  if (value === null) return null;
+  if (typeof value !== 'string' || value === '') {
+    throw new LiveError(`\`${field}\` is neither a string nor null`);
   }
-
-  if (data.l0 !== undefined && data.l0 !== null) payload.l0 = parseL0(data.l0);
-
-  return payload;
+  return value;
 }
 
 function parseSensorState(id: string, entry: unknown): LiveSensorState {
@@ -344,7 +323,7 @@ function parseSensorState(id: string, entry: unknown): LiveSensorState {
       // (`SPEC.md` § Confidence).
       return { state: 'clear' };
     case 'unknown':
-      if (typeof entry.reason !== 'string') {
+      if (typeof entry.reason !== 'string' || entry.reason === '') {
         throw new LiveError(`sensor \`${id}\` is unknown with no reason`);
       }
       return { state: 'unknown', reason: entry.reason };
@@ -358,6 +337,9 @@ function parseL0(data: unknown): LiveL0 {
   if (typeof data.frame_id !== 'string') throw new LiveError('`l0.frame_id` is not a string');
   if (typeof data.captured_at !== 'string') {
     throw new LiveError('`l0.captured_at` is not a string');
+  }
+  if (data.detections === undefined) {
+    return { frame_id: data.frame_id, captured_at: data.captured_at };
   }
   if (!Array.isArray(data.detections)) throw new LiveError('`l0.detections` is not a list');
   return {

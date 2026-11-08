@@ -11,8 +11,8 @@
  * **It never rejects, ever.** `ResultSource.resultFor` is contracted not to, and
  * `next()` holds to the same rule: a request that failed, a body that would not
  * parse, a version this page does not read — each becomes one answer in which
- * every sensor reads `unknown` with the reason on screen, and the object asks
- * again. The alternative was named in #341: a source that rejects leaves the
+ * every sensor reads `unknown`, with a notice that the service cannot be
+ * reached, and the object asks again. The alternative was named in #341: a source that rejects leaves the
  * last good answers frozen under a live-looking screen.
  *
  * **The manifest is the service's, not the page's.** It is read from
@@ -60,22 +60,6 @@ import type { LiveAnswer, LivePayload, LiveSensorState } from './liveContract.js
 const FAILED_RETRY_MS = 1000;
 
 /**
- * How long to wait after an answer that arrived but carried no new frame.
- *
- * `latest` with `after` is a long poll, so a service with nothing new holds the
- * request and this never fires. **The pacing must not depend on that**, though:
- * a service that answers "nothing new" at once — `bin/live-stub.mjs
- * --no-frames` does — would otherwise spin the loop as fast as the network
- * allows, one `fetch`, one state map and one render per turn. A quarter second
- * bounds that at four asks a second, and is short enough that a service sending
- * a frame per answer with no long poll at all still runs at a useful rate.
- *
- * Shorter than {@link FAILED_RETRY_MS}: this one is the service working and
- * having nothing to say, not the service being unreachable.
- */
-const QUIET_PAUSE_MS = 250;
-
-/**
  * How long to wait before reopening an `events` connection that closed for
  * good.
  *
@@ -89,11 +73,11 @@ const EVENTS_RETRY_MS = 5000;
 /** `EventSource.CLOSED`, which a fake in a test need not carry as a static. */
 const EVENTSOURCE_CLOSED = 2;
 
-/** What a sensor the service did not report reads, in this page's words. */
-const NOT_REPORTED = 'the service did not report this sensor';
+/** The notice while the service answers with no frame. Each sensor carries the service's reason. */
+const NO_PICTURE = 'No picture from the camera';
 
-/** What an answer with no frames and no reason of its own reads. */
-const NO_FRAMES = 'the service has no frames to send';
+/** The notice while the service's answer cannot be read. */
+const NO_SERVICE = 'Cannot reach the occupancy service';
 
 /**
  * The occupancy service at `base` as one source for the live view.
@@ -119,12 +103,7 @@ export function occupancyService(base: string = LIVE_BASE): FrameSource & Result
   let pending: FrameResult | null = null;
   /** The request in flight, so leaving the view aborts it. */
   let inFlight: AbortController | null = null;
-  /**
-   * How long to wait before the next ask, in ms, or `0` to ask at once.
-   *
-   * Set by every outcome that produced no new frame, so that the loop's pace is
-   * this object's and not the service's willingness to hold a request open.
-   */
+  /** How long to wait before the next ask, in ms, or `0` to ask at once. Set after a failure. */
   let pause = 0;
   let events: EventSource | null = null;
   let reopening: ReturnType<typeof setTimeout> | null = null;
@@ -237,13 +216,13 @@ export function occupancyService(base: string = LIVE_BASE): FrameSource & Result
     return { source: new Image(), width: 0, height: 0, fresh: false };
   }
 
-  /** Every sensor in the held manifest `unknown` for one reason, with it on screen. */
-  function blind(reason: string): FrameResult {
+  /** Every sensor in the held manifest `unknown` because the service cannot be read. */
+  function unreachable(): FrameResult {
     const states = new Map<string, SensorState>();
     for (const sensor of layout?.sensors ?? []) {
-      states.set(sensor.id, { state: 'unknown', message: reason });
+      states.set(sensor.id, { state: 'unknown', reason: 'no-service' });
     }
-    return { sensorStates: states, notice: reason };
+    return { sensorStates: states, notice: NO_SERVICE };
   }
 
   /** One sensor's state, as the service sent it. */
@@ -258,7 +237,7 @@ export function occupancyService(base: string = LIVE_BASE): FrameSource & Result
       case 'clear':
         return { state: 'clear' };
       case 'unknown':
-        return { state: 'unknown', message: entry.reason };
+        return { state: 'unknown', serviceReason: entry.reason };
     }
   }
 
@@ -271,11 +250,10 @@ export function occupancyService(base: string = LIVE_BASE): FrameSource & Result
    * manifest's, and an answer about one it has never heard of has nowhere to go.
    */
   function answersFor(payload: LivePayload): FrameResult {
-    const reported = payload.sensors ?? {};
     const states = new Map<string, SensorState>();
     for (const sensor of layout?.sensors ?? []) {
-      const entry = reported[sensor.id];
-      states.set(sensor.id, entry ? stateOf(entry) : { state: 'unknown', message: NOT_REPORTED });
+      const entry = payload.l1[sensor.id];
+      states.set(sensor.id, entry ? stateOf(entry) : { state: 'unknown', reason: 'not-reported' });
     }
 
     const l0 = payload.l0;
@@ -286,7 +264,7 @@ export function occupancyService(base: string = LIVE_BASE): FrameSource & Result
     }
     const age = l0AgeMs(payload);
     return {
-      detections: l0.detections,
+      ...(l0.detections === undefined ? {} : { detections: l0.detections }),
       sensorStates: states,
       ...(age === null ? {} : { l0Age: age }),
     };
@@ -425,29 +403,30 @@ export function occupancyService(base: string = LIVE_BASE): FrameSource & Result
         if ('failed' in result) {
           // One answer saying so, then ask again. The screen keeps its picture
           // and loses its answers, which is the honest pair.
+          console.error(`Cannot read the occupancy service at ${base}: ${result.failed}`);
           pause = FAILED_RETRY_MS;
-          pending = blind(`the occupancy service could not be read — ${result.failed}`);
+          pending = unreachable();
           return stale();
         }
 
         const { payload, frame } = result.answer;
 
         if (frame === null) {
-          // A JSON-only answer: the service has no frames.
-          pause = QUIET_PAUSE_MS;
-          pending = blind(payload.reason ?? NO_FRAMES);
+          // Only the `json` part: the service has no frame. `LIVE.md` has it
+          // wait about 1 s before answering so, which paces this loop. The
+          // picture stays with no boxes, and each sensor carries the
+          // service's reason.
+          pending = { sensorStates: answersFor(payload).sensorStates, notice: NO_PICTURE };
           return stale();
         }
 
         // **Different**, not greater. The id is the service's token and this
         // page never orders it, so a service that restarted and numbered from
         // scratch recovers on its next answer instead of being ignored forever.
-        if (payload.frame_id !== undefined && payload.frame_id === lastId) {
+        if (payload.frame_id === lastId) {
           // The same frame as last time is not a new frame, and its answers
-          // belong to the picture already up. Ask again, paced — a long poll
-          // that timed out answers this, and so does a service that does not
-          // long-poll at all.
-          pause = QUIET_PAUSE_MS;
+          // belong to the picture already up. Ask again: `after` held the
+          // request for about 1 s.
           continue;
         }
 
@@ -457,12 +436,13 @@ export function occupancyService(base: string = LIVE_BASE): FrameSource & Result
         } catch (err) {
           // The session ending is not a decode this page should report.
           if (!running) return null;
+          console.error(`Cannot decode the occupancy service's frame: ${text(err)}`);
           pause = FAILED_RETRY_MS;
-          pending = blind(`the occupancy service's frame could not be decoded — ${text(err)}`);
+          pending = unreachable();
           return stale();
         }
 
-        lastId = payload.frame_id ?? null;
+        lastId = payload.frame_id;
         pending = answersFor(payload);
         return decoded;
       }
@@ -478,7 +458,7 @@ export function occupancyService(base: string = LIVE_BASE): FrameSource & Result
      * manifest's.
      */
     async resultFor(): Promise<FrameResult> {
-      return pending ?? blind('the occupancy service has not answered yet');
+      return pending ?? unreachable();
     },
   };
 }

@@ -11,8 +11,19 @@ import type { Point, Sensor } from '@rails49/r49';
  * against. It was omitted from this union until `@occupancy/drift` could produce
  * it (issue #12 → #94); the other three describe missing capability, and this
  * one describes measurement that would be wrong.
+ *
+ * `no-service` and `not-reported` are this page's findings about an occupancy
+ * service (#331): its answer could not be read, or it named no state for a
+ * sensor in its manifest. A cause the service itself reports is its own words,
+ * in `serviceReason`.
  */
-export type UnknownReason = 'no-model' | 'no-calibration' | 'outside-frame' | 'drift';
+export type UnknownReason =
+  | 'no-model'
+  | 'no-calibration'
+  | 'outside-frame'
+  | 'drift'
+  | 'no-service'
+  | 'not-reported';
 
 /**
  * One sensor's L1 state.
@@ -30,14 +41,14 @@ export type UnknownReason = 'no-model' | 'no-calibration' | 'outside-frame' | 'd
  * than a style. A cause **this page** found is one of a closed set, so
  * `sensorMarker.ts` words each one in a total `Record` and a new cause is a
  * type error there. A cause an occupancy service found is the service's, which
- * this page cannot enumerate and must not reword, so it arrives as `message`
- * and is shown as sent (#331).
+ * this page cannot enumerate and must not reword, so it arrives as
+ * `serviceReason` and is shown as sent (#331).
  */
 export type SensorState =
   | { readonly state: 'occupied'; readonly confidence: number; readonly detection?: Detection }
   | { readonly state: 'clear' }
   | { readonly state: 'unknown'; readonly reason: UnknownReason }
-  | { readonly state: 'unknown'; readonly message: string };
+  | { readonly state: 'unknown'; readonly serviceReason: string };
 
 /**
  * L1: per-sensor occupancy, as a pure function of L0.

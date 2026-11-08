@@ -1597,7 +1597,7 @@ or a field of it.
 | `LIVE_VERSION`, `LATEST_TIMEOUT_MS` | The one contract version this reads, and how long a `latest` may take |
 | `manifestUrl`, `latestUrl`, `eventsUrl` | The three paths. `latestUrl(base, after)` sends the previous `frame_id` back **unchanged** |
 | `findService(base?)` | The service check: the manifest `Response` where this origin serves a service, else `null` |
-| `readLatest(response)` | One answer: `{ payload, frame }`, with `frame` `null` for a JSON-only answer. Throws `LiveError` |
+| `readLatest(response)` | One answer: `{ payload, frame }`, with `frame` `null` for an answer with only the `json` part. Throws `LiveError` |
 | `parsePayload(data)`, `l0AgeMs(payload)` | The JSON part validated field by field, and the L0 age in the service's own clock |
 | `LivePayload`, `LiveSensorState`, `LiveL0`, `LiveAnswer`, `LiveError` | The wire's shapes |
 
@@ -1628,9 +1628,10 @@ mean two requests for one answer, and L1 that could belong to a different frame 
 under it. `rr-app` hands it to `rr-live-view` as both.
 
 **It never rejects.** A request that failed, a body that will not parse, a version it does not read —
-each becomes one answer in which every sensor reads `unknown` with the reason as its `message` and as
-the `FrameResult.notice`, the picture on screen stays (`fresh: false`), and it asks again after about
-a second. A source that rejected would leave the last good answers frozen under a live-looking
+each becomes one answer in which every sensor reads `unknown` (`no-service`) under the notice "Cannot
+reach the occupancy service", the picture on screen stays (`fresh: false`), and it asks again after
+about a second. An answer with no frame keeps the picture too, under the notice "No picture from the
+camera", with each sensor `unknown` and the service's reason as its `serviceReason`. A source that rejected would leave the last good answers frozen under a live-looking
 screen, which is what [#341] named.
 
 **A frame is new when its id *differs* from the last, not when it is greater.** The id is the

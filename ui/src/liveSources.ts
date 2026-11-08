@@ -171,13 +171,6 @@ export interface FrameResult {
 }
 
 /**
- * Where a frame's answers come from: the model in this page, or a service.
- *
- * `resultFor` never rejects. A frame that fails is one frame, and the loop must
- * keep running and report `unknown` for it rather than freezing the last
- * answer on screen.
- */
-/**
  * The layout a result source answers against, where it is not the view's
  * archive (#331).
  *
@@ -196,6 +189,13 @@ export interface SourceLayout {
   readonly dpt: number | null;
 }
 
+/**
+ * Where a frame's answers come from: the model in this page, or a service.
+ *
+ * `resultFor` never rejects. A frame that fails is one frame, and the loop must
+ * keep running and report `unknown` for it rather than freezing the last
+ * answer on screen.
+ */
 export interface ResultSource {
   /**
    * Prepare to answer.

@@ -591,9 +591,11 @@ nothing.
 
 **`unknown` has two shapes, and that is a compile-time check.** A cause *this page* found is one of
 the closed `UnknownReason` set, which `sensorMarker.ts` words in a total `Record` — adding a cause
-is a type error there. A cause an occupancy service found arrives as `message` and is shown as
-sent (#331): this page cannot enumerate the service's causes, and rewording them would be inventing
-a vocabulary for somebody else's measurement.
+is a type error there. That set includes the two causes this page finds about a service: its answer
+cannot be read (`no-service`), or it named no state for a sensor (`not-reported`). A cause an
+occupancy service found arrives as `serviceReason` and is shown as sent (#331): this page cannot
+enumerate the service's causes, and rewording them would be inventing a vocabulary for somebody
+else's measurement.
 
 ## Frames and results come from sources (#330)
 
@@ -717,11 +719,17 @@ network, and a field of the wrong type otherwise reaches a sensor marker or a bo
 frame's L1 together, so two sources would mean two requests for one answer and L1 that could belong
 to a different frame than the picture under it. The rules it keeps:
 
-* **It never rejects.** Every failure — a non-2xx, this page's own HTML from a door whose service is
-  down, a malformed body, a wrong version, a request with no answer in five seconds, a frame that
-  will not decode — becomes one answer in which every sensor reads `unknown` with the reason, and it
-  asks again after about a second. The frame it hands over is the one already on screen, marked
-  `fresh: false`.
+* **It never rejects.** Every failure — a non-2xx, an answer that is not the multipart form (this
+  page's own HTML from a door whose service is down), a malformed body, a wrong version, a request
+  with no answer in five seconds, a frame that will not decode — becomes one answer in which every
+  sensor reads `unknown` (`no-service`) under the notice "Cannot reach the occupancy service". The
+  detail goes to the console, and it asks again after about a second. The frame it hands over is the
+  one already on screen, marked `fresh: false`.
+* **An answer with only the `json` part is the service having no frame.** The picture on screen
+  stays, with no boxes, under the notice "No picture from the camera", and each sensor reads
+  `unknown` with the reason the service sent for it. `LIVE.md` has the service wait about a second
+  before answering so, and has `after` wait up to about a second for a new frame, so the service
+  paces the loop and this object adds no pause of its own.
 * **A frame is new when its id *differs* from the last, not when it is greater.** The id is the
   service's token, sent back as `after` unchanged, never parsed or ordered — so a service that
   restarted and numbered from scratch recovers on its next answer rather than being ignored for the

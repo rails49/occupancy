@@ -66,7 +66,7 @@ const text = (value: string) => new TextEncoder().encode(value);
  * @param payload what goes in the `json` part, serialised as given — so a test
  *                can send a wrong `version` or a field of the wrong type.
  * @param frame   the `frame` part's bytes, or `null` to leave the part out,
- *                which is a malformed answer rather than a JSON-only one.
+ *                which is how the service says it has no frame.
  */
 export function multipartAnswer(payload: unknown, frame: Uint8Array | null = FRAME_BYTES): Response {
   const parts: Uint8Array[] = [
@@ -90,7 +90,7 @@ export function multipartAnswer(payload: unknown, frame: Uint8Array | null = FRA
   return new Response(concat(parts), { headers: { 'content-type': MULTIPART_TYPE } });
 }
 
-/** A JSON-only answer: the service has no frame to send. */
+/** A plain JSON answer, as the manifest is served. */
 export function jsonAnswer(payload: unknown, status = 200): Response {
   return new Response(JSON.stringify(payload), {
     status,

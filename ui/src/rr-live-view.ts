@@ -694,9 +694,9 @@ export class RRLiveView extends LitElement {
     return html`
       <rr-stats-bar
         .fps=${this._fps}
-        .cars=${this._detections === null ? null : this._detections.length}
+        .cars=${this._detections?.length ?? (this._judging ? 0 : null)}
         .occupied=${this._occupiedCount}
-        .inference=${this._inference}
+        .inference=${this._judging ? this._inference ?? 0 : null}
         .l0Age=${this._l0Age}
         .alignment=${this._judging ? this._drift?.displacementPx ?? null : null}
         .alignmentTolerance=${this._judging ? this._driftTolerancePx : null}

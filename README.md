@@ -45,8 +45,9 @@ The dev server serves HTTPS with a self-signed certificate, because `getUserMedi
 The page looks for an [occupancy service](GLOSSARY.md#occupancy) at `/live` on its own origin when
 it loads ([#331](https://github.com/rails49/occupancy/issues/331)). Where it finds one, pressing
 Live shows that service's frames, its sensor states, its L0 where it sends any, and the rate the
-page is getting — no camera, no model loaded here, and no drift check. The deployed site serves no
-service, so it behaves as it always has.
+page is getting — no camera, no model loaded here, and no drift check. The page only shows what the
+service decided; the detection that runs the railroad happens in the service. The deployed site
+serves no service, so it behaves as it always has.
 
 `bin/live-stub.mjs` is a stand-in for checking that by hand. It is **not** the service — that is
 [rails49/occupancy-service](https://github.com/rails49/occupancy-service), whose `LIVE.md` is the
@@ -62,10 +63,16 @@ node bin/live-stub.mjs                # port 8080, bound on every interface
 
 Then open `http://<this machine's IP>:8080/` on the phone or tablet and press Live. Plain HTTP is
 enough: service mode uses no camera, so it needs no secure context. Flags worth knowing:
-`--port`, `--fps`, `--no-frames` (the service saying it has none: the last picture should stay,
-every sensor should read `unknown` with the reason, and the rate should drop to 0) and `--churn`
-(drops the event-stream clients every 20 s, as the real service does after a save, so the page
-re-reads the manifest).
+`--port`, `--fps`, `--no-frames` (the service saying it has no frame: the last picture should stay
+under "No picture from the camera", every sensor should read `unknown` with the reason, and the rate
+should drop to 0) and `--churn` (drops the event-stream clients every 20 s, as the real service does
+after a save, so the page re-reads the manifest).
+
+`occupancy-service`'s conformance check passes against the stand-in, with frames on and off:
+
+```sh
+uvx --from git+https://github.com/rails49/occupancy-service live-check http://localhost:8080/live
+```
 
 ## 📷 Capture
 

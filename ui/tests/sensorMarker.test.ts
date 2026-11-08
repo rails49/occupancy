@@ -248,7 +248,7 @@ describe('renderSensor() — L1 state (#85)', () => {
     const el = renderSvg(
       renderSensor(sensor(), size(40), frame, false, {
         state: 'unknown',
-        message: 'the classifier found no track under this sensor',
+        serviceReason: 'the classifier found no track under this sensor',
       })
     );
     expect(el.querySelector('title')!.textContent).toBe(
@@ -262,6 +262,8 @@ describe('renderSensor() — L1 state (#85)', () => {
       'no-calibration': /calibration/i,
       'outside-frame': /frame/i,
       drift: /drift/i,
+      'no-service': /cannot reach the occupancy service/i,
+      'not-reported': /did not report/i,
     };
     for (const [reason, pattern] of Object.entries(reasons) as [UnknownReason, RegExp][]) {
       const el = renderSvg(renderSensor(sensor(), size(40), frame, false, { state: 'unknown', reason }));

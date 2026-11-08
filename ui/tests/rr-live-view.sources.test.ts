@@ -419,11 +419,11 @@ describe('rr-live-view with sources of its own', () => {
     it('keeps the last picture, drops the rate to 0 and shows the notice on a turn with no frame', async () => {
       const shown = new Map<string, SensorState>([['Sservice001', { state: 'clear' }]]);
       const blind = new Map<string, SensorState>([
-        ['Sservice001', { state: 'unknown', message: 'the service has no frames' }],
+        ['Sservice001', { state: 'unknown', serviceReason: 'no frames' }],
       ]);
       const source = fakeService([
         { src: 'blob:one', detections, states: shown },
-        { fresh: false, notice: 'the service has no frames', states: blind },
+        { fresh: false, notice: 'No picture from the camera', states: blind },
       ]);
 
       const el = await mount(source);
@@ -439,11 +439,11 @@ describe('rr-live-view with sources of its own', () => {
       expect(viewer.detections).toEqual([]);
       expect(viewer.sensorStates!.get('Sservice001')).toEqual({
         state: 'unknown',
-        message: 'the service has no frames',
+        serviceReason: 'no frames',
       });
       expect(stats.fps).toBe(0);
       expect(stats.cars).to.be.null;
-      expect(el.shadowRoot!.textContent).to.contain('the service has no frames');
+      expect(el.shadowRoot!.textContent).to.contain('No picture from the camera');
     });
 
     it('re-reads the layout every frame, so a sensor that moved reaches the viewer', async () => {

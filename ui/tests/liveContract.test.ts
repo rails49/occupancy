@@ -15,6 +15,7 @@ import {
   errorAnswer,
   htmlAnswer,
   jsonAnswer,
+  MULTIPART_TYPE,
   multipartAnswer,
   useNodeFileGlobals,
 } from './liveFixture.js';
@@ -41,7 +42,7 @@ const FULL: LivePayload = {
   version: 1,
   frame_id: 'f-7',
   captured_at: '2026-11-05T10:00:01.500Z',
-  sensors: {
+  l1: {
     Soccupied01: { state: 'occupied', confidence: 0.77 },
     Sclear00001: { state: 'clear' },
     Sunknown001: { state: 'unknown', reason: 'the classifier found no track here' },
@@ -51,6 +52,17 @@ const FULL: LivePayload = {
     captured_at: '2026-11-05T10:00:01.100Z',
     detections: [DETECTION],
   },
+};
+
+/** The fields `LIVE.md` requires, and nothing else. */
+const BARE: LivePayload = { version: 1, frame_id: 'f-1', captured_at: '2026-11-05T10:00:00Z', l1: {} };
+
+/** The json part with no frame, as `LIVE.md`'s example has it. */
+const NO_FRAME: LivePayload = {
+  version: 1,
+  frame_id: null,
+  captured_at: null,
+  l1: { Sunknown001: { state: 'unknown', reason: 'no frames' } },
 };
 
 describe('the live contract, as URLs', () => {
@@ -116,9 +128,9 @@ describe('readLatest', () => {
     const { payload, frame } = await readLatest(multipartAnswer(FULL));
 
     expect(payload.frame_id).toBe('f-7');
-    expect(payload.sensors!.Soccupied01).toEqual({ state: 'occupied', confidence: 0.77 });
-    expect(payload.sensors!.Sclear00001).toEqual({ state: 'clear' });
-    expect(payload.sensors!.Sunknown001).toEqual({
+    expect(payload.l1.Soccupied01).toEqual({ state: 'occupied', confidence: 0.77 });
+    expect(payload.l1.Sclear00001).toEqual({ state: 'clear' });
+    expect(payload.l1.Sunknown001).toEqual({
       state: 'unknown',
       reason: 'the classifier found no track here',
     });
@@ -127,14 +139,18 @@ describe('readLatest', () => {
     expect(frame!.size).toBeGreaterThan(0);
   });
 
-  it('reads a JSON-only answer as no frame at all', async () => {
-    // Which is how the service says it has none. L1 and a reason still come.
-    const { payload, frame } = await readLatest(
-      jsonAnswer({ version: 1, reason: 'the camera is not sending' })
-    );
+  it('reads an answer with only the json part as no frame', async () => {
+    // Which is how the service says it has none. Each sensor carries its reason.
+    const { payload, frame } = await readLatest(multipartAnswer(NO_FRAME, null));
 
     expect(frame).to.be.null;
-    expect(payload.reason).toBe('the camera is not sending');
+    expect(payload.frame_id).to.be.null;
+    expect(payload.captured_at).to.be.null;
+    expect(payload.l1.Sunknown001).toEqual({ state: 'unknown', reason: 'no frames' });
+  });
+
+  it('refuses a plain JSON answer, which is not the multipart form', async () => {
+    await expect(readLatest(jsonAnswer(NO_FRAME))).rejects.toThrow(/application\/json/);
   });
 
   it('refuses the page\'s own HTML, which is what the door answers when the service is down', async () => {
@@ -147,12 +163,11 @@ describe('readLatest', () => {
   });
 
   it('refuses a malformed body', async () => {
-    const broken = new Response('{ not json', { headers: { 'content-type': 'application/json' } });
+    const broken = new Response('--r49LiveBoundary\r\nnot a part', {
+      headers: { 'content-type': MULTIPART_TYPE },
+    });
     await expect(readLatest(broken)).rejects.toThrow(LiveError);
-  });
-
-  it('refuses a multipart answer with no frame part', async () => {
-    await expect(readLatest(multipartAnswer(FULL, null))).rejects.toThrow(/`frame` part/);
+    await expect(readLatest(multipartAnswer('{ not json'))).rejects.toThrow(LiveError);
   });
 
   it('refuses a version it does not read', async () => {
@@ -171,18 +186,21 @@ describe('parsePayload', () => {
     // box at NaN.
     const cases: [unknown, RegExp][] = [
       [[], /not an object/],
-      [{ version: 1, frame_id: 7 }, /`frame_id` is not a string/],
-      [{ version: 1, sensors: [] }, /`sensors` is not an object/],
-      [{ version: 1, sensors: { S1: { state: 'busy' } } }, /reads "busy"/],
-      [{ version: 1, sensors: { S1: { state: 'occupied' } } }, /no confidence/],
-      [{ version: 1, sensors: { S1: { state: 'unknown' } } }, /no reason/],
-      [{ version: 1, l0: { frame_id: 'a', captured_at: 'b', detections: {} } }, /not a list/],
+      [{ ...BARE, frame_id: 7 }, /`frame_id` is neither a string nor null/],
+      [{ ...BARE, captured_at: undefined }, /`captured_at` is neither a string nor null/],
+      [{ ...BARE, l1: undefined }, /`l1` is not an object/],
+      [{ ...BARE, l1: [] }, /`l1` is not an object/],
+      [{ ...BARE, l1: { S1: { state: 'busy' } } }, /reads "busy"/],
+      [{ ...BARE, l1: { S1: { state: 'occupied' } } }, /no confidence/],
+      [{ ...BARE, l1: { S1: { state: 'unknown' } } }, /no reason/],
+      [{ ...BARE, l1: { S1: { state: 'unknown', reason: '' } } }, /no reason/],
+      [{ ...BARE, l0: { frame_id: 'a', captured_at: 'b', detections: {} } }, /not a list/],
       [
-        { version: 1, l0: { frame_id: 'a', captured_at: 'b', detections: [{ ...DETECTION, length: 'x' }] } },
+        { ...BARE, l0: { frame_id: 'a', captured_at: 'b', detections: [{ ...DETECTION, length: 'x' }] } },
         /`length` is not a number/,
       ],
       [
-        { version: 1, l0: { frame_id: 'a', captured_at: 'b', detections: [{ ...DETECTION, centre: {} }] } },
+        { ...BARE, l0: { frame_id: 'a', captured_at: 'b', detections: [{ ...DETECTION, centre: {} }] } },
         /has no centre/,
       ],
     ];
@@ -191,16 +209,21 @@ describe('parsePayload', () => {
     }
   });
 
-  it('takes an answer that carries nothing but its version', async () => {
-    // Every other field is optional by contract: `l0` lands in
-    // occupancy-service#8, so a service may be running that never sends it.
-    expect(parsePayload({ version: 1 })).toEqual({ version: 1 });
+  it('takes an answer with only the required fields, and ignores keys it does not know', async () => {
+    // `l0` lands in occupancy-service#8, so a service may be running that never
+    // sends it. `LIVE.md`: a reader ignores keys it does not know.
+    expect(parsePayload({ ...BARE, scores: { S1: 0.2 } })).toEqual(BARE);
+  });
+
+  it('takes `l0` with no detections, as `LIVE.md`\'s example sends it', async () => {
+    const l0 = { frame_id: 'f-5', captured_at: '2026-11-05T10:00:01.100Z' };
+    expect(parsePayload({ ...BARE, l0 }).l0).toEqual(l0);
   });
 
   it('accepts `clear` with nothing attached, and attaches nothing', async () => {
     // SPEC § Confidence: `clear` is the absence of evidence.
-    const payload = parsePayload({ version: 1, sensors: { S1: { state: 'clear', confidence: 1 } } });
-    expect(payload.sensors!.S1).toEqual({ state: 'clear' });
+    const payload = parsePayload({ ...BARE, l1: { S1: { state: 'clear', confidence: 1 } } });
+    expect(payload.l1.S1).toEqual({ state: 'clear' });
   });
 });
 
@@ -212,11 +235,11 @@ describe('l0AgeMs', () => {
   });
 
   it('is null where either time is missing or unreadable', async () => {
-    expect(l0AgeMs({ version: 1 })).to.be.null;
-    expect(l0AgeMs({ version: 1, captured_at: FULL.captured_at })).to.be.null;
+    expect(l0AgeMs(BARE)).to.be.null;
+    expect(l0AgeMs({ ...BARE, captured_at: FULL.captured_at })).to.be.null;
     expect(
       l0AgeMs({
-        version: 1,
+        ...BARE,
         captured_at: 'not a time',
         l0: { frame_id: 'a', captured_at: '2026-11-05T10:00:01.100Z', detections: [] },
       })

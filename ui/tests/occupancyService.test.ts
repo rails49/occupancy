@@ -66,7 +66,7 @@ function payload(id = 'f-1') {
     version: 1,
     frame_id: id,
     captured_at: '2026-11-05T10:00:01.500Z',
-    sensors: {
+    l1: {
       [SENSOR_A]: { state: 'occupied', confidence: 0.66 },
       [SENSOR_B]: { state: 'clear' },
       // A sensor the service reported and the manifest does not have. Nothing
@@ -78,6 +78,20 @@ function payload(id = 'f-1') {
       captured_at: '2026-11-05T10:00:01.200Z',
       detections: [DETECTION],
     },
+  };
+}
+
+/** The json part with no frame: every sensor `unknown` with the service's reason. */
+function noFrame() {
+  return {
+    version: 1,
+    frame_id: null,
+    captured_at: null,
+    l1: {
+      [SENSOR_A]: { state: 'unknown', reason: 'no frames' },
+      [SENSOR_B]: { state: 'unknown', reason: 'no frames' },
+    },
+    l0: { frame_id: 'f-0', captured_at: '2026-11-05T10:00:01.200Z', detections: [DETECTION] },
   };
 }
 
@@ -242,30 +256,27 @@ describe('occupancyService', () => {
     });
 
     it('reads a sensor the service did not report as unknown, and says so', async () => {
-      const quiet = { ...payload(), sensors: { [SENSOR_A]: { state: 'occupied', confidence: 0.5 } } };
+      const quiet = { ...payload(), l1: { [SENSOR_A]: { state: 'occupied', confidence: 0.5 } } };
       const { source } = await opened([multipartAnswer(quiet)]);
 
       const frame = (await source.next())!;
       const result = await source.resultFor(frame, { drifted: false, dpt: null });
 
-      expect(result.sensorStates.get(SENSOR_B)).toEqual({
-        state: 'unknown',
-        message: 'the service did not report this sensor',
-      });
+      expect(result.sensorStates.get(SENSOR_B)).toEqual({ state: 'unknown', reason: 'not-reported' });
       source.close();
     });
 
     it("shows a service's own unknown reason as sent", async () => {
       const refused = {
         ...payload(),
-        sensors: { [SENSOR_A]: { state: 'unknown', reason: 'drift' } },
+        l1: { [SENSOR_A]: { state: 'unknown', reason: 'drift' } },
       };
       const { source } = await opened([multipartAnswer(refused)]);
 
       const frame = (await source.next())!;
       const result = await source.resultFor(frame, { drifted: false, dpt: null });
 
-      expect(result.sensorStates.get(SENSOR_A)).toEqual({ state: 'unknown', message: 'drift' });
+      expect(result.sensorStates.get(SENSOR_A)).toEqual({ state: 'unknown', serviceReason: 'drift' });
       source.close();
     });
 
@@ -286,7 +297,7 @@ describe('occupancyService', () => {
   describe('L0', () => {
     it('reports no L0 at all where the answer carries none', async () => {
       // Which is a service with no DPT: no boxes to draw and no car count.
-      const bare = { version: 1, frame_id: 'f-1', sensors: {} };
+      const bare = { version: 1, frame_id: 'f-1', captured_at: '2026-11-05T10:00:01.500Z', l1: {} };
       const { source } = await opened([multipartAnswer(bare)]);
 
       const frame = (await source.next())!;
@@ -294,6 +305,19 @@ describe('occupancyService', () => {
 
       expect(result.detections).toBeUndefined();
       expect(result.l0Age).toBeUndefined();
+      source.close();
+    });
+
+    it('reports an L0 with no detections as no boxes, with its age', async () => {
+      // `LIVE.md` leaves the rest of `l0` to occupancy-service#8.
+      const ids = { ...payload(), l0: { frame_id: 'f-0', captured_at: '2026-11-05T10:00:01.200Z' } };
+      const { source } = await opened([multipartAnswer(ids)]);
+
+      const frame = (await source.next())!;
+      const result = await source.resultFor(frame, { drifted: false, dpt: null });
+
+      expect(result.detections).toBeUndefined();
+      expect(result.l0Age).toBe(300);
       source.close();
     });
 
@@ -321,15 +345,11 @@ describe('occupancyService', () => {
       ]);
 
       await source.next();
-      const started = performance.now();
       const second = (await source.next())!;
 
       // Three asks for two frames: the repeat was not a frame.
       expect(latestAsks()).toHaveLength(3);
       expect(second.src).toBe('blob:frame-1');
-      // And the re-ask was paced. A service that answers "nothing new" at once
-      // rather than holding the request would otherwise spin this loop.
-      expect(performance.now() - started).toBeGreaterThan(100);
       source.close();
     });
 
@@ -372,22 +392,45 @@ describe('occupancyService', () => {
   });
 
   describe('no frames, and a failed request', () => {
-    /**
-     * Every answer that cannot become a frame, and what the notice says.
-     *
-     * A JSON-only answer is the service saying it has none, and carries its own
-     * reason. The rest are the request failing, which says so instead.
-     */
-    const broken: [string, () => Response, RegExp][] = [
-      ['a JSON-only answer', () => jsonAnswer({ version: 1, reason: 'the camera stopped' }), /the camera stopped/],
-      ['this page\'s own HTML', () => htmlAnswer(), /could not be read/],
-      ['a 500', () => errorAnswer(500), /could not be read/],
-      ['a malformed body', () => new Response('{', { headers: { 'content-type': 'application/json' } }), /could not be read/],
-      ['a version it does not read', () => multipartAnswer({ ...payload(), version: 7 }), /could not be read/],
+    it('shows each sensor with the service\'s reason on an answer with no frame, and no boxes', async () => {
+      const { source } = await opened([multipartAnswer(noFrame(), null), multipartAnswer(payload('f-9'))]);
+
+      const first = (await source.next())!;
+      const blind = await source.resultFor(first, { drifted: false, dpt: null });
+
+      // No new picture, so the one on screen stays and the turn does not count
+      // toward the rate. `after` is not advanced past it.
+      expect(first.fresh).toBe(false);
+      expect(first.src).toBeUndefined();
+      expect(blind.detections).toBeUndefined();
+      expect(blind.notice).toBe('No picture from the camera');
+      expect(blind.sensorStates).toEqual(
+        new Map([
+          [SENSOR_A, { state: 'unknown', serviceReason: 'no frames' }],
+          [SENSOR_B, { state: 'unknown', serviceReason: 'no frames' }],
+        ])
+      );
+
+      const next = (await source.next())!;
+      const good = await source.resultFor(next, { drifted: false, dpt: null });
+      expect(next.src).toBe('blob:frame-0');
+      expect(good.notice).toBeUndefined();
+      expect(latestAsks()).toEqual(['/live/latest', '/live/latest']);
+      source.close();
+    });
+
+    /** Every answer that is a failed request. */
+    const broken: [string, () => Response][] = [
+      ['this page\'s own HTML', () => htmlAnswer()],
+      ['a plain JSON answer', () => jsonAnswer(noFrame())],
+      ['a 500', () => errorAnswer(500)],
+      ['a malformed body', () => multipartAnswer('{')],
+      ['a version it does not read', () => multipartAnswer({ ...payload(), version: 7 })],
     ];
 
-    for (const [what, answer, notice] of broken) {
+    for (const [what, answer] of broken) {
       it(`gives unknown for every sensor on ${what}, and recovers on the next answer`, async () => {
+        const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
         const { source } = await opened([answer(), multipartAnswer(payload('f-9'))]);
 
         const first = (await source.next())!;
@@ -398,11 +441,12 @@ describe('occupancyService', () => {
         expect(first.fresh).toBe(false);
         expect(first.src).toBeUndefined();
         expect(blind.detections).toBeUndefined();
-        expect(blind.notice).toMatch(notice);
+        expect(blind.notice).toBe('Cannot reach the occupancy service');
         expect([...blind.sensorStates.keys()]).toEqual([SENSOR_A, SENSOR_B]);
         for (const state of blind.sensorStates.values()) {
-          expect(state.state).toBe('unknown');
+          expect(state).toEqual({ state: 'unknown', reason: 'no-service' });
         }
+        expect(logged).toHaveBeenCalledOnce();
 
         // And the next answer recovers: the id was never advanced past a
         // failure, so nothing is skipped.
@@ -417,6 +461,7 @@ describe('occupancyService', () => {
     }
 
     it('calls a request with no answer a failure, and asks again', async () => {
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
       vi.useFakeTimers();
       const source = occupancyService(BASE);
       // `open()` and the first ask both need the stubbed clock advanced.
@@ -432,7 +477,8 @@ describe('occupancyService', () => {
       await vi.advanceTimersByTimeAsync(2);
       expect(frame?.fresh).toBe(false);
       const blind = await source.resultFor(frame!, { drifted: false, dpt: null });
-      expect(blind.notice).toMatch(/no answer in 5 s/);
+      expect(blind.notice).toBe('Cannot reach the occupancy service');
+      expect(logged.mock.calls[0][0]).toMatch(/no answer in 5 s/);
 
       source.close();
     });
@@ -440,7 +486,7 @@ describe('occupancyService', () => {
     it('keeps the picture it has while it cannot be read', async () => {
       const { source } = await opened([
         multipartAnswer(payload('f-1')),
-        jsonAnswer({ version: 1, reason: 'the camera stopped' }),
+        multipartAnswer(noFrame(), null),
       ]);
 
       const shown = (await source.next())!;
@@ -453,30 +499,6 @@ describe('occupancyService', () => {
       expect(quiet.fresh).toBe(false);
       // And the handle is still live: nothing released it.
       expect(revoked).toEqual([]);
-      source.close();
-    });
-  });
-
-  describe('what paces the asks', () => {
-    it('takes real time over a service that answers at once that it has no frames', async () => {
-      // `latest` with `after` is a long poll, so a service with nothing new
-      // holds the request — but the pacing must not depend on that.
-      // `bin/live-stub.mjs --no-frames` answers immediately, and an unpaced
-      // loop spins one fetch, one state map and one render per turn as fast as
-      // the network allows. The threshold is an order-of-magnitude claim, not
-      // the pause: exporting that constant so a test could name it would make a
-      // timing choice part of this object's surface.
-      const { source } = await opened([jsonAnswer({ version: 1, reason: 'no camera' })]);
-
-      const started = performance.now();
-      for (let turn = 0; turn < 4; turn++) {
-        const frame = (await source.next())!;
-        await source.resultFor(frame, { drifted: false, dpt: null });
-      }
-      const elapsed = performance.now() - started;
-
-      expect(latestAsks()).toHaveLength(4);
-      expect(elapsed).toBeGreaterThan(100);
       source.close();
     });
   });

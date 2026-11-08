@@ -156,7 +156,7 @@ export interface SensorSymbolSize {
  *
  * An occupancy service's reason is not in here and cannot be: it is the
  * service's wording for a cause this page does not enumerate, so it arrives as
- * `message` and is shown as sent (#331).
+ * `serviceReason` and is shown as sent (#331).
  */
 const UNKNOWN_REASONS: Record<UnknownReason, string> = {
   'no-model': 'no model loaded',
@@ -166,6 +166,8 @@ const UNKNOWN_REASONS: Record<UnknownReason, string> = {
   // the answer is withheld because the camera moved. The banner carries the
   // number and the override; a tooltip is not where a user acts on either.
   drift: 'camera has drifted — refusing to classify',
+  'no-service': 'cannot reach the occupancy service',
+  'not-reported': 'the occupancy service did not report this sensor',
 };
 
 /**
@@ -186,7 +188,7 @@ function stateTooltip(state: SensorState): string {
     case 'clear':
       return 'clear';
     case 'unknown':
-      return `unknown — ${'reason' in state ? UNKNOWN_REASONS[state.reason] : state.message}`;
+      return `unknown — ${'reason' in state ? UNKNOWN_REASONS[state.reason] : state.serviceReason}`;
   }
 }
 

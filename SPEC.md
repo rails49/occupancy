@@ -58,7 +58,7 @@ The box tested keeps the detector's centre, orientation and length and takes the
 
 ### The vocabulary
 
-L1 states are occupied, clear and unknown, as [`GLOSSARY.md`](GLOSSARY.md#occupancy) defines them. A detection above the confidence threshold counts when it covers the sensor, including a low-confidence one. Errors lean toward occupied, and a persistent phantom can deadlock a controller's schedule; both are accepted in [ADR 0005](docs/adr/0005-l1-is-geometry-over-l0-biased-toward-occupied.md). Camera drift as a reason for unknown comes from [issue #12](https://github.com/rails49/occupancy/issues/12). A page watching an occupancy service reports every sensor unknown while the service has no frames to send, or while its answer cannot be read, and the reason is the service's own words rather than one of this page's ([#331](https://github.com/rails49/occupancy/issues/331)).
+L1 states are occupied, clear and unknown, as [`GLOSSARY.md`](GLOSSARY.md#occupancy) defines them. A detection above the confidence threshold counts when it covers the sensor, including a low-confidence one. Errors lean toward occupied, and a persistent phantom can deadlock a controller's schedule; both are accepted in [ADR 0005](docs/adr/0005-l1-is-geometry-over-l0-biased-toward-occupied.md). Camera drift as a reason for unknown comes from [issue #12](https://github.com/rails49/occupancy/issues/12). A page watching an occupancy service reports every sensor unknown while the service has no frame, with the service's own reason for each, and while its answer cannot be read, with this page's ([#331](https://github.com/rails49/occupancy/issues/331)).
 
 The bias reduces the consequence of the worse error. It does not make this a safety interlock.
 

@@ -18,11 +18,14 @@
  *
  *     node bin/live-stub.mjs [--port 8080] [--fps 5] [--no-frames] [--churn]
  *
- * `--no-frames` answers `latest` with JSON alone, which is how the service says
- * it has no frames: the page should keep its last picture, read every sensor
- * `unknown` with the reason, and drop the rate to 0. `--churn` drops every
- * `events` client every 20 s, which is what the real service does after a save
- * and what makes the page re-read the manifest.
+ * `--no-frames` answers `latest` with only the `json` part, which is how the
+ * service says it has no frame: the page should keep its last picture, show
+ * "No picture from the camera", read every sensor `unknown` with the reason, and
+ * drop the rate to 0. `--churn` drops every `events` client every 20 s, which is
+ * what the real service does after a save and what makes the page re-read the
+ * manifest.
+ *
+ * `occupancy-service`'s `live-check` passes against it; see `README.md`.
  */
 
 import { createServer } from 'node:http';
@@ -108,8 +111,7 @@ const MANIFEST = {
       { id: 'stub-west', name: 'West', x: 60, y: TRACK_Y },
       { id: 'stub-middle', name: 'Middle', x: 160, y: TRACK_Y },
       { id: 'stub-east', name: 'East', x: 260, y: TRACK_Y },
-      // Never answered with a state: the page should read it `unknown` and show
-      // this service's own words for why.
+      // Always `unknown`: the page should show this service's own words for why.
       { id: 'stub-refused', name: 'Refused', x: 160, y: 40 },
     ],
   },
@@ -130,13 +132,28 @@ const waiting = new Set();
 /** Every open `events` response. */
 const streams = new Set();
 
+/** The reason this stand-in gives for a sensor it cannot answer. */
+const REFUSED = 'this stand-in never answers this sensor';
+/** The reason every sensor carries with `--no-frames`. */
+const NO_FRAME_REASON = 'no frames';
+
 const frameId = () => `stub-${frameNumber}`;
+
+/** Each sensor's entry as last sent on `events`, by id. */
+let published = l1();
 
 setInterval(() => {
   frameNumber++;
   carX = (carX + 14) % (RESOLUTION.width + CAR_LENGTH);
   for (const resolveWaiter of waiting) resolveWaiter();
   waiting.clear();
+  // `events` carries each change.
+  const now = l1();
+  for (const [id, entry] of Object.entries(now)) {
+    if (JSON.stringify(entry) === JSON.stringify(published[id])) continue;
+    for (const stream of streams) sendEvent(stream, id, entry);
+  }
+  published = now;
 }, Math.max(20, Math.round(1000 / FPS)));
 
 if (CHURN) {
@@ -158,16 +175,21 @@ function car() {
   };
 }
 
-/** L1 for the three sensors on the track, and nothing for the fourth. */
-function sensors() {
+/** L1: one entry per sensor in the manifest, as `LIVE.md` requires. */
+function l1() {
   const box = car();
   const states = {};
   for (const sensor of MANIFEST.layout.sensors) {
-    if (sensor.id === 'stub-refused') continue;
-    const covered = Math.abs(sensor.x - box.centre.x) < box.length / 2;
-    states[sensor.id] = covered
-      ? { state: 'occupied', confidence: box.confidence }
-      : { state: 'clear' };
+    if (NO_FRAMES) {
+      states[sensor.id] = { state: 'unknown', reason: NO_FRAME_REASON };
+    } else if (sensor.id === 'stub-refused') {
+      states[sensor.id] = { state: 'unknown', reason: REFUSED };
+    } else {
+      const covered = Math.abs(sensor.x - box.centre.x) < box.length / 2;
+      states[sensor.id] = covered
+        ? { state: 'occupied', confidence: box.confidence }
+        : { state: 'clear' };
+    }
   }
   return states;
 }
@@ -175,14 +197,14 @@ function sensors() {
 /** The JSON part of a `latest` answer. */
 function payload() {
   if (NO_FRAMES) {
-    return { version: 1, reason: 'this stand-in was started with --no-frames' };
+    return { version: 1, frame_id: null, captured_at: null, l1: l1() };
   }
   const now = Date.now();
   return {
     version: 1,
     frame_id: frameId(),
     captured_at: new Date(now).toISOString(),
-    sensors: sensors(),
+    l1: l1(),
     l0: {
       frame_id: frameId(),
       // A little behind the frame on purpose, so the page's L0 age readout has
@@ -195,16 +217,26 @@ function payload() {
 
 const BOUNDARY = 'liveStubBoundary';
 
-/** One `latest` answer: the `json` part, then the `frame` part. */
+/** One `latest` answer: the `json` part, then the `frame` part where there is one. */
 function writeMultipart(res, json, frame) {
-  const head = Buffer.from(
-    `--${BOUNDARY}\r\nContent-Disposition: form-data; name="json"\r\n` +
-      `Content-Type: application/json\r\n\r\n${JSON.stringify(json)}\r\n` +
-      `--${BOUNDARY}\r\nContent-Disposition: form-data; name="frame"; filename="frame.jpg"\r\n` +
-      'Content-Type: image/jpeg\r\n\r\n'
-  );
-  const tail = Buffer.from(`\r\n--${BOUNDARY}--\r\n`);
-  const body = Buffer.concat([head, frame, tail]);
+  const parts = [
+    Buffer.from(
+      `--${BOUNDARY}\r\nContent-Disposition: form-data; name="json"\r\n` +
+        `Content-Type: application/json\r\n\r\n${JSON.stringify(json)}\r\n`
+    ),
+  ];
+  if (frame !== null) {
+    parts.push(
+      Buffer.from(
+        `--${BOUNDARY}\r\nContent-Disposition: form-data; name="frame"; filename="frame.jpg"\r\n` +
+          'Content-Type: image/jpeg\r\n\r\n'
+      ),
+      frame,
+      Buffer.from('\r\n')
+    );
+  }
+  parts.push(Buffer.from(`--${BOUNDARY}--\r\n`));
+  const body = Buffer.concat(parts);
   res.writeHead(200, {
     'content-type': `multipart/form-data; boundary=${BOUNDARY}`,
     'content-length': String(body.length),
@@ -223,43 +255,46 @@ function writeJson(res, json, status = 200) {
   res.end(body);
 }
 
-/**
- * Answer `latest`, waiting for a frame the caller does not have.
- *
- * A long poll, as the contract is: a caller whose `after` is the current id
- * waits, and after a couple of seconds is answered with the id it already has
- * anyway — which is a legitimate answer the page treats as "not a new frame"
- * and asks again.
- */
-async function latest(req, res, after) {
-  if (NO_FRAMES) {
-    writeJson(res, payload());
-    return;
-  }
-  if (after === frameId()) {
-    await new Promise(done => {
-      const give = () => {
-        clearTimeout(timer);
-        waiting.delete(give);
-        done();
-      };
-      const timer = setTimeout(give, 2000);
-      waiting.add(give);
-      req.on('close', give);
-    });
-  }
-  if (res.writableEnded || req.destroyed) return;
-  writeMultipart(res, payload(), FRAME_JPEG);
+/** Wait up to about 1 s for the next frame, or until the caller leaves. */
+function nextFrame(req) {
+  return new Promise(done => {
+    const give = () => {
+      clearTimeout(timer);
+      waiting.delete(give);
+      done();
+    };
+    const timer = setTimeout(give, 1000);
+    waiting.add(give);
+    req.on('close', give);
+  });
 }
 
-/** The event stream. Nothing is published on it; a connect is the message. */
+/**
+ * Answer `latest`, as `LIVE.md` states it.
+ *
+ * With `after` set to the current id, wait up to about 1 s for a newer frame,
+ * then answer with what there is. With no frames, wait about 1 s and answer
+ * with only the `json` part.
+ */
+async function latest(req, res, after) {
+  if (NO_FRAMES || after === frameId()) await nextFrame(req);
+  if (res.writableEnded || req.destroyed) return;
+  writeMultipart(res, payload(), NO_FRAMES ? null : FRAME_JPEG);
+}
+
+/** One sensor's L1 entry on `events`, with its id in `sensor`. */
+function sendEvent(res, id, entry) {
+  res.write(`data: ${JSON.stringify({ sensor: id, ...entry })}\n\n`);
+}
+
+/** The event stream: every sensor's state on connect, then each change. */
 function events(res) {
   res.writeHead(200, {
     'content-type': 'text/event-stream',
     'cache-control': 'no-store',
     connection: 'keep-alive',
   });
-  res.write(': connected\n\n');
+  for (const [id, entry] of Object.entries(published)) sendEvent(res, id, entry);
   streams.add(res);
   const beat = setInterval(() => res.write(': beat\n\n'), 15_000);
   res.on('close', () => {
