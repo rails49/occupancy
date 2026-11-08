@@ -1,9 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, onTestFinished } from 'vitest';
 import { fixture, html } from '@open-wc/testing';
 import { R49Archive } from '@rails49/r49';
 import type { Detection } from '@rails49/detector';
 import '../src/rr-live-view.js';
 import { RRLiveView } from '../src/rr-live-view.js';
+import { RRStatsBar } from '../src/rr-stats-bar.js';
 import type { FrameSource, ResultContext, ResultSource, SourceFrame } from '../src/liveSources.js';
 import type { SensorState } from '../src/occupancy.js';
 
@@ -369,6 +370,9 @@ describe('rr-live-view with sources of its own', () => {
     it('shows the frame through src and draws the layout the source declares', async () => {
       const states = new Map<string, SensorState>([
         ['Sservice001', { state: 'occupied', confidence: 0.8 }],
+        ['Sclear00001', { state: 'clear' }],
+        ['Sunreported', { state: 'unknown', reason: 'not-reported' }],
+        ['Srefused001', { state: 'unknown', serviceReason: 'camera cannot see this sensor' }],
       ]);
       const source = fakeService([{ src: 'blob:one', detections, l0Age: 120, states }]);
 
@@ -385,10 +389,8 @@ describe('rr-live-view with sources of its own', () => {
       expect(viewer.sensors.map(s => s.id)).toEqual(['Sservice001']);
       expect(viewer.resolution).toEqual({ width: 640, height: 480 });
       expect(viewer.dpt).toBe(20);
-      expect(viewer.sensorStates!.get('Sservice001')).toEqual({
-        state: 'occupied',
-        confidence: 0.8,
-      });
+      // Each L1 state and reason reaches the viewer as the source gave it.
+      expect(viewer.sensorStates).toEqual(states);
       expect(stats.cars).toBe(1);
       expect(stats.l0Age).toBe(120);
     });
@@ -414,6 +416,35 @@ describe('rr-live-view with sources of its own', () => {
       await waitFor(el, () => el.shadowRoot!.querySelector('rr-viewer')!.src !== null);
 
       expect(el.shadowRoot!.querySelector('rr-stats-bar')!.cars).toBe(0);
+    });
+
+    it('times the first frame after a gap from nothing, not from before the gap', async () => {
+      // Two new frames with a gap between them make no rate: each is the first
+      // of its run.
+      const rates: [RRStatsBar, number][] = [];
+      const setFps = Object.getOwnPropertyDescriptor(RRStatsBar.prototype, 'fps')!.set!;
+      const spy = vi
+        .spyOn(RRStatsBar.prototype, 'fps', 'set')
+        .mockImplementation(function (this: RRStatsBar, value) {
+          rates.push([this, value]);
+          setFps.call(this, value);
+        });
+      onTestFinished(() => spy.mockRestore());
+      const source = fakeService([
+        { src: 'blob:one' },
+        { fresh: false },
+        { src: 'blob:two' },
+        { fresh: false },
+      ]);
+
+      const el = await mount(source);
+      const viewer = el.shadowRoot!.querySelector('rr-viewer')!;
+      await waitFor(el, () => viewer.src === 'blob:two' && source.asked > 4);
+
+      // Only this view's bar: views left running by earlier tests set theirs too.
+      const stats = el.shadowRoot!.querySelector('rr-stats-bar')!;
+      const ours = rates.filter(([bar]) => bar === stats).map(([, rate]) => rate);
+      expect(ours.filter(rate => rate !== 0)).toEqual([]);
     });
 
     it('keeps the last picture, drops the rate to 0 and shows the notice on a turn with no frame', async () => {

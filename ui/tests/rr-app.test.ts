@@ -503,8 +503,22 @@ describe('rr-app', () => {
 
   describe('the occupancy service on this origin (#331)', () => {
     const originalFetch = global.fetch;
+    // jsdom has no EventSource. The live view opens the service's stream; these
+    // tests never connect it.
+    beforeEach(() => {
+      vi.stubGlobal(
+        'EventSource',
+        class {
+          close() {}
+        }
+      );
+    });
     afterEach(() => {
+      // Remove the views first, so none is still opening the service when the
+      // stub goes.
+      fixtureCleanup();
       global.fetch = originalFetch;
+      vi.unstubAllGlobals();
     });
 
     const served = {

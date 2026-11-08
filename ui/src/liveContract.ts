@@ -1,54 +1,24 @@
 /**
- * The live contract: what an occupancy service answers, and how this page reads
- * it (#331).
+ * This page's reader for the live contract, which `occupancy-service`'s
+ * `LIVE.md` states (#331). It is the only file here that names a path, a part
+ * or a field of the contract. `occupancyService.ts` runs the loop over it and
+ * `rr-app` runs {@link findService}.
  *
- * **The contract is not this repository's.** It is `occupancy-service`'s, stated
- * in its `LIVE.md`, and both words are that project's
- * (`GLOSSARY.md` § Occupancy). What lives here is one reader for it, so that the
- * wire — the paths, the content types, the part names, the field names and the
- * version — is described in exactly one file. `occupancyService.ts` runs the
- * loop over it and `rr-app` runs {@link findService}; neither names a path or a
- * part.
- *
- * **Everything is on the page's own origin.** `/live` is one constant and not a
- * setting: a cross-origin service is out of scope, and the app fetches from
- * origin anyway (ADR 0006).
- *
- * **A failure is never a rejection a caller may skip.** {@link readLatest}
- * throws a {@link LiveError} naming what was wrong with the answer, and the
- * caller turns that into `unknown` for every sensor — `ResultSource.resultFor`
- * never rejects, and a loop that skipped a frame instead would leave the last
- * good answers frozen on screen.
+ * {@link readLatest} throws a {@link LiveError} naming what was wrong with an
+ * answer, and the caller turns that into `unknown` for every sensor.
  */
 
 import type { Detection } from '@rails49/detector';
 
-/**
- * Where a service answers, on the page's own origin.
- *
- * One constant, not a setting (#331 § Out of scope). A base somebody could type
- * would be a second way for the page to be wrong about what it is watching, and
- * the service is served through the same door as the page.
- */
+/** Where a service answers, on the page's own origin (ADR 0006). One constant, not a setting. */
 export const LIVE_BASE = '/live';
 
-/**
- * The only `version` of the contract this page reads.
- *
- * Checked rather than assumed: a service that moved on is a service whose
- * fields this reader would misread, and reporting `unknown` with a reason is
- * better than drawing a sensor state built from a field that changed meaning.
- */
+/** The only `version` of the contract this page reads. Any other is a failed request. */
 export const LIVE_VERSION = 1;
 
 /**
  * How long to wait for a complete `latest` answer before calling the request
- * failed.
- *
- * `latest` with `after` waits up to about 1 s for a new frame (`LIVE.md`), so a
- * wait is normal and a *silence* is not. Five seconds is long enough that a slow
- * frame on a slow link still lands and short enough that a service that died
- * mid-answer is reported rather than leaving the screen on the last frame.
+ * failed. `latest` with `after` waits up to about 1 s at the service.
  */
 export const LATEST_TIMEOUT_MS = 5000;
 
@@ -59,18 +29,12 @@ export type LiveSensorState =
   | { readonly state: 'unknown'; readonly reason: string };
 
 /**
- * L0 for the newest frame the service inferred.
+ * L0 for the newest frame the service inferred, which may be earlier than the
+ * frame served. Both times are the service's clock.
  *
- * Its own `frame_id` and `captured_at`, because it is **not** necessarily the
- * frame being served: a service infers on its own cadence and publishes the
- * newest boxes it has, so the two times are what say how far behind the boxes
- * are. Both are the service's clock.
- *
- * `detections` is `Detection` as this page already has it, in
- * `camera.resolution` pixels (`SPEC.md` § Output encoding) — the same six
- * fields, so nothing is converted on the way in. `LIVE.md` leaves everything in
- * `l0` but the two ids to rails49/occupancy-service#8, so a service may send
- * `l0` without `detections`; then no boxes are drawn and no cars counted.
+ * `detections` is `Detection`, in `camera.resolution` pixels. `LIVE.md` leaves
+ * everything in `l0` but its id and time to rails49/occupancy-service#8, so
+ * `detections` may be absent; then no boxes are drawn and no cars counted.
  */
 export interface LiveL0 {
   readonly frame_id: string;
@@ -107,12 +71,7 @@ export interface LiveAnswer {
   readonly frame: Blob | null;
 }
 
-/**
- * An answer this page refuses to read, with what was wrong with it.
- *
- * A named class so a caller can tell a contract failure from a programming
- * error without matching on message text.
- */
+/** An answer this page refuses to read, with what was wrong with it. */
 export class LiveError extends Error {
   constructor(message: string) {
     super(message);
@@ -137,27 +96,18 @@ function mimeType(response: Response): string {
 }
 
 /**
- * Whether this origin serves an occupancy service, as its answer to the
- * manifest.
+ * The manifest `Response` where this origin serves an occupancy service, else
+ * `null`. #333 reads its `ETag` and opens it.
  *
- * **Returns the answer, not a boolean**, so that a caller that wants the
- * manifest itself does not fetch it twice — #333 opens it as an archive and
- * reads its `ETag` from here.
- *
- * Only a JSON content type counts. The cloud copy of this page answers every
- * unknown path with 200 `text/html` (its SPA fallback), so `response.ok` alone
- * would find a service on a static host. Any other answer, and any network
- * failure, is "no service" — and silently: the page without one is the page as
- * it has always been, and a toast on every load of the deployed site would be
- * noise about a feature that is not missing.
+ * Only a 2xx with a JSON content type counts: the cloud copy of this page
+ * answers every unknown path with 200 `text/html`. Any other answer, and any
+ * network failure, is no service, with no toast.
  */
 export async function findService(base: string = LIVE_BASE): Promise<Response | null> {
   let response: Response;
   try {
     response = await fetch(manifestUrl(base));
   } catch {
-    // A refused connection, DNS, an offline page. Not an error to report: there
-    // is simply no service here.
     return null;
   }
   if (!response.ok) return null;
@@ -169,14 +119,7 @@ export function manifestUrl(base: string = LIVE_BASE): string {
   return `${base}/archive/manifest.json`;
 }
 
-/**
- * Where to ask for the next frame.
- *
- * `after` is the previous answer's `frame_id`, sent back **unchanged**: it is
- * the service's token and this page never parses, compares or orders it. That
- * is what lets a restarted service recover — see `occupancyService.ts`, which
- * treats a *different* id as new rather than a greater one.
- */
+/** Where to ask for the next frame. `after` is the previous answer's `frame_id`, sent back unchanged. */
 export function latestUrl(base: string = LIVE_BASE, after: string | null = null): string {
   return after === null
     ? `${base}/latest`
@@ -189,18 +132,15 @@ export function eventsUrl(base: string = LIVE_BASE): string {
 }
 
 /**
- * Read one `latest` answer.
- *
- * The body is parsed with **`response.formData()`** rather than by hand: the
- * browser already has a multipart parser, and the one in rails49/control#950
- * exists only because WebKit refused that type there. If `formData()` turns out
- * to fail on a real iPhone (#331's human step), this function is the one place
- * that changes.
+ * Read one `latest` answer with `response.formData()`. If that fails on a real
+ * iPhone (#331's device check), this function parses the body itself, as
+ * rails49/control#950 does.
  *
  * @throws {LiveError} a non-2xx answer, a content type other than the
- *         multipart form — the door answers with this page's HTML when the
- *         service behind it is down — a body that will not parse, a missing
- *         `json` part, or a `version` this page does not read.
+ *         multipart form (a proxy answers with this page's HTML when the
+ *         service behind it is down), a body that will not parse, a missing
+ *         `json` part, a `version` this page does not read, or an answer whose
+ *         frame and fields disagree with `LIVE.md`.
  */
 export async function readLatest(response: Response): Promise<LiveAnswer> {
   if (!response.ok) throw new LiveError(`the service answered ${response.status}`);
@@ -215,7 +155,7 @@ export async function readLatest(response: Response): Promise<LiveAnswer> {
   try {
     form = await response.formData();
   } catch (err) {
-    throw new LiveError(`the multipart answer could not be read: ${message(err)}`);
+    throw new LiveError(`the multipart answer could not be read: ${errorText(err)}`);
   }
 
   // The part names are `LIVE.md`'s. With no frame the answer is only `json`.
@@ -226,19 +166,27 @@ export async function readLatest(response: Response): Promise<LiveAnswer> {
     throw new LiveError('the `frame` part is not a file');
   }
 
-  // A part with a filename arrives as a `File` and one without as a string,
-  // and which the service sends is its business.
+  // `LIVE.md` sends `json` with no filename, so it arrives as a string; a part
+  // with one would arrive as a `File`.
   const text = typeof json === 'string' ? json : await json.text();
-  return { payload: parsePayload(parseJson(text)), frame };
+  const payload = parsePayload(parseJson(text));
+  // `LIVE.md`: `frame_id` and `captured_at` are null when there is no frame
+  // and only then, and with no frame every sensor is `unknown`.
+  if ((frame === null) !== (payload.frame_id === null)) {
+    throw new LiveError(
+      frame === null ? 'an answer with no frame names a `frame_id`' : 'a frame came with no `frame_id`'
+    );
+  }
+  if (frame === null && Object.values(payload.l1).some(entry => entry.state !== 'unknown')) {
+    throw new LiveError('an answer with no frame has a sensor that is not `unknown`');
+  }
+  return { payload, frame };
 }
 
 /**
  * How far behind the served frame the L0 drawn over it is, in milliseconds, or
- * `null` where either time is missing or unreadable.
- *
- * Both times are the **service's** clock, so the subtraction is within one
- * clock and this page's own is never consulted — a phone whose clock is minutes
- * off still reports the right age.
+ * `null` where either time is missing or unreadable. Both times are the
+ * service's clock; this page's clock plays no part.
  */
 export function l0AgeMs(payload: LivePayload): number | null {
   const frame = payload.captured_at === null ? NaN : Date.parse(payload.captured_at);
@@ -251,27 +199,21 @@ function parseJson(text: string): unknown {
   try {
     return JSON.parse(text) as unknown;
   } catch (err) {
-    throw new LiveError(`the answer is not JSON: ${message(err)}`);
+    throw new LiveError(`the answer is not JSON: ${errorText(err)}`);
   }
 }
 
-function message(err: unknown): string {
+/** An error's message, or the value as text where it is not an `Error`. */
+export function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/** Whether a value is an object with string keys — the shape every check below starts from. */
+/** Whether a value is an object with string keys. */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/**
- * Validate the JSON part, field by field.
- *
- * Narrow guards rather than a cast: this is the network, and a field that is
- * the wrong type reaches a sensor marker or a box on the photograph. A refusal
- * here becomes `unknown` for every sensor with a reason the user can read,
- * which is the honest outcome; a cast would draw a box at `NaN`.
- */
+/** Validate the JSON part, field by field. Keys this page does not read are dropped. */
 export function parsePayload(data: unknown): LivePayload {
   if (!isRecord(data)) throw new LiveError('the answer is not an object');
   if (data.version !== LIVE_VERSION) {
@@ -311,16 +253,12 @@ function parseSensorState(id: string, entry: unknown): LiveSensorState {
   if (!isRecord(entry)) throw new LiveError(`sensor \`${id}\` is not an object`);
   switch (entry.state) {
     case 'occupied':
-      // The number is the whole state: a service's classifier reports
-      // P(occupied) and no box (ADR 0022), and `SensorState.occupied` carries
-      // the confidence for exactly that reason.
-      if (typeof entry.confidence !== 'number' || !Number.isFinite(entry.confidence)) {
+      if (!finite(entry.confidence)) {
         throw new LiveError(`sensor \`${id}\` is occupied with no confidence`);
       }
       return { state: 'occupied', confidence: entry.confidence };
     case 'clear':
-      // No confidence, and none accepted: `clear` is the absence of evidence
-      // (`SPEC.md` § Confidence).
+      // Any `confidence` is dropped: `clear` carries none (`SPEC.md` § Confidence).
       return { state: 'clear' };
     case 'unknown':
       if (typeof entry.reason !== 'string' || entry.reason === '') {
@@ -338,15 +276,10 @@ function parseL0(data: unknown): LiveL0 {
   if (typeof data.captured_at !== 'string') {
     throw new LiveError('`l0.captured_at` is not a string');
   }
-  if (data.detections === undefined) {
-    return { frame_id: data.frame_id, captured_at: data.captured_at };
-  }
+  const ids = { frame_id: data.frame_id, captured_at: data.captured_at };
+  if (data.detections === undefined) return ids;
   if (!Array.isArray(data.detections)) throw new LiveError('`l0.detections` is not a list');
-  return {
-    frame_id: data.frame_id,
-    captured_at: data.captured_at,
-    detections: data.detections.map((entry, index) => parseDetection(entry, index)),
-  };
+  return { ...ids, detections: data.detections.map((entry, index) => parseDetection(entry, index)) };
 }
 
 function parseDetection(data: unknown, index: number): Detection {
@@ -369,6 +302,6 @@ function parseDetection(data: unknown, index: number): Detection {
   };
 }
 
-function finite(value: unknown): boolean {
+function finite(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }

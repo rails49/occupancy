@@ -91,14 +91,9 @@ const DRIFT_SAMPLE_INTERVAL_MS = 3000;
  * and the frame rate — the view's own judgement, which is the same whatever is
  * answering.
  *
- * **The view's own judgement runs while it holds an archive** (#331). The drift
- * check measures a live frame against the archive's reference image, the
- * recorder records those measurements, and the two notices about a missing
- * model or a missing DPT are about running a model over that archive — so all
- * four hang off `archive`, and none of them appears for an occupancy service,
- * which answers from a manifest of its own and publishes states this page
- * cannot withhold. Opening or creating an archive is exactly what leaves a
- * service behind (`rr-app`), so the one condition covers it.
+ * In service mode (sources handed in, no archive, #331) the view runs no drift
+ * check and shows no recorder, alignment readout, or model and DPT notices: the
+ * service publishes states this page cannot withhold. See `_judging`.
  *
  * **Properties:** `archive`, `sources`.
  */
@@ -289,18 +284,16 @@ export class RRLiveView extends LitElement {
   }
 
   /**
-   * Whether this page is the one judging — a model it loads over an archive it
-   * holds.
+   * Whether this page runs the model itself: the camera path, with or without
+   * an archive. False in service mode, which is sources handed in with no
+   * archive (#331).
    *
-   * The drift check, the recorder, the alignment readout and the two notices
-   * about a missing model or a missing DPT are all about that job. A service
-   * does it elsewhere and publishes the result, which this page cannot withhold
-   * (#331, and drift in service mode is #336) — and it has no archive to
-   * measure a pose against, because opening or creating one is exactly what
-   * leaves a service behind.
+   * The drift check, the recorder, the alignment readout, Cars and Inference
+   * before a first answer, and the notices about a missing model or DPT belong
+   * to the camera path only.
    */
   private get _judging(): boolean {
-    return this.archive !== null;
+    return this.sources === null || this.archive !== null;
   }
 
   async connectedCallback() {
@@ -541,7 +534,10 @@ export class RRLiveView extends LitElement {
         this._lastFrameTime = startTime;
         if (frame.src !== undefined) this._src = frame.src;
       } else {
+        // The next new frame starts the count again rather than being timed
+        // from before the gap.
         this._fps = 0;
+        this._lastFrameTime = 0;
       }
 
       // `drifted` is the refusal and `_dpt` is resolved once — from the source's
@@ -585,7 +581,7 @@ export class RRLiveView extends LitElement {
       // Read every frame: a service that re-read its manifest on a reconnect
       // has new sensor positions, and the states below are keyed on them.
       this._sourceLayout = results.layout ?? null;
-      // A source answering from a layout **was** prepared, whatever `open()`
+      // A source answering from a layout was prepared, whatever `open()`
       // said: a service whose manifest failed then and succeeded on a reconnect
       // must not keep the notice saying it could not be read. The local model
       // brings no layout, so its own error is untouched.

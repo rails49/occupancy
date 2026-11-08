@@ -657,14 +657,12 @@ freezing on screen, which is the failure mode #341 named for a source that canno
 `FrameResult.detections` **absent** means no L0 was published at all — no boxes and no car count —
 where an empty list means a model looked and found none.
 
-**The view's own judgement runs while it holds an archive** (#331). The drift check measures a live
-frame against the archive's reference image; the recorder records those measurements; the alignment
-readout reports them; and the model and DPT notices are about running a model over that archive. All
-five therefore hang off `archive` (`_judging`), and none of them appears for an occupancy service,
-which answers from a manifest of its own and publishes states this page cannot withhold (drift in
-service mode is #336). The condition is `archive`, not a flag naming the service, because opening or
-creating an archive is exactly what leaves a service behind — `rr-app` drops it on the same act. The
-source's `open()` error is still shown either way, in the words that fit who failed.
+**Service mode is sources handed in with no archive** (#331, `_judging`). In it the view runs no
+drift check and shows no drift banner, recorder, alignment readout, or model and DPT notices, and the
+stats bar shows Cars only with L0 and never Inference: the service publishes states this page cannot
+withhold (drift in service mode is #336). The camera path, with or without an archive, is as it was.
+Opening or creating an archive leaves a service behind in `rr-app`. The source's `open()` error is
+still shown either way, in the words that fit who failed.
 
 **`sources` is read on connect.** The loop, the drift check and the result source's lifetime all hang
 off one mount; swapping a source mid-session would mean tearing down and rebuilding all three, and a
@@ -698,8 +696,7 @@ path is driven there with a stand-in `<video>` and measured by hand in Chromium.
 The page asks `/live/archive/manifest.json` once, when `rr-app` connects. **Only a JSON content type
 counts as a service**: the deployed copy answers every unknown path with 200 `text/html`, so
 `response.ok` alone would find one on a static host. Any other answer, and any network failure, is no
-service and the page is what it has always been — silently, because a toast on every load of the
-deployed site would be noise about a feature that is not missing. `liveContract.ts`'s `findService`
+service and the page is what it has always been, with no toast. `liveContract.ts`'s `findService`
 returns the **`Response`**, not a boolean, so #333 can read its `ETag` and open the manifest it
 already fetched.
 
@@ -720,7 +717,7 @@ frame's L1 together, so two sources would mean two requests for one answer and L
 to a different frame than the picture under it. The rules it keeps:
 
 * **It never rejects.** Every failure — a non-2xx, an answer that is not the multipart form (this
-  page's own HTML from a door whose service is down), a malformed body, a wrong version, a request
+  page's own HTML from a proxy whose service is down), a malformed body, a wrong version, a request
   with no answer in five seconds, a frame that will not decode — becomes one answer in which every
   sensor reads `unknown` (`no-service`) under the notice "Cannot reach the occupancy service". The
   detail goes to the console, and it asks again after about a second. The frame it hands over is the
@@ -748,11 +745,9 @@ to a different frame than the picture under it. The rules it keeps:
   `ResultSource.layout` reports. So an unsaved edit in the editor cannot move what the live view
   draws, and a sensor the manifest does not have is not drawn and so is not answered.
 
-**The service is left behind by New and Open, for good.** `rr-app._open` is the one chokepoint both
-go through, and `_leftService` also swallows a manifest answer that arrives afterwards — the race the
-check's own latency opens. There is no way back short of a reload, deliberately: a page that is
-sometimes showing a layout the person has open and sometimes one they have not would be worse than
-one that picks.
+**The service is left behind by New and Open, for good.** Both pass through `rr-app._open`, and
+`_leftService` also ignores a manifest answer that arrives afterwards. Only a reload finds the
+service again.
 
 `bin/live-stub.mjs` is a stand-in service for checking this by hand on a device, and serves the built
 page from the same origin because `/live` has to be. It is not the service — rails49/occupancy-service

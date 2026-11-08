@@ -134,12 +134,14 @@ describe('rr-live-view', () => {
   });
 
   it('shows Cars and Inference before the first frame, as it did before #331', async () => {
-    // Only service mode withholds them.
-    const el = await fixture<RRLiveView>(html`<rr-live-view .archive=${archive}></rr-live-view>`);
-    const stats = el.shadowRoot!.querySelector('rr-stats-bar')!;
+    // Only service mode withholds them, with or without an archive here.
+    for (const loaded of [archive, null]) {
+      const el = await fixture<RRLiveView>(html`<rr-live-view .archive=${loaded}></rr-live-view>`);
+      const stats = el.shadowRoot!.querySelector('rr-stats-bar')!;
 
-    expect(stats.cars).toBe(0);
-    expect(stats.inference).toBe(0);
+      expect(stats.cars, `archive ${loaded ? 'open' : 'none'}`).toBe(0);
+      expect(stats.inference, `archive ${loaded ? 'open' : 'none'}`).toBe(0);
+    }
   });
 
   it('loads the detector the bundle ships, and no classifier', async () => {

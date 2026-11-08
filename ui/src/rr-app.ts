@@ -80,7 +80,7 @@ export class RRApp extends LitElement {
    * The occupancy service this origin serves, or `null` where there is none
    * (#331).
    *
-   * Looked for **once, at page start**, and handed to the live view as both of
+   * Looked for once, at page start, and handed to the live view as both of
    * its sources. The page still opens in the editor; this only decides what
    * Live shows when the person presses it.
    */
@@ -88,10 +88,8 @@ export class RRApp extends LitElement {
   /**
    * Whether an archive of the person's own has taken over.
    *
-   * New and Open leave the service behind — the person is editing a layout of
-   * theirs, and a view of somebody else's running layout is no longer what they
-   * asked for. This also swallows an answer that arrives *after* that, which is
-   * the race the check's own latency opens.
+   * New and Open leave the service behind. This also ignores a service check
+   * that answers after that.
    */
   private _leftService = false;
 
@@ -147,9 +145,7 @@ export class RRApp extends LitElement {
    * Ask whether this origin serves an occupancy service, and hold it if it
    * does (#331).
    *
-   * **Silent either way.** The deployed copy of this page serves none, and a
-   * toast on every load saying so would be noise about a feature that is not
-   * missing. The check itself is `liveContract.ts`'s, and #333 reuses it.
+   * No toast either way. The check is `liveContract.ts`'s, and #333 reuses it.
    */
   private async _lookForService() {
     if ((await findService()) === null || this._leftService) return;
@@ -160,10 +156,8 @@ export class RRApp extends LitElement {
   /**
    * Stop watching the service, for good.
    *
-   * Not a toggle: there is no way back to it short of a reload, and offering
-   * one would mean a page that is sometimes showing a layout the person has
-   * open and sometimes one they have not. `_leftService` also ignores an answer
-   * still in flight from `_lookForService`.
+   * Only a reload finds it again. `_leftService` also ignores an answer still
+   * in flight from `_lookForService`.
    */
   private _leaveService() {
     this._leftService = true;
@@ -251,8 +245,8 @@ export class RRApp extends LitElement {
   private _open(archive: R49Archive) {
     this._session = new EditSession(archive);
     this._session.subscribe(() => this.requestUpdate());
-    // The one chokepoint both New and Open go through, and the act that leaves
-    // an occupancy service behind (#331). A cancelled New or Open opens
+    // New and Open both pass here, and both leave an occupancy service behind
+    // (#331). A cancelled New or Open opens
     // nothing and reaches neither this nor `_leaveService`.
     this._leaveService();
   }

@@ -54,14 +54,14 @@ export interface SourceFrame {
    * Whether this turn carried a picture the view has not shown.
    *
    * Absent is `true` — a camera hands over the frame it just read. `false` is
-   * an answer that carried **no new frame**: an occupancy service with nothing
+   * an answer that carried no new frame: an occupancy service with nothing
    * to send, or a request of its that failed (#331). The view keeps the picture
    * already on screen, stops counting the turn toward the rate, and takes the
    * answers that came with it — which is how every sensor reads `unknown` and
    * the rate reads 0 while the service is quiet, instead of the last good
    * answers staying frozen on screen.
    *
-   * **Nothing may read pixels from a turn that is not fresh.** `source` is then
+   * Nothing may read pixels from a turn that is not fresh. `source` is then
    * whatever picture is still up, or an empty image where there has never been
    * one, and the view skips the drift grab for it.
    */
@@ -132,7 +132,7 @@ export interface ResultContext {
  */
 export interface FrameResult {
   /**
-   * L0 for this frame, or **absent** where the source publishes no L0 at all.
+   * L0 for this frame, or absent where the source publishes no L0 at all.
    *
    * Empty, never stale, when a model looked and found nothing. Absent is the
    * other fact: an occupancy service that has no DPT produces no boxes to
@@ -160,7 +160,7 @@ export interface FrameResult {
    */
   readonly l0Age?: number;
   /**
-   * What to tell the user about **this** answer, or absent when there is
+   * What to tell the user about this answer, or absent when there is
    * nothing to say.
    *
    * Distinct from {@link ResultSource.open}'s message, which is why the source
@@ -214,7 +214,7 @@ export interface ResultSource {
    * The layout these answers are about, or `null`/absent where the view's
    * `archive` is it.
    *
-   * A **getter**, read by the view on every frame rather than once at `open()`:
+   * A getter, read by the view on every frame rather than once at `open()`:
    * a service re-reads its manifest whenever its event stream reconnects, and a
    * sensor that moved has to reach the viewer with the state keyed on it (#331).
    */

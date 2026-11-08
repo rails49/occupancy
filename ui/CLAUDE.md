@@ -7,13 +7,8 @@ Vite, TypeScript. It edits `.r49` layout archives through the file picker and ru
 the browser via ONNX Runtime WASM.
 
 **This package has no backend of its own, and must not grow one — do not introduce one without
-discussion.** What it does have, since #331, is a **client**: where an
-[occupancy service](../GLOSSARY.md#occupancy) answers at `/live` on the page's own origin, the live
-view shows that service's frames, L1 and L0 and loads no model. The service is a separate program
-(rails49/occupancy-service) a person chooses to run, the deployed site serves none, and the editor is
-unchanged. `/live` is one constant, not a setting, and `src/liveContract.ts` is the only file that
-names a path, a part or a field of the contract — see [`../docs/UI.md`](../docs/UI.md) § An occupancy
-service is found at `/live`.
+discussion.** Since #331 it is a client of an [occupancy service](../GLOSSARY.md#occupancy) on its own
+origin, where one runs: [`../docs/UI.md`](../docs/UI.md) § An occupancy service is found at `/live`.
 
 ## The three documents, and which one is true
 

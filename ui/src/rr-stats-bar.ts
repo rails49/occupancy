@@ -17,8 +17,8 @@ import { customElement, property } from 'lit/decorators.js';
  * to the model. It is the number that moves when the device changes, which is
  * the whole reason to watch it (see the map's hardware note).
  *
- * **`cars`, `inference` and `l0Age` are absent, not zero, when nobody measured
- * them** (#331). An occupancy service that publishes no L0 has no car count and
+ * `cars`, `inference` and `l0Age` are absent, not zero, when nobody measured
+ * them (#331). An occupancy service that publishes no L0 has no car count and
  * no detector of this page's to time, and a row reading `0` would be a claim
  * that it looked and found nothing — the same confident-looking miss `clear`
  * refuses to make. An absent row says nothing instead.

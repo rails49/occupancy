@@ -147,7 +147,7 @@ export interface SensorSymbolSize {
 }
 
 /**
- * Why **this page** could not answer, in words.
+ * Why this page could not answer, in words.
  *
  * A total `Record` rather than a `switch` with a default: `UnknownReason` grows,
  * and a default would render a new reason as whatever the fallback string says

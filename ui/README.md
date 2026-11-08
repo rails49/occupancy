@@ -1415,13 +1415,10 @@ An occupancy service is handed in as **both** sources at once, by `rr-app`, with
   quiet instead of the last good answers freezing. `FrameResult.notice` is the reason, shown as a
   notice and cleared by the next answer; `FrameResult.detections` absent means no L0 was published
   at all (no boxes, no car count), where an empty list means a model looked and found none.
-* **This page's own judgement runs while it holds an archive** ([#331]). The drift check and its
-  banner, the recorder, the alignment readout and the model and DPT notices are about running a
-  model over that archive, so all five hang off `archive` — and none appears for an occupancy
-  service, which answers from a manifest of its own and publishes states this page cannot withhold
-  (drift in service mode is [#336]). Opening or creating an archive is exactly what leaves a service
-  behind, so the one condition covers it. A service's `open()` failure is still shown, in its own
-  words.
+* **Service mode is `sources` set with no `archive`** ([#331]). It shows no drift banner,
+  recorder, alignment readout, or model and DPT notices, and no Inference row (drift in service mode
+  is [#336]). The camera path, with or without an archive, is as it was. A service's `open()`
+  failure is still shown, in its own words.
 * **This is the occupancy contract, not a demo.** The detector runs **once per frame** — not once per
   sensor — and every sensor is derived from its output by pure geometry, which is `../SPEC.md`
   § Occupancy Output: L1 is a function of L0 and never calls a second model, so it cannot contradict
@@ -1604,8 +1601,7 @@ or a field of it.
 **`findService` returns the answer, not a boolean**, so [#333] can read its `ETag` and open the
 manifest it already fetched. **Only a JSON content type counts**: the cloud copy of this page answers
 every unknown path with 200 `text/html`, so `response.ok` alone would find a service on a static
-host. Any other answer, and any network failure, is "no service" — silently, because a page without
-one is the page as it has always been.
+host. Any other answer, and any network failure, is "no service", with no toast.
 
 **`readLatest` uses `response.formData()`.** The browser already has a multipart parser; the
 hand-rolled one in rails49/control#950 exists only because WebKit refused that type there, and if

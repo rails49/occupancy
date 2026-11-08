@@ -28,7 +28,7 @@ export type UnknownReason =
 /**
  * One sensor's L1 state.
  *
- * `occupied` carries **`confidence`**, and the covering `detection` where there
+ * `occupied` carries `confidence`, and the covering `detection` where there
  * is one: geometry over L0 answers with a box, and a classifier answers with
  * P(occupied) and no box at all (ADR 0022), so the number is the part every
  * occupied state has. Where the box is there too nothing is lost, and a
@@ -38,7 +38,7 @@ export type UnknownReason =
  * confident-looking number with no measurement behind it.
  *
  * `unknown` comes in two shapes, and the split is a compile-time check rather
- * than a style. A cause **this page** found is one of a closed set, so
+ * than a style. A cause this page found is one of a closed set, so
  * `sensorMarker.ts` words each one in a total `Record` and a new cause is a
  * type error there. A cause an occupancy service found is the service's, which
  * this page cannot enumerate and must not reword, so it arrives as

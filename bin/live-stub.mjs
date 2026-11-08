@@ -2,7 +2,7 @@
 /**
  * A stand-in occupancy service, for checking the live view by hand (#331).
  *
- * It serves the built page **and** the live contract from one origin, because
+ * It serves the built page and the live contract from one origin, because
  * that is what the page expects: `/live` is on the page's own origin and there
  * is no setting for anything else. One command therefore puts both on the LAN,
  * which is what the check on a real iPhone or iPad needs — see
@@ -53,32 +53,32 @@ const CHURN = flag('--churn');
  *
  * Embedded rather than checked in beside this file, so the whole stand-in is
  * one file somebody can read, and real rather than synthesised because the
- * point of the check is that a device **decodes** what the service sends.
+ * point of the check is that a device decodes what the service sends.
  * Nothing moves in the picture; what moves is the car in `l0`, which is what
  * flips the sensors and is the thing worth watching.
  */
 const FRAME_JPEG = Buffer.from(
-    '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' +
-    'AAAAAAAAAAAAAAAAAAAAAAAAP//Z',
+  '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' +
+  'AAAAAAAAAAAAAAAAAAAAAAAAP//Z',
 
   'base64'
 );
@@ -206,10 +206,9 @@ function payload() {
     captured_at: new Date(now).toISOString(),
     l1: l1(),
     l0: {
-      frame_id: frameId(),
-      // A little behind the frame on purpose, so the page's L0 age readout has
-      // something to show.
-      captured_at: new Date(now - 180).toISOString(),
+      // The previous frame, so the page's L0 age readout has something to show.
+      frame_id: `stub-${frameNumber - 1}`,
+      captured_at: new Date(now - Math.round(1000 / FPS)).toISOString(),
       detections: [car()],
     },
   };

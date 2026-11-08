@@ -149,6 +149,20 @@ describe('readLatest', () => {
     expect(payload.l1.Sunknown001).toEqual({ state: 'unknown', reason: 'no frames' });
   });
 
+  it('refuses a frame with no `frame_id`, and a `frame_id` with no frame', async () => {
+    await expect(readLatest(multipartAnswer({ ...FULL, frame_id: null }))).rejects.toThrow(
+      /a frame came with no `frame_id`/
+    );
+    await expect(readLatest(multipartAnswer({ ...NO_FRAME, frame_id: 'f-1' }, null))).rejects.toThrow(
+      /no frame names a `frame_id`/
+    );
+  });
+
+  it('refuses an answer with no frame where a sensor is not unknown', async () => {
+    const answer = multipartAnswer({ ...NO_FRAME, l1: { S1: { state: 'clear' } } }, null);
+    await expect(readLatest(answer)).rejects.toThrow(/not `unknown`/);
+  });
+
   it('refuses a plain JSON answer, which is not the multipart form', async () => {
     await expect(readLatest(jsonAnswer(NO_FRAME))).rejects.toThrow(/application\/json/);
   });
