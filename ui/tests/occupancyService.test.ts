@@ -227,6 +227,7 @@ describe('occupancyService', () => {
         sensors: manifest().layout.sensors,
         resolution: { width: 640, height: 480 },
         dpt: DPT,
+        tracks: [],
       });
 
       const frame = (await source.next())!;
@@ -661,6 +662,112 @@ describe('occupancyService', () => {
       expect(() => source.close()).to.not.throw();
       expect(() => source.close()).to.not.throw();
       expect(asked).toEqual([]);
+    });
+  });
+
+  describe('details (#332)', () => {
+    const PATCH_PARTS = [
+      { name: 'patch-0', bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0]) },
+      { name: 'patch-1', bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1]) },
+    ];
+
+    /** A full answer with patches and a camera line. */
+    function detailed(id = 'f-1') {
+      return {
+        ...payload(id),
+        scores: { [SENSOR_A]: 0.66, [SENSOR_B]: 0.1 },
+        patches: { [SENSOR_A]: 'patch-0', [SENSOR_B]: 'patch-1' },
+        camera: { state: 'ok', rate_fps: 15 },
+      };
+    }
+
+    const withPatches = (id = 'f-1') => multipartAnswer(detailed(id), undefined, PATCH_PARTS);
+
+    it('asks for patches only while told to, from its next request on', async () => {
+      const { source } = await opened([
+        multipartAnswer(payload('f-1')),
+        multipartAnswer(payload('f-2')),
+        multipartAnswer(payload('f-3')),
+      ]);
+
+      await source.next();
+      source.setPatches!(true);
+      await source.next();
+      source.setPatches!(false);
+      await source.next();
+
+      expect(latestAsks()).toEqual([
+        '/live/latest',
+        '/live/latest?after=f-1&patches=1',
+        '/live/latest?after=f-2',
+      ]);
+      source.close();
+    });
+
+    it('hands over the optional fields, and each patch as an object URL', async () => {
+      const { source } = await opened([withPatches()]);
+
+      const frame = (await source.next())!;
+      const { details } = await source.resultFor(frame, { drifted: false, dpt: null });
+
+      // The frame's URL first, then one per patch.
+      expect(created).toEqual(['blob:frame-0', 'blob:frame-1', 'blob:frame-2']);
+      expect(details!.patches).toEqual(
+        new Map([
+          [SENSOR_A, 'blob:frame-1'],
+          [SENSOR_B, 'blob:frame-2'],
+        ])
+      );
+      expect(details!.scores!.get(SENSOR_B)).toBe(0.1);
+      expect(details!.camera).toEqual({ state: 'ok', rate_fps: 15 });
+      source.close();
+    });
+
+    it('releases each patch URL when the next answer arrives, and on leaving', async () => {
+      const { source } = await opened([withPatches('f-1'), withPatches('f-2')]);
+
+      await source.next();
+      await source.next();
+      // The first frame (0) and its patches (1, 2) went when the second answer arrived.
+      expect(revoked.sort()).toEqual(['blob:frame-0', 'blob:frame-1', 'blob:frame-2']);
+
+      source.close();
+      expect(revoked.sort()).toEqual(created.sort());
+    });
+
+    it('drops the patches and keeps `camera` on an answer with no frame', async () => {
+      const blind = { ...noFrame(), camera: { state: 'lost' } };
+      const { source } = await opened([withPatches(), multipartAnswer(blind, null)]);
+
+      await source.next();
+      const frame = (await source.next())!;
+      const { details } = await source.resultFor(frame, { drifted: false, dpt: null });
+
+      expect(details).toEqual({ camera: { state: 'lost' } });
+      expect(revoked).toEqual(expect.arrayContaining(['blob:frame-1', 'blob:frame-2']));
+      source.close();
+    });
+
+    it('carries no details, and no patches, on a failed answer', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      const { source } = await opened([withPatches(), errorAnswer(500)]);
+
+      await source.next();
+      const frame = (await source.next())!;
+      const result = await source.resultFor(frame, { drifted: false, dpt: null });
+
+      expect(result.details).toBeUndefined();
+      expect(revoked).toEqual(expect.arrayContaining(['blob:frame-1', 'blob:frame-2']));
+      source.close();
+    });
+
+    it('holds the manifest\'s tracks in its layout', async () => {
+      const track = { nodes: [{ x: 0, y: 0, heading: 0 }, { x: 50, y: 0, heading: 0 }] };
+      manifests = [{ ...manifest(), layout: { ...manifest().layout, tracks: [track] } }];
+      const { source } = await opened();
+
+      expect(source.layout!.tracks).toEqual([track]);
+      source.close();
     });
   });
 

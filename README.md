@@ -52,7 +52,9 @@ serves no service, so it behaves as it always has.
 `bin/live-stub.mjs` is a stand-in for checking that by hand. It is **not** the service — that is
 [rails49/occupancy-service](https://github.com/rails49/occupancy-service), whose `LIVE.md` is the
 contract — but it answers the same three paths with a real JPEG and a car moving along a length of
-track, which is enough to see frames, states, boxes and a frame rate on a device. It serves the
+track, which is enough to see frames, states, boxes and a frame rate on a device. It also sends
+every optional field of `LIVE.md`, with a PNG patch per sensor but one, for the Details panel
+([#332](https://github.com/rails49/occupancy/issues/332)). It serves the
 built page from the same origin, because `/live` is on the page's own origin and there is no setting
 for anything else.
 
@@ -65,7 +67,7 @@ Then open `http://<this machine's IP>:8080/` on the phone or tablet and press Li
 enough: service mode uses no camera, so it needs no secure context. Flags worth knowing:
 `--port`, `--fps`, `--no-frames` (the service saying it has no frame: the last picture should stay
 under "No picture from the camera", every sensor should read `unknown` with the reason, and the rate
-should drop to 0) and `--churn` (drops the event-stream clients every 20 s, as the real service does
+should drop to 0, and Details should keep the camera line, read `lost`) and `--churn` (drops the event-stream clients every 20 s, as the real service does
 after a save, so the page re-reads the manifest).
 
 `occupancy-service`'s conformance check passes against the stand-in, with frames on and off:

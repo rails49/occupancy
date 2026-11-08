@@ -11,7 +11,8 @@
  * It is not the service. The real one is rails49/occupancy-service, and the
  * contract it follows is that project's `LIVE.md`. This answers the same three
  * paths with made-up data so that a person can see frames, sensor states, L0
- * boxes and a frame rate on a device.
+ * boxes and a frame rate on a device, and every optional field of `LIVE.md`
+ * with real PNG patches for the Details panel (#332).
  *
  * Node's http and fs only: no dependency, nothing to install, and nothing here
  * is built or typechecked by the gate.
@@ -30,6 +31,7 @@
 
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
+import { crc32, deflateSync } from 'node:zlib';
 import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -114,6 +116,15 @@ const MANIFEST = {
       // Always `unknown`: the page should show this service's own words for why.
       { id: 'stub-refused', name: 'Refused', x: 160, y: 40 },
     ],
+    // Drawn as a centerline while Details is open (#332).
+    tracks: [
+      {
+        nodes: [
+          { x: 0, y: TRACK_Y, heading: 0 },
+          { x: RESOLUTION.width, y: TRACK_Y, heading: 0 },
+        ],
+      },
+    ],
   },
   camera: { resolution: RESOLUTION },
   images: [],
@@ -141,6 +152,50 @@ const frameId = () => `stub-${frameNumber}`;
 
 /** Each sensor's entry as last sent on `events`, by id. */
 let published = l1();
+/** How many times each sensor's L1 has changed. */
+const changes = Object.fromEntries(MANIFEST.layout.sensors.map(sensor => [sensor.id, 0]));
+/** The last message the `occupancy` profile published per sensor, as `last_messages` holds it. */
+const lastMessages = {};
+
+/** A PNG chunk: length, type, data and CRC. */
+function chunk(type, data) {
+  const head = Buffer.alloc(8);
+  head.writeUInt32BE(data.length, 0);
+  head.write(type, 4, 'latin1');
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(Buffer.concat([head.subarray(4), data])), 0);
+  return Buffer.concat([head, data, crc]);
+}
+
+/** A real PNG, `size` square, one RGB colour with a darker border. */
+function png(size, [r, g, b]) {
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(size, 0);
+  header.writeUInt32BE(size, 4);
+  header.set([8, 2, 0, 0, 0], 8);
+  const rows = [];
+  for (let y = 0; y < size; y++) {
+    const row = [0];
+    for (let x = 0; x < size; x++) {
+      const edge = x < 2 || y < 2 || x >= size - 2 || y >= size - 2;
+      row.push(...(edge ? [r >> 1, g >> 1, b >> 1] : [r, g, b]));
+    }
+    rows.push(Buffer.from(row));
+  }
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', header),
+    chunk('IDAT', deflateSync(Buffer.concat(rows))),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+/** A patch per state, so the panel's patches change as the car passes. */
+const PATCH_PNGS = {
+  occupied: png(48, [220, 60, 60]),
+  clear: png(48, [60, 180, 90]),
+  unknown: png(48, [140, 150, 165]),
+};
 
 setInterval(() => {
   frameNumber++;
@@ -152,6 +207,8 @@ setInterval(() => {
   for (const [id, entry] of Object.entries(now)) {
     if (JSON.stringify(entry) === JSON.stringify(published[id])) continue;
     for (const stream of streams) sendEvent(stream, id, entry);
+    changes[id]++;
+    lastMessages[id] = { occupancy: { message: entry, time: new Date().toISOString() } };
   }
   published = now;
 }, Math.max(20, Math.round(1000 / FPS)));
@@ -194,10 +251,34 @@ function l1() {
   return states;
 }
 
-/** The JSON part of a `latest` answer. */
-function payload() {
+/** Each sensor's made-up P(occupied): how much of the car covers it. */
+function scores() {
+  const box = car();
+  return Object.fromEntries(
+    MANIFEST.layout.sensors.map(sensor => {
+      const off = Math.abs(sensor.x - box.centre.x) / box.length;
+      return [sensor.id, Math.round(Math.max(0.02, Math.min(0.98, 1.5 - 2 * off)) * 100) / 100];
+    })
+  );
+}
+
+/**
+ * The JSON part of a `latest` answer, with every optional field.
+ *
+ * @param patchIds the sensors whose patch goes in this answer, in part order;
+ *                 empty unless `?patches=1` was asked.
+ */
+function payload(patchIds) {
+  // What an answer with no frame still carries. `LIVE.md`: `last_messages`
+  // and `drift` do not come from the served frame; `camera` reports the
+  // camera, which is what says it is lost.
+  const optional = {
+    last_messages: lastMessages,
+    camera: NO_FRAMES ? { state: 'lost' } : { state: 'ok', rate_fps: FPS, frame_age_ms: 12 },
+    drift: NO_FRAMES ? { unmeasured: 'no frames' } : { px: 1.5, tolerance_px: 9.75, past: false },
+  };
   if (NO_FRAMES) {
-    return { version: 1, frame_id: null, captured_at: null, l1: l1() };
+    return { version: 1, frame_id: null, captured_at: null, l1: l1(), ...optional };
   }
   const now = Date.now();
   return {
@@ -211,13 +292,24 @@ function payload() {
       captured_at: new Date(now - Math.round(1000 / FPS)).toISOString(),
       detections: [car()],
     },
+    scores: scores(),
+    threshold: 0.5,
+    ...(patchIds.length > 0
+      ? { patches: Object.fromEntries(patchIds.map((id, i) => [id, `patch-${i}`])) }
+      : {}),
+    changes,
+    timings: { capture_ms: 2.5, decode_ms: 11, cut_ms: 1.25, classify_ms: 30, rate_fps: FPS },
+    ...optional,
   };
 }
 
 const BOUNDARY = 'liveStubBoundary';
 
-/** One `latest` answer: the `json` part, then the `frame` part where there is one. */
-function writeMultipart(res, json, frame) {
+/**
+ * One `latest` answer: the `json` part, the `frame` part where there is one,
+ * then each patch as `patch-0`, `patch-1`, ... in the order `json.patches` names them.
+ */
+function writeMultipart(res, json, frame, patchPngs = []) {
   const parts = [
     Buffer.from(
       `--${BOUNDARY}\r\nContent-Disposition: form-data; name="json"\r\n` +
@@ -231,6 +323,16 @@ function writeMultipart(res, json, frame) {
           'Content-Type: image/jpeg\r\n\r\n'
       ),
       frame,
+      Buffer.from('\r\n')
+    );
+  }
+  for (const [i, bytes] of patchPngs.entries()) {
+    parts.push(
+      Buffer.from(
+        `--${BOUNDARY}\r\nContent-Disposition: form-data; name="patch-${i}"; filename="patch-${i}.png"\r\n` +
+          'Content-Type: image/png\r\n\r\n'
+      ),
+      bytes,
       Buffer.from('\r\n')
     );
   }
@@ -275,10 +377,22 @@ function nextFrame(req) {
  * then answer with what there is. With no frames, wait about 1 s and answer
  * with only the `json` part.
  */
-async function latest(req, res, after) {
+async function latest(req, res, after, patches) {
   if (NO_FRAMES || after === frameId()) await nextFrame(req);
   if (res.writableEnded || req.destroyed) return;
-  writeMultipart(res, payload(), NO_FRAMES ? null : FRAME_JPEG);
+  if (NO_FRAMES) {
+    writeMultipart(res, payload([]), null);
+    return;
+  }
+  // `stub-refused` has no patch, so its cell stays empty.
+  const states = l1();
+  const patchIds = patches ? Object.keys(states).filter(id => id !== 'stub-refused') : [];
+  writeMultipart(
+    res,
+    payload(patchIds),
+    FRAME_JPEG,
+    patchIds.map(id => PATCH_PNGS[states[id].state])
+  );
 }
 
 /** One sensor's L1 entry on `events`, with its id in `sensor`. */
@@ -353,7 +467,7 @@ const server = createServer((req, res) => {
       writeJson(res, MANIFEST);
       return;
     case '/live/latest':
-      void latest(req, res, url.searchParams.get('after'));
+      void latest(req, res, url.searchParams.get('after'), url.searchParams.get('patches') === '1');
       return;
     case '/live/events':
       events(res);

@@ -1,12 +1,20 @@
-import { describe, it, expect, vi, beforeEach, onTestFinished } from 'vitest';
+import { describe, it, expect, vi, afterAll, afterEach, beforeAll, beforeEach, onTestFinished } from 'vitest';
 import { fixture, html } from '@open-wc/testing';
 import { R49Archive } from '@rails49/r49';
 import type { Detection } from '@rails49/detector';
 import '../src/rr-live-view.js';
 import { RRLiveView } from '../src/rr-live-view.js';
 import { RRStatsBar } from '../src/rr-stats-bar.js';
-import type { FrameSource, ResultContext, ResultSource, SourceFrame } from '../src/liveSources.js';
+import type {
+  FrameSource,
+  ResultContext,
+  ResultSource,
+  ServiceDetails,
+  SourceFrame,
+} from '../src/liveSources.js';
 import type { SensorState } from '../src/occupancy.js';
+import { occupancyService } from '../src/occupancyService.js';
+import { jsonAnswer, multipartAnswer, useNodeFileGlobals } from './liveFixture.js';
 
 // The live view against **fake** sources (#330), which is the half
 // `rr-live-view.test.ts` cannot reach: that file drives the camera and the
@@ -287,10 +295,19 @@ describe('rr-live-view with sources of its own', () => {
 
   describe('a source that brings its own frames and its own layout (#331)', () => {
     const SENSORS = [{ id: 'Sservice001', x: 10, y: 20 }];
+    const TRACKS = [
+      {
+        nodes: [
+          { x: 0, y: 20, heading: 0 },
+          { x: 100, y: 20, heading: 0 },
+        ],
+      },
+    ];
     const LAYOUT = {
       sensors: SENSORS,
       resolution: { width: 640, height: 480 },
       dpt: 20,
+      tracks: TRACKS,
     };
 
     /**
@@ -306,6 +323,7 @@ describe('rr-live-view with sources of its own', () => {
         l0Age?: number;
         notice?: string;
         states?: ReadonlyMap<string, SensorState>;
+        details?: ServiceDetails;
       }[],
       { openError = null as string | null, layoutLate = false } = {}
     ) {
@@ -315,6 +333,11 @@ describe('rr-live-view with sources of its own', () => {
       let layout: typeof LAYOUT | null = layoutLate ? null : LAYOUT;
       const source = {
         asked: 0,
+        /** Each `setPatches` call, in order. */
+        patches: [] as boolean[],
+        setPatches(on: boolean) {
+          source.patches.push(on);
+        },
         stream: null as MediaStream | null,
         settings: {} as MediaTrackSettings,
         get layout() {
@@ -355,6 +378,7 @@ describe('rr-live-view with sources of its own', () => {
             ...(answer.detections !== undefined ? { detections: answer.detections } : {}),
             ...(answer.l0Age !== undefined ? { l0Age: answer.l0Age } : {}),
             ...(answer.notice !== undefined ? { notice: answer.notice } : {}),
+            ...(answer.details !== undefined ? { details: answer.details } : {}),
             sensorStates: answer.states ?? new Map<string, SensorState>(),
           };
         },
@@ -544,6 +568,217 @@ describe('rr-live-view with sources of its own', () => {
       expect(stats.alignment).to.be.null;
       expect(stats.alignmentTolerance).to.be.null;
     });
+
+    describe('Details (#332)', () => {
+      const detailsButton = (el: RRLiveView) =>
+        [...el.shadowRoot!.querySelectorAll('button')].find(b => b.textContent!.trim() === 'Details');
+      const panel = (el: RRLiveView) => el.shadowRoot!.querySelector('rr-service-details');
+
+      it('opens a panel with what the service sent, asking for patches while it is open', async () => {
+        const states = new Map<string, SensorState>([['Sservice001', { state: 'clear' }]]);
+        const details: ServiceDetails = { scores: new Map([['Sservice001', 0.1]]) };
+        const source = fakeService([{ src: 'blob:one', states, details }]);
+
+        const el = await mount(source);
+        await waitFor(el, () => source.asked > 0);
+        expect(panel(el)).to.be.null;
+        expect(detailsButton(el)!.getAttribute('aria-pressed')).toBe('false');
+
+        detailsButton(el)!.click();
+        await el.updateComplete;
+        expect(source.patches).toEqual([false, true]);
+        expect(detailsButton(el)!.getAttribute('aria-pressed')).toBe('true');
+        expect(panel(el)!.details).toBe(details);
+        expect(panel(el)!.sensors).toEqual(SENSORS);
+        expect(panel(el)!.states).toBe(states);
+
+        detailsButton(el)!.click();
+        await el.updateComplete;
+        expect(source.patches).toEqual([false, true, false]);
+        expect(panel(el)).to.be.null;
+      });
+
+      it('draws the tracks only while the panel is open', async () => {
+        const source = fakeService([{ src: 'blob:one' }]);
+
+        const el = await mount(source);
+        const viewer = el.shadowRoot!.querySelector('rr-viewer')!;
+        await waitFor(el, () => source.asked > 0);
+        expect(viewer.tracks).toEqual([]);
+
+        detailsButton(el)!.click();
+        await el.updateComplete;
+        expect(viewer.tracks).toEqual(TRACKS);
+
+        detailsButton(el)!.click();
+        await el.updateComplete;
+        expect(viewer.tracks).toEqual([]);
+      });
+
+      it('is closed each time the view opens', async () => {
+        const source = fakeService([{ src: 'blob:one' }]);
+
+        const first = await mount(source);
+        await waitFor(first, () => source.asked > 0);
+        detailsButton(first)!.click();
+        first.remove();
+
+        const second = await mount(source);
+        await waitFor(second, () => source.asked > 1);
+        expect(panel(second)).to.be.null;
+        // The same object, so it is told to stop asking for patches.
+        expect(source.patches.at(-1)).toBe(false);
+      });
+    });
+  });
+
+  describe('Details over a service\'s multipart answers (#332)', () => {
+    // The real `occupancyService` under the view, with `fetch` stubbed by
+    // multipart bodies built byte by byte, so each field travels the whole
+    // way: `readLatest`, the source's object URLs, the view, the panel.
+    const fileGlobals = useNodeFileGlobals();
+    beforeAll(() => fileGlobals.install());
+    afterAll(() => fileGlobals.restore());
+
+    const ID = 'C3"A';
+    const TRACK = { nodes: [{ x: 0, y: 20, heading: 0 }, { x: 100, y: 20, heading: 0 }] };
+    const MANIFEST = {
+      version: 4,
+      layout: {
+        name: 'Served',
+        scale: 'N',
+        calibration: {
+          points: [
+            { px: { x: 0, y: 0 }, world: { x: 0, y: 0, z: 0 } },
+            { px: { x: 100, y: 0 }, world: { x: 10, y: 0, z: 0 } },
+          ],
+        },
+        sensors: [
+          { id: ID, x: 10, y: 20 },
+          { id: 'C3.B', x: 60, y: 20 },
+        ],
+        tracks: [TRACK],
+      },
+      camera: { resolution: { width: 640, height: 480 } },
+      images: [],
+    };
+
+    class QuietEventSource {
+      onopen = null;
+      onerror = null;
+      close() {}
+    }
+
+    let asked: string[];
+    let extra: Record<string, unknown>;
+    /** The spies this block makes, restored one by one: `vi.restoreAllMocks` would also strip `setup.ts`'s `ResizeObserver`. */
+    let spies: { mockRestore(): void }[];
+
+    beforeEach(() => {
+      asked = [];
+      extra = {};
+      let frame = 0;
+      vi.stubGlobal('EventSource', QuietEventSource);
+      let made = 0;
+      spies = [
+        vi.spyOn(URL, 'createObjectURL').mockImplementation(() => `blob:made-${made++}`),
+        vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {}),
+        vi.spyOn(console, 'warn').mockImplementation(() => {}),
+      ];
+      HTMLImageElement.prototype.decode = () => Promise.resolve();
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (url: string) => {
+          asked.push(url);
+          if (url.endsWith('manifest.json')) return jsonAnswer(MANIFEST);
+          // Paced like `after` at a service, so the loop does not spin.
+          await new Promise(resolve => setTimeout(resolve, 5));
+          const patches = url.includes('patches=1');
+          const payload = {
+            version: 1,
+            frame_id: `f-${++frame}`,
+            captured_at: '2026-11-05T10:00:01.500Z',
+            l1: { [ID]: { state: 'clear' }, 'C3.B': { state: 'clear' } },
+            scores: { [ID]: 0.02 },
+            threshold: 0.45,
+            changes: { [ID]: 7 },
+            timings: { classify_ms: 31, rate_fps: 14.5 },
+            camera: { state: 'ok', frame_age_ms: 20 },
+            drift: { px: 2, tolerance_px: 9.75, past: false },
+            last_messages: { [ID]: { occupancy: { message: 'ON', time: '2026-11-05T10:15:30Z' } } },
+            // `C3.B` names a part the answer lacks, so its cell is empty.
+            ...(patches ? { patches: { [ID]: 'patch-0', 'C3.B': 'patch-9' } } : {}),
+            ...extra,
+          };
+          const parts = patches ? [{ name: 'patch-0', bytes: new Uint8Array([1, 2, 3]) }] : [];
+          return multipartAnswer(payload, undefined, parts);
+        })
+      );
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      for (const spy of spies) spy.mockRestore();
+    });
+
+    const mountService = () => {
+      const service = occupancyService('/live');
+      return fixture<RRLiveView>(
+        html`<rr-live-view .sources=${{ frames: service, results: service }}></rr-live-view>`
+      );
+    };
+    const latest = () => asked.filter(url => url.includes('/latest'));
+    const patchImg = (el: RRLiveView) =>
+      el.shadowRoot!.querySelector('rr-service-details')?.shadowRoot!.querySelector('img') ?? null;
+
+    it('shows each sensor\'s patch and fields while open, and asks for patches only then', async () => {
+      const el = await mountService();
+      await waitFor(el, () => latest().length > 1);
+      expect(latest().some(url => url.includes('patches=1'))).toBe(false);
+
+      el.shadowRoot!.querySelector<HTMLButtonElement>('.details-bar button')!.click();
+      await waitFor(el, () => patchImg(el) !== null);
+
+      const panel = el.shadowRoot!.querySelector('rr-service-details')!.shadowRoot!;
+      expect(patchImg(el)!.getAttribute('src')).to.match(/^blob:made-/);
+      // One patch: `C3.B`'s part is missing.
+      expect(panel.querySelectorAll('img')).toHaveLength(1);
+      const text = panel.textContent!.replace(/\s+/g, ' ');
+      for (const sent of [
+        '0.02', // scores
+        '0.45', // threshold
+        '7', // changes
+        'classify 31.0 ms',
+        'service 14.5 fps',
+        'ok', // camera
+        '20 ms', // frame age
+        '2.0 px, within 9.8 px',
+        'occupancy: ON',
+      ]) {
+        expect(text).to.contain(sent);
+      }
+      expect(el.shadowRoot!.querySelector('rr-viewer')!.tracks).toEqual([TRACK]);
+
+      el.shadowRoot!.querySelector<HTMLButtonElement>('.details-bar button')!.click();
+      await el.updateComplete;
+      const closedAt = latest().length;
+      await waitFor(el, () => latest().length > closedAt + 1);
+      // One request may have left before the click; none after it asks.
+      expect(latest().slice(closedAt + 1).some(url => url.includes('patches=1'))).toBe(false);
+    });
+
+    it('keeps L1 on the viewer when an optional field has the wrong shape', async () => {
+      extra = { scores: 'all of them' };
+      const el = await mountService();
+      const viewer = el.shadowRoot!.querySelector('rr-viewer')!;
+      await waitFor(el, () => viewer.sensorStates!.size > 0);
+
+      expect(viewer.sensorStates!.get(ID)).toEqual({ state: 'clear' });
+      el.shadowRoot!.querySelector<HTMLButtonElement>('.details-bar button')!.click();
+      await waitFor(el, () => patchImg(el) !== null);
+      const text = el.shadowRoot!.querySelector('rr-service-details')!.shadowRoot!.textContent!;
+      expect(text).to.not.contain('Score');
+    });
   });
 
   it('runs on the camera and the shipped model when given none', async () => {
@@ -553,5 +788,9 @@ describe('rr-live-view with sources of its own', () => {
     expect(loadDetector).toHaveBeenCalledTimes(1);
     const viewer = el.shadowRoot!.querySelector('rr-viewer')!;
     expect(viewer.stream).to.not.be.null;
+    // Details is a service's (#332): no button, no panel, no tracks.
+    expect(el.shadowRoot!.querySelector('.details-bar')).to.be.null;
+    expect(el.shadowRoot!.querySelector('rr-service-details')).to.be.null;
+    expect(viewer.tracks).toEqual([]);
   });
 });

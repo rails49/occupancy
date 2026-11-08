@@ -745,6 +745,12 @@ to a different frame than the picture under it. The rules it keeps:
   `ResultSource.layout` reports. So an unsaved edit in the editor cannot move what the live view
   draws, and a sensor the manifest does not have is not drawn and so is not answered.
 
+**Details shows only the current answer** (#332). While the panel is open the object asks with
+`patches=1`, and each result carries the answer's optional fields as `details`, with every patch as
+an object URL that the next answer releases. A field the service did not send, or sent in the wrong
+shape, has no line or column. An answer with no frame carries no patches and keeps what it sent,
+such as `camera`; a failed answer carries no details at all.
+
 **The service is left behind by New and Open, for good.** Both pass through `rr-app._open`, and
 `_leftService` also ignores a manifest answer that arrives afterwards. Only a reload finds the
 service again.
@@ -889,9 +895,11 @@ implementation:
 
 ## What the three views draw, and why the viewer holds all of them
 
-`rr-viewer` takes the editor's authored objects (`calibrationPoints`, `sensors`, `cars`), the
-live view's per-frame answers (`detections` for L0, `sensorStates` for L1), and the diagnostics
-view's per-object inks (`carInks`, `detectionInks`) — and computes none of it.
+`rr-viewer` takes the editor's authored objects (`calibrationPoints`, `sensors`, `cars`,
+`tracks`), the live view's per-frame answers (`detections` for L0, `sensorStates` for L1), and the
+diagnostics view's per-object inks (`carInks`, `detectionInks`) — and computes none of it. The live
+view draws tracks only in service mode while Details is open, as centerlines from the service's
+manifest (#332); local mode and a closed panel draw none.
 Rules the code depends on:
 
 * **The inks are parallel arrays, and a short one reads as "no override".** So the live view passes

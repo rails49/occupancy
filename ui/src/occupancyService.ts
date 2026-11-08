@@ -25,6 +25,7 @@ import type {
   FrameResult,
   FrameSource,
   ResultSource,
+  ServiceDetails,
   SourceFrame,
   SourceLayout,
 } from './liveSources.js';
@@ -39,7 +40,7 @@ import {
   manifestUrl,
   readLatest,
 } from './liveContract.js';
-import type { LiveAnswer, LivePayload, LiveSensorState } from './liveContract.js';
+import type { LiveAnswer, LiveDetails, LivePayload, LiveSensorState } from './liveContract.js';
 
 /** How long to wait after a failed `latest` before asking again. */
 const FAILED_RETRY_MS = 1000;
@@ -75,6 +76,10 @@ export function occupancyService(base: string = LIVE_BASE): FrameSource & Result
   let lastId: string | null = null;
   /** The object URL the view is showing, which the next frame releases. */
   let shown: string | null = null;
+  /** Whether to ask for patches, from the next request on (#332). */
+  let patches = false;
+  /** The patch URLs of the last answer, which the next answer releases. */
+  let patchUrls: string[] = [];
   /** The last decoded picture, kept so a turn with no new frame can hand it over again. */
   let picture: SourceFrame | null = null;
   /** The answers that came with the frame `next()` just handed over. */
@@ -95,6 +100,26 @@ export function occupancyService(base: string = LIVE_BASE): FrameSource & Result
     if (url !== null) URL.revokeObjectURL(url);
   }
 
+  /** Release the last answer's patch URLs. */
+  function releasePatches() {
+    for (const url of patchUrls) URL.revokeObjectURL(url);
+    patchUrls = [];
+  }
+
+  /** One answer's details, with its patches as object URLs in place of the last answer's. */
+  function detailsOf(live: LiveDetails): ServiceDetails {
+    releasePatches();
+    const { patches: parts, ...fields } = live;
+    if (parts === undefined) return fields;
+    const urls = new Map<string, string>();
+    for (const [id, blob] of parts) {
+      const url = URL.createObjectURL(blob);
+      patchUrls.push(url);
+      urls.set(id, url);
+    }
+    return { ...fields, patches: urls };
+  }
+
   /** Read the service's manifest and hold what the view draws from it. */
   async function readManifest(): Promise<void> {
     const response = await fetch(manifestUrl(base));
@@ -106,6 +131,7 @@ export function occupancyService(base: string = LIVE_BASE): FrameSource & Result
       sensors: manifest.layout.sensors ?? [],
       resolution: manifest.camera.resolution,
       dpt: getDPT(manifest),
+      tracks: manifest.layout.tracks ?? [],
     };
   }
 
@@ -124,7 +150,7 @@ export function occupancyService(base: string = LIVE_BASE): FrameSource & Result
       controller.abort();
     }, LATEST_TIMEOUT_MS);
     try {
-      const response = await fetch(latestUrl(base, lastId), { signal: controller.signal });
+      const response = await fetch(latestUrl(base, lastId, patches), { signal: controller.signal });
       return { answer: await readLatest(response) };
     } catch (err) {
       if (timedOut) return { failed: `no answer in ${LATEST_TIMEOUT_MS / 1000} s` };
@@ -192,6 +218,7 @@ export function occupancyService(base: string = LIVE_BASE): FrameSource & Result
   function failed(detail: string): SourceFrame {
     console.error(`Cannot read the occupancy service at ${base}: ${detail}`);
     pause = FAILED_RETRY_MS;
+    releasePatches();
     pending = unreachable();
     return samePicture();
   }
@@ -281,6 +308,7 @@ export function occupancyService(base: string = LIVE_BASE): FrameSource & Result
     events = null;
     release(shown);
     shown = null;
+    releasePatches();
     picture = null;
     pending = null;
     pause = 0;
@@ -318,6 +346,10 @@ export function occupancyService(base: string = LIVE_BASE): FrameSource & Result
       shutdown();
     },
 
+    setPatches(on: boolean) {
+      patches = on;
+    },
+
     // The view calls this even where `open()` never ran (#341).
     close() {
       shutdown();
@@ -336,13 +368,17 @@ export function occupancyService(base: string = LIVE_BASE): FrameSource & Result
         if (!running) return null;
         if ('failed' in result) return failed(result.failed);
 
-        const { payload, frame } = result.answer;
+        const { payload, frame, details } = result.answer;
 
         if (frame === null) {
           // The service has no frame. `LIVE.md` has it wait about 1 s before
           // answering so, which paces this loop. The picture stays with no
           // boxes, and each sensor carries the service's reason.
-          pending = { sensorStates: answersFor(payload).sensorStates, notice: NO_PICTURE };
+          pending = {
+            sensorStates: answersFor(payload).sensorStates,
+            notice: NO_PICTURE,
+            details: detailsOf(details),
+          };
           return samePicture();
         }
 
@@ -361,7 +397,7 @@ export function occupancyService(base: string = LIVE_BASE): FrameSource & Result
         }
 
         lastId = payload.frame_id;
-        pending = answersFor(payload);
+        pending = { ...answersFor(payload), details: detailsOf(details) };
         return decoded;
       }
       return null;

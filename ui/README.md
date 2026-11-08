@@ -60,9 +60,11 @@ rr-app                          ← shell: owns the editing session and the view
 │   └── rr-context-menu         ← right-click verbs on one object (sl-menu)
 ├── rr-live-view                ← live mode; owns the L0→L1 loop, over a frame and a result source
 │   ├── rr-stats-bar            ← FPS / cars / occupied / inference / L0 age / drift overlay
-│   └── rr-viewer               ← SAME component, video source instead of img
-│       ├── sensorMarker.ts     ← the diamond, coloured by occupied / clear / unknown
-│       └── carMarker.ts        ← renderDetection: the dashed L0 box
+│   ├── rr-viewer               ← SAME component, video source instead of img
+│   │   ├── sensorMarker.ts     ← the diamond, coloured by occupied / clear / unknown
+│   │   ├── carMarker.ts        ← renderDetection: the dashed L0 box
+│   │   └── trackMarker.ts      ← centerlines, while Details is open in service mode
+│   └── rr-service-details      ← service mode's Details panel: a service's fields and patches
 └── rr-diagnostics-view         ← diagnostics mode; sweeps the archive, owns the results
     ├── rr-diagnostics-report   ← scorecard, sortable per-image table, crop strip
     │   └── rr-viewer           ← SAME component, one crop per finding (zoom rect)
@@ -160,6 +162,7 @@ rr-app                          ← shell: owns the editing session and the view
 > [#326]: https://github.com/rails49/occupancy/issues/326
 > [#330]: https://github.com/rails49/occupancy/issues/330
 > [#331]: https://github.com/rails49/occupancy/issues/331
+> [#332]: https://github.com/rails49/occupancy/issues/332
 > [#333]: https://github.com/rails49/occupancy/issues/333
 > [#335]: https://github.com/rails49/occupancy/issues/335
 > [#336]: https://github.com/rails49/occupancy/issues/336
@@ -447,7 +450,7 @@ image pixel coordinates.
 | `detections` | `readonly Detection[]` | L0 for this frame: dashed oriented boxes at the model's **own** predicted width. Empty in the editor |
 | `cars` | `readonly CarLabel[]` | Car spans to draw: a chord inside its width rectangle. Per **image**, so switching images swaps the whole list; empty in the live view |
 | `pendingCar` | `PendingCar \| null` | The **rubber band** — `{ anchor, to }` for the chain in flight. The one thing here that is not in the manifest; empty in the live view |
-| `tracks` | `readonly Track[]` | The layout's tracks ([#284]), drawn under everything else. Per layout, so the same on every image; empty in the live view |
+| `tracks` | `readonly Track[]` | The layout's tracks ([#284]), drawn under everything else. Per layout, so the same on every image. The live view passes the service's tracks while Details is open ([#332]), and none otherwise |
 | `pendingTrack` | `Track \| null` | The line drawn blue ([#324]): the one a track chain is tracing, or one a drag of its click or an insert is changing. The editor leaves that line out of `tracks` |
 | `trackCues` | `TrackCues \| null` | What the track tool draws over the tracks ([#324]): the ring on the traced line's end, hollow end dots when none is traced, and the preview or hover at the pointer. `null` under another tool |
 | `trackDetail` | `boolean` | Whether tracks show their rails and click dots, or the centerline alone. The editor sets it while the track tool is chosen |
@@ -1419,6 +1422,11 @@ An occupancy service is handed in as **both** sources at once, by `rr-app`, with
   recorder, alignment readout, or model and DPT notices, and no Inference row (drift in service mode
   is [#336]). The camera path, with or without an archive, is as it was. A service's `open()`
   failure is still shown, in its own words.
+* **Details** ([#332]): in service mode a Details button stands where the recorder does in local
+  mode. It is closed each time the view opens. While it is open, `rr-service-details` sits below the
+  viewer with the last answer's `FrameResult.details`, the viewer draws the layout's tracks as
+  centerlines, and the result source is told `setPatches(true)`; closing it sends
+  `setPatches(false)`.
 * **This is the occupancy contract, not a demo.** The detector runs **once per frame** — not once per
   sensor — and every sensor is derived from its output by pure geometry, which is `../SPEC.md`
   § Occupancy Output: L1 is a function of L0 and never calls a second model, so it cannot contradict
@@ -1582,6 +1590,35 @@ amber, not red — the refusal banner is already red and carries the button that
 
 ---
 
+### `rr-service-details`
+
+What an occupancy service sent beyond L1, below the live view's viewer while Details is open
+([#332]).
+
+| Property | Type | Description |
+|---|---|---|
+| `details` | `ServiceDetails \| null` | The last answer's optional fields, with each patch as an object URL. `null` after a failed answer |
+| `sensors` | `readonly Sensor[]` | The held manifest's sensors, in order: one row each |
+| `states` | `ReadonlyMap<string, SensorState>` | L1, for the State column |
+| `rate` | `number` | Frames per second the page gets |
+
+**Emits:** nothing.
+
+* Above the table, as far as the service sent them: camera state, the page's rate and the
+  service's, time per stage, frame age, L0 age, threshold and drift (the reading against its
+  tolerance, or why it is unmeasured). The page's rate is always shown.
+* Columns: Sensor (id, and the name when it has one) and State always; Patch, Score, Changes and
+  Last messages only when the service sent `patches`, `scores`, `changes` and `last_messages`. A
+  sensor with no entry has an empty cell.
+* State is `sensorMarker.ts`'s `stateText`, the marker's tooltip wording, so a clear sensor's score
+  shows only in Score.
+* A message's time is shown in local time, or as sent where it does not parse. It is never
+  compared with the page's clock.
+* It scrolls on its own, and the live view gives it `contain: inline-size` so its table cannot
+  widen the view.
+
+---
+
 ### `liveContract.ts`
 
 The live contract an occupancy service answers, read in one place ([#331]). The contract is
@@ -1594,9 +1631,16 @@ or a field of it.
 | `LIVE_VERSION`, `LATEST_TIMEOUT_MS` | The one contract version this reads, and how long a `latest` may take |
 | `manifestUrl`, `latestUrl`, `eventsUrl` | The three paths. `latestUrl(base, after)` sends the previous `frame_id` back **unchanged** |
 | `findService(base?)` | The service check: the manifest `Response` where this origin serves a service, else `null` |
-| `readLatest(response)` | One answer: `{ payload, frame }`, with `frame` `null` for an answer with only the `json` part. Throws `LiveError` |
+| `readLatest(response)` | One answer: `{ payload, frame, details }`, with `frame` `null` for an answer with only the `json` part. Throws `LiveError` |
 | `parsePayload(data)`, `l0AgeMs(payload)` | The JSON part validated field by field, and the L0 age in the service's own clock |
 | `LivePayload`, `LiveSensorState`, `LiveL0`, `LiveAnswer`, `LiveError` | The wire's shapes |
+| `LiveDetails`, `LiveTimings`, `LiveCamera`, `LiveDrift`, `LiveMessage` | The optional fields ([#332]) |
+
+**`details` holds each optional field the answer sent in the right shape.** A field of the wrong
+shape is left out and logged with `console.warn`; L1 and the frame stand. `details.patches` maps a
+sensor id to the part `patches` names for it, because a part name cannot carry any sensor id. A
+sensor with no entry, or whose entry names a missing part, has no patch. `latestUrl(base, after,
+patches)` adds `patches=1`.
 
 **`findService` returns the answer, not a boolean**, so [#333] can read its `ETag` and open the
 manifest it already fetched. **Only a JSON content type counts**: the cloud copy of this page answers
@@ -1647,6 +1691,11 @@ seconds.
 
 **It loads no detector and measures no drift.** The service publishes states this page cannot
 withhold, and drift in service mode is [#336].
+
+**Details** ([#332]). `setPatches(on)` asks for `patches=1` from the next request on. Each result
+carries `details`, the answer's optional fields with each patch as an object URL, and a failed
+answer carries none. The patch URLs are released when the next answer arrives and on leaving. The
+layout also holds the manifest's `tracks`.
 
 ---
 
