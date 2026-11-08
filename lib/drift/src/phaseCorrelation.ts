@@ -184,9 +184,8 @@ export function makeScratch(grid: BlockGrid): CorrelationScratch {
  * zero is a different kind of claim from one placed under a noise floor. The
  * cost is a quantum of one working pixel, scaled back to the reference frame,
  * and it is not always small against the tolerance the UI's
- * `MAX_DRIFT_TRACK_FRACTION` sets — half a track width. On an 8064-px-wide
- * capture of an N-scale layout the quantum is 0.257 of a track width, so that
- * tolerance admits one step and refuses two
+ * `MAX_DRIFT_TRACK_FRACTION` sets. On an 8064-px-wide capture of an N-scale
+ * layout the quantum is 0.257 of a track width
  * (`docs/research/drift-tolerance-measured.md`).
  */
 function blockShift(

@@ -784,29 +784,26 @@ clamps to its own working resolution internally; letting it do that is what keep
 one thing.
 
 **The tolerance is a fraction of a track width, and `maxDriftPx(dpt)` here is the only place that
-multiplies.** `MAX_DRIFT_TRACK_FRACTION` (0.5), a constant beside it, times the layout's DPT — which *is* pixels per
+multiplies.** `MAX_DRIFT_TRACK_FRACTION`, a constant beside it, times the layout's DPT — which *is* pixels per
 track gauge — gives the tolerance in the frame the sensors were authored in. A fraction rather than a
 pixel count because the failure is geometric: occupancy breaks when a sensor stops sitting on the car
 it reads, and both boundaries for that (falling off the box, sliding onto a neighbouring track's car)
-sit near one whole track width, so half a track is the most that can still be read as the pose. The
-same *pixel* count would mean five times as much misalignment at DPT 18 as at DPT 90. `null` DPT
-yields `null` and the verdict is withheld: those sensors already read `unknown` / `no-calibration`,
-and a fabricated tolerance would be a second wrong answer in a quieter voice.
+sit near one whole track width. The same *pixel* count would mean five times as much drift at DPT 18
+as at DPT 90. `null` DPT yields `null` and the verdict is withheld: those sensors already read
+`unknown` / `no-calibration`, and a fabricated tolerance would be a second wrong answer in a quieter
+voice.
 
-**The fraction is a reading, not a derivation.** The geometry above bounds it from above and says
-nothing about where inside that bound to sit. What fixed it is the ceiling rig: one step of the check
-is 0.257 of a track width there, so the 0.25 this replaced sat *below* the smallest non-zero reading
-the check can report, and 18 of 32 frames from a camera nobody had moved were refused. 0.5 admits one
-step and still refuses two. The readings, the derivation and what the session did not measure are in
+**The fraction is measured.** A sweep of the classifier's error against camera shift, and the check's
+readings on 32 photos from a camera nobody moved, set it. Both, and what was not measured, are in
 [`docs/research/drift-tolerance-measured.md`](research/drift-tolerance-measured.md); the value is
 provisional until the occupancy service's check has run
 ([rails49/occupancy-service#12](https://github.com/rails49/occupancy-service/issues/12)).
 
 > This replaced an absolute `max_drift_px` of 0.5 — the check's own quantum. That number conflated a
 > **detection floor** with a **tolerance**: it was unreachable without precision mounting and said
-> nothing about when occupancy actually breaks. A tolerance should sit above what the check can
-> resolve, not on it — and 0.25 of a track width turned out to repeat that mistake on a 48 MP
-> frame, where it fell under the quantum again.
+> nothing about when occupancy actually breaks. The fraction that followed, 0.25 of a track width,
+> was argued from geometry; on a 48 MP frame it sat under one step of the check, and refused 18 of
+> 32 photos from a camera nobody moved (#336).
 
 **`DriftSession` carries one `refName`.** With a single reference, `DriftResult.refIndex` is always 0
 and callers ignore it; what they want to name is the image the measurement was taken against.

@@ -24,13 +24,10 @@ import type { R49Archive } from '@rails49/r49';
  * fraction of one track width (ADR 0020,
  * `docs/adr/0020-only-the-live-view-measures-drift.md`).
  *
- * Why 0.5: a sensor fails when it slides off its car or onto a neighbouring
- * track's, and both sit about one track width away, so half a track width is
- * the most that can still be read as the pose. The number is a reading rather
- * than a derivation — on the ceiling rig one step of the check is 0.257 of a
- * track width, and the tolerance this replaced refused 18 of 32 frames from a
- * camera nobody had touched (`docs/research/drift-tolerance-measured.md`).
- * Provisional: what would settle it is a second rig's readings
+ * Why 0.5: at half a track width of shift the classifier's worst fold keeps
+ * false clear inside a train under 1%, and all 32 photos from a camera nobody
+ * touched read within it (`docs/research/drift-tolerance-measured.md`, #336).
+ * Provisional until the occupancy service's readings on `gleis49`
  * (rails49/occupancy-service#12), which is why the live view's refusal still
  * carries an override.
  */
@@ -50,7 +47,7 @@ export const MAX_DRIFT_TRACK_FRACTION = 0.5;
  * expressed in the frame the sensors were authored in. That is the frame the
  * failure happens in: occupancy breaks when a sensor stops sitting on the car it
  * reads, which is a geometric condition, not a pixel count — the same physical
- * misalignment matters equally at DPT 18 and at DPT 90.
+ * drift matters equally at DPT 18 and at DPT 90.
  *
  * @param dpt the layout's resolution in dots per track. `null` yields `null`:
  *            an uncalibrated layout has no track width to take a fraction of,

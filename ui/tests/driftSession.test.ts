@@ -40,9 +40,7 @@ describe('driftVerdict', () => {
     // The band the readings landed in: a step of the check on the ceiling rig
     // is 0.257 of a track width, so an untouched camera reads around here and
     // the tolerance this replaced refused it.
-    const verdict = driftVerdict(0.3 * DPT, DPT)!;
-    expect(verdict.past).toBe(false);
-    expect(verdict.px).toBeGreaterThan(0.25 * DPT);
+    expect(driftVerdict(0.3 * DPT, DPT)!.past).toBe(false);
   });
 
   it('gives no verdict without a DPT, since there is no track width to take a fraction of', () => {
