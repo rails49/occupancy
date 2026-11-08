@@ -171,7 +171,8 @@ const UNKNOWN_REASONS: Record<UnknownReason, string> = {
 };
 
 /**
- * The state as a tooltip: the word, and for `unknown` what stopped it.
+ * The state in words: the word, and for `unknown` what stopped it. The
+ * marker's tooltip and `rr-service-details`' State column (#332).
  *
  * `occupied` names its evidence — the confidence of whatever answered it — and
  * `clear` deliberately names none. That asymmetry is `SPEC.md` § Confidence
@@ -181,7 +182,7 @@ const UNKNOWN_REASONS: Record<UnknownReason, string> = {
  * `unknown` reads the closed set through {@link UNKNOWN_REASONS} where this page
  * found the cause, and the service's own words where it did not (#331).
  */
-function stateTooltip(state: SensorState): string {
+export function stateText(state: SensorState): string {
   switch (state.state) {
     case 'occupied':
       return `occupied — ${Math.round(state.confidence * 100)}% confidence`;
@@ -234,7 +235,7 @@ export function renderSensor(
       data-sensor-id="${sensor.id}"
       data-state="${state ? state.state : ''}"
     >
-      ${state ? svg`<title>${stateTooltip(state)}</title>` : ''}
+      ${state ? svg`<title>${stateText(state)}</title>` : ''}
       <polygon points="${x},${y - arm} ${x + arm},${y} ${x},${y + arm} ${x - arm},${y}" />
       <circle cx="${x}" cy="${y}" r="${core}" />
       <text

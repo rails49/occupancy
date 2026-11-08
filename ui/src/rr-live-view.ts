@@ -11,6 +11,7 @@ import type {
   FrameSource,
   LiveSources,
   ResultSource,
+  ServiceDetails,
   SourceFrame,
   SourceLayout,
 } from './liveSources.js';
@@ -27,6 +28,7 @@ import { downloadDriftCsv, driftCsvName, driftRow } from './driftRecording.js';
 import type { DriftRow } from './driftRecording.js';
 import './rr-viewer.js';
 import './rr-stats-bar.js';
+import './rr-service-details.js';
 
 import type { RrViewer } from './rr-viewer.js';
 
@@ -93,7 +95,10 @@ const DRIFT_SAMPLE_INTERVAL_MS = 3000;
  *
  * In service mode (sources handed in, no archive, #331) the view runs no drift
  * check and shows no recorder, alignment readout, or model and DPT notices: the
- * service publishes states this page cannot withhold. See `_judging`.
+ * service publishes states this page cannot withhold. See `_judging`. In its
+ * place a Details button opens `rr-service-details` below the viewer, and
+ * while it is open the viewer draws the layout's tracks and the service is
+ * asked for patches (#332).
  *
  * **Properties:** `archive`, `sources`.
  */
@@ -201,6 +206,10 @@ export class RRLiveView extends LitElement {
   @state() private _overrideDrift = false;
   /** When recording started and the drift rows since, or `null` when not recording (#217). */
   @state() private _recording: { started: Date; rows: readonly DriftRow[] } | null = null;
+  /** Whether the Details panel is open (#332). Closed each time the view opens. */
+  @state() private _detailsOpen = false;
+  /** What the service sent beyond L0 and L1 with the last answer, or `null` (#332). */
+  @state() private _details: ServiceDetails | null = null;
 
   @query('rr-viewer') private _viewer!: RrViewer;
 
@@ -243,15 +252,24 @@ export class RRLiveView extends LitElement {
       color: var(--sl-color-danger-800);
     }
 
-    .recorder {
+    .recorder,
+    .details-bar {
       padding: 0.25rem 1rem;
       background: var(--sl-color-neutral-100);
       color: var(--sl-color-neutral-700);
       font-size: 0.9rem;
     }
 
+    /* The table's width must not widen the view: the panel scrolls it. */
+    rr-service-details {
+      flex: 0 1 auto;
+      max-height: 40%;
+      contain: inline-size;
+    }
+
     .notice button,
-    .recorder button {
+    .recorder button,
+    .details-bar button {
       margin-left: 0.75rem;
       padding: 0.15rem 0.6rem;
       font: inherit;
@@ -303,6 +321,8 @@ export class RRLiveView extends LitElement {
     this._frames = this.sources?.frames ?? cameraFrameSource(() => this._viewer);
     this._results =
       this.sources?.results ?? (this.archive ? localModelResultSource(this.archive) : null);
+    this._detailsOpen = false;
+    this._results?.setPatches?.(false);
     await this._frames.start();
     // Left again while the frames were being acquired — the permission prompt
     // is a dialog the user can walk away from. `disconnectedCallback` has
@@ -488,6 +508,20 @@ export class RRLiveView extends LitElement {
     this._recording = null;
   }
 
+  /** Open or close the Details panel, and ask for patches only while it is open. */
+  private _toggleDetails() {
+    this._detailsOpen = !this._detailsOpen;
+    this._results?.setPatches?.(this._detailsOpen);
+  }
+
+  private _renderDetailsButton() {
+    return html`<div class="details-bar">
+      <button aria-pressed=${this._detailsOpen ? 'true' : 'false'} @click=${this._toggleDetails}>
+        Details
+      </button>
+    </div>`;
+  }
+
   private _renderRecorder() {
     const rows = this._recording?.rows.length ?? 0;
     return html`<div class="recorder">
@@ -575,6 +609,7 @@ export class RRLiveView extends LitElement {
       this._l0Age = result.l0Age ?? null;
       // Per answer, so it clears itself when the next one lands.
       this._notice = result.notice ?? null;
+      this._details = result.details ?? null;
       // Absent is "nothing inferred", so the readout keeps the last real
       // measurement rather than dropping to zero for a frame.
       if (result.inference !== undefined) this._inference = result.inference;
@@ -686,6 +721,7 @@ export class RRLiveView extends LitElement {
     const layout = this._sourceLayout;
     const sensors = layout?.sensors ?? manifest?.layout.sensors ?? [];
     const resolution = layout?.resolution ?? manifest?.camera.resolution ?? DEFAULT_RESOLUTION;
+    const showDetails = this._detailsOpen && !this._judging;
 
     return html`
       <rr-stats-bar
@@ -712,7 +748,7 @@ export class RRLiveView extends LitElement {
 
       ${this._judging ? this._renderDriftNotice() : ''}
 
-      ${this._judging ? this._renderRecorder() : ''}
+      ${this._judging ? this._renderRecorder() : this._renderDetailsButton()}
 
       <rr-viewer
         .src=${this._src}
@@ -722,7 +758,17 @@ export class RRLiveView extends LitElement {
         .sensorStates=${this._sensorStates}
         .dpt=${this._dpt}
         .resolution=${resolution}
+        .tracks=${showDetails ? layout?.tracks ?? [] : []}
       ></rr-viewer>
+
+      ${showDetails
+        ? html`<rr-service-details
+            .details=${this._details}
+            .sensors=${sensors}
+            .states=${this._sensorStates}
+            .rate=${this._fps}
+          ></rr-service-details>`
+        : ''}
     `;
   }
 }

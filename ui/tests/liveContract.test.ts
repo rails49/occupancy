@@ -260,3 +260,116 @@ describe('l0AgeMs', () => {
     ).to.be.null;
   });
 });
+
+describe('the optional fields (#332)', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  /** Bytes standing in for a patch image. Never decoded here. */
+  const bytes = (n: number) => new Uint8Array([0x89, 0x50, 0x4e, 0x47, n]);
+
+  /** Every optional field, as `LIVE.md`'s example sends them. */
+  const DETAILED = {
+    ...FULL,
+    scores: { Soccupied01: 0.77, Sclear00001: 0.02 },
+    threshold: 0.5,
+    patches: { Soccupied01: 'patch-0', Sclear00001: 'patch-1' },
+    changes: { Soccupied01: 4, Sclear00001: 0 },
+    timings: { capture_ms: 2.5, decode_ms: 11, cut_ms: 1.25, classify_ms: 30, rate_fps: 14.5 },
+    camera: { state: 'ok', rate_fps: 15, frame_age_ms: 20 },
+    drift: { px: 2, tolerance_px: 9.75, past: false },
+    last_messages: {
+      Soccupied01: {
+        occupancy: { message: { state: 'occupied' }, time: '2026-11-05T10:15:30.140Z' },
+        text: { message: 'ON', time: '2026-11-05T10:15:30.141Z' },
+      },
+    },
+  };
+
+  const PATCHES = [
+    { name: 'patch-0', bytes: bytes(0) },
+    { name: 'patch-1', bytes: bytes(1) },
+  ];
+
+  it('reads each field, and each sensor\'s patch from the part `patches` names', async () => {
+    const { details } = await readLatest(multipartAnswer(DETAILED, undefined, PATCHES));
+
+    expect(details.scores).toEqual(new Map([['Soccupied01', 0.77], ['Sclear00001', 0.02]]));
+    expect(details.threshold).toBe(0.5);
+    expect(details.changes).toEqual(new Map([['Soccupied01', 4], ['Sclear00001', 0]]));
+    expect(details.timings).toEqual(DETAILED.timings);
+    expect(details.camera).toEqual(DETAILED.camera);
+    expect(details.drift).toEqual(DETAILED.drift);
+    expect(details.last_messages!.get('Soccupied01')).toEqual(
+      new Map([
+        ['occupancy', { message: { state: 'occupied' }, time: '2026-11-05T10:15:30.140Z' }],
+        ['text', { message: 'ON', time: '2026-11-05T10:15:30.141Z' }],
+      ])
+    );
+    const patch = details.patches!.get('Sclear00001')!;
+    expect(new Uint8Array(await patch.arrayBuffer())).toEqual(bytes(1));
+    expect(details.patches!.size).toBe(2);
+  });
+
+  it('gives a sensor whose id holds a `"` its own patch', async () => {
+    // A part name cannot carry the id: a browser returns `"` as `%22`.
+    const quoted = { ...BARE, patches: { 'C3"A': 'patch-0', 'C3%22A': 'patch-1' } };
+    const { details } = await readLatest(multipartAnswer(quoted, undefined, PATCHES));
+
+    expect(new Uint8Array(await details.patches!.get('C3"A')!.arrayBuffer())).toEqual(bytes(0));
+    expect(new Uint8Array(await details.patches!.get('C3%22A')!.arrayBuffer())).toEqual(bytes(1));
+  });
+
+  it('gives no patch to a sensor with no entry, or to an entry naming a missing part', async () => {
+    const partial = { ...BARE, patches: { Soccupied01: 'patch-0', Sclear00001: 'patch-9' } };
+    const { details } = await readLatest(multipartAnswer(partial, undefined, PATCHES.slice(0, 1)));
+
+    expect([...details.patches!.keys()]).toEqual(['Soccupied01']);
+  });
+
+  it('reads an answer with no optional fields as none, and logs nothing', async () => {
+    const warned = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { details } = await readLatest(multipartAnswer(BARE));
+
+    expect(details).toEqual({});
+    expect(warned).not.toHaveBeenCalled();
+  });
+
+  it('reads drift that could not be measured, with its reason', async () => {
+    const { details } = await readLatest(multipartAnswer({ ...BARE, drift: { unmeasured: 'no reference' } }));
+    expect(details.drift).toEqual({ unmeasured: 'no reference' });
+  });
+
+  it('counts a field of the wrong shape as absent, logs it, and keeps L1 and the frame', async () => {
+    const warned = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const wrong: [string, unknown][] = [
+      ['scores', { Soccupied01: 1.5 }],
+      ['threshold', '0.5'],
+      ['patches', { Soccupied01: 7 }],
+      ['changes', { Soccupied01: 1.5 }],
+      ['timings', { decode_ms: -1 }],
+      ['camera', { state: 'sleeping' }],
+      ['drift', { px: 2 }],
+      ['drift', { unmeasured: '' }],
+      ['last_messages', { Soccupied01: { occupancy: { message: 7, time: 'now' } } }],
+      ['last_messages', { Soccupied01: [] }],
+    ];
+    for (const [field, value] of wrong) {
+      warned.mockClear();
+      const { payload, frame, details } = await readLatest(
+        multipartAnswer({ ...FULL, [field]: value }, undefined, PATCHES)
+      );
+
+      expect(details, field).toEqual({});
+      expect(warned, field).toHaveBeenCalledOnce();
+      expect(String(warned.mock.calls[0][0]), field).toContain(field);
+      expect(payload.l1.Soccupied01).toEqual({ state: 'occupied', confidence: 0.77 });
+      expect(frame).to.not.be.null;
+    }
+  });
+
+  it('asks for patches only when told to', () => {
+    expect(latestUrl(LIVE_BASE, null, true)).toBe('/live/latest?patches=1');
+    expect(latestUrl(LIVE_BASE, 'f-7', true)).toBe('/live/latest?after=f-7&patches=1');
+    expect(latestUrl(LIVE_BASE, 'f-7', false)).toBe('/live/latest?after=f-7');
+  });
+});

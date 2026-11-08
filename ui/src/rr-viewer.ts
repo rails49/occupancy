@@ -448,8 +448,8 @@ export class RrViewer extends LitElement {
    */
   @property({ attribute: false }) pendingCar: PendingCar | null = null;
   /**
-   * Tracks (#284). Per layout, so the same on every image. Empty in
-   * the live view.
+   * Tracks (#284). Per layout, so the same on every image. The live view
+   * passes them only while its Details panel is open (#332).
    */
   @property({ attribute: false }) tracks: readonly Track[] = [];
   /**

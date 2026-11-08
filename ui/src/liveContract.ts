@@ -61,6 +61,56 @@ export interface LivePayload {
   readonly l0?: LiveL0;
 }
 
+/** `timings`: milliseconds per stage and rates, any of them. The `detect_ms` group comes with a detector. */
+export interface LiveTimings {
+  readonly capture_ms?: number;
+  readonly decode_ms?: number;
+  readonly cut_ms?: number;
+  readonly classify_ms?: number;
+  readonly rate_fps?: number;
+  readonly detect_ms?: number;
+  readonly l0_rate_fps?: number;
+  readonly l0_age_ms?: number;
+}
+
+/** `camera`: the service's camera, any of these. */
+export interface LiveCamera {
+  readonly state?: 'ok' | 'lost';
+  readonly rate_fps?: number;
+  readonly frame_age_ms?: number;
+}
+
+/** `drift`: a reading against its tolerance, or why there is none. `px` is in the reference image's pixels. */
+export type LiveDrift =
+  | { readonly px: number; readonly tolerance_px: number; readonly past: boolean }
+  | { readonly unmeasured: string };
+
+/** One message a profile last published for a sensor. `time` is the service's clock. */
+export interface LiveMessage {
+  readonly message: string | Readonly<Record<string, unknown>>;
+  readonly time: string;
+}
+
+/**
+ * The optional fields of the JSON part other than `l0` (#332), as `LIVE.md` §
+ * Optional fields states them. A field the service did not send is absent, and
+ * so is one of the wrong shape. Maps are keyed by sensor id.
+ *
+ * `patches` holds each sensor's patch part itself, not its name. A sensor with
+ * no entry, or whose entry names a part the answer lacks, has none.
+ */
+export interface LiveDetails {
+  readonly scores?: ReadonlyMap<string, number>;
+  readonly threshold?: number;
+  readonly patches?: ReadonlyMap<string, Blob>;
+  readonly changes?: ReadonlyMap<string, number>;
+  readonly timings?: LiveTimings;
+  readonly camera?: LiveCamera;
+  readonly drift?: LiveDrift;
+  /** Sensor id to profile name to its last message. */
+  readonly last_messages?: ReadonlyMap<string, ReadonlyMap<string, LiveMessage>>;
+}
+
 /** A `latest` answer: the JSON part, and the frame where there was one. */
 export interface LiveAnswer {
   readonly payload: LivePayload;
@@ -69,6 +119,8 @@ export interface LiveAnswer {
    * which is how the service says it has no frame to send.
    */
   readonly frame: Blob | null;
+  /** The optional fields, each absent where not sent or of the wrong shape. */
+  readonly details: LiveDetails;
 }
 
 /** An answer this page refuses to read, with what was wrong with it. */
@@ -119,11 +171,20 @@ export function manifestUrl(base: string = LIVE_BASE): string {
   return `${base}/archive/manifest.json`;
 }
 
-/** Where to ask for the next frame. `after` is the previous answer's `frame_id`, sent back unchanged. */
-export function latestUrl(base: string = LIVE_BASE, after: string | null = null): string {
-  return after === null
-    ? `${base}/latest`
-    : `${base}/latest?after=${encodeURIComponent(after)}`;
+/**
+ * Where to ask for the next frame. `after` is the previous answer's
+ * `frame_id`, sent back unchanged; `patches` asks for the patch parts.
+ */
+export function latestUrl(
+  base: string = LIVE_BASE,
+  after: string | null = null,
+  patches = false
+): string {
+  const query = [
+    ...(after === null ? [] : [`after=${encodeURIComponent(after)}`]),
+    ...(patches ? ['patches=1'] : []),
+  ];
+  return query.length === 0 ? `${base}/latest` : `${base}/latest?${query.join('&')}`;
 }
 
 /** Where the service's event stream lives. */
@@ -169,7 +230,8 @@ export async function readLatest(response: Response): Promise<LiveAnswer> {
   // `LIVE.md` sends `json` with no filename, so it arrives as a string; a part
   // with one would arrive as a `File`.
   const text = typeof json === 'string' ? json : await json.text();
-  const payload = parsePayload(parseJson(text));
+  const data = parseJson(text);
+  const payload = parsePayload(data);
   // `LIVE.md`: `frame_id` and `captured_at` are null when there is no frame
   // and only then, and with no frame every sensor is `unknown`.
   if ((frame === null) !== (payload.frame_id === null)) {
@@ -180,7 +242,131 @@ export async function readLatest(response: Response): Promise<LiveAnswer> {
   if (frame === null && Object.values(payload.l1).some(entry => entry.state !== 'unknown')) {
     throw new LiveError('an answer with no frame has a sensor that is not `unknown`');
   }
-  return { payload, frame };
+  return { payload, frame, details: parseDetails(data as Record<string, unknown>, form) };
+}
+
+/**
+ * Each optional field `parse` accepts, by name. A parser returns `undefined`
+ * for a value of the wrong shape.
+ */
+const OPTIONAL_FIELDS: {
+  readonly [K in Exclude<keyof LiveDetails, 'patches'>]: (value: unknown) => LiveDetails[K];
+} = {
+  scores: value => idMap(value, fraction),
+  threshold: fraction,
+  changes: value => idMap(value, count),
+  timings: value =>
+    knownNumbers<LiveTimings>(value, [
+      'capture_ms',
+      'decode_ms',
+      'cut_ms',
+      'classify_ms',
+      'rate_fps',
+      'detect_ms',
+      'l0_rate_fps',
+      'l0_age_ms',
+    ]),
+  camera: parseCamera,
+  drift: parseDrift,
+  last_messages: value => idMap(value, profiles => idMap(profiles, parseMessage)),
+};
+
+/**
+ * The optional fields of a JSON part `parsePayload` accepted. Each field of
+ * the wrong shape is left out and logged; the rest of the answer stands.
+ * `patches` names parts of `form`, and each sensor gets the part named.
+ */
+function parseDetails(data: Record<string, unknown>, form: FormData): LiveDetails {
+  const details: Record<string, unknown> = {};
+  const take = (field: string, parse: (value: unknown) => unknown) => {
+    if (data[field] === undefined) return;
+    const parsed = parse(data[field]);
+    if (parsed === undefined) {
+      console.warn(`The occupancy service sent \`${field}\` in the wrong shape; it is ignored.`);
+      return;
+    }
+    details[field] = parsed;
+  };
+  for (const [field, parse] of Object.entries(OPTIONAL_FIELDS)) take(field, parse);
+  take('patches', value => parsePatches(value, form));
+  return details as LiveDetails;
+}
+
+/** Sensor id to its patch part, or `undefined` for a `patches` of the wrong shape. */
+function parsePatches(value: unknown, form: FormData): ReadonlyMap<string, Blob> | undefined {
+  const names = idMap(value, name => (typeof name === 'string' && name !== '' ? name : undefined));
+  if (names === undefined) return undefined;
+  const patches = new Map<string, Blob>();
+  for (const [id, name] of names) {
+    const part = form.get(name);
+    if (part instanceof Blob) patches.set(id, part);
+  }
+  return patches;
+}
+
+/** An object's entries as a map, or `undefined` where it is not an object or any value fails `parse`. */
+function idMap<T>(value: unknown, parse: (entry: unknown) => T | undefined): Map<string, T> | undefined {
+  if (!isRecord(value)) return undefined;
+  const map = new Map<string, T>();
+  for (const [key, entry] of Object.entries(value)) {
+    const parsed = parse(entry);
+    if (parsed === undefined) return undefined;
+    map.set(key, parsed);
+  }
+  return map;
+}
+
+/** An object holding any of `keys`, each a number from 0. Other keys are dropped. */
+function knownNumbers<T>(value: unknown, keys: readonly string[]): T | undefined {
+  if (!isRecord(value)) return undefined;
+  const out: Record<string, number> = {};
+  for (const key of keys) {
+    if (value[key] === undefined) continue;
+    if (!nonNegative(value[key])) return undefined;
+    out[key] = value[key];
+  }
+  return out as T;
+}
+
+function parseCamera(value: unknown): LiveCamera | undefined {
+  const numbers = knownNumbers<LiveCamera>(value, ['rate_fps', 'frame_age_ms']);
+  if (numbers === undefined || !isRecord(value)) return undefined;
+  if (value.state === undefined) return numbers;
+  if (value.state !== 'ok' && value.state !== 'lost') return undefined;
+  return { state: value.state, ...numbers };
+}
+
+function parseDrift(value: unknown): LiveDrift | undefined {
+  if (!isRecord(value)) return undefined;
+  if (value.unmeasured !== undefined) {
+    return typeof value.unmeasured === 'string' && value.unmeasured !== ''
+      ? { unmeasured: value.unmeasured }
+      : undefined;
+  }
+  const { px, tolerance_px: tolerance, past } = value;
+  if (!nonNegative(px) || !nonNegative(tolerance) || typeof past !== 'boolean') return undefined;
+  return { px, tolerance_px: tolerance, past };
+}
+
+function parseMessage(value: unknown): LiveMessage | undefined {
+  if (!isRecord(value) || typeof value.time !== 'string') return undefined;
+  const { message } = value;
+  if (typeof message !== 'string' && !isRecord(message)) return undefined;
+  return { message, time: value.time };
+}
+
+/** A number from 0 to 1, or `undefined`. */
+function fraction(value: unknown): number | undefined {
+  return nonNegative(value) && value <= 1 ? value : undefined;
+}
+
+/** An integer from 0, or `undefined`. */
+function count(value: unknown): number | undefined {
+  return nonNegative(value) && Number.isInteger(value) ? value : undefined;
+}
+
+function nonNegative(value: unknown): value is number {
+  return finite(value) && value >= 0;
 }
 
 /**

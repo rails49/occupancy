@@ -60,15 +60,26 @@ function concat(parts: Uint8Array[]): ArrayBuffer {
 
 const text = (value: string) => new TextEncoder().encode(value);
 
+/** A binary part after the frame, such as `patch-0`, sent with a `filename`. */
+export interface ExtraPart {
+  readonly name: string;
+  readonly bytes: Uint8Array;
+}
+
 /**
- * A `latest` answer: the `json` part, then the `frame` part.
+ * A `latest` answer: the `json` part, then the `frame` part, then any others.
  *
  * @param payload what goes in the `json` part, serialised as given — so a test
  *                can send a wrong `version` or a field of the wrong type.
  * @param frame   the `frame` part's bytes, or `null` to leave the part out,
  *                which is how the service says it has no frame.
+ * @param extra   further binary parts, as PNGs, such as the patches.
  */
-export function multipartAnswer(payload: unknown, frame: Uint8Array | null = FRAME_BYTES): Response {
+export function multipartAnswer(
+  payload: unknown,
+  frame: Uint8Array | null = FRAME_BYTES,
+  extra: readonly ExtraPart[] = []
+): Response {
   const parts: Uint8Array[] = [
     text(
       `--${BOUNDARY}\r\nContent-Disposition: form-data; name="json"\r\n` +
@@ -83,6 +94,15 @@ export function multipartAnswer(payload: unknown, frame: Uint8Array | null = FRA
           'filename="frame.jpg"\r\nContent-Type: image/jpeg\r\n\r\n'
       ),
       frame
+    );
+  }
+  for (const part of extra) {
+    parts.push(
+      text(
+        `\r\n--${BOUNDARY}\r\nContent-Disposition: form-data; name="${part.name}"; ` +
+          `filename="${part.name}.png"\r\nContent-Type: image/png\r\n\r\n`
+      ),
+      part.bytes
     );
   }
   parts.push(text(`\r\n--${BOUNDARY}--\r\n`));

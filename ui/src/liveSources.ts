@@ -18,8 +18,20 @@
  */
 
 import type { Detection, Frame } from '@rails49/detector';
-import type { Sensor } from '@rails49/r49';
+import type { Sensor, Track } from '@rails49/r49';
+import type { LiveDetails } from './liveContract.js';
 import type { SensorState } from './occupancy.js';
+
+/**
+ * What an occupancy service sent beyond L0 and L1, for `rr-service-details`
+ * (#332): `LIVE.md`'s optional fields, with each sensor's patch as an object
+ * URL. The source owns those URLs and releases them when its next answer
+ * arrives.
+ */
+export interface ServiceDetails extends Omit<LiveDetails, 'patches'> {
+  /** Sensor id to its patch's object URL. Absent where the service sent no `patches`. */
+  readonly patches?: ReadonlyMap<string, string>;
+}
 
 /**
  * One frame to run on, with the intrinsic size it arrived at.
@@ -168,6 +180,11 @@ export interface FrameResult {
    * with no frames says why, and a request that failed says that it did (#331).
    */
   readonly notice?: string;
+  /**
+   * What a service sent for this answer beyond L0 and L1 (#332). Absent from
+   * the local model, and from a service's failed answer.
+   */
+  readonly details?: ServiceDetails;
 }
 
 /**
@@ -187,6 +204,8 @@ export interface SourceLayout {
   readonly resolution: Frame;
   /** Dots per track, or `null` where the layout resolves none. */
   readonly dpt: number | null;
+  /** The layout's tracks, which the view draws while Details is open (#332). */
+  readonly tracks: readonly Track[];
 }
 
 /**
@@ -219,6 +238,11 @@ export interface ResultSource {
    * sensor that moved has to reach the viewer with the state keyed on it (#331).
    */
   readonly layout?: SourceLayout | null;
+  /**
+   * Ask for each sensor's patch from the next request on, or stop asking
+   * (#332). Only a service has patches to send.
+   */
+  setPatches?(on: boolean): void;
 }
 
 /**
