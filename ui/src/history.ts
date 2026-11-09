@@ -287,6 +287,11 @@ export class EditHistory {
   /** `_index` as of the last save. Negative once eviction passes it. */
   private _savedIndex = 0;
   private _bytes = 0;
+  /**
+   * How many entries eviction has dropped off the bottom, for the life of this
+   * history. What makes {@link position} survive one.
+   */
+  private _evicted = 0;
   private readonly _budgetBytes: number;
   /** The gesture currently open, or null. At most one — see {@link beginGesture}. */
   private _gesture: OpenGesture | null = null;
@@ -309,6 +314,7 @@ export class EditHistory {
     this._index = 0;
     this._savedIndex = 0;
     this._bytes = 0;
+    this._evicted = 0;
     // A gesture holds a snapshot of the archive being replaced, so it cannot
     // survive the replacement. Dropping it here is also what keeps an
     // uncommitted gesture from wedging undo permanently.
@@ -373,12 +379,35 @@ export class EditHistory {
   }
 
   /**
-   * Marks the current position as saved. Called after a successful export —
-   * saving does not clear the history, because the bytes on disk are unaffected
-   * by anything undone afterwards, so undoing past a save stays legitimate.
+   * Where in the stack the next save would be writing from (#333).
+   *
+   * Taken when a save **starts** and handed back to {@link markSaved} when it
+   * lands, because a save is not instant: writing to an occupancy service is
+   * several requests over the network, and an edit made while they are in
+   * flight is not in the bytes that went. Marking the position the save
+   * started from leaves that edit unsaved, which is what it is.
+   *
+   * It counts from the **first edit of the session**, not from the bottom of
+   * the stack, so eviction cannot move it. An edit recorded during the save can
+   * evict the oldest entry, which shifts every index down — and a raw index
+   * held across that would mark a position one edit too late, reporting the
+   * archive clean when the edit made during the save was never written.
    */
-  markSaved(): void {
-    this._savedIndex = this._index;
+  get position(): number {
+    return this._index + this._evicted;
+  }
+
+  /**
+   * Marks a position as saved — {@link position} as the save started, or the
+   * current one where a caller gives none.
+   *
+   * Saving does not clear the history, because the bytes written are unaffected
+   * by anything undone afterwards, so undoing past a save stays legitimate.
+   * {@link isDirty} is measured from this marker, so an edit recorded during
+   * the save leaves the archive dirty and an undo during it does too.
+   */
+  markSaved(position: number = this.position): void {
+    this._savedIndex = position - this._evicted;
   }
 
   /**
@@ -654,6 +683,7 @@ export class EditHistory {
       this._bytes -= evicted.bytes;
       this._index--;
       this._savedIndex--;
+      this._evicted++;
     }
   }
 

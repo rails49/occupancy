@@ -26,6 +26,7 @@ import type {
   FrameSource,
   ResultSource,
   ServiceDetails,
+  ShownFrame,
   SourceFrame,
   SourceLayout,
 } from './liveSources.js';
@@ -76,6 +77,16 @@ export function occupancyService(base: string = LIVE_BASE): FrameSource & Result
   let lastId: string | null = null;
   /** The object URL the view is showing, which the next frame releases. */
   let shown: string | null = null;
+  /**
+   * The bytes behind that URL, with the id of the answer they came in, for
+   * Freeze (#334); `null` while the current answer carries no frame.
+   *
+   * Held separately from the object URL because a URL is not readable bytes:
+   * fetching it back would be a second read of a frame this object already
+   * has, and one that fails once the URL is revoked. It is replaced at the
+   * moment the URL is, so what Freeze adds is always the picture on screen.
+   */
+  let shownFrame: ShownFrame | null = null;
   /** Whether to ask for patches, from the next request on (#332). */
   let patches = false;
   /** The patch URLs of the last answer, which the next answer releases. */
@@ -219,6 +230,9 @@ export function occupancyService(base: string = LIVE_BASE): FrameSource & Result
     console.error(`Cannot read the occupancy service at ${base}: ${detail}`);
     pause = FAILED_RETRY_MS;
     releasePatches();
+    // The picture stays up, but nothing may be added from it: this answer
+    // carried no frame, and the one on screen is out of date (#334).
+    shownFrame = null;
     pending = unreachable();
     return samePicture();
   }
@@ -308,6 +322,7 @@ export function occupancyService(base: string = LIVE_BASE): FrameSource & Result
     events = null;
     release(shown);
     shown = null;
+    shownFrame = null;
     releasePatches();
     picture = null;
     pending = null;
@@ -322,6 +337,12 @@ export function occupancyService(base: string = LIVE_BASE): FrameSource & Result
 
     get layout() {
       return layout;
+    },
+
+    // The frame on screen, for Freeze (#334). A getter: it moves with the
+    // picture, and the view reads it once per turn.
+    get shownFrame() {
+      return shownFrame;
     },
 
     async start() {
@@ -379,6 +400,9 @@ export function occupancyService(base: string = LIVE_BASE): FrameSource & Result
             notice: NO_PICTURE,
             details: detailsOf(details),
           };
+          // Nothing to freeze: the picture on screen is older than what the
+          // service is now saying about the camera (#334).
+          shownFrame = null;
           return samePicture();
         }
 
@@ -397,6 +421,11 @@ export function occupancyService(base: string = LIVE_BASE): FrameSource & Result
         }
 
         lastId = payload.frame_id;
+        // Set once the frame is the one on screen, so a press while a newer
+        // answer is still decoding adds the picture the person is looking at.
+        // `readLatest` refuses an answer whose frame and `frame_id` disagree,
+        // which is why there is an id to carry here.
+        shownFrame = { id: payload.frame_id!, bytes: frame };
         pending = { ...answersFor(payload), details: detailsOf(details) };
         return decoded;
       }

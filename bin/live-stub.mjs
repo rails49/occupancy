@@ -18,6 +18,7 @@
  * is built or typechecked by the gate.
  *
  *     node bin/live-stub.mjs [--port 8080] [--fps 5] [--no-frames] [--churn]
+ *                            [--archive <dir>]
  *
  * `--no-frames` answers `latest` with only the `json` part, which is how the
  * service says it has no frame: the page should keep its last picture, show
@@ -26,13 +27,23 @@
  * what the real service does after a save and what makes the page re-read the
  * manifest.
  *
+ * `--archive <dir>` serves that folder at `/live/archive/` and **accepts writes
+ * into it**, which is what the editor saves to (#333): `GET`, `PUT` and
+ * `DELETE` per file, the manifest's version in `ETag`, `If-Match` on every
+ * write, 412 on a stale one and 411 on a body with no `Content-Length`. The
+ * folder's manifest is also what `latest` keys its L1 on, so the live view and
+ * the editor agree about which sensors exist. Without the flag the stand-in
+ * serves its own made-up manifest and no `ETag`, which is a **read-only**
+ * archive from the page's side — the other half of #333 worth seeing by hand.
+ *
  * `occupancy-service`'s `live-check` passes against it; see `README.md`.
  */
 
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
+import { readFile, unlink, writeFile } from 'node:fs/promises';
 import { crc32, deflateSync } from 'node:zlib';
-import { extname, join, normalize, resolve } from 'node:path';
+import { extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -40,15 +51,31 @@ const DIST = join(ROOT, 'ui', 'dist');
 
 const args = process.argv.slice(2);
 const flag = name => args.includes(name);
+/**
+ * An option's value, or `fallback` where it was not given.
+ *
+ * A name with nothing after it, or the next flag after it, is a mistake rather
+ * than a value — `--archive --churn` would otherwise serve a folder called
+ * `--churn`, and the page would find no service with nothing on screen to say
+ * why.
+ */
 const option = (name, fallback) => {
   const at = args.indexOf(name);
-  return at === -1 ? fallback : args[at + 1];
+  if (at === -1) return fallback;
+  const value = args[at + 1];
+  if (value === undefined || value.startsWith('--')) {
+    console.error(`live-stub: ${name} needs a value`);
+    process.exit(2);
+  }
+  return value;
 };
 
 const PORT = Number(option('--port', '8080'));
 const FPS = Number(option('--fps', '5'));
 const NO_FRAMES = flag('--no-frames');
 const CHURN = flag('--churn');
+/** The folder served, and written, at `/live/archive/`, or null for the built-in manifest. */
+const ARCHIVE = option('--archive', null);
 
 /**
  * One real JPEG, 320x240: a dark pane with a length of track across it.
@@ -130,6 +157,37 @@ const MANIFEST = {
   images: [],
 };
 
+/**
+ * The manifest `/live/archive/manifest.json` answers with: the folder's, with
+ * `--archive`, and the built-in one otherwise.
+ *
+ * Re-read after every write, because the editor's save is what changes it and
+ * the loop below keys L1 on the sensors it names.
+ */
+let archiveManifest = null;
+
+/** Where the archive folder keeps its manifest. */
+const manifestPath = () => join(ARCHIVE, 'manifest.json');
+
+/** Read the folder's manifest into {@link archiveManifest}, or leave it null. */
+function readArchiveManifest() {
+  if (ARCHIVE === null) return;
+  try {
+    archiveManifest = JSON.parse(readFileSync(manifestPath(), 'utf8'));
+  } catch (err) {
+    archiveManifest = null;
+    console.warn(`live-stub: no readable manifest.json in ${ARCHIVE}: ${err.message}`);
+  }
+}
+
+/** The manifest the page sees. */
+const served = () => archiveManifest ?? MANIFEST;
+
+/** The sensors L1 is keyed on: the served manifest's. */
+const sensors = () => served().layout?.sensors ?? [];
+
+readArchiveManifest();
+
 /** How long the car is, in frame pixels. */
 const CAR_LENGTH = 90;
 
@@ -152,8 +210,11 @@ const frameId = () => `stub-${frameNumber}`;
 
 /** Each sensor's entry as last sent on `events`, by id. */
 let published = l1();
-/** How many times each sensor's L1 has changed. */
-const changes = Object.fromEntries(MANIFEST.layout.sensors.map(sensor => [sensor.id, 0]));
+/**
+ * How many times each sensor's L1 has changed: every sensor the served manifest
+ * named at startup, and any that a save adds while this runs.
+ */
+const changes = Object.fromEntries(sensors().map(sensor => [sensor.id, 0]));
 /** The last message the `occupancy` profile published per sensor, as `last_messages` holds it. */
 const lastMessages = {};
 
@@ -207,7 +268,7 @@ setInterval(() => {
   for (const [id, entry] of Object.entries(now)) {
     if (JSON.stringify(entry) === JSON.stringify(published[id])) continue;
     for (const stream of streams) sendEvent(stream, id, entry);
-    changes[id]++;
+    changes[id] = (changes[id] ?? 0) + 1;
     lastMessages[id] = { occupancy: { message: entry, time: new Date().toISOString() } };
   }
   published = now;
@@ -236,7 +297,7 @@ function car() {
 function l1() {
   const box = car();
   const states = {};
-  for (const sensor of MANIFEST.layout.sensors) {
+  for (const sensor of sensors()) {
     if (NO_FRAMES) {
       states[sensor.id] = { state: 'unknown', reason: NO_FRAME_REASON };
     } else if (sensor.id === 'stub-refused') {
@@ -255,7 +316,7 @@ function l1() {
 function scores() {
   const box = car();
   return Object.fromEntries(
-    MANIFEST.layout.sensors.map(sensor => {
+    sensors().map(sensor => {
       const off = Math.abs(sensor.x - box.centre.x) / box.length;
       return [sensor.id, Math.round(Math.max(0.02, Math.min(0.98, 1.5 - 2 * off)) * 100) / 100];
     })
@@ -460,10 +521,156 @@ async function serveStatic(req, res, pathname) {
   }
 }
 
+/** The archive path prefix every file of it hangs off. */
+const ARCHIVE_PREFIX = '/live/archive/';
+
+/**
+ * The archive's version: a hash of its `manifest.json`, or null where there is
+ * none to read.
+ *
+ * One version for the whole archive rather than one per file, because that is
+ * what makes a save atomic from the page's side: every write of one save
+ * carries the version the page opened at, and a copy somebody else moved on
+ * refuses all of them.
+ */
+async function archiveEtag() {
+  try {
+    const bytes = await readFile(manifestPath());
+    return `"${crc32(bytes).toString(16)}-${bytes.length}"`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Where a request's file is on disk, or null for a name that would leave the
+ * folder.
+ *
+ * The page percent-encodes each segment, so this decodes before it resolves —
+ * and then checks the result is still inside the folder, since a decoded `%2F`
+ * or a `..` would otherwise address anything on the machine.
+ */
+function archivePath(pathname) {
+  let name;
+  try {
+    name = decodeURIComponent(pathname.slice(ARCHIVE_PREFIX.length));
+  } catch {
+    return null;
+  }
+  if (name === '') return null;
+  const root = resolve(ARCHIVE);
+  const onDisk = resolve(root, normalize(name));
+  return onDisk === root || onDisk.startsWith(root + sep) ? onDisk : null;
+}
+
+/** The whole request body, as one buffer. */
+function readBody(req) {
+  return new Promise((resolve_, reject) => {
+    const chunks = [];
+    req.on('data', chunk => chunks.push(chunk));
+    req.on('end', () => resolve_(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
+}
+
+/**
+ * One file of the archive folder: read it, write it, or take it away.
+ *
+ * The rules are `LIVE.md`'s saving rules, which is what makes this worth
+ * running the built page against by hand (#333): `If-Match` on every write,
+ * 412 where it is not the version on disk, 411 for a body with no
+ * `Content-Length`, and the new version in the answer to a `manifest.json`
+ * write so the page can go on saving without reloading.
+ */
+async function archiveRequest(req, res, pathname) {
+  const onDisk = archivePath(pathname);
+  if (onDisk === null) {
+    writeJson(res, { error: 'that name is not inside the archive' }, 400);
+    return;
+  }
+  const isManifest = onDisk === resolve(manifestPath());
+
+  if (req.method === 'GET' || req.method === 'HEAD') {
+    let body;
+    try {
+      body = await readFile(onDisk);
+    } catch {
+      writeJson(res, { error: 'no such file in the archive' }, 404);
+      return;
+    }
+    const etag = isManifest ? await archiveEtag() : null;
+    res.writeHead(200, {
+      'content-type': TYPES[extname(onDisk)] ?? 'application/octet-stream',
+      'content-length': String(body.length),
+      'cache-control': 'no-store',
+      ...(etag === null ? {} : { etag }),
+    });
+    res.end(req.method === 'HEAD' ? undefined : body);
+    return;
+  }
+
+  if (req.method !== 'PUT' && req.method !== 'DELETE') {
+    res.writeHead(405, { allow: 'GET, HEAD, PUT, DELETE', 'content-length': '0' });
+    res.end();
+    return;
+  }
+
+  // The length is required, not inferred: a chunked body would have the file
+  // on disk depend on a connection staying up.
+  if (req.method === 'PUT' && req.headers['content-length'] === undefined) {
+    writeJson(res, { error: 'a write needs a Content-Length' }, 411);
+    return;
+  }
+
+  const current = await archiveEtag();
+  if (req.headers['if-match'] !== current) {
+    writeJson(
+      res,
+      { error: `If-Match ${req.headers['if-match'] ?? '(absent)'} is not ${current ?? '(no archive)'}` },
+      412
+    );
+    return;
+  }
+
+  if (req.method === 'PUT') {
+    await writeFile(onDisk, await readBody(req));
+    // The manifest is the version, so only its own write answers with a new
+    // one — and that is the one the page carries into the deletes after it.
+    if (!isManifest) {
+      res.writeHead(204, { 'content-length': '0' });
+      res.end();
+      return;
+    }
+    readArchiveManifest();
+    const etag = await archiveEtag();
+    res.writeHead(204, { ...(etag === null ? {} : { etag }), 'content-length': '0' });
+    res.end();
+    return;
+  }
+
+  // Already gone is the state the caller wanted.
+  await unlink(onDisk).catch(() => undefined);
+  res.writeHead(204, { 'content-length': '0' });
+  res.end();
+}
+
 const server = createServer((req, res) => {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+  if (ARCHIVE !== null && url.pathname.startsWith(ARCHIVE_PREFIX)) {
+    // Caught, not floated: an aborted upload or an unwritable path would
+    // otherwise be an unhandled rejection, and that ends the stand-in in the
+    // middle of a hand-check.
+    archiveRequest(req, res, url.pathname).catch(err => {
+      console.error(`live-stub: ${req.method} ${url.pathname} failed`, err);
+      if (!res.headersSent) writeJson(res, { error: String(err) }, 500);
+      else res.end();
+    });
+    return;
+  }
   switch (url.pathname) {
     case '/live/archive/manifest.json':
+      // No `ETag`: with no folder behind it this archive is read-only, and the
+      // page's Save says so and offers Save As.
       writeJson(res, MANIFEST);
       return;
     case '/live/latest':
@@ -482,4 +689,9 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`  this machine:  http://localhost:${PORT}/`);
   console.log('  on the LAN:    http://<this machine’s IP>:' + PORT + '/');
   console.log(`  ${FPS} frames/s, ${NO_FRAMES ? 'no frames' : 'frames on'}${CHURN ? ', churning events' : ''}`);
+  console.log(
+    ARCHIVE === null
+      ? '  archive:       the built-in manifest, read-only (no ETag)'
+      : `  archive:       ${resolve(ARCHIVE)}, writable`
+  );
 });

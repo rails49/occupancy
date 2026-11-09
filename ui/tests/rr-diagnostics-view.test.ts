@@ -247,6 +247,29 @@ describe('rr-diagnostics-view', () => {
     expect(detect).toHaveBeenCalledTimes(3);
   });
 
+  // An archive on an occupancy service reads its images over the network, and a
+  // read can fail (#333). A score over the images it did read is worth more
+  // than no report at all, and the count says how many it saw.
+  it('passes over an image whose read failed, and scores the rest', async () => {
+    const archive = await archiveOf(3);
+    const original = archive.getImage.bind(archive);
+    archive.getImage = async (filename: string) => {
+      if (filename.includes('2')) throw new Error('the service answered 500');
+      return original(filename);
+    };
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const el = await fixture<RRDiagnosticsView>(
+      html`<rr-diagnostics-view .archive=${archive}></rr-diagnostics-view>`
+    );
+    await waitFor(el, () => report(el)?.sweeping === false);
+
+    expect(detect).toHaveBeenCalledTimes(2);
+    expect(report(el)!.diagnostics!.images).to.have.lengthOf(2);
+    // Not a failed sweep: the view shows what it read.
+    expect(el.shadowRoot!.querySelector('.notice.error')).to.be.null;
+  });
+
   it("gives detect the layout's DPT, scaled to the image's own pixels", async () => {
     // The fixture declares 200 x 100, and this image is twice that.
     HTMLImageElement.prototype.decode = async function decode(this: HTMLImageElement) {

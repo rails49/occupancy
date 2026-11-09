@@ -1,8 +1,9 @@
 /**
  * This page's reader for the live contract, which `occupancy-service`'s
- * `LIVE.md` states (#331). It is the only file here that names a path, a part
- * or a field of the contract. `occupancyService.ts` runs the loop over it and
- * `rr-app` runs {@link findService}.
+ * `LIVE.md` states (#331). It is the only file here that names a path, a part,
+ * a field, a method or a header of the contract. `occupancyService.ts` runs the
+ * loop over it, `serviceArchive.ts` opens and saves the archive over it (#333),
+ * and `rr-app` runs {@link findService}.
  *
  * {@link readLatest} throws a {@link LiveError} naming what was wrong with an
  * answer, and the caller turns that into `unknown` for every sensor.
@@ -166,9 +167,100 @@ export async function findService(base: string = LIVE_BASE): Promise<Response | 
   return isJson(response) ? response : null;
 }
 
+/** The name the manifest is stored under inside an archive. */
+export const MANIFEST_NAME = 'manifest.json';
+
 /** Where the service's manifest lives. */
 export function manifestUrl(base: string = LIVE_BASE): string {
-  return `${base}/archive/manifest.json`;
+  return archiveFileUrl(base, MANIFEST_NAME);
+}
+
+/**
+ * Where one file of the service's archive lives (#333).
+ *
+ * Each path segment is percent-encoded, so an image whose name carries a space
+ * or a `#` addresses the file it names rather than a different one. A name
+ * holding a `/` keeps its separators: the archive's own paths are relative, and
+ * encoding those would ask for a file whose name contains a slash.
+ *
+ * `@rails49/r49` addresses the same files the same way when it reads them from
+ * {@link archiveBase}; this is what writes to them.
+ */
+export function archiveFileUrl(base: string, name: string): string {
+  const path = name.split('/').map(encodeURIComponent).join('/');
+  return `${base}/archive/${path}`;
+}
+
+/**
+ * The archive's base, **absolute**, for `R49Archive.load` (#333).
+ *
+ * `load` takes an `http` or `https` base and reads `<base>/manifest.json` and
+ * `<base>/<filename>` under it, so the contract's origin-relative path has to
+ * be resolved against this page — and this file is where a path of the
+ * contract is named. Still this origin (ADR 0006): {@link LIVE_BASE} starts at
+ * the root, so all the resolution supplies is the scheme and the host.
+ */
+export function archiveBase(base: string = LIVE_BASE): string {
+  return new URL(`${base}/archive`, window.location.href).href;
+}
+
+/** The `ETag` an answer carries, or `null` where it carries none. */
+export function readEtag(response: Response): string | null {
+  return response.headers.get('ETag');
+}
+
+/**
+ * The copy on the service is not the one this page opened. The save is refused
+ * whole: `LIVE.md` gives nobody a merge.
+ */
+export const SAVE_STALE = 412;
+
+/** The service refused the save on a rule of its own, which it states in `error`. */
+export const SAVE_REFUSED = 422;
+
+/**
+ * `PUT <base>/archive/<name>`, with `etag` in `If-Match`.
+ *
+ * The body is a `Blob` rather than a stream so the request carries a
+ * `Content-Length`: a service following `LIVE.md` answers 411 without one.
+ */
+export function putArchiveFile(
+  base: string,
+  name: string,
+  etag: string,
+  body: Blob
+): Promise<Response> {
+  return fetch(archiveFileUrl(base, name), {
+    method: 'PUT',
+    headers: { 'If-Match': etag, 'Content-Type': body.type },
+    body,
+  });
+}
+
+/** `DELETE <base>/archive/<name>`, with `etag` in `If-Match`. */
+export function deleteArchiveFile(base: string, name: string, etag: string): Promise<Response> {
+  return fetch(archiveFileUrl(base, name), {
+    method: 'DELETE',
+    headers: { 'If-Match': etag },
+  });
+}
+
+/**
+ * The rule a refusal names, from the answer's `error` field, or `null` where
+ * the body is not JSON or carries no such field.
+ *
+ * The field is the service's own words, quoted rather than interpreted: this
+ * page cannot know which rules a service holds its archive to.
+ */
+export async function saveRefusalRule(response: Response): Promise<string | null> {
+  let data: unknown;
+  try {
+    data = await response.json();
+  } catch {
+    return null;
+  }
+  if (!isRecord(data)) return null;
+  return typeof data.error === 'string' && data.error !== '' ? data.error : null;
 }
 
 /**

@@ -2,13 +2,19 @@ import { describe, it, expect, vi, afterAll, afterEach, beforeAll } from 'vitest
 import {
   LIVE_BASE,
   LiveError,
+  archiveBase,
+  archiveFileUrl,
+  deleteArchiveFile,
   eventsUrl,
   findService,
   l0AgeMs,
   latestUrl,
   manifestUrl,
   parsePayload,
+  putArchiveFile,
+  readEtag,
   readLatest,
+  saveRefusalRule,
 } from '../src/liveContract.js';
 import type { LivePayload } from '../src/liveContract.js';
 import {
@@ -81,6 +87,71 @@ describe('the live contract, as URLs', () => {
   });
 });
 
+describe('the archive on a service (#333)', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  // `R49Archive.load` takes an absolute `http` or `https` base, and what it
+  // reads under it has to be the files the writer writes to.
+  it('resolves the archive base against this page, on this origin', () => {
+    expect(archiveBase('/live')).toBe(new URL('/live/archive', window.location.href).href);
+    expect(archiveBase('/live')).toMatch(/^https?:\/\//);
+    expect(archiveBase()).toBe(archiveBase(LIVE_BASE));
+    expect(new URL(archiveBase()).pathname).toBe('/live/archive');
+    expect(new URL(archiveFileUrl(LIVE_BASE, 'a.jpg'), archiveBase()).href).toBe(
+      `${archiveBase()}/a.jpg`
+    );
+  });
+
+  it('percent-encodes each path segment of a file name', () => {
+    expect(archiveFileUrl('/live', 'manifest.json')).toBe('/live/archive/manifest.json');
+    expect(archiveFileUrl('/live', 'IMG 0001.jpg')).toBe('/live/archive/IMG%200001.jpg');
+    expect(archiveFileUrl('/live', 'a#b?c.jpg')).toBe('/live/archive/a%23b%3Fc.jpg');
+    // A relative path keeps its separators: the segments are encoded, not the
+    // slashes between them.
+    expect(archiveFileUrl('/live', 'raw/a b.jpg')).toBe('/live/archive/raw/a%20b.jpg');
+  });
+
+  it('reads the ETag an answer carries, and none where it carries none', () => {
+    expect(readEtag(jsonAnswer({ version: 4 }, 200, '"v1"'))).toBe('"v1"');
+    expect(readEtag(jsonAnswer({ version: 4 }))).to.be.null;
+  });
+
+  it('PUTs a file with If-Match and a body that carries a Content-Length', async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const body = new Blob([new Uint8Array([1, 2, 3])], { type: 'image/jpeg' });
+    await putArchiveFile('/live', 'IMG 1.jpg', '"v1"', body);
+
+    expect(fetchMock).toHaveBeenCalledWith('/live/archive/IMG%201.jpg', {
+      method: 'PUT',
+      headers: { 'If-Match': '"v1"', 'Content-Type': 'image/jpeg' },
+      body,
+    });
+  });
+
+  it('DELETEs a file with If-Match', async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await deleteArchiveFile('/live', 'img_1.jpg', '"v2"');
+
+    expect(fetchMock).toHaveBeenCalledWith('/live/archive/img_1.jpg', {
+      method: 'DELETE',
+      headers: { 'If-Match': '"v2"' },
+    });
+  });
+
+  it('quotes the rule a refusal names, and nothing from a body that has none', async () => {
+    expect(await saveRefusalRule(jsonAnswer({ error: 'images/orphan: img_9.jpg' }, 422))).toBe(
+      'images/orphan: img_9.jpg'
+    );
+    expect(await saveRefusalRule(jsonAnswer({ error: '' }, 422))).to.be.null;
+    expect(await saveRefusalRule(jsonAnswer({}, 422))).to.be.null;
+    expect(await saveRefusalRule(errorAnswer(405))).to.be.null;
+  });
+});
+
 describe('findService', () => {
   afterEach(() => vi.unstubAllGlobals());
 
@@ -94,8 +165,9 @@ describe('findService', () => {
   };
 
   it('finds a service in a JSON manifest, and hands back the answer', async () => {
-    // The answer and not a boolean, so #333 can read its ETag and open it as an
-    // archive without fetching the manifest twice.
+    // The answer and not a boolean, so #333 can read its `ETag` before it loads
+    // the manifest — a save landing between the two leaves the page holding the
+    // older one, and its own save is refused.
     const fetchMock = stubFetch(jsonAnswer({ version: 4 }));
 
     const response = await findService();

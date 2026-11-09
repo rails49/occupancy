@@ -12,6 +12,7 @@ import type {
   LiveSources,
   ResultSource,
   ServiceDetails,
+  ShownFrame,
   SourceFrame,
   SourceLayout,
 } from './liveSources.js';
@@ -54,6 +55,21 @@ const DEFAULT_RESOLUTION: Frame = { width: 1920, height: 1080 };
 const DRIFT_SAMPLE_INTERVAL_MS = 3000;
 
 /**
+ * A frame the person asked to be put into the archive — Freeze (#334).
+ *
+ * The view owns no session and no toast, so this is everything the add needs:
+ * the bytes to store, and the id of the answer they came in so `rr-app` can
+ * tell a second press on one frame from a press on the next. Neither is read
+ * here.
+ */
+export interface FrameAddDetail {
+  /** The frame on screen, exactly as the service sent it. */
+  readonly bytes: Blob;
+  /** The source's id for the answer it came in; a token, only ever compared. */
+  readonly frameId: string;
+}
+
+/**
  * The live view: a frame, its occupancy answer, and the two layers of that
  * output drawn over the frame.
  *
@@ -93,14 +109,19 @@ const DRIFT_SAMPLE_INTERVAL_MS = 3000;
  * and the frame rate — the view's own judgement, which is the same whatever is
  * answering.
  *
- * In service mode (sources handed in, no archive, #331) the view runs no drift
- * check and shows no recorder, alignment readout, or model and DPT notices: the
- * service publishes states this page cannot withhold. See `_judging`. In its
+ * In service mode (sources that declare themselves a service's, #331) the view
+ * runs no drift check and shows no recorder, alignment readout, or model and
+ * DPT notices: the service publishes states this page cannot withhold. An
+ * archive may be bound at the same time — the service's own, since #333 — and
+ * it changes none of that. See `_judging`. In its
  * place a Details button opens `rr-service-details` below the viewer, and
  * while it is open the viewer draws the layout's tracks and the service is
- * asked for patches (#332).
+ * asked for patches (#332). **Freeze** stands beside it: one press sends the
+ * frame on screen up as `rr-frame-add` for `rr-app` to add to the archive
+ * (#334), and the feed goes on running.
  *
- * **Properties:** `archive`, `sources`.
+ * **Properties:** `archive`, `sources`. **Emits:** `rr-frame-add`
+ * ({@link FrameAddDetail}).
  */
 @customElement('rr-live-view')
 export class RRLiveView extends LitElement {
@@ -208,6 +229,16 @@ export class RRLiveView extends LitElement {
   @state() private _recording: { started: Date; rows: readonly DriftRow[] } | null = null;
   /** Whether the Details panel is open (#332). Closed each time the view opens. */
   @state() private _detailsOpen = false;
+  /**
+   * The frame on screen, or `null` where the current answer carried none
+   * (#334) — which is what disables Freeze.
+   *
+   * The source's, read once per turn beside the answers rather than at the
+   * press: between the source taking a newer frame and this view rendering it
+   * there is a window where the source is ahead of the screen, and Freeze adds
+   * what the person is looking at.
+   */
+  @state() private _shownFrame: ShownFrame | null = null;
   /** What the service sent beyond L0 and L1 with the last answer, or `null` (#332). */
   @state() private _details: ServiceDetails | null = null;
 
@@ -279,6 +310,13 @@ export class RRLiveView extends LitElement {
       border-radius: 4px;
       cursor: pointer;
     }
+
+    /* Freeze with no frame to add: it stays in place and says it cannot be
+       pressed, rather than coming and going with the service's answers. */
+    .details-bar button[disabled] {
+      opacity: 0.5;
+      cursor: default;
+    }
   `,
   ];
 
@@ -302,16 +340,22 @@ export class RRLiveView extends LitElement {
   }
 
   /**
-   * Whether this page runs the model itself: the camera path, with or without
-   * an archive. False in service mode, which is sources handed in with no
-   * archive (#331).
+   * Whether this page runs the model itself: the camera path, and a video file
+   * standing in for it, with or without an archive. False in service mode,
+   * which the sources declare (#331).
    *
    * The drift check, the recorder, the alignment readout, Cars and Inference
    * before a first answer, and the notices about a missing model or DPT belong
    * to the camera path only.
+   *
+   * It read "sources handed in and no archive" until #333. An archive opened
+   * from the service is now bound to the page while the live view watches that
+   * same service, so the absence of an archive no longer tells the two apart —
+   * and measuring drift against the service's own archive would be this page
+   * second-guessing the judgement it is only relaying.
    */
   private get _judging(): boolean {
-    return this.sources === null || this.archive !== null;
+    return this.sources?.service !== true;
   }
 
   async connectedCallback() {
@@ -351,9 +395,10 @@ export class RRLiveView extends LitElement {
    * Open the result source, prepare the drift check, then run the loop.
    *
    * The result source is the one requirement, not the archive (#331): an
-   * occupancy service brings its own layout, and the page holds none while it
-   * is watching one. Without a source there is nothing to ask — no archive and
-   * no service — and the frames go on showing with nothing read off them.
+   * occupancy service brings its own layout, and what the view draws comes from
+   * it whether or not an archive is bound as well. Without a source there is
+   * nothing to ask — no archive and no service — and the frames go on showing
+   * with nothing read off them.
    */
   private async _run() {
     if (!this._results) return;
@@ -387,7 +432,9 @@ export class RRLiveView extends LitElement {
    * claim than reporting no drift and the only honest one available.
    */
   private async _openDriftCheck() {
-    if (!this.archive) return;
+    // Not in service mode, whatever archive is bound: the service runs its own
+    // check (#336), and since #333 the archive bound may be the service's own.
+    if (!this._judging || !this.archive) return;
     try {
       this._driftSession = await openDriftCheck(this.archive);
       this._driftError =
@@ -514,11 +561,41 @@ export class RRLiveView extends LitElement {
     this._results?.setPatches?.(this._detailsOpen);
   }
 
-  private _renderDetailsButton() {
+  /**
+   * Send the frame on screen up to be added to the archive (#334).
+   *
+   * The picture does not stop and the loop is not touched: freezing a frame is
+   * taking a copy of it, not pausing the feed. What becomes of the copy is
+   * `rr-app`'s — this view owns no session, so it cannot judge the add, record
+   * it, or say what happened to it.
+   */
+  private _freeze() {
+    const frame = this._shownFrame;
+    if (frame === null) return;
+    this.dispatchEvent(
+      new CustomEvent<FrameAddDetail>('rr-frame-add', {
+        detail: { bytes: frame.bytes, frameId: frame.id },
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
+
+  /**
+   * The service bar: Details, and Freeze beside it.
+   *
+   * Freeze is disabled while the current answer has no frame — before the
+   * first one, on an answer with only the `json` part, and on a request that
+   * failed. The last picture is still on screen in all three, and it is out of
+   * date; a button that added it anyway would write a photograph of a moment
+   * the service has just said it cannot see.
+   */
+  private _renderServiceBar() {
     return html`<div class="details-bar">
       <button aria-pressed=${this._detailsOpen ? 'true' : 'false'} @click=${this._toggleDetails}>
         Details
       </button>
+      <button ?disabled=${this._shownFrame === null} @click=${this._freeze}>Freeze</button>
     </div>`;
   }
 
@@ -567,11 +644,18 @@ export class RRLiveView extends LitElement {
         if (this._lastFrameTime) this._fps = 1000 / (startTime - this._lastFrameTime);
         this._lastFrameTime = startTime;
         if (frame.src !== undefined) this._src = frame.src;
+        // Beside the picture, not beside the answers: what Freeze offers is
+        // the frame on screen, and the two must not be able to disagree — the
+        // answer below may be skipped (#334).
+        this._shownFrame = frames.shownFrame ?? null;
       } else {
         // The next new frame starts the count again rather than being timed
         // from before the gap.
         this._fps = 0;
         this._lastFrameTime = 0;
+        // This turn carried no frame, so there is nothing to add, even though
+        // the last picture is still up.
+        this._shownFrame = null;
       }
 
       // `drifted` is the refusal and `_dpt` is resolved once — from the source's
@@ -748,7 +832,7 @@ export class RRLiveView extends LitElement {
 
       ${this._judging ? this._renderDriftNotice() : ''}
 
-      ${this._judging ? this._renderRecorder() : this._renderDetailsButton()}
+      ${this._judging ? this._renderRecorder() : this._renderServiceBar()}
 
       <rr-viewer
         .src=${this._src}

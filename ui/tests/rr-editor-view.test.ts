@@ -8,7 +8,10 @@ import { EditSession } from '../src/editSession.js';
 import { HIGHLIGHT_DURATION_MS } from '../src/highlight.js';
 import { classChoices, rootClass } from '../src/vocabulary.js';
 import '../src/rr-editor-view.js';
-import { RREditorView, portraitRefusal, sizeRefusal } from '../src/rr-editor-view.js';
+import { RREditorView } from '../src/rr-editor-view.js';
+// The three steps of an image add moved to `imageAdd.ts` when Live's Freeze
+// started taking them too (#334); these tests are otherwise unchanged.
+import { portraitRefusal, sizeRefusal } from '../src/imageAdd.js';
 import { readExifOrientation } from '../src/exifOrientation.js';
 import { jpeg, jpegWithOrientation } from './jpegFixture.ts';
 import type { RRCalibrationDialog } from '../src/rr-calibration-dialog.js';
@@ -2061,6 +2064,207 @@ describe('rr-editor-view', () => {
 
       expect(bar(el).images).to.have.length(1);
       expect(bar(el).images[0]).to.equal('blob:mock-url');
+    });
+
+    /**
+     * An archive on an occupancy service reads its images over the network, one
+     * request each, and a read can fail (#333). Here `getImage` is held open per
+     * filename, which is what a slow service looks like from inside the editor.
+     */
+    describe('reading the images one at a time (#333)', () => {
+      /** Each read, in order, and the resolver that lets it answer. */
+      let asked: string[];
+      let waiting: Map<string, (bytes: Uint8Array | null) => void>;
+      let failing: Map<string, (err: Error) => void>;
+
+      beforeEach(() => {
+        asked = [];
+        waiting = new Map();
+        failing = new Map();
+        archive.getManifest().images.push(
+          { filename: 'img2.jpg', labeled_complete: false, labels: [] },
+          { filename: 'img3.jpg', labeled_complete: false, labels: [] }
+        );
+        vi.spyOn(archive, 'getImage').mockImplementation(
+          (filename: string) =>
+            new Promise<Uint8Array | null>((resolve, reject) => {
+              asked.push(filename);
+              waiting.set(filename, resolve);
+              failing.set(filename, reject);
+            })
+        );
+        // One URL per blob, so a test can tell the viewer's image apart.
+        let made = 0;
+        vi.mocked(URL.createObjectURL).mockImplementation(() => `blob:${made++}`);
+      });
+
+      /** Let one read answer, and settle what follows it. */
+      async function answer(el: RREditorView, filename: string) {
+        waiting.get(filename)!(new Uint8Array([1, 2, 3]));
+        await flush();
+        await el.updateComplete;
+      }
+
+      /** Let one read fail, and settle what follows it. */
+      async function fail(el: RREditorView, filename: string) {
+        failing.get(filename)!(new Error('the service answered 500'));
+        await flush();
+        await el.updateComplete;
+      }
+
+      const viewer = (el: RREditorView) => el.shadowRoot!.querySelector('rr-viewer')!;
+
+      it('reads the image on screen first, and paints it before the rest are read', async () => {
+        const session = new EditSession(archive);
+        session.selectImage('img3.jpg');
+        const el = await fixture<RREditorView>(
+          html`<rr-editor-view .session=${session}></rr-editor-view>`
+        );
+        await flush();
+
+        // The photograph the person is looking at, not the first in the list.
+        expect(asked).to.deep.equal(['img3.jpg']);
+
+        await answer(el, 'img3.jpg');
+
+        // On screen, while the other two are still unread.
+        expect(viewer(el).src).to.equal('blob:0');
+        expect(asked).to.deep.equal(['img3.jpg', 'img1.jpg']);
+      });
+
+      it('reads an image selected mid-pass next, rather than at the end of the queue', async () => {
+        const el = await mount();
+        await flush();
+        expect(asked).to.deep.equal(['img1.jpg']);
+
+        await selectImage(el, 2);
+        await answer(el, 'img1.jpg');
+
+        expect(asked).to.deep.equal(['img1.jpg', 'img3.jpg']);
+        await answer(el, 'img3.jpg');
+        expect(viewer(el).src).to.equal('blob:1');
+      });
+
+      it('goes on past a read that failed, and says so once for the pass', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const el = await mount();
+        const notices = noticesOf(el);
+        await flush();
+
+        await fail(el, 'img1.jpg');
+        await fail(el, 'img2.jpg');
+        await answer(el, 'img3.jpg');
+
+        // Every other image was read, and the two that were not are one notice.
+        expect(bar(el).images.filter(url => url !== '')).to.have.length(1);
+        expect(notices).to.have.length(1);
+        expect(notices[0]).to.contain('img1.jpg');
+        expect(notices[0]).to.contain('img2.jpg');
+      });
+
+      it('starts a pass for the next archive while the last read is still waiting', async () => {
+        const el = await mount();
+        await flush();
+        expect(asked).to.deep.equal(['img1.jpg']);
+
+        // Open, with the read of the old archive's first image still in flight.
+        const next = new R49Archive();
+        next.setManifest({
+          version: 4,
+          layout: { name: 'Next', scale: 'N', calibration: { points: [] }, sensors: [] },
+          camera: { resolution: { width: 100, height: 100 } },
+          images: [{ filename: 'other.jpg', labeled_complete: false, labels: [] }],
+        });
+        vi.spyOn(next, 'getImage').mockResolvedValue(new Uint8Array([9]));
+        el.session = new EditSession(next);
+        await el.updateComplete;
+        await flush();
+
+        expect(next.getImage).toHaveBeenCalledWith('other.jpg');
+        expect(el.shadowRoot!.querySelector('rr-viewer')!.src).to.not.be.null;
+
+        // And the abandoned read answering later changes nothing.
+        await answer(el, 'img1.jpg');
+        expect(el.shadowRoot!.querySelector('rr-viewer')!.src).to.not.be.null;
+      });
+
+      it('says nothing for a read that failed after the archive was replaced', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const el = await mount();
+        const notices = noticesOf(el);
+        await flush();
+        expect(asked).to.deep.equal(['img1.jpg']);
+
+        // The next archive names the same image, so a failure recorded against
+        // the name by the abandoned pass would be recorded against *this*
+        // archive's image.
+        const next = new R49Archive();
+        next.setManifest({
+          version: 4,
+          layout: { name: 'Next', scale: 'N', calibration: { points: [] }, sensors: [] },
+          camera: { resolution: { width: 100, height: 100 } },
+          images: [{ filename: 'img1.jpg', labeled_complete: false, labels: [] }],
+        });
+        vi.spyOn(next, 'getImage').mockResolvedValue(new Uint8Array([9]));
+        el.session = new EditSession(next);
+        await el.updateComplete;
+        await flush();
+        expect(viewer(el).src).to.not.be.null;
+
+        // The old archive's read rejects now, with nobody looking at it.
+        await fail(el, 'img1.jpg');
+
+        // No toast naming an archive that is no longer open, and the image the
+        // new archive does have is still on screen.
+        expect(notices).to.have.length(0);
+        expect(viewer(el).src).to.not.be.null;
+      });
+
+      it('gives a name that left the archive a fresh read when it comes back', async () => {
+        // An image the archive had no bytes for is not asked for again — until
+        // its name goes, and something else is stored under it.
+        const el = await mount();
+        await flush();
+        waiting.get('img1.jpg')!(null);
+        await flush();
+        await answer(el, 'img2.jpg');
+        await answer(el, 'img3.jpg');
+        expect(asked).to.deep.equal(['img1.jpg', 'img2.jpg', 'img3.jpg']);
+
+        archive.getManifest().images.shift();
+        el.requestUpdate();
+        await el.updateComplete;
+        await flush();
+        archive.getManifest().images.push({
+          filename: 'img1.jpg',
+          labeled_complete: false,
+          labels: [],
+        });
+        el.requestUpdate();
+        await el.updateComplete;
+        await flush();
+
+        expect(asked.filter(name => name === 'img1.jpg')).to.have.length(2);
+      });
+
+      it('does not ask again for an image whose read failed', async () => {
+        // `updated()` runs the pass after every render, so a retry per render
+        // would be an unbounded loop of failing requests and toasts.
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const el = await mount();
+        const notices = noticesOf(el);
+        await flush();
+        await fail(el, 'img1.jpg');
+        await answer(el, 'img2.jpg');
+        await answer(el, 'img3.jpg');
+
+        el.requestUpdate();
+        await el.updateComplete;
+        await flush();
+
+        expect(asked.filter(name => name === 'img1.jpg')).to.have.length(1);
+        expect(notices).to.have.length(1);
+      });
     });
   });
 

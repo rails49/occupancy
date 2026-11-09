@@ -3,12 +3,15 @@
 Guidance for Claude Code (claude.ai/code) when working in `ui/`.
 
 A static webapp: [Lit](https://lit.dev/) elements, [Shoelace](https://shoelace.style/) components,
-Vite, TypeScript. It edits `.r49` layout archives through the file picker and runs the detector in
-the browser via ONNX Runtime WASM.
+Vite, TypeScript. It edits `.r49` layout archives — through the file picker, and on an occupancy
+service where one answers at `/live` (#333) — and runs the detector in the browser via ONNX Runtime
+WASM.
 
 **This package has no backend of its own, and must not grow one — do not introduce one without
 discussion.** Since #331 it is a client of an [occupancy service](../GLOSSARY.md#occupancy) on its own
 origin, where one runs: [`../docs/UI.md`](../docs/UI.md) § An occupancy service is found at `/live`.
+Since #333 it opens that service's archive and saves back to it, which is a client of somebody
+else's backend and not one of its own.
 
 ## The three documents, and which one is true
 
@@ -36,7 +39,8 @@ you are touching:
 | :--- | :--- |
 | what the editor does and deliberately does not do | What the editor builds |
 | `rr-app`, `editSession.ts`, who owns which state | State: props down, events up |
-| `persistence.ts`, Open and Save | Saving is two paths, and the fallback is permanent |
+| `persistence.ts`, Open and Save | Saving is three routes, and the fallback is permanent |
+| `serviceArchive.ts`, `getImage`, reading images | An image is read when it is needed, and a read can fail |
 | anything that writes `ManifestData`, `history.ts` | Every manifest mutation goes through `history.record` |
 | car authoring clicks | Chaining; Right-click is a state branch, and the menu knows nothing |
 | class names, `vocabulary.ts` | The vocabulary |
@@ -48,7 +52,7 @@ you are touching:
 | `base` in `vite.config.ts`, `/ort/`, `/shoelace`, `modelAssets.ts` | Absolute asset paths |
 | `detectorSession.ts`, the model | Model loading lives in `detectorSession.ts` |
 | the live loop, `liveSources.ts`, a frame or result source | Frames and results come from sources |
-| `liveContract.ts`, `occupancyService.ts`, `/live` | An occupancy service is found at `/live` |
+| `liveContract.ts`, `occupancyService.ts`, `serviceArchive.ts`, `/live` | An occupancy service is found at `/live` |
 | `occupancy.ts`, `SensorState` | L1 lives in `occupancy.ts` |
 | `driftSession.ts`, drift readouts | Camera drift lives in `driftSession.ts` |
 | `diagnostics.ts`, `rr-diagnostics-view` | Diagnostics reads the model against the labels |
@@ -180,7 +184,10 @@ caught none of the six. Two more things follow, and both are load-bearing:
 * **jsdom has no File System Access API**, which is the honest baseline — it is the fallback path,
   and it is what Safari and every phone run. `tests/persistence.test.ts` covers the write-back
   routes by installing fakes on `window`, so it proves the module *routes* correctly and **not**
-  that Chromium's API behaves as documented, which nothing in jsdom could show.
+  that Chromium's API behaves as documented, which nothing in jsdom could show. The service route
+  (#333) needs no handle, so it is the one write-back route jsdom runs end to end, against a
+  stubbed `fetch` — `tests/serviceArchive.test.ts` asserts the requests, in order, with their
+  headers.
 
 * **jsdom does not lay out or paint.** `getBoundingClientRect()` is all zeros and SVG geometry
   (`createSVGPoint`, `getScreenCTM`) is absent, so `tests/rr-viewer.test.ts` stubs both per test —

@@ -4,6 +4,7 @@ import { R49Archive } from '@rails49/r49';
 import type { Detection } from '@rails49/detector';
 import '../src/rr-live-view.js';
 import { RRLiveView } from '../src/rr-live-view.js';
+import type { FrameAddDetail } from '../src/rr-live-view.js';
 import { RRStatsBar } from '../src/rr-stats-bar.js';
 import type {
   FrameSource,
@@ -315,16 +316,22 @@ describe('rr-live-view with sources of its own', () => {
      * picture through `src`, answers it, and declares the layout the answers
      * are keyed on.
      */
+    interface Answer {
+      src?: string;
+      fresh?: boolean;
+      detections?: Detection[];
+      l0Age?: number;
+      notice?: string;
+      states?: ReadonlyMap<string, SensorState>;
+      details?: ServiceDetails;
+      /** The frame this answer carried, which Freeze offers (#334). */
+      frame?: { id: string; bytes: Blob };
+      /** Make `resultFor` reject for this answer, which the contract forbids. */
+      fail?: boolean;
+    }
+
     function fakeService(
-      answers: {
-        src?: string;
-        fresh?: boolean;
-        detections?: Detection[];
-        l0Age?: number;
-        notice?: string;
-        states?: ReadonlyMap<string, SensorState>;
-        details?: ServiceDetails;
-      }[],
+      answers: Answer[],
       { openError = null as string | null, layoutLate = false } = {}
     ) {
       let turn = -1;
@@ -356,6 +363,17 @@ describe('rr-live-view with sources of its own', () => {
         async open() {
           return openError;
         },
+        /**
+         * Say something new from the next turn on. The last answer queued
+         * repeats, so this is what makes a state the test can wait for.
+         */
+        say(answer: Answer) {
+          answers.push(answer);
+        },
+        // The frame the current answer carried, as the service holds it (#334).
+        get shownFrame() {
+          return answers[Math.max(turn, 0)]?.frame ?? null;
+        },
         close() {},
         async next(): Promise<SourceFrame | null> {
           await new Promise(resolve => setTimeout(resolve, 0));
@@ -374,6 +392,7 @@ describe('rr-live-view with sources of its own', () => {
         async resultFor() {
           const answer = answers[Math.max(turn, 0)];
           source.asked++;
+          if (answer.fail) throw new Error('the source broke its contract');
           return {
             ...(answer.detections !== undefined ? { detections: answer.detections } : {}),
             ...(answer.l0Age !== undefined ? { l0Age: answer.l0Age } : {}),
@@ -386,9 +405,12 @@ describe('rr-live-view with sources of its own', () => {
       return source satisfies FrameSource & ResultSource;
     }
 
-    const mount = (source: FrameSource & ResultSource) =>
+    const mount = (source: FrameSource & ResultSource, archive: R49Archive | null = null) =>
       fixture<RRLiveView>(
-        html`<rr-live-view .sources=${{ frames: source, results: source }}></rr-live-view>`
+        html`<rr-live-view
+          .archive=${archive}
+          .sources=${{ frames: source, results: source, service: true }}
+        ></rr-live-view>`
       );
 
     it('shows the frame through src and draws the layout the source declares', async () => {
@@ -569,6 +591,134 @@ describe('rr-live-view with sources of its own', () => {
       expect(stats.alignmentTolerance).to.be.null;
     });
 
+    // #333 binds the service's own archive to the page while the live view is
+    // watching that service, so "no archive" stopped being what tells service
+    // mode apart. Measuring drift against the service's archive would be this
+    // page second-guessing the judgement it is only relaying.
+    it('measures no drift with the service\'s own archive bound (#333)', async () => {
+      const source = fakeService([{ src: 'blob:one' }]);
+
+      const el = await mount(source, archive);
+      await waitFor(el, () => el.shadowRoot!.querySelector('rr-viewer')!.src !== null);
+
+      expect(openDriftCheck).not.toHaveBeenCalled();
+      expect(loadDetector).not.toHaveBeenCalled();
+      expect(el.shadowRoot!.querySelector('.recorder')).to.be.null;
+      // The layout drawn is still the source's, not the archive's.
+      expect(el.shadowRoot!.querySelector('rr-viewer')!.dpt).toBe(20);
+    });
+
+    describe('Freeze (#334)', () => {
+      const button = (el: RRLiveView, label: string) =>
+        [...el.shadowRoot!.querySelectorAll('button')].find(b => b.textContent!.trim() === label);
+      const freeze = (el: RRLiveView) => button(el, 'Freeze');
+
+      /** Every `rr-frame-add` the view sent, in order. */
+      function adds(el: RRLiveView) {
+        const seen: FrameAddDetail[] = [];
+        el.addEventListener('rr-frame-add', e => seen.push((e as CustomEvent<FrameAddDetail>).detail));
+        return seen;
+      }
+
+      const frame = (id: string, text: string) => ({ id, bytes: new Blob([text]) });
+
+      it('stands beside Details and sends the frame on screen, with the feed running', async () => {
+        const onScreen = frame('f-1', 'first frame');
+        const source = fakeService([{ src: 'blob:one', frame: onScreen }]);
+
+        const el = await mount(source);
+        const sent = adds(el);
+        await waitFor(el, () => freeze(el)?.disabled === false);
+
+        // Details first, as #332 put it there; Freeze is the second button of
+        // the same bar, where the recorder stands in local mode.
+        const bar = [...el.shadowRoot!.querySelectorAll('.details-bar button')];
+        expect(bar.map(b => b.textContent!.trim())).toEqual(['Details', 'Freeze']);
+
+        const turns = source.asked;
+        freeze(el)!.click();
+        await el.updateComplete;
+
+        expect(sent).toHaveLength(1);
+        // The bytes as the source holds them, and the id of the answer they
+        // came in — the view reads neither.
+        expect(sent[0].bytes).toBe(onScreen.bytes);
+        expect(sent[0].frameId).toBe('f-1');
+
+        // The picture does not stop: the loop goes on asking and the viewer
+        // goes on being handed frames.
+        await waitFor(el, () => source.asked > turns + 1);
+        expect(source.asked).toBeGreaterThan(turns + 1);
+        expect(el.shadowRoot!.querySelector('rr-viewer')!.src).toBe('blob:one');
+      });
+
+      it('is disabled before the first frame, on an answer with none, and enabled by the next', async () => {
+        const source = fakeService([{ src: 'blob:one', frame: frame('f-1', 'first') }]);
+
+        const el = await mount(source);
+        // The first answer is a macrotask away, so this is the state before
+        // any frame has arrived.
+        expect(freeze(el)!.disabled).toBe(true);
+
+        await waitFor(el, () => freeze(el)!.disabled === false);
+        expect(freeze(el)!.disabled).toBe(false);
+
+        // An answer with only the `json` part: the picture stays on screen and
+        // it is out of date, so there is nothing to add.
+        source.say({ fresh: false, notice: 'No picture from the camera' });
+        await waitFor(el, () => freeze(el)!.disabled);
+        expect(freeze(el)!.disabled).toBe(true);
+        expect(el.shadowRoot!.querySelector('rr-viewer')!.src).toBe('blob:one');
+
+        // A failed request is the same answer from the view's side.
+        source.say({ fresh: false, notice: 'Cannot reach the occupancy service' });
+        await waitFor(el, () => source.asked > 2);
+        expect(freeze(el)!.disabled).toBe(true);
+
+        source.say({ src: 'blob:two', frame: frame('f-2', 'second') });
+        await waitFor(el, () => freeze(el)!.disabled === false);
+        expect(freeze(el)!.disabled).toBe(false);
+      });
+
+      it('offers the picture on screen even while the answers are being skipped', async () => {
+        // `resultFor` is contracted never to reject and the loop skips a frame
+        // that does: the frame on offer therefore goes with the **picture**,
+        // not with the answers, or Freeze could add a frame nobody is looking
+        // at.
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const second = frame('f-2', 'second frame');
+        const source = fakeService([{ src: 'blob:one', frame: frame('f-1', 'first frame') }]);
+
+        const el = await mount(source);
+        const sent = adds(el);
+        await waitFor(el, () => freeze(el)?.disabled === false);
+
+        source.say({ src: 'blob:two', frame: second, fail: true });
+        const viewer = el.shadowRoot!.querySelector('rr-viewer')!;
+        await waitFor(el, () => viewer.src === 'blob:two');
+
+        freeze(el)!.click();
+        await el.updateComplete;
+
+        expect(sent).toHaveLength(1);
+        expect(sent[0].frameId).toBe('f-2');
+        expect(sent[0].bytes).toBe(second.bytes);
+      });
+
+      it('sends nothing while there is no frame to send', async () => {
+        const source = fakeService([{ fresh: false, notice: 'No picture from the camera' }]);
+
+        const el = await mount(source);
+        const sent = adds(el);
+        await waitFor(el, () => source.asked > 1);
+
+        freeze(el)!.click();
+        await el.updateComplete;
+
+        expect(sent).toEqual([]);
+      });
+    });
+
     describe('Details (#332)', () => {
       const detailsButton = (el: RRLiveView) =>
         [...el.shadowRoot!.querySelectorAll('button')].find(b => b.textContent!.trim() === 'Details');
@@ -724,7 +874,9 @@ describe('rr-live-view with sources of its own', () => {
     const mountService = () => {
       const service = occupancyService('/live');
       return fixture<RRLiveView>(
-        html`<rr-live-view .sources=${{ frames: service, results: service }}></rr-live-view>`
+        html`<rr-live-view
+          .sources=${{ frames: service, results: service, service: true }}
+        ></rr-live-view>`
       );
     };
     const latest = () => asked.filter(url => url.includes('/latest'));
@@ -788,8 +940,12 @@ describe('rr-live-view with sources of its own', () => {
     expect(loadDetector).toHaveBeenCalledTimes(1);
     const viewer = el.shadowRoot!.querySelector('rr-viewer')!;
     expect(viewer.stream).to.not.be.null;
-    // Details is a service's (#332): no button, no panel, no tracks.
+    // Details is a service's (#332), and so is Freeze (#334): no bar, no
+    // panel, no tracks. Freeze with the camera is out of scope — the editor's
+    // Capture from Camera is that path.
     expect(el.shadowRoot!.querySelector('.details-bar')).to.be.null;
+    expect([...el.shadowRoot!.querySelectorAll('button')].map(b => b.textContent!.trim())).to.not
+      .contain('Freeze');
     expect(el.shadowRoot!.querySelector('rr-service-details')).to.be.null;
     expect(viewer.tracks).toEqual([]);
   });

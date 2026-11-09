@@ -54,7 +54,9 @@ serves no service, so it behaves as it always has.
 contract — but it answers the same three paths with a real JPEG and a car moving along a length of
 track, which is enough to see frames, states, boxes and a frame rate on a device. It also sends
 every optional field of `LIVE.md`, with a PNG patch per sensor but one, for the Details panel
-([#332](https://github.com/rails49/occupancy/issues/332)). It serves the
+([#332](https://github.com/rails49/occupancy/issues/332)), and with `--archive <dir>` it serves and
+**accepts writes into** that folder, which is what the editor opens and saves
+([#333](https://github.com/rails49/occupancy/issues/333)). It serves the
 built page from the same origin, because `/live` is on the page's own origin and there is no setting
 for anything else.
 
@@ -67,8 +69,31 @@ Then open `http://<this machine's IP>:8080/` on the phone or tablet and press Li
 enough: service mode uses no camera, so it needs no secure context. Flags worth knowing:
 `--port`, `--fps`, `--no-frames` (the service saying it has no frame: the last picture should stay
 under "No picture from the camera", every sensor should read `unknown` with the reason, and the rate
-should drop to 0, and Details should keep the camera line, read `lost`) and `--churn` (drops the event-stream clients every 20 s, as the real service does
-after a save, so the page re-reads the manifest).
+should drop to 0, and Details should keep the camera line, read `lost`), `--churn` (drops the event-stream clients every 20 s, as the real service does
+after a save, so the page re-reads the manifest) and `--archive <dir>` (below).
+
+### Checking the archive on a service
+
+Without `--archive` the stand-in serves its own made-up manifest and no `ETag`, which is a
+**read-only** archive from the page's side: the page opens it, and Save says so and offers Save As.
+With `--archive <dir>` the folder is the archive, and the stand-in follows `LIVE.md`'s saving rules
+over it — `GET`, `PUT` and `DELETE` per file, the manifest's version in `ETag`, `If-Match` on every
+write, 412 on a stale one, and **411 on a body with no `Content-Length`**.
+
+```sh
+mkdir -p /tmp/yard && cp <some>.r49-manifest /tmp/yard/manifest.json   # or unzip a .r49 into it
+pnpm --filter @occupancy/ui build
+node bin/live-stub.mjs --archive /tmp/yard
+```
+
+The page opens that archive at load. Add an image, label it, press Save, reload: the image and the
+label are there, and the folder holds the file. Delete it, press Save, and the file is gone. Save As
+writes a `.r49` and moves the work to that file, after which Live goes back to this device's camera.
+
+Press Live and then **Freeze** ([#334](https://github.com/rails49/occupancy/issues/334)) and the
+frame on screen is added to that archive: the picture keeps running, the editor shows the new image,
+and Save writes it into the folder. With `--no-frames` the button is disabled, because the picture
+still on screen is out of date.
 
 `occupancy-service`'s conformance check passes against the stand-in, with frames on and off:
 

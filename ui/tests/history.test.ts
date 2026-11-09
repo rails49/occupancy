@@ -203,6 +203,85 @@ describe('EditHistory', () => {
     expect(history.isDirty).toBe(false);
   });
 
+  // A save is not instant: writing to an occupancy service is several requests,
+  // and an edit made while they are in flight is not in the bytes that went
+  // (#333). So the position is taken when the save starts and marked when it
+  // lands, which leaves that edit unsaved.
+  it('marks the position a save started from, leaving an edit made during it dirty', async () => {
+    const archive = await makeArchive();
+    const history = attached(archive);
+    const rename = (name: string) =>
+      history.record(`edit ${name}`, { kind: 'layout' }, () => {
+        archive.getManifest().layout = { ...archive.getManifest().layout, name };
+      });
+
+    await rename('A');
+    const position = history.position;
+    await rename('B');
+
+    history.markSaved(position);
+    expect(history.isDirty).toBe(true);
+
+    // Undoing back to what was written makes it clean again.
+    await history.undo();
+    expect(history.isDirty).toBe(false);
+  });
+
+  // Eviction shifts every index down, so a raw index held across one would mark
+  // a position one edit too late — reporting the archive clean when the edit
+  // made during the save was never written. The position counts from the first
+  // edit of the session instead.
+  it('keeps a save position across an eviction during the save', async () => {
+    const archive = await makeArchive();
+    // A budget small enough that the third entry evicts the first.
+    const history = new EditHistory(300);
+    history.attach(archive);
+    const rename = (name: string) =>
+      history.record(`edit ${name}`, { kind: 'layout' }, () => {
+        archive.getManifest().layout = { ...archive.getManifest().layout, name };
+      });
+
+    await rename('A');
+    await rename('B');
+    const position = history.position;
+    // The edit made while the save was in flight, which evicts the oldest.
+    await rename('C');
+    expect(history.size).toBeLessThan(3);
+
+    history.markSaved(position);
+    expect(history.isDirty).toBe(true);
+    await history.undo();
+    expect(history.isDirty).toBe(false);
+  });
+
+  it('marks the current position when a save gives none', async () => {
+    const archive = await makeArchive();
+    const history = attached(archive);
+
+    await history.record('edit name', { kind: 'layout' }, () => {
+      archive.getManifest().layout = { ...archive.getManifest().layout, name: 'A' };
+    });
+
+    history.markSaved();
+    expect(history.isDirty).toBe(false);
+  });
+
+  // An undo that lands while the save runs leaves the archive dirty too: what
+  // was written is no longer what the archive holds.
+  it('is dirty after an undo during a save', async () => {
+    const archive = await makeArchive();
+    const history = attached(archive);
+
+    await history.record('edit name', { kind: 'layout' }, () => {
+      archive.getManifest().layout = { ...archive.getManifest().layout, name: 'A' };
+    });
+    const position = history.position;
+    await history.undo();
+
+    history.markSaved(position);
+    expect(history.isDirty).toBe(true);
+  });
+
   it('discards the redo branch when a new edit is recorded', async () => {
     const archive = await makeArchive();
     const history = attached(archive);

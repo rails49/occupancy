@@ -1,11 +1,11 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, query, state } from 'lit/decorators.js';
-import { calibrationFit, getDPT, make_id } from '@rails49/r49';
+import { calibrationFit, getDPT } from '@rails49/r49';
 import type { Image, ManifestData, Point } from '@rails49/r49';
 import { MIN_DPT } from '@rails49/detector';
 import { captureFromCamera } from './capture.js';
+import { addPickedFiles, addPrepared, captureFilename } from './imageAdd.js';
 import type {
-  AddedImage,
   ClickResult,
   Drag,
   EditSession,
@@ -35,8 +35,6 @@ import type { ClassChoice } from './vocabulary.js';
 import { lookTheme, TURN_HEIGHT_PX } from '@rails49/look';
 import type { HistoryHighlight } from './history.js';
 import { HIGHLIGHT_DURATION_MS } from './highlight.js';
-import { clearExifOrientation } from './exifOrientation.js';
-import { imageSize } from './imageSize.js';
 import { makeThumbnail } from './thumbnail.js';
 import type {
   ViewerContextMenuDetail,
@@ -289,134 +287,6 @@ export interface NotifyDetail {
   readonly duration?: number;
 }
 
-/** Why a portrait image is refused, naming what the user picked (#255). */
-export function portraitRefusal(name: string, size: Size): string {
-  const shape = `${size.width}×${size.height}`;
-  return `${name} is portrait (${shape}) — an image must be landscape, so it was not added.`;
-}
-
-/**
- * Why an image of another size is refused, naming both sizes (#260).
- *
- * It names the two numbers rather than saying "wrong size", because which
- * half is wrong is the user's call: a shot taken at another zoom and an
- * archive whose `camera.resolution` is wrong read identically otherwise.
- */
-export function sizeRefusal(name: string, size: Size, required: Size): string {
-  const shape = `${size.width}×${size.height}`;
-  const declared = `${required.width}×${required.height}`;
-  return (
-    `${name} is ${shape}, the archive is ${declared} — ` +
-    `an added image must be the archive's size, so it was not added.`
-  );
-}
-
-/**
- * The bytes a picked or captured image is stored as, and the size the two
- * refusal rules are applied to (`SPEC.md` § Images).
- *
- * The orientation tag goes to 1 first, so the bytes the archive holds are the
- * bytes every reader agrees on (#255, `exifOrientation.ts`), and the stored
- * array is then what `imageSize` measures — the size a new archive takes as
- * `camera.resolution` (#254), and the size the rules are judged on.
- */
-async function prepareImage(picked: Uint8Array): Promise<Omit<AddedImage, 'filename'>> {
-  const bytes = clearExifOrientation(picked);
-  return { bytes, size: await imageSize(bytes) };
-}
-
-/**
- * Why a prepared image may not be stored, or null when it may
- * (`SPEC.md` § Images).
- *
- * A portrait array is refused rather than rotated: rotating would re-encode
- * the photograph, and software that rotated it once can rotate it back. An
- * image that is not the size required is refused because the detector's export
- * normalizes every label against `camera.resolution`, so a shot of another
- * field of view puts its labels in the wrong places (#260) — drawn scaled to
- * fit, which is why nothing on screen would say so. An image that does not
- * decode has no size to judge and is added as before.
- *
- * `required` is the session's `requiredImageSize` for a single add. Inside a
- * pick it is the size the pick has settled on, which is the same answer: the
- * first file the pick accepts is the one `EditSession.addImages` takes
- * `camera.resolution` from (#254).
- */
-function addRefusal(name: string, size: Size | undefined, required: Size | null): string | null {
-  if (!size) return null;
-  if (size.height > size.width) return portraitRefusal(name, size);
-  if (required && (size.width !== required.width || size.height !== required.height)) {
-    return sizeRefusal(name, size, required);
-  }
-  return null;
-}
-
-/**
- * Adds one captured image, or returns the notice that refuses it.
- *
- * The picker's path is {@link addPickedFiles}; both prepare and judge the same
- * way, so a capture and a pick of one file are refused in the same words.
- */
-async function addPrepared(
-  session: EditSession,
-  filename: string,
-  name: string,
-  picked: Uint8Array
-): Promise<string | null> {
-  const { bytes, size } = await prepareImage(picked);
-  const refusal = addRefusal(name, size, session.requiredImageSize);
-  if (refusal) return refusal;
-  await session.addImage(filename, bytes, size);
-  return null;
-}
-
-/**
- * Adds a whole pick as one history entry, and returns the notice naming what
- * it refused, or null when it refused nothing (#262).
- *
- * **Filename order**, not the order the picker handed the files over, which is
- * the platform's and on Chromium is the order they were clicked: a camera
- * names its files in the order it took them, so filename order is capture
- * order and the archive's image list reads as the session did. The comparison
- * is numeric, so `shot9.jpg` precedes `shot10.jpg`, and against a fixed
- * locale, so the order does not move with the browser's.
- *
- * Each file keeps its own name — `EditSession.addImages` falls back to a
- * generated one only for a collision (#256) — because the names are what the
- * corpus is indexed by outside this program.
- *
- * A refused file is skipped and the rest of the pick is added: forty
- * photographs with one 0.5x shot among them cost one Cmd+Z, and one toast
- * naming the shot rather than forty-one toasts.
- */
-async function addPickedFiles(
-  session: EditSession,
-  files: readonly File[]
-): Promise<string | null> {
-  const ordered = [...files].sort((a, b) =>
-    a.name.localeCompare(b.name, 'en', { numeric: true })
-  );
-  const adds: AddedImage[] = [];
-  const refusals: string[] = [];
-  let required = session.requiredImageSize;
-
-  for (const file of ordered) {
-    const { bytes, size } = await prepareImage(new Uint8Array(await file.arrayBuffer()));
-    const refusal = addRefusal(file.name, size, required);
-    if (refusal) {
-      refusals.push(refusal);
-      continue;
-    }
-    adds.push({ filename: file.name, bytes, size });
-    // In an archive where nothing is positioned, this file is the one that
-    // sets `camera.resolution`, so it is what the rest of the pick is held to.
-    if (!required && size) required = size;
-  }
-
-  await session.addImages(adds);
-  return refusals.length === 0 ? null : refusals.join(' ');
-}
-
 /** An image's blob URLs: full size for the viewer, a small copy for the strip. */
 interface ImageUrls {
   full: string;
@@ -433,6 +303,17 @@ function revokeImageUrls(urls: ImageUrls) {
 
 /** How long a notice from the session stays up, in ms (#324). */
 const NOTICE_MS = 3000;
+
+/**
+ * One notice for everything a read pass could not get (#333).
+ *
+ * Named rather than counted up to three, because the name is what tells the
+ * person whether the image they are about to label is one of them.
+ */
+function unreadNotice(filenames: readonly string[]): string {
+  const what = filenames.length === 1 ? 'image' : 'images';
+  return `Could not read ${filenames.length} ${what}: ${filenames.join(', ')}`;
+}
 
 /**
  * Main editor view: shows an archive's images and what is authored on them,
@@ -477,6 +358,21 @@ export class RREditorView extends LitElement {
    * stated here, above the image it is about.
    */
   @state() private _frameMismatch: ViewerMediaFrameDetail | null = null;
+  /**
+   * Images whose bytes this session could not get: a read that failed, or a
+   * name the archive has no bytes under (#333). Not asked for again — see
+   * {@link _syncImageUrls} — and dropped when the name leaves the archive, or
+   * with the session.
+   */
+  private _unreadable = new Set<string>();
+  /**
+   * The session a read pass is running for, or null when none is.
+   *
+   * The **session** and not a flag: a pass whose read is still awaiting the
+   * network when the archive is replaced must not hold the next session's pass
+   * shut, and must not clear a claim that is no longer its own.
+   */
+  private _reading: EditSession | null = null;
   /** Stops listening to the session. */
   private _unsubscribe: (() => void) | null = null;
   /** Stops listening to the session's notices. */
@@ -670,6 +566,11 @@ export class RREditorView extends LitElement {
       this._cursor = null;
       this._imageUrls.forEach(revokeImageUrls);
       this._imageUrls = new Map();
+      // What the last archive could not read says nothing about this one.
+      this._unreadable = new Set();
+      // A pass still awaiting the old archive's bytes will see the session has
+      // changed and stand down; it must not hold the next pass shut until then.
+      this._reading = null;
       // Zoom rects mean nothing on the next archive.
       this._fitZoom();
     }
@@ -726,6 +627,25 @@ export class RREditorView extends LitElement {
    * stays valid for as long as its image is in the list. Every full-size URL is
    * made before any thumbnail, so the image on screen does not wait for the
    * strip. An image that does not decode uses its full-size URL in the strip.
+   *
+   * **The image on screen is read first, and the screen is painted after each
+   * one** (#333). An archive on an occupancy service reads its images over the
+   * network, one request each, so reading them in manifest order and painting
+   * once at the end would leave the photograph the person is looking at waiting
+   * behind every image before it. The next image to read is chosen afresh on
+   * each turn, so selecting one that has not been read yet reads it next rather
+   * than at the end of the queue; the rest follow one at a time, because the
+   * thumbnail strip is made of them.
+   *
+   * **A read that fails costs that image and nothing else.** The pass goes on
+   * to the next one and ends with a single toast naming what it could not read
+   * — one for the pass, not one per image. A name that failed is not asked for
+   * again: `updated()` runs this after every render, and a retry per render
+   * would be an unbounded loop of failing requests behind an unbroken wall of
+   * toasts.
+   *
+   * One pass at a time, for the same reason: a `requestUpdate` inside it
+   * re-enters here through `updated()`.
    */
   private async _syncImageUrls() {
     const session = this.session;
@@ -738,18 +658,60 @@ export class RREditorView extends LitElement {
       this._imageUrls.delete(filename);
       changed = true;
     }
-    const made = new Map<ImageUrls, Blob>();
-    for (const filename of filenames) {
-      if (this._imageUrls.has(filename)) continue;
-      const data = await session.archive.getImage(filename);
-      if (this.session !== session || this._imageUrls.has(filename) || !data) continue;
-      const blob = new Blob([data as BlobPart], { type: 'image/jpeg' });
-      const urls: ImageUrls = { full: URL.createObjectURL(blob), thumbnail: null };
-      this._imageUrls.set(filename, urls);
-      made.set(urls, blob);
-      changed = true;
+    // A name that leaves the archive takes its failure with it, so an image
+    // stored under that name later gets a read of its own.
+    for (const filename of this._unreadable) {
+      if (!filenames.has(filename)) this._unreadable.delete(filename);
     }
     if (changed) this.requestUpdate();
+    if (this._reading === session) return;
+
+    this._reading = session;
+    const made = new Map<ImageUrls, Blob>();
+    const unread: string[] = [];
+    try {
+      for (;;) {
+        const filename = this._nextToRead();
+        if (filename === null) break;
+        let data: Uint8Array | null;
+        try {
+          data = await session.archive.getImage(filename);
+        } catch (err) {
+          console.error(`Failed to read ${filename}`, err);
+          // Checked here too, and before anything is recorded: a read that
+          // rejects after the archive was replaced must not put the old
+          // archive's name into the new session's `_unreadable` — which would
+          // leave an image of the new one permanently unread — nor toast names
+          // from an archive nobody is looking at any more.
+          if (this.session !== session) return;
+          this._unreadable.add(filename);
+          unread.push(filename);
+          continue;
+        }
+        if (this.session !== session) return;
+        if (this._imageUrls.has(filename)) continue;
+        if (!data) {
+          // No bytes under that name: a hole in the archive, which
+          // `imageMismatches()` is the question for, and not a failed read.
+          this._unreadable.add(filename);
+          continue;
+        }
+        const blob = new Blob([data as BlobPart], { type: 'image/jpeg' });
+        const urls: ImageUrls = { full: URL.createObjectURL(blob), thumbnail: null };
+        this._imageUrls.set(filename, urls);
+        made.set(urls, blob);
+        // After each one, so the photograph on screen appears as soon as it is
+        // here rather than when the last of them is.
+        this.requestUpdate();
+      }
+    } finally {
+      // Only if this pass is still the one running: the archive may have been
+      // replaced while it was waiting, and the next session's pass owns the
+      // claim by then.
+      if (this._reading === session) this._reading = null;
+    }
+    if (unread.length > 0) this._notify(unreadNotice(unread));
+
     for (const [urls, blob] of made) {
       const thumbnail = await makeThumbnail(blob).catch(() => blob);
       // Revoked while the thumbnail was made: the image went, or the session did.
@@ -757,6 +719,22 @@ export class RREditorView extends LitElement {
       urls.thumbnail = URL.createObjectURL(thumbnail);
       this.requestUpdate();
     }
+  }
+
+  /**
+   * The next image to read: the one on screen where it has no URL yet, else
+   * the first in manifest order that has none. `null` when there is nothing
+   * left to read.
+   *
+   * Asked again before every read, which is what lets a selection made while
+   * the pass is running jump the queue.
+   */
+  private _nextToRead(): string | null {
+    const wanted = (filename: string) =>
+      !this._imageUrls.has(filename) && !this._unreadable.has(filename);
+    const shown = this.session?.image?.filename;
+    if (shown !== undefined && wanted(shown)) return shown;
+    return this._images().find(image => wanted(image.filename))?.filename ?? null;
   }
 
   /**
@@ -981,8 +959,9 @@ export class RREditorView extends LitElement {
 
   /**
    * Images are added, from the picker or from the camera. Both prepare and
-   * judge the same way, and a refusal is toasted naming what the user chose:
-   * the picked files, or the capture that would have been stored.
+   * judge the same way — `imageAdd.ts` holds the three steps, which Live's
+   * Freeze takes too (#334) — and a refusal is toasted naming what the user
+   * chose: the picked files, or the capture that would have been stored.
    *
    * The picker takes **several files in one pick** (#262) — the photographs of
    * one session are chosen once, not once per photograph — and the whole pick
@@ -1007,7 +986,7 @@ export class RREditorView extends LitElement {
       input.click();
     } else if (source === 'camera') {
       try {
-        const filename = `capture_${make_id(3)}.jpg`;
+        const filename = captureFilename();
         const refusal = await addPrepared(session, filename, filename, await captureFromCamera());
         if (refusal) this._notify(refusal);
       } catch (err) {
