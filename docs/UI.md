@@ -275,7 +275,8 @@ package's (org ADR-0022).
   is complete. That is what a Save As on a service binding costs, and why the service route does not
   export at all.
 * A 404 is **not** a failed read: it is the archive having a hole in it, which `imageMismatches()`
-  is the question for, and it answers `null` exactly as an absent zip entry does.
+  is the question for, and it answers `null` exactly as an absent zip entry does. It gets no toast,
+  but like a failed read it is not asked for again while the manifest names it.
 
 ## Every manifest mutation goes through `history.record`
 
