@@ -38,7 +38,13 @@ import type { RrViewer } from './rr-viewer.js';
 /** What `camera.resolution` stands in as when an archive declares none. */
 const DEFAULT_RESOLUTION: Frame = { width: 1920, height: 1080 };
 
-/** `m:ss`: where a video file is, and how long it is, for the transport (#286). */
+/**
+ * `m:ss`: where a video file is, and how long it is, for the transport (#286).
+ *
+ * Both numbers are finite by the time they get here: a `<video>` reports `NaN`
+ * for the duration of a file whose metadata has not arrived and `Infinity` for
+ * one with no end, and `Playback.duration` answers `0` for both.
+ */
 function clockText(seconds: number): string {
   const whole = Math.max(0, Math.floor(seconds));
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`;

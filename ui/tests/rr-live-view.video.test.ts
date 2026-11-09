@@ -385,6 +385,20 @@ describe('rr-live-view playing a video file', () => {
     expect(el.shadowRoot!.querySelector('.video-time')!.textContent).toContain('0:45 / 1:30');
   });
 
+  it('reads 0:00 for a file whose length is not known yet', async () => {
+    // A `<video>` reports NaN before its metadata arrives, and Infinity for a
+    // file with no end. Neither may reach the screen as "NaN:NaN".
+    const el = await fixture<RRLiveView>(
+      html`<rr-live-view .archive=${archive}></rr-live-view>`,
+    );
+    standInVideo(el, standIn({ currentTime: 0, duration: NaN }));
+    await pickVideo(el, VIDEO);
+    await waitFor(el, () => el.shadowRoot!.querySelector('.video-time') !== null);
+
+    expect(el.shadowRoot!.querySelector('.video-time')!.textContent).toContain('0:00 / 0:00');
+    expect(el.shadowRoot!.querySelector<HTMLInputElement>('.video-seek')!.disabled).toBe(true);
+  });
+
   it('goes back to the camera, releasing the file', async () => {
     const el = await fixture<RRLiveView>(
       html`<rr-live-view .archive=${archive}></rr-live-view>`,
