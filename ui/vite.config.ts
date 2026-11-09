@@ -147,6 +147,9 @@ export const config: VitestConfig = {
     environment: 'jsdom',
     include: ['tests/**/*.test.ts'],
     setupFiles: ['tests/setup.ts'],
+    // A run holds at most 4 GB of JS heap in all.
+    maxWorkers: 4,
+    poolOptions: { forks: { execArgv: ['--max-old-space-size=1024'] } },
   },
   build: {
     rollupOptions: {
