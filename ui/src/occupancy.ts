@@ -13,9 +13,10 @@ import type { Point, Sensor } from '@rails49/r49';
  * one describes measurement that would be wrong.
  *
  * `no-frame` is the camera giving nothing to look at — before its first
- * picture, after they stop, or where access to it was refused (#345). It is
- * the absence that precedes all the others: the model was never asked, because
- * there were no pixels to ask it about.
+ * picture, after they stop, or where access to it was refused (#345). The
+ * model was never asked, because there were no pixels to ask it about, which
+ * puts it above `drift` and the rest of the per-frame reasons and below
+ * `no-model`.
  *
  * `no-service` and `not-reported` are this page's findings about an occupancy
  * service (#331): its answer could not be read, or it named no state for a
@@ -127,8 +128,8 @@ export function occupancy(input: {
   // for both reasons; reporting the system-wide cause is the one that tells a
   // human what to fix.
   //
-  // Drift comes first of all, and that ordering is the refusal. The other three
-  // reasons say a measurement could not be made; this one says a measurement
+  // Drift outranks the absences below it, and that ordering is the refusal.
+  // Those say a measurement could not be made; this one says a measurement
   // could, and must not be trusted — so it outranks them rather than waiting
   // behind a missing model for its turn. It is also the only one that survives
   // being fixed elsewhere: build the model, calibrate the layout, and a drifted
