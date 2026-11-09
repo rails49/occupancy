@@ -29,6 +29,12 @@ const frame: SourceFrame = {
   height: 720,
 };
 
+/**
+ * A turn that carried no frame: the camera has none to give (#345). The pixels
+ * are the same object, which is the point — nothing may read them.
+ */
+const quiet: SourceFrame = { ...frame, fresh: false };
+
 /** One sensor at the centre of a 100x100 frame, under the car above. */
 function oneSensorArchive() {
   const archive = new R49Archive();
@@ -118,6 +124,56 @@ describe('localModelResultSource', () => {
     // Nothing inferred, so nothing to time — and the stats bar keeps the last
     // number it was given rather than being handed a zero.
     expect(result.inference).toBeUndefined();
+  });
+
+  it('does not look at a turn that carried no frame, and says so', async () => {
+    // `SourceFrame.fresh: false` says nothing may read pixels from it, so the
+    // detector is not asked: there is no frame to ask it about (#345).
+    const source = localModelResultSource(archive);
+    await source.open();
+
+    const result = await source.resultFor(quiet, { drifted: false, dpt: DPT });
+
+    expect(detect).not.toHaveBeenCalled();
+    expect([...result.sensorStates.values()]).toEqual([{ state: 'unknown', reason: 'no-frame' }]);
+    // No L0 at all, rather than an empty list: nothing looked, so no boxes are
+    // drawn and nothing counted cars for this turn.
+    expect(result.detections).toBeUndefined();
+    // Nothing inferred, so the readout keeps the last real measurement.
+    expect(result.inference).toBeUndefined();
+  });
+
+  it('answers the frame after a turn with no frame as usual', async () => {
+    const source = localModelResultSource(archive);
+    await source.open();
+    await source.resultFor(quiet, { drifted: false, dpt: DPT });
+
+    const back = await source.resultFor(frame, { drifted: false, dpt: DPT });
+
+    expect(back.detections).toEqual(detections);
+    expect(back.sensorStates.get('S1abcdefghi')).toMatchObject({ state: 'occupied' });
+  });
+
+  it('says no-model rather than no-frame when no model opened either', async () => {
+    // A model that never loaded is a session-long fact a frame would not have
+    // fixed, and it is the one that tells a human what to fix.
+    loadDetector.mockRejectedValue(new Error('no model'));
+    const source = localModelResultSource(archive);
+    await source.open();
+
+    const result = await source.resultFor(quiet, { drifted: false, dpt: DPT });
+
+    expect([...result.sensorStates.values()]).toEqual([{ state: 'unknown', reason: 'no-model' }]);
+  });
+
+  it('says no-frame rather than no-calibration for a turn with no frame', async () => {
+    // Without pixels there was nothing for the DPT to resample.
+    const source = localModelResultSource(archive);
+    await source.open();
+
+    const result = await source.resultFor(quiet, { drifted: false, dpt: null });
+
+    expect([...result.sensorStates.values()]).toEqual([{ state: 'unknown', reason: 'no-frame' }]);
   });
 
   it('gives unknown for a frame whose detect failed, and runs the next one', async () => {
