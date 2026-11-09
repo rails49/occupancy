@@ -633,6 +633,9 @@ export class RRLiveView extends LitElement {
     // Set before the awaits, so that leaving the view while a model is still
     // loading stops the loop before it starts.
     this._running = true;
+    // Which source this session opened on. A model takes seconds to load, and
+    // the Video file button is live for all of them (#286).
+    const run = this._frameRun;
 
     // A source that cannot answer is not fatal, and deliberately so — see the
     // class comment. The loop starts anyway and every sensor reports `unknown`.
@@ -642,6 +645,12 @@ export class RRLiveView extends LitElement {
     this._sourceLayout = this._results.layout ?? null;
 
     await this._openDriftCheck();
+
+    // A file picked while the model was loading has a loop of its own already,
+    // started by `_openFrames` — which also means the opening above and the
+    // drift check have landed in time for it. A second loop here would read one
+    // source twice and write two sets of answers into one view.
+    if (run !== this._frameRun) return;
 
     await this._loop();
   }

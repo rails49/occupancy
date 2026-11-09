@@ -726,6 +726,10 @@ be reached, so the phone records in its own Camera app and the clip is opened he
 * **One picture is one frame.** A frame is handed over only at a `currentTime` the loop has not run
   on, so a paused file **holds** the loop instead of re-detecting one still per animation frame, and
   a seek runs the frame it landed on whether the file is playing or paused.
+* **A pick during the model load joins the loop it already started.** `_run` opens the result source
+  and the drift check, which takes seconds, and the Video file button is live for all of them — so
+  the pick's `_openFrames` starts the loop and `_run` finds `_frameRun` moved on and starts none.
+  Two loops over one source would read it twice and write two sets of answers into one view.
 * **The frame source is swapped in place; the session is not.** `sources` is still read on connect,
   because a service *is* a different session — a video file is not. `rr-live-view._openFrames`
   stops the old source, starts the new one and restarts the loop, and leaves the result source, its

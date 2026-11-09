@@ -117,6 +117,12 @@ describe('rr-live-view playing a video file', () => {
 
   beforeEach(() => {
     loadDetector.mockClear();
+    // The implementation too, not just the calls: one case below holds the load
+    // open, and `mockClear` would leave that hanging for every case after it.
+    loadDetector.mockImplementation(async () => ({
+      detect: vi.fn(async () => detections),
+      dispose: vi.fn(async () => {}),
+    }));
     check.mockClear();
     check.mockImplementation(async () => ({ displacementPx: 0, refIndex: 0 }));
     openDriftCheck.mockClear();
@@ -245,6 +251,36 @@ describe('rr-live-view playing a video file', () => {
     // One model for the session: the swap is a different source, not a
     // different session.
     expect(loadDetector).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs a file picked while the model was still loading', async () => {
+    // The model takes seconds, and the button is live for all of them. The
+    // file's loop starts on the pick and the model lands into it — and the
+    // session's own call must not start a second loop over the same source.
+    const detect = vi.fn(async () => detections);
+    const landed = { detect, dispose: vi.fn(async () => {}) };
+    let land!: () => void;
+    loadDetector.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          land = () => resolve(landed);
+        }),
+    );
+    const el = await fixture<RRLiveView>(
+      html`<rr-live-view .archive=${archive}></rr-live-view>`,
+    );
+    const viewer = el.shadowRoot!.querySelector('rr-viewer')!;
+    const video = standIn();
+    standInVideo(el, video);
+    await pickVideo(el, VIDEO);
+    await waitFor(el, () => viewer.videoSrc !== null);
+
+    land();
+    video.currentTime = 9;
+    await waitFor(el, () => detect.mock.calls.length > 0);
+
+    expect(detect).toHaveBeenCalled();
+    expect(viewer.detections).toEqual(detections);
   });
 
   it('names the file it is playing', async () => {
