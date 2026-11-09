@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Sensor } from '@rails49/r49';
 import type { Detection } from '@rails49/detector';
-import { covers, occupancy } from '../src/occupancy.js';
+import { MARGIN_GAUGES, covers, occupancy } from '../src/occupancy.js';
 
 /**
  * L1. The contract SPEC § Occupancy Output writes once, pinned in the one place
@@ -220,10 +220,12 @@ describe('overlapping boxes', () => {
 
 describe('couplers', () => {
   it('leave no gap between abutting cars', () => {
-    // Two cars sharing an endpoint at x = 1110. Strict containment with no
-    // epsilon: the shared point itself is in neither box, but every point
-    // either side of it is in one, so a sensor between coupled cars reads
-    // occupied and couplings need never be labeled or detected.
+    // Two cars sharing an endpoint at x = 1110. Either side of the coupling is
+    // now inside *both* boxes, because each one is lengthened by 2 G past its
+    // own end (#337) — so the shared endpoint needed no special case before the
+    // margin and needs none now. Confidences tie here and the scan keeps the
+    // first box it found, which is the left one for both sensors; the
+    // highest-confidence rule is exercised where they differ.
     const left = detection({ centre: { x: 960, y: 540 }, length: 300 });
     const right = detection({ centre: { x: 1260, y: 540 }, length: 300 });
     const sensors = [sensor('just-left', 1109.9, 540), sensor('just-right', 1110.1, 540)];
@@ -236,23 +238,104 @@ describe('couplers', () => {
     });
     expect(states.get('just-right')).toEqual({
       state: 'occupied',
-      confidence: right.confidence,
-      detection: right,
+      confidence: left.confidence,
+      detection: left,
     });
   });
+});
 
-  it('leaves a real gap between uncoupled cars reading clear', () => {
-    // The epsilon SPEC refuses would manufacture a phantom here.
-    const left = detection({ centre: { x: 800, y: 540 }, length: 300 });
-    const right = detection({ centre: { x: 1200, y: 540 }, length: 300 });
-    const states = occupancy({
-      detections: [left, right],
+describe('the margin', () => {
+  // 2 G at each end along the long axis (ADR 0023). At DPT 20 one gauge is 20
+  // px, so the margin is 40 px and a 300 px box is tested as 380 px long.
+  const car = detection({ centre: { x: 960, y: 540 }, length: 300 });
+
+  it('reaches 2 G past each end, and no further', () => {
+    // Ends at 810 and 1110. 1.9 G past either one is occupied; 2.1 G is clear.
+    const sensors = [
+      sensor('right-inside', 1148, 540),
+      sensor('right-outside', 1152, 540),
+      sensor('left-inside', 772, 540),
+      sensor('left-outside', 768, 540),
+    ];
+    const states = occupancy({ detections: [car], sensors, dpt: DPT, frame: FRAME });
+
+    expect(states.get('right-inside')).toMatchObject({ state: 'occupied' });
+    expect(states.get('left-inside')).toMatchObject({ state: 'occupied' });
+    expect(states.get('right-outside')).toEqual({ state: 'clear' });
+    expect(states.get('left-outside')).toEqual({ state: 'clear' });
+  });
+
+  it('closes a 3 G gap between uncoupled cars and leaves a 5 G one open', () => {
+    // Two margins meet across any gap under 4 G: at 3 G the middle of the gap is
+    // 1.5 G from each end and reads occupied. SPEC's sentence about a real gap
+    // reading clear therefore holds for gaps over 4 G, and 5 G is one of those.
+    const closed = occupancy({
+      detections: [
+        detection({ centre: { x: 800, y: 540 }, length: 300 }), // ends at 950
+        detection({ centre: { x: 1160, y: 540 }, length: 300 }), // starts at 1010
+      ],
+      sensors: [sensor('gap', 980, 540)],
+      dpt: DPT,
+      frame: FRAME,
+    });
+    expect(closed.get('gap')).toMatchObject({ state: 'occupied' });
+
+    const open = occupancy({
+      detections: [
+        detection({ centre: { x: 800, y: 540 }, length: 300 }), // ends at 950
+        detection({ centre: { x: 1200, y: 540 }, length: 300 }), // starts at 1050
+      ],
       sensors: [sensor('gap', 1000, 540)],
       dpt: DPT,
       frame: FRAME,
     });
+    expect(open.get('gap')).toEqual({ state: 'clear' });
+  });
 
-    expect(states.get('gap')).toEqual({ state: 'clear' });
+  it('does not widen the box across the axis', () => {
+    // The margin is along the track only. Across it the derived width already
+    // carries ~1.4 m prototype of slack, and lengthening the sides would reach
+    // the next track over: 21 px off the centreline, just past the ~20.9 px
+    // half-width, still reads clear.
+    const states = occupancy({
+      detections: [car],
+      sensors: [sensor('beside', 960, 561)],
+      dpt: DPT,
+      frame: FRAME,
+    });
+
+    expect(states.get('beside')).toEqual({ state: 'clear' });
+  });
+
+  it('is a count of gauges, so its reach in pixels scales with DPT', () => {
+    // The number SPEC and ADR 0023 state is 2 *G*, not 40 px: at twice the DPT
+    // a gauge is twice as many pixels and the margin reaches twice as far. The
+    // offsets come from `MARGIN_GAUGES` rather than from a literal, so a test
+    // that still passed after the constant moved would have to be wrong twice.
+    const coarse = 40;
+    const end = car.centre.x + car.length / 2;
+    const reach = MARGIN_GAUGES * coarse;
+    const states = occupancy({
+      detections: [car],
+      sensors: [
+        sensor('inside', end + reach * 0.95, 540),
+        sensor('outside', end + reach * 1.05, 540),
+      ],
+      dpt: coarse,
+      frame: FRAME,
+    });
+
+    expect(states.get('inside')).toMatchObject({ state: 'occupied' });
+    expect(states.get('outside')).toEqual({ state: 'clear' });
+    // And at DPT 20 that same point past the end is well clear, which is what
+    // makes the reach the DPT's and not the box's.
+    const fine = occupancy({
+      detections: [car],
+      sensors: [sensor('inside', end + reach * 0.95, 540)],
+      dpt: DPT,
+      frame: FRAME,
+    });
+    expect(fine.get('inside')).toEqual({ state: 'clear' });
   });
 });
 
@@ -260,32 +343,49 @@ describe('the occupancy test', () => {
   const car = detection({ centre: { x: 500, y: 250 }, length: 200, width: 42, angle: 0 });
 
   it('contains a point inside the box', () => {
-    expect(covers(car, 42, { x: 500, y: 250 })).toBe(true);
-    expect(covers(car, 42, { x: 599, y: 270 })).toBe(true);
+    expect(covers(car, 42, 0, { x: 500, y: 250 })).toBe(true);
+    expect(covers(car, 42, 0, { x: 599, y: 270 })).toBe(true);
   });
 
   it('excludes a point past either half-extent', () => {
-    expect(covers(car, 42, { x: 601, y: 250 })).toBe(false);
-    expect(covers(car, 42, { x: 500, y: 272 })).toBe(false);
+    expect(covers(car, 42, 0, { x: 601, y: 250 })).toBe(false);
+    expect(covers(car, 42, 0, { x: 500, y: 272 })).toBe(false);
   });
 
   it('is strict: a point exactly on the boundary is not contained', () => {
-    // No tolerance epsilon, per SPEC. At a coupler two boxes abut on a shared
-    // endpoint, so a point between coupled cars is already strictly inside one
-    // of them, and a real gap between uncoupled cars must read clear.
-    expect(covers(car, 42, { x: 600, y: 250 })).toBe(false);
-    expect(covers(car, 42, { x: 500, y: 271 })).toBe(false);
+    // No epsilon on top of the margin, per SPEC — that would be a second
+    // tolerance nothing measured. The boundary tested is the lengthened one, so
+    // here, with the margin zero, it is the raw box's own end.
+    expect(covers(car, 42, 0, { x: 600, y: 250 })).toBe(false);
+    expect(covers(car, 42, 0, { x: 500, y: 271 })).toBe(false);
+  });
+
+  it('lengthens the box by the margin at both ends', () => {
+    // 40 px of margin on a box ending at 600 and 400: 639 is inside, 640 is the
+    // lengthened boundary and strictly outside, 641 is past it. The same either
+    // side.
+    expect(covers(car, 42, 40, { x: 639, y: 250 })).toBe(true);
+    expect(covers(car, 42, 40, { x: 640, y: 250 })).toBe(false);
+    expect(covers(car, 42, 40, { x: 641, y: 250 })).toBe(false);
+    expect(covers(car, 42, 40, { x: 361, y: 250 })).toBe(true);
+    expect(covers(car, 42, 40, { x: 359, y: 250 })).toBe(false);
+  });
+
+  it('leaves the across-axis extent alone', () => {
+    // The margin is along the long axis only; the half-width is still the
+    // width it was handed, margin or no margin.
+    expect(covers(car, 42, 40, { x: 500, y: 272 })).toBe(false);
   });
 
   it("uses the width it is handed, not the detection's own", () => {
     // The whole point of the normalization: an under-predicted width must not
     // shrink the box L1 tests against.
     const narrow = detection({ centre: { x: 500, y: 250 }, length: 200, width: 10, angle: 0 });
-    expect(covers(narrow, 10, { x: 500, y: 265 })).toBe(false);
-    expect(covers(narrow, 42, { x: 500, y: 265 })).toBe(true);
+    expect(covers(narrow, 10, 0, { x: 500, y: 265 })).toBe(false);
+    expect(covers(narrow, 42, 0, { x: 500, y: 265 })).toBe(true);
   });
 
-  it('rotates with the box', () => {
+  it('rotates with the box, margin included', () => {
     const diagonal = detection({
       centre: { x: 0, y: 0 },
       length: 200,
@@ -296,7 +396,12 @@ describe('the occupancy test', () => {
     // 50 px along the long axis is inside; 50 px across it is not.
     const along = { x: 50 / Math.SQRT2, y: 50 / Math.SQRT2 };
     const across = { x: -50 / Math.SQRT2, y: 50 / Math.SQRT2 };
-    expect(covers(diagonal, 20, along)).toBe(true);
-    expect(covers(diagonal, 20, across)).toBe(false);
+    expect(covers(diagonal, 20, 0, along)).toBe(true);
+    expect(covers(diagonal, 20, 0, across)).toBe(false);
+
+    // 120 px along it is past the end, and inside once 40 px of margin is added.
+    const past = { x: 120 / Math.SQRT2, y: 120 / Math.SQRT2 };
+    expect(covers(diagonal, 20, 0, past)).toBe(false);
+    expect(covers(diagonal, 20, 40, past)).toBe(true);
   });
 });

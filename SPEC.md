@@ -35,9 +35,13 @@ Everything above L1 is unspecified: event and transition semantics (Rocrail's en
 
 ### The occupancy test
 
-A sensor is occupied when a detection's oriented box strictly contains its point. There is no tolerance. The lateral direction already has about 1.4 m prototype of slack from the car width. At a coupling the two boxes share an endpoint, so a point between coupled cars is inside one of them. A real gap between uncoupled cars should read clear, and a tolerance would put a phantom there.
+A sensor is occupied when a detection's oriented box, lengthened by the [margin](GLOSSARY.md#occupancy) at both ends, strictly contains its point. The margin is two gauges, the occupancy service's default too. Why: [ADR 0023](docs/adr/0023-occupied-has-a-two-gauge-margin.md).
 
-The box tested keeps the detector's centre, orientation and length and takes the car width in place of the predicted width ([ADR 0005](docs/adr/0005-l1-is-geometry-over-l0-biased-toward-occupied.md)). Every training label has the same width, so the model's width output only fits a constant. L0 still reports the raw predicted box.
+The margin lengthens the long axis only. Nothing is added laterally: that direction already has about 1.4 m prototype of slack from the car width, and a wider box would reach the next track.
+
+There is no tolerance on top of the margin, and containment at the lengthened boundary is strict. At a coupling the two boxes share an endpoint and so overlap once lengthened, so a coupling need never be labeled or detected. A gap between uncoupled cars reads clear when it is over 4 G, where the two margins no longer meet. A smaller gap reads occupied, which is the bias ADR 0005 chose.
+
+The box tested takes its centre, orientation and length from the detector, and the car width in place of the predicted width ([ADR 0005](docs/adr/0005-l1-is-geometry-over-l0-biased-toward-occupied.md)). Every training label has the same width, so the model's width output only fits a constant. L0 still reports the raw predicted box, and so does the occupied state's covering detection.
 
 > ⚠️ Known limitation: long cars on tight curves. The box's long axis is the chord between the car's ends, but the track bows off that chord by the sagitta `L²/8R`. Once that exceeds the half-width (17.2 mm in HO), a sensor near the car's midpoint falls outside the box. The ends still register, so a long car crossing a sensor reads occupied → clear → occupied.
 >

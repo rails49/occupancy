@@ -660,6 +660,18 @@ that report. What L1 builds on stays in the package: the `Detection` shape and `
 width it substitutes for the predicted one. `covers`, the strict point-in-oriented-box test, sits
 beside `occupancy()` because nothing else calls it.
 
+**The box tested is lengthened by the margin, 2 G at each end of its long axis** (#337, SPEC § The
+occupancy test), so a box of `length` is tested as `length + 4 × dpt`. The number is
+`MARGIN_GAUGES` in this module and nowhere else, and `occupancy()` is the one place it is multiplied
+by a DPT, as `driftSession.ts` does with `MAX_DRIFT_TRACK_FRACTION`. `covers` takes a `marginPx`,
+not a DPT. The margin is not an input to `occupancy()`. Tests pin two consequences: a sensor either
+side of a coupling is inside both boxes, and a gap between uncoupled cars reads clear only over 4 G.
+
+**The service's own L1 cases run against `occupancy()`**, from a copy of its `conformance/l1.json`
+in `tests/fixtures/` with the source commit recorded beside it, in
+`tests/occupancy.shared.test.ts`. `lib/drift` does the same for the shared drift cases. The test
+does not compare the `unknown` reason, which is the vocabulary split below.
+
 It is pure and total — one state per sensor, always — so the live view hands `rr-viewer`'s sensor
 markers one answer and never builds an `unknown` itself. Its one caller in the live path is
 `localModelResultSource.ts` (#330); the view passes `drifted` and `dpt` in and reads the map back.
@@ -1045,6 +1057,7 @@ implementation:
 * **Matching is width-normalized**, the same substitution `occupancy()` makes and for the same
   reason: a label's width is *derived* from DPT rather than authored, so scoring the predicted width
   would charge the model against no ground truth. The raw ratio is reported, never matched on.
+  Matching keeps the raw length: L1's margin (#337) is not added here.
 * **`AGREE_IOU` is 0.7, deliberately not mAP50's 0.5.** At 0.5 a box half the car's length scores as
   agreement — two equal-width rectangles sharing half their length have exactly IoU 0.5 — and nobody
   looking at that picture would say the model agreed. It is a legibility threshold; no published

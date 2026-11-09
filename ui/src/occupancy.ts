@@ -51,6 +51,15 @@ export type SensorState =
   | { readonly state: 'unknown'; readonly serviceReason: string };
 
 /**
+ * The margin, in gauges: how far beyond a car's end, along the track, a sensor
+ * still reads occupied (`GLOSSARY.md` § Margin, `SPEC.md` § The occupancy test).
+ *
+ * 1 G is `dpt` pixels. `occupancy()` is the one place it is multiplied by the
+ * layout's DPT.
+ */
+export const MARGIN_GAUGES = 2;
+
+/**
  * L1: per-sensor occupancy, as a pure function of L0.
  *
  * Never calls a second model, so it cannot contradict the boxes drawn beside
@@ -63,7 +72,11 @@ export type SensorState =
  * diagnostics view from each building unknown-maps in their own branches —
  * three places that would have to agree about a contract SPEC wrote once.
  *
- * The box tested is **width-normalized**: centre, orientation and length come
+ * The box tested is lengthened by the margin: {@link MARGIN_GAUGES} at
+ * each end along its long axis, so a box of `length` is tested as
+ * `length + 4 × dpt`. Across the axis nothing is added.
+ *
+ * It is also **width-normalized**: centre, orientation and length come
  * from the detector, but `carWidthPx(dpt)` replaces the predicted width. Width
  * is a fit to a constant, so its deviation is pure error and directional: at
  * DPT 20 a car is ~42 px wide, so a centreline sensor sits ~21 px inside the
@@ -122,6 +135,7 @@ export function occupancy(input: {
   }
 
   const widthPx = carWidthPx(dpt);
+  const marginPx = MARGIN_GAUGES * dpt;
 
   for (const sensor of sensors) {
     if (sensor.x < 0 || sensor.x > frame.width || sensor.y < 0 || sensor.y > frame.height) {
@@ -135,7 +149,7 @@ export function occupancy(input: {
     // and `unknown` is never a confidence outcome.
     let best: Detection | null = null;
     for (const detection of detections) {
-      if (!covers(detection, widthPx, sensor)) continue;
+      if (!covers(detection, widthPx, marginPx, sensor)) continue;
       if (best === null || detection.confidence > best.confidence) best = detection;
     }
 
@@ -155,22 +169,31 @@ function unknown(reason: UnknownReason): SensorState {
 }
 
 /**
- * Whether an oriented box of the given width **strictly contains** a point.
+ * Whether an oriented box of the given width, lengthened by the margin at both
+ * ends, strictly contains a point.
  *
  * Tested in the box's own axes rather than against its corners: a point is
  * inside when its along-axis and across-axis offsets from the centre are both
  * within the respective half-extents. Four corners and a winding rule would
  * answer the same question with more ways to be wrong.
  *
- * No tolerance epsilon, per SPEC. Any value would be unvalidatable, the lateral
- * direction already carries ~1.4 m prototype of slack from the derived width,
- * and at a coupler two boxes abut on a shared endpoint so a point between
- * coupled cars is already inside one of them. A real gap between uncoupled cars
- * should read `clear`, and an epsilon would manufacture a phantom there.
+ * The along-axis half-extent is `length / 2 + marginPx`; the across-axis
+ * half-extent is `widthPx / 2`. Containment is strict at both, with no further
+ * tolerance (`SPEC.md` § The occupancy test).
  *
  * Exported for its tests only: `occupancy` is the only caller.
+ *
+ * @param widthPx  The box's full width in pixels — `carWidthPx(dpt)`, not the
+ *                 detector's predicted width.
+ * @param marginPx How far past each end still counts, in pixels:
+ *                 {@link MARGIN_GAUGES} gauges, which is `MARGIN_GAUGES * dpt`.
  */
-export function covers(detection: Detection, widthPx: number, point: Point): boolean {
+export function covers(
+  detection: Detection,
+  widthPx: number,
+  marginPx: number,
+  point: Point
+): boolean {
   const dx = point.x - detection.centre.x;
   const dy = point.y - detection.centre.y;
   const ux = Math.cos(detection.angle);
@@ -179,5 +202,5 @@ export function covers(detection: Detection, widthPx: number, point: Point): boo
   const along = dx * ux + dy * uy;
   const across = -dx * uy + dy * ux;
 
-  return Math.abs(along) < detection.length / 2 && Math.abs(across) < widthPx / 2;
+  return Math.abs(along) < detection.length / 2 + marginPx && Math.abs(across) < widthPx / 2;
 }
