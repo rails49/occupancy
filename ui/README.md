@@ -5,8 +5,9 @@ Web app for configuring track occupancy detection, plus a live view for real-tim
 `.r49` archives are opened and saved through the file picker, and classification runs in the browser
 via ONNX Runtime. There is no backend of this package's; where an
 [occupancy service](../GLOSSARY.md#occupancy) answers at `/live` on the page's own origin, the live
-view can show that service's frames and answers instead ([#331], `liveContract.ts`,
-`occupancyService.ts`). The deployed site serves none, and the editor is client-side either way.
+view shows that service's frames and answers ([#331], `liveContract.ts`, `occupancyService.ts`) and
+the page opens the archive that service serves and saves back to it ([#333],
+`serviceArchive.ts`). The deployed site serves none, and the editor is client-side either way.
 
 * **`../SPEC.md`** — what the system is *for*, and the requirements it is working toward. Covers the
   whole project, not just this package. Much of it is not built yet; treat it as the target, not a
@@ -44,7 +45,7 @@ Non-element modules use plain camelCase filenames with no prefix.
 ```
 rr-app                          ← shell: owns the editing session and the view mode
 ├── look-shell                  ← @rails49/look: the page
-│   ├── look-band               ← UI name, layout name and scale, bound file, settings gear
+│   ├── look-band               ← UI name, layout name and scale, where Save writes, settings gear
 │   └── look-rail               ← the views; in the editor, File, History and Tools
 ├── rr-settings-dialog          ← layout metadata + required-metadata gate (look-dialog)
 ├── rr-discard-dialog           ← Save, Discard changes or Cancel before New and Open (look-dialog)
@@ -170,10 +171,11 @@ rr-app                          ← shell: owns the editing session and the view
 
 ## State and data flow
 
-There is no Lit context and no shared store. `rr-app` creates one `EditSession` per archive on New
-and Open (`editSession.ts`, ADR 0017) and passes it down as the `.session` property; the live and
-diagnostics views get its `.archive`. Children report upward with bubbling `rr-*` custom events,
-and `rr-app` and the editor both subscribe to the session:
+There is no Lit context and no shared store. `rr-app` creates one `EditSession` per archive on New,
+on Open, and on finding an archive an occupancy service serves ([#333]) (`editSession.ts`,
+ADR 0017), and passes it down as the `.session` property; the live and diagnostics views get its
+`.archive`. Children report upward with bubbling `rr-*` custom events, and `rr-app` and the editor
+both subscribe to the session:
 
 ```
         .session ↓                    ↑ rr-* events (bubbles: true, composed: true)
@@ -183,19 +185,21 @@ rr-app ─────────── rr-editor-view ────────
 ```
 
 * **`rr-app` owns:** the session, the view mode, the band and the rail, file new/open/save, and the
-  occupancy service it found on this origin ([#331], `liveContract.ts` § `findService`). The check
-  runs once at page start and is silent either way; the service is handed to `rr-live-view` as both
-  of its sources, and New and Open leave it behind for good — including an answer that arrives
-  after them.
+  occupancy service it found on this origin ([#331], [#333], `liveContract.ts` § `findService`). The
+  check runs once at page start and is silent where there is no service; where there is one, the
+  service is handed to `rr-live-view` as both of its sources **and** the archive it serves is opened
+  and bound. New, Open and a picker Save As leave it behind for good — including an answer, or a
+  load, that arrives after them.
 * **The `EditSession` owns:** the archive and its **undo history**, the image on screen, **the
   active tool**, the **chain in progress**, and the open drag. Every manifest write the editor and
   the settings dialog make is one of its methods, and each goes through `history.record` (or one
   `beginGesture` per drag). A chain in progress writes nothing until the click that closes a car on
   it, so abandoning one leaves both the manifest and the stack untouched — however many cars the
   chain already wrote, since each of those is its own committed entry.
-* **`rr-editor-view` owns:** blob URLs for the images, the cursor the rubber band follows, the
-  dialog or menu that is open and what it is open on, the highlight after an undo, and the
-  thumbnails. It also owns the one control that sets `labeled_complete`, which is the only place in the
+* **`rr-editor-view` owns:** blob URLs for the images and the order they are read in ([#333]: the
+  image on screen first, one at a time, and what it could not read), the cursor the rubber band
+  follows, the dialog or menu that is open and what it is open on, the highlight after an undo, and
+  the thumbnails. It also owns the one control that sets `labeled_complete`, which is the only place in the
   format a human asserts something about absence. **The zoom is view state** ([#44]): a rect of the
   authored frame it hands the viewer, `null` for fit. It records nothing, it survives an image
   change and a live chain, New and Open drop it, and a **reveal pans to keep what an undo changed on
@@ -235,7 +239,8 @@ reaching into the archive directly leaves an undo stack that is wrong rather tha
 Application shell. Owns the editing session and routes between the views.
 
 **Internal state** (no public properties): `_session`, `_viewMode`
-(`'editor' | 'live' | 'diagnostics'`), `_binding`. Starts with no session and no binding.
+(`'editor' | 'live' | 'diagnostics'`), `_binding`, `_service`. Starts with no session and no
+binding; where this origin serves an occupancy service, both arrive from it ([#333]).
 
 **Handles:** `look-view` and `look-press` from its own band and rail, `rr-layout-change`,
 `rr-camera-height-change`, `rr-notify`.
@@ -268,20 +273,32 @@ hijack Cmd+Z mid-typing. A press with a drag still live does nothing (see `histo
   1920×1080 until the first image replaces it ([#254]), empty calibration points and no
   sensors. It **clears the binding**: the new archive is
   emphatically not the file that was open.
-* Open and Save go through `persistence.ts`, which owns the choice between
-  overwriting a file and downloading a new generation ([#48]). The binding is set **only once the
-  bytes parse** — a binding to a file that failed to load would aim the next save at an archive this
-  session never held.
-* Save `export()`s and hands the bytes to `writeArchive`, with `look-press`'s `shiftKey` meaning
-  Save As. A dismissed picker returns early: nothing written, nothing marked, no
-  toast. Everything else marks the history saved, including a download — the fallback did write a
-  file, and refusing to mark it would leave a phone permanently dirty. The toast names the verb and
-  the file, because "Saved to disk" would hide which of the two things just happened.
+* Open and Save go through `persistence.ts`, which owns the choice between the occupancy service,
+  overwriting a file and downloading a new generation ([#48], [#333]). The binding is set **only
+  once the bytes parse** — a binding to a file that failed to load would aim the next save at an
+  archive this session never held.
+* Save hands the **archive** to `writeArchive`, with `look-press`'s `shiftKey` meaning Save As. A
+  dismissed picker returns early: nothing written, nothing marked, no toast. A refusal from the
+  service says what the service said, up until it is closed, and marks nothing. Everything else
+  marks the history saved, including a download — the fallback did write a file, and refusing to
+  mark it would leave a phone permanently dirty. The toast names the verb and the file, because
+  "Saved" would hide which of the three things just happened.
+* **The history position is taken before the first request** and that position is marked, so an
+  edit made while the save was in flight leaves the archive dirty. A Save pressed while one is
+  running does nothing, and a toast stays up while it runs ([#333]).
 * The **stem** is the binding's, falling back to `layout.name` for an archive that has never been
-  saved. It does not follow a later rename: the file's identity is the file, and `layout.name` is
-  metadata stored inside it.
-* The band names the bound file in a `look-reading` **only when a handle exists** — that is exactly
-  when Save would overwrite it. A binding without a handle names no file that exists yet.
+  saved — which an archive on a service always is. It does not follow a later rename: the file's
+  identity is the file, and `layout.name` is metadata stored inside it.
+* The band names where Save writes in a `look-reading`, and **only where that is something that
+  exists**: the bound filename where there is a handle, "occupancy service" where the archive came
+  from one and took an `ETag`. A download, and a read-only service, name nothing writable and stay
+  quiet.
+* At page start, with nothing open, it looks for an occupancy service and **opens the archive it
+  serves** ([#333]): the check's `ETag` first, then `R49Archive.load` on the service's `archive/`
+  base URL. An archive the person
+  opened or created first wins, before the check answers and before the load does. No service, or a
+  service that is not one, is silent. A manifest that will not load gets the failed-load toast.
+  New, Open and a picker Save As leave the service behind for good.
 * `look-band`'s `ui` is "occupancy"; look draws the mark and the UI name (org
   [ADR-0019](https://github.com/rails49/.github/blob/main/docs/adr/0019-the-band-starts-with-the-mark-and-the-ui-name.md), [#206]).
 * `look-about` carries the layout's name and its **scale** as the detail ([#52]), read out of the
@@ -1396,8 +1413,10 @@ Camera stream under the two layers of the occupancy output ([#85]).
 | `archive` | `R49Archive \| null` |
 | `sources` | `LiveSources \| null` |
 
-An occupancy service is handed in as **both** sources at once, by `rr-app`, with `archive` left
-`null` ([#331]) — see `occupancyService.ts`.
+An occupancy service is handed in as **both** sources at once, by `rr-app`, with `service: true`
+([#331]) — see `occupancyService.ts`. That flag, and not the absence of an `archive`, is what makes
+it **service mode**: since [#333] the archive bound may be the service's own, and measuring drift
+against it would be this page second-guessing the judgement it is only relaying.
 
 * **Frames come from a frame source and results from a result source** ([#330], `liveSources.ts`).
   The loop asks `FrameSource.next()` for a frame and `ResultSource.resultFor()` for that frame's L0
@@ -1621,15 +1640,20 @@ What an occupancy service sent beyond L1, below the live view's viewer while Det
 
 ### `liveContract.ts`
 
-The live contract an occupancy service answers, read in one place ([#331]). The contract is
-`occupancy-service`'s, stated in its `LIVE.md`; this is the only file here that names a path, a part
-or a field of it.
+The live contract an occupancy service answers, read in one place ([#331], [#333]). The contract is
+`occupancy-service`'s, stated in its `LIVE.md`; this is the only file here that names a path, a part,
+a field, a method or a header of it.
 
 | Export | Description |
 |---|---|
 | `LIVE_BASE` | `'/live'`, on the page's own origin. One constant, not a setting |
 | `LIVE_VERSION`, `LATEST_TIMEOUT_MS` | The one contract version this reads, and how long a `latest` may take |
 | `manifestUrl`, `latestUrl`, `eventsUrl` | The three paths. `latestUrl(base, after)` sends the previous `frame_id` back **unchanged** |
+| `MANIFEST_NAME`, `archiveFileUrl(base, name)` | One file of the service's archive, each path segment percent-encoded ([#333]) |
+| `archiveBase(base)` | The archive's base, **absolute**, which is what `R49Archive.load` takes ([#333]) |
+| `readEtag(response)` | The `ETag` an answer carries, or `null` |
+| `putArchiveFile`, `deleteArchiveFile` | `PUT` and `DELETE` one file, with `If-Match` ([#333]) |
+| `SAVE_STALE`, `SAVE_REFUSED`, `saveRefusalRule(response)` | 412 and 422, and the rule a refusal states in its `error` |
 | `findService(base?)` | The service check: the manifest `Response` where this origin serves a service, else `null` |
 | `readLatest(response)` | One answer: `{ payload, frame, details }`, with `frame` `null` for an answer with only the `json` part. Throws `LiveError` |
 | `parsePayload(data)`, `l0AgeMs(payload)` | The JSON part validated field by field, and the L0 age in the service's own clock |
@@ -1642,10 +1666,14 @@ sensor id to the part `patches` names for it, because a part name cannot carry a
 sensor with no entry, or whose entry names a missing part, has no patch. `latestUrl(base, after,
 patches)` adds `patches=1`.
 
-**`findService` returns the answer, not a boolean**, so [#333] can read its `ETag` and open the
-manifest it already fetched. **Only a JSON content type counts**: the cloud copy of this page answers
+**`findService` returns the answer, not a boolean**, so the version in its `ETag` is read before the
+archive is loaded ([#333]). **Only a JSON content type counts**: the cloud copy of this page answers
 every unknown path with 200 `text/html`, so `response.ok` alone would find a service on a static
 host. Any other answer, and any network failure, is "no service", with no toast.
+
+**A write carries a `Blob` body** so the request has a `Content-Length`: a service following
+`LIVE.md` answers 411 without one. Each path segment is percent-encoded, so an image named with a
+space or a `#` addresses the file it names.
 
 **`readLatest` uses `response.formData()`.** The browser already has a multipart parser; the
 hand-rolled one in rails49/control#950 exists only because WebKit refused that type there, and if
@@ -1696,6 +1724,44 @@ withhold, and drift in service mode is [#336].
 carries `details`, the answer's optional fields with each patch as an object URL, and a failed
 answer carries none. The patch URLs are released when the next answer arrives and on leaving. The
 layout also holds the manifest's `tracks`.
+
+---
+
+### `serviceArchive.ts`
+
+How an archive opened from an occupancy service is saved back to it ([#333]).
+
+| Export | Description |
+|---|---|
+| `ServiceWriter` | `@rails49/r49`'s `ArchiveWriter` over the contract's requests. `etag` is the version the next request holds |
+| `saveToService(archive, base, etag)` | One save: `archive.writeChanges` through a fresh `ServiceWriter`. Resolves `ServiceWrite` |
+| `ServiceWrite` | `{ kind: 'wrote', etag }` or `{ kind: 'refused', message }` |
+
+**The archive and the save are the format's, not this package's** (org ADR-0022). `R49Archive.load`
+takes the service's base URL, `getImage` fetches an image as it is needed, `export()` fetches
+whatever is still unread, and `writeChanges` puts the added images, then `manifest.json`, then
+deletes each name the base held that the manifest no longer names — taking the manifest as it stood
+when it was called, so an edit made during a save is the next save's. What is left here is the one
+thing the format cannot state: how *this* page reaches a service.
+
+* **`put` is `PUT <base>/archive/<name>` and `remove` is `DELETE`**, with each path segment
+  percent-encoded and `If-Match` holding the version. The body is a `Blob` so the request carries a
+  `Content-Length`, which a service following `LIVE.md` answers 411 without.
+* **The manifest's answer replaces the version held**, so the deletes after it and the next save
+  hold the new one. An answer carrying no `ETag` is followed by a read of the manifest, because
+  holding the version from before the write would refuse every `DELETE` after it and the next save
+  too, reporting a copy somebody else changed when nobody did.
+* **A refused `put` ends the pass**, and comes back as `refused` rather than as a failure: 412 says
+  the copy changed and names Save As, 422 quotes the answer's `error`, any other status is named.
+  The files the pass did not reach stay unwritten and the next save carries them.
+* **A failed `DELETE` is logged and resolves**, so the save stands and the deletes after it still
+  run. The file stays on the service as an orphan, which occupancy-service#7 accepts, and r49
+  forgets the name — the orphan is never retried. What the archive *is* is what the manifest names,
+  and the manifest is already written by then.
+* **A network failure rejects**, which the caller reports as a failed save.
+
+`docs/UI.md` § An image is read when it is needed has what each caller does with a rejected
+`getImage`, and § Saving is three routes has where a save goes.
 
 ---
 
@@ -1767,18 +1833,21 @@ Camera helpers, shared by both views.
 
 ### `persistence.ts`
 
-Where a session's work goes when it is saved, and the two ways of putting it there ([#48]).
+Where a session's work goes when it is saved, and the three ways of putting it there ([#48],
+[#333]).
 
 | Export | Description |
 |---|---|
-| `FileBinding` | `{ stem, handle? }` — the file this session writes back to. **A handle means Save overwrites; no handle means Save downloads a new generation.** |
-| `SaveOutcome` | `{ kind: 'wrote' \| 'downloaded', binding, filename }` or `{ kind: 'cancelled' }` |
+| `FileBinding` | `{ stem, handle?, service? }` — where this session writes back to. **A service means Save writes to the occupancy service; a handle means Save overwrites that file; neither means Save downloads a new generation.** |
+| `ServiceBinding` | `{ base, etag }` — the archive on an occupancy service. `etag` `null` is a read-only copy ([#333]) |
+| `SaveOutcome` | `{ kind: 'wrote' \| 'downloaded', binding, filename }`, `{ kind: 'served', binding }`, `{ kind: 'refused', binding, message }` or `{ kind: 'cancelled' }` |
 | `OpenedArchive` | `{ file, binding }` |
+| `READ_ONLY_NOTICE` | What a read-only service binding is told when Save goes to a file instead |
 | `supportsFileSystemAccess()` | Whether a file can be written back in place |
 | `fileStem(filename)` | `west-yard.r49` → `west-yard` |
 | `timestampedName(stem, date?)` | `west-yard-20260802-1432.r49` — the download path's filename |
 | `openArchive()` | Picker where one exists, file input everywhere else; `null` on dismissal |
-| `writeArchive(bytes, binding, { rebind? })` | Writes, and reports which way |
+| `writeArchive(archive, binding, { rebind?, notice? })` | Writes, and reports which way |
 
 A browser cannot write to a file handed to it through `<input type="file">`. Only the File System
 Access API yields a writable handle, and that API is **Chromium desktop only** — not Firefox, not
@@ -1786,18 +1855,32 @@ Safari, and on no phone at all. Since `ui/CLAUDE.md` supports all three engines 
 labeling device is a phone, write-back is an enhancement over a download path that **stays
 permanently**, never a replacement for it. This module exists so that split lives in one place.
 
-`writeArchive` takes four routes, in order:
+It takes the **archive**, not its bytes: the service route writes the files that changed and never
+an archive, so a save there costs no export — and an archive on a service would otherwise fetch
+every unread image for it. The file routes export **before the picker opens and before the first
+write**, because an export that fails has to fail before a file has been named: otherwise a picker
+save would leave an empty `.r49` at that name, and truncate whatever was there.
 
-1. A bound handle, `rebind` false — **overwrite it, silently**. `createWritable` stages into a swap
+`writeArchive` takes five routes, in order:
+
+0. A **service binding with an `ETag`**, `rebind` false — the changed files, the manifest and the
+   deletes go to the service ([`serviceArchive.ts`](#servicearchivets)). No handle is involved, so
+   this is the one write-back route that runs on a phone. A refusal comes back as `refused` and
+   leaves the binding and the history marker alone; a network failure throws, as a failed file
+   write does.
+1. A service binding with **no `ETag`** — the service serves the archive read-only. `notice` is
+   told `READ_ONLY_NOTICE`, before the picker opens, and the save takes a route below.
+2. A bound handle, `rebind` false — **overwrite it, silently**. `createWritable` stages into a swap
    file and commits on `close()`, so an interrupted write cannot truncate the original. That
    atomicity is the whole safety net, by decision: no `.bak`, and no verification read, because
    re-parsing every image on every save costs more than the failure it would guard.
-2. A bound handle whose write permission is **refused** — falls through to (4) rather than failing.
+3. A bound handle whose write permission is **refused** — falls through to (5) rather than failing.
    A denied prompt must not cost the user a save, and a second dialog would be asking twice.
-3. No handle (or `rebind`), API present — the **picker**, suggesting the binding's *plain* stem.
-   Dismissal returns `cancelled`; the old binding stands.
-4. No API — a **timestamped download**, returning the binding unchanged. A download binds nothing,
-   so the next save asks the same question again.
+4. No handle (or `rebind`), API present — the **picker**, suggesting the binding's *plain* stem.
+   Dismissal returns `cancelled`; the old binding stands. A picker save **moves a service binding
+   to the file**: the binding returned carries the handle and no service.
+5. No API — a **timestamped download**, returning the binding unchanged. A download binds nothing,
+   so the next save asks the same question again and a service binding stays one.
 
 Two rules that are easy to get backwards:
 
@@ -1826,7 +1909,7 @@ exporter.
 
 | Export | Description |
 |---|---|
-| `EditHistory` | `attach`, `record`, `beginGesture`, `undo`, `redo`, `markSaved`; `canUndo`/`canRedo`/`undoEntry`/`redoEntry`/`undoLabel`/`redoLabel`/`isDirty`/`size`/`bytes` |
+| `EditHistory` | `attach`, `record`, `beginGesture`, `undo`, `redo`, `markSaved(position?)`; `position`/`canUndo`/`canRedo`/`undoEntry`/`redoEntry`/`undoLabel`/`redoLabel`/`isDirty`/`size`/`bytes` |
 | `HistoryTarget` | `{ kind: 'layout' }`, `{ kind: 'image', filename }`, or `{ kind: 'images' }` |
 | `HistoryEntry` | What `undo`/`redo` return, so the caller can reveal what changed. Carries `highlights` |
 | `HistoryHighlight` | One object an entry changed: `{ kind: 'car' \| 'sensor', id }` or `{ kind: 'calibration', px }` |

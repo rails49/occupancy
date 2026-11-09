@@ -162,30 +162,74 @@ Lit does not observe mutations *inside* `R49Archive`. The session calls its list
 change, and `rr-app` and the editor re-render on that. The settings dialog's edits go through the
 session too (`editLayout`, `setCameraHeight`), so nothing edits the manifest outside it.
 
-## Saving is two paths, and the fallback is permanent (#48)
+## Saving is three routes, and the fallback is permanent (#48, #333)
 
-`persistence.ts` owns both and is the only place that knows which one runs. A browser cannot write
-to a file handed to it by `<input type="file">`; only the File System Access API yields a writable
-handle, and that API is **Chromium desktop only** — not Firefox, not Safari, on no phone. Since this
-file supports all three engines equally and the labeling device is a phone, **write-back is an
-enhancement layered over the download path, never a replacement for it.** Do not delete the fallback,
-and do not gate a feature on a handle existing.
+`persistence.ts` owns all three and is the only place that knows which one runs. A browser cannot
+write to a file handed to it by `<input type="file">`; only the File System Access API yields a
+writable handle, and that API is **Chromium desktop only** — not Firefox, not Safari, on no phone.
+Since this file supports all three engines equally and the labeling device is a phone, **write-back
+is an enhancement layered over the download path, never a replacement for it.** Do not delete the
+fallback, and do not gate a feature on a handle existing.
 
-* A **`FileBinding`** is the file this session writes back to. **Handle present ⇒ Save overwrites;
-  absent ⇒ Save downloads a new generation.** `rr-app` holds it; New clears it, Save As re-points
-  it, and Open sets it **only once the bytes parse** — a binding to a file that failed to load aims
-  the next save at an archive this session never held.
+The third route is an **occupancy service**: an archive opened from one is written back to it a file
+at a time (#333). It needs no handle, so it is the one write-back route that works in every
+supported browser and on a phone — which is the device `SPEC.md` assumes is doing the labeling.
+
+**`writeArchive` takes the archive, not its bytes.** The service route writes the files that changed
+and never an archive, so exporting for it would fetch every image the page has not looked at for
+nothing. The file routes export **before the picker opens and before the first write** — an export
+can now fail, since an image may be on the far end of a network, and it has to fail before a file
+has been named: a picker save that exported afterwards would leave an empty `.r49` at the name the
+person chose, truncating whatever was there.
+
+* A **`FileBinding`** is where this session writes back to, in one of three kinds. **Service
+  present ⇒ Save writes to the occupancy service** (where the binding took an `ETag`); **handle
+  present ⇒ Save overwrites that file**; **neither ⇒ Save downloads a new generation.** `rr-app`
+  holds it; New clears it, Save As re-points it, Open sets it **only once the bytes parse** — a
+  binding to a file that failed to load aims the next save at an archive this session never held —
+  and the service's own archive binds it at page start, from the check in § An occupancy service is
+  found at `/live`.
+* **The write order, and what it is snapshotted from, are the format's** — `R49Archive.writeChanges`
+  puts each added image, then `manifest.json`, then deletes each name the base held that the manifest
+  no longer names, taking the manifest as it stood when it was called. `serviceArchive.ts` supplies
+  only the `ArchiveWriter` that pair of verbs goes over: `PUT` and `DELETE` under `<base>/archive/`
+  with each segment percent-encoded, `If-Match` on every request, the `ETag` out of the manifest's
+  answer carried into the deletes after it, and a **failed `DELETE` logged rather than fatal** — the
+  file stays on the service as an orphan, which rails49/occupancy-service#7 accepts, and r49 forgets
+  the name so it is never retried. The order is what keeps the archive readable at every moment in
+  between: an image is there before the manifest names it, and a file goes only once the manifest no
+  longer does.
+* **The `ETag` is the version, and `If-Match` is the whole concurrency story.** It is read from the
+  check's answer *before* the manifest is loaded, so a save landing between the two leaves this page
+  holding the older version and **this page's** save refused — which is the right way round. A
+  refusal is reported and nothing else: the archive stays dirty and stays bound to the service, the
+  page never falls back to a file by itself, and it merges nothing. 412 says the copy changed and
+  names Save As, 422 quotes the rule in the answer's `error`, any other status is named, and a
+  network failure is the ordinary `Save failed` toast.
+* **No `ETag` means read-only** — a `.r49` zip on the service, or a folder it cannot write. The
+  person is told so and the save takes the picker or the download from there, with `layout.name` as
+  the suggested name. Said rather than silently rerouted: they opened the archive from the service
+  and have every reason to believe Save puts it back.
+* **A picker Save As moves the binding to the file**, and `rr-app` then leaves the service for good,
+  so the live view goes back to the camera and the model in this page. A *download* binds nothing,
+  here as everywhere, so the archive stays the service's.
+* **A save is no longer instant, and three things follow.** The history position is taken when the
+  save starts and *that* position is what is marked, so an edit made while the requests were in
+  flight leaves the archive dirty — it is not in what went. A Save pressed while one is running does
+  nothing. A toast stays up while it runs.
 * **The timestamp is the download path's, and only its.** A written-back file keeps its name across
   every overwrite, so a timestamp in the picker's suggestion would assert a save time the file no
   longer has. The format exists so a **lexical sort of the folder is a chronological one** — that,
   not tidiness, is what stops a session re-opening the wrong generation and silently reverting
   labeling work the history cannot recover (`SPEC.md` § Undo and redo: it never survives a reload).
 * **The stem is the file's, not the layout's.** It comes from the opened filename, falling back to
-  `layout.name` only for an archive that has never been saved, and it does **not** follow a later
-  rename: `layout.name` is metadata stored inside the file, not the file's identity.
-* **A download counts as saved.** `markSaved()` runs on both paths — the fallback did write a file,
-  and withholding the marker would leave a phone permanently dirty and make the discard gate cry
-  wolf on every New. Only a dismissed picker marks nothing, and it toasts nothing either.
+  `layout.name` only for an archive that has never been saved — which an archive on a service always
+  is — and it does **not** follow a later rename: `layout.name` is metadata stored inside the file,
+  not the file's identity.
+* **A download counts as saved.** `markSaved()` runs on every route that wrote something — the
+  fallback did write a file, and withholding the marker would leave a phone permanently dirty and
+  make the discard gate cry wolf on every New. Only a dismissed picker and a refusal mark nothing,
+  and the dismissed picker toasts nothing either.
 * **Write permission is requested at the first save, never at open**, and a refusal falls through to
   the download rather than failing. An overwrite has **no other safety net**: `createWritable`'s
   atomic swap is the decision, so no `.bak` file and no verification read — re-parsing every image
@@ -197,6 +241,34 @@ and do not gate a feature on a handle existing.
   (#326). The key cancels the browser's Save Page even when a field has focus. It saves nothing on
   a key repeat. It saves nothing from inside an open dialog either, since a dialog's fields commit
   on blur or Enter.
+
+## An image is read when it is needed, and a read can fail (#333)
+
+`R49Archive.getImage` used to be a zip lookup that could not fail. An archive opened from a base URL
+— which is what an archive on an occupancy service is — reads each image over the network instead,
+so **it can reject, and every caller takes that.** The reading is `@rails49/r49` 0.3.0's, not this
+package's (org ADR-0022).
+
+* **The editor reads the image on screen first and paints after each one.** Reading in manifest
+  order and painting once at the end would leave the photograph the person is looking at waiting
+  behind every image before it. The next name is chosen afresh on each turn, so selecting an unread
+  image reads it next rather than at the end of the queue; the rest follow one at a time, because
+  the thumbnail strip is made of them.
+* **A failed read costs that image alone.** The pass goes on and ends with **one** toast naming
+  everything it could not read, and a name that failed is **not asked for again**: `updated()` runs
+  the pass after every render, so a retry there is an unbounded loop of failing requests behind an
+  unbroken wall of toasts. One pass runs at a time, for the same reason.
+* **The diagnostics sweep passes over an image it cannot read** and scores the rest: a score over
+  what it did read is worth more than no report, and the count under the bar says how many it saw.
+* **A delete whose bytes cannot be read leaves the image in place**, with a notice.
+  `history.record`'s `retain` reads them *before* the mutation, so the refusal lands before anything
+  is removed — rather than leaving an undo that would restore a manifest entry naming bytes the
+  archive no longer has, which is the hole this design refuses everywhere.
+* **A `Save As` exports, and exporting fetches what the page has not read**, so the `.r49` it writes
+  is complete. That is what a Save As on a service binding costs, and why the service route does not
+  export at all.
+* A 404 is **not** a failed read: it is the archive having a hole in it, which `imageMismatches()`
+  is the question for, and it answers `null` exactly as an absent zip entry does.
 
 ## Every manifest mutation goes through `history.record`
 
@@ -691,21 +763,22 @@ frame, a turn with no new frame, and none of the page's own notices — and
 the camera and the shipped detector still behave the way they did through the same loop. jsdom decodes no video, so the camera
 path is driven there with a stand-in `<video>` and measured by hand in Chromium.
 
-## An occupancy service is found at `/live` and read in one place (#331)
+## An occupancy service is found at `/live` and read in one place (#331, #333)
 
 The page asks `/live/archive/manifest.json` once, when `rr-app` connects. **Only a JSON content type
 counts as a service**: the deployed copy answers every unknown path with 200 `text/html`, so
 `response.ok` alone would find one on a static host. Any other answer, and any network failure, is no
 service and the page is what it has always been, with no toast. `liveContract.ts`'s `findService`
-returns the **`Response`**, not a boolean, so #333 can read its `ETag` and open the manifest it
-already fetched.
+returns the **`Response`**, not a boolean, so the version in its `ETag` is read before anything is
+loaded.
 
 `/live` is one constant and not a setting. A cross-origin service is out of scope, everything the app
 fetches comes from origin anyway (ADR 0006), and a base somebody could type would be a second way for
 the page to be wrong about what it is watching.
 
 **`liveContract.ts` is the only file that names the wire.** The paths, the part names (`json` and
-`frame`), the field names, the version and the five-second timeout are there, and `readLatest` is one
+`frame`), the field names, the version, the five-second timeout, and the methods, headers and
+refusal statuses an archive is written back with (#333) are there, and `readLatest` is one
 function over `response.formData()` — the browser already has a multipart parser, and the hand-rolled
 one in rails49/control#950 exists only because WebKit refused that type there. If `formData()` turns
 out to fail on a real iPhone (#331's human step) that function is the one place that changes. It
@@ -751,9 +824,23 @@ an object URL that the next answer releases. A field the service did not send, o
 shape, has no line or column. An answer with no frame carries no patches and keeps what it sent,
 such as `camera`; a failed answer carries no details at all.
 
-**The service is left behind by New and Open, for good.** Both pass through `rr-app._open`, and
-`_leftService` also ignores a manifest answer that arrives afterwards. Only a reload finds the
-service again.
+**The page opens the archive the service serves** (#333), in `rr-app._lookForService`: the service's
+`archive/` is a base URL, and `R49Archive.load` takes one. The check's answer gives the `ETag` and
+the load reads the manifest again — two reads, deliberately, since the version has to be the one this page is saving *against*
+and a save landing between them is exactly what `If-Match` is for. Images follow one at a time, as
+they are asked for, and § Saving is three routes has where a save goes. A manifest that will not
+load is a failed load like any other, with the same toast; the live view still watches the service,
+since finding one and loading its archive are different questions.
+
+**The service is left behind by New, by Open, and by a Save As that lands in a file, for good**
+(#333). The first two pass through `rr-app._open`, and `_leftService` also ignores a manifest answer
+— or a load — that arrives afterwards. Only a reload finds the service again.
+
+**While the archive is bound to the service, the live view uses the service.** That replaces #331's
+rule that it did so until an archive was opened or created, which stopped being the question once
+the archive *is* the service's. `LiveSources.service` says what the sources are, because nothing
+else can: the service's own archive is bound and the view must still show the service's judgement
+rather than measure drift against it.
 
 `bin/live-stub.mjs` is a stand-in service for checking this by hand on a device, and serves the built
 page from the same origin because `/live` has to be. It is not the service — rails49/occupancy-service
