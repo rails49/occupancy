@@ -287,6 +287,24 @@ describe('rr-live-view playing a video file', () => {
     );
   });
 
+  it('keeps the clock moving with no archive open, where no loop is running', async () => {
+    // The transport is rendered from the element, so without a turn per frame
+    // it would sit where the file was opened while the picture ran on.
+    const el = await fixture<RRLiveView>(html`<rr-live-view></rr-live-view>`);
+    const video = standIn({ currentTime: 3 });
+    standInVideo(el, video);
+    await pickVideo(el, VIDEO);
+    await waitFor(el, () => el.shadowRoot!.querySelector('.video-time') !== null);
+    expect(el.shadowRoot!.querySelector('.video-time')!.textContent).toContain('0:03');
+
+    video.currentTime = 20;
+    await waitFor(el, () =>
+      el.shadowRoot!.querySelector('.video-time')!.textContent!.includes('0:20'),
+    );
+
+    expect(el.shadowRoot!.querySelector('.video-time')!.textContent).toContain('0:20 / 1:30');
+  });
+
   it('plays and pauses the file', async () => {
     const el = await fixture<RRLiveView>(
       html`<rr-live-view .archive=${archive}></rr-live-view>`,

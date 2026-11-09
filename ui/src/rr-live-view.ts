@@ -539,23 +539,31 @@ export class RRLiveView extends LitElement {
     this._readFrames();
     this._running = true;
     if (this._results) void this._loop();
-    else void this._watchForRefusal(frames, run);
+    else void this._drainFrames(frames, run);
   }
 
   /**
-   * Wait for a source with nothing reading it to say why it has no frames.
+   * Read the frames of a source nothing is answering, and say where they stop.
    *
-   * The loop does this as part of running, but it does not run at all without a
-   * result source — no archive is open, so nothing is being asked about the
-   * pixels. A video file still has something to say in that state: the browser
-   * could not play it, and the person who just chose it is owed the refusal
-   * rather than a black rectangle. One frame is enough to tell the two apart,
-   * and the frame itself is dropped — there is nobody to answer it.
+   * `_loop` does this as part of running, but it does not run at all without a
+   * result source — no archive is open, so there is nothing to ask about the
+   * pixels. Two things still need the turns. A video file the browser cannot
+   * play has something to say, and the person who just chose it is owed the
+   * refusal rather than a black rectangle. And the transport's clock and slider
+   * are rendered from the element, so without a turn per frame they would sit
+   * at wherever the file was when it was opened while the picture ran on.
+   *
+   * The frames themselves are dropped: there is nobody to answer them.
    */
-  private async _watchForRefusal(frames: FrameSource, run: number) {
-    const frame = await frames.next();
-    if (frame === null && this._running && run === this._frameRun) {
-      this._framesError = frames.error ?? null;
+  private async _drainFrames(frames: FrameSource, run: number) {
+    while (this._running && run === this._frameRun) {
+      const frame = await frames.next();
+      if (!this._running || run !== this._frameRun) return;
+      if (frame === null) {
+        this._framesError = frames.error ?? null;
+        return;
+      }
+      this.requestUpdate();
     }
   }
 

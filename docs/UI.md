@@ -746,8 +746,10 @@ be reached, so the phone records in its own Camera app and the clip is opened he
   `.mov` by default and only Safari decodes it, so it is the first file a new user will pick.
   `next()` polls the element's own `MediaError` and answers `null` — the loop's one way out — and
   the view reads `FrameSource.error` when a `null` arrives while the loop is still live. Where no
-  archive is open there is **no loop**, so the view waits for that one answer itself
-  (`_watchForRefusal`): a file that cannot play must not leave a black rectangle and no explanation.
+  archive is open there is **no loop** — nothing is being asked about the pixels — so the view reads
+  the frames itself and drops them (`_drainFrames`): a file that cannot play must not leave a black
+  rectangle and no explanation, and the transport's clock is rendered from the element, so without a
+  turn per frame it would sit where the file was opened while the picture ran on.
 * **The file is read locally and goes nowhere.** It is an object URL on a `<video>`, and this package
   has no backend to send it to.
 * **Frame size is the element's intrinsic size**, exactly as it is for the camera
