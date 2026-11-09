@@ -90,6 +90,11 @@ The page opens that archive at load. Add an image, label it, press Save, reload:
 label are there, and the folder holds the file. Delete it, press Save, and the file is gone. Save As
 writes a `.r49` and moves the work to that file, after which Live goes back to this device's camera.
 
+Press Live and then **Freeze** ([#334](https://github.com/rails49/occupancy/issues/334)) and the
+frame on screen is added to that archive: the picture keeps running, the editor shows the new image,
+and Save writes it into the folder. With `--no-frames` the button is disabled, because the picture
+still on screen is out of date.
+
 `occupancy-service`'s conformance check passes against the stand-in, with frames on and off:
 
 ```sh

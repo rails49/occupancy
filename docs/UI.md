@@ -849,6 +849,25 @@ the archive *is* the service's. `LiveSources.service` says what the sources are,
 else can: the service's own archive is bound and the view must still show the service's judgement
 rather than measure drift against it.
 
+**Freeze adds the frame on screen to the archive** (#334). The source holds each frame's bytes
+beside the object URL the picture is shown through (`FrameSource.shownFrame`, with the answer's
+`frame_id`), and replaces both at the moment the next frame takes the screen — so a press while a
+newer answer is still decoding adds the picture the person is looking at, and a press needs no
+second read of a frame the page already has. `rr-live-view` renders Freeze beside Details, reads
+**the frame it last rendered** rather than whatever the source holds now, and sends it up as
+`rr-frame-add`; it owns no session, so it neither judges nor records the add. `rr-app` does both,
+through `imageAdd.ts` under a `capture_<id>.jpg` name, which is Capture from Camera's path exactly.
+
+Three things follow from that split, and all three are deliberate. The button is **disabled while
+the current answer carried no frame** — before the first, on a `json`-only answer, on a failed
+request — because the last picture stays on screen in all three and is out of date. The add is
+**one history entry and no save**: Live has neither Save nor undo, so the toast names the file and
+says to save it in the editor, and § Saving is three routes is where that save goes — including off
+a read-only service, where it is a download. And **what the live view draws does not change**: it
+draws the service's manifest, so the frame is in this page's archive until a save puts it on the
+service. A second press on one frame id adds nothing, and neither does a press while an add is
+running; `rr-app` holds both, because it is what knows an add is in flight.
+
 `bin/live-stub.mjs` is a stand-in service for checking this by hand on a device, and serves the built
 page from the same origin because `/live` has to be. It is not the service — rails49/occupancy-service
 is — and `README.md` § Checking the live view against a service has the commands.
