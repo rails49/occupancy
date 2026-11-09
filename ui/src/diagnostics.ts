@@ -164,12 +164,6 @@ export const AGREE_IOU = 0.7;
  * is derived rather than authored. What matching should measure is whether the
  * model found the car and lay along it. The raw width is still reported, in
  * {@link PoseDeviation}.
- *
- * The **length is raw**, and that is where this box parts company with the one
- * L1 tests (#337). `occupancy()` lengthens by the margin, 2 G at each end, as a
- * deliberate bias toward occupied; adding it here would score the model as
- * having found a car 4 G longer than it predicted, against a label that is the
- * car's actual extent.
  */
 function normalizedBoxCorners(detection: Detection, dpt: number): readonly Point[] {
   return boxCorners({ ...detection, width: carWidthPx(dpt) });

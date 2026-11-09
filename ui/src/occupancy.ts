@@ -52,22 +52,10 @@ export type SensorState =
 
 /**
  * The margin, in gauges: how far beyond a car's end, along the track, a sensor
- * still reads occupied (`GLOSSARY.md` § Margin).
+ * still reads occupied (`GLOSSARY.md` § Margin, `SPEC.md` § The occupancy test).
  *
- * Two, from [ADR 0023](../../docs/adr/0023-occupied-has-a-two-gauge-margin.md).
- * A miss costs a collision, so a car that comes within 2 G of a sensor counts
- * as occupying it; and one definition for the detector and the classifier is
- * what lets the two be combined by "either says occupied" and scored against
- * the same ground truth. It is also what the occupancy service defaults to, so
- * a number here is the page agreeing with the service rather than each holding
- * its own.
- *
- * It is a count of *gauges*, not pixels: 1 G is `dpt` pixels, so `occupancy()`
- * multiplies it by the layout's DPT and that is the only place the conversion
- * happens — the same shape `driftSession.ts`'s `MAX_DRIFT_TRACK_FRACTION`
- * takes. Not an input to `occupancy()`: the margin is SPEC's number for this
- * page, and a caller choosing its own would be a second answer for one
- * question.
+ * 1 G is `dpt` pixels. `occupancy()` is the one place it is multiplied by the
+ * layout's DPT.
  */
 export const MARGIN_GAUGES = 2;
 
@@ -84,10 +72,9 @@ export const MARGIN_GAUGES = 2;
  * diagnostics view from each building unknown-maps in their own branches —
  * three places that would have to agree about a contract SPEC wrote once.
  *
- * The box tested is **lengthened by the margin**: {@link MARGIN_GAUGES} at
+ * The box tested is lengthened by the margin: {@link MARGIN_GAUGES} at
  * each end along its long axis, so a box of `length` is tested as
- * `length + 4 × dpt` (ADR 0023). A sensor a car is about to reach reads
- * occupied, because a miss costs a collision. Across the axis nothing is added.
+ * `length + 4 × dpt`. Across the axis nothing is added.
  *
  * It is also **width-normalized**: centre, orientation and length come
  * from the detector, but `carWidthPx(dpt)` replaces the predicted width. Width
@@ -183,29 +170,16 @@ function unknown(reason: UnknownReason): SensorState {
 
 /**
  * Whether an oriented box of the given width, lengthened by the margin at both
- * ends, **strictly contains** a point.
+ * ends, strictly contains a point.
  *
  * Tested in the box's own axes rather than against its corners: a point is
  * inside when its along-axis and across-axis offsets from the centre are both
  * within the respective half-extents. Four corners and a winding rule would
  * answer the same question with more ways to be wrong.
  *
- * The margin lengthens the box **along its long axis only** — half-extent
- * `length / 2 + marginPx` — and the across-axis extent stays the half-width it
- * was handed. Lengthening the sides as well would reach the next track over,
- * where parallel sidings sit ~60 px apart at DPT 20, and that direction already
- * carries ~1.4 m prototype of slack from the derived width.
- *
- * No tolerance epsilon on top of the margin, per SPEC: the margin is the
- * tolerance, it is a measured number (ADR 0023), and a second one would not be.
- * So containment is strict at the lengthened boundary, and a gap between
- * uncoupled cars wider than two margins — over 4 G — still reads `clear`. At a
- * coupler the two boxes already abut on a shared endpoint, and with the margin
- * they overlap, so a point between coupled cars is inside both.
- *
- * The margin is passed in rather than derived here from DPT, because this
- * function knows pixels and nothing else: `occupancy` holds the one conversion
- * from gauges, beside the width constant it resolves from the same DPT.
+ * The along-axis half-extent is `length / 2 + marginPx`; the across-axis
+ * half-extent is `widthPx / 2`. Containment is strict at both, with no further
+ * tolerance (`SPEC.md` § The occupancy test).
  *
  * Exported for its tests only: `occupancy` is the only caller.
  *

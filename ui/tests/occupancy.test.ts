@@ -266,8 +266,7 @@ describe('the margin', () => {
   });
 
   it('closes a 3 G gap between uncoupled cars and leaves a 5 G one open', () => {
-    // A miss costs a collision, so a car within 2 G of a sensor counts. Two
-    // margins meet across any gap under 4 G: at 3 G the middle of the gap is
+    // Two margins meet across any gap under 4 G: at 3 G the middle of the gap is
     // 1.5 G from each end and reads occupied. SPEC's sentence about a real gap
     // reading clear therefore holds for gaps over 4 G, and 5 G is one of those.
     const closed = occupancy({

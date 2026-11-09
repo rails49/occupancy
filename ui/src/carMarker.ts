@@ -412,10 +412,8 @@ export function renderPendingCar(pending: PendingCar, size: CarSymbolSize): SVGT
  * detection carries the width the model predicted, and L0 is defined as the
  * pose *exactly as emitted* (`SPEC.md` § Occupancy Output). Substituting the
  * derived width here would draw a box the model never produced and hide the
- * error the raw one shows. L1's normalization is L1's, and so is its margin —
- * both happen in `occupancy()` where the sensor is tested, so the box drawn
- * here is shorter and narrower than the box that answered the sensor beside it
- * (#337).
+ * error the raw one shows. L1's normalization is L1's, and it happens in
+ * `occupancy()` where the sensor is tested.
  *
  * Nothing about a detection is in the manifest, so — like the rubber band —
  * this draws pure view state. There is no `id` to key on either: the 300-slot
