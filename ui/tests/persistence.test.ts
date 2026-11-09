@@ -1,11 +1,15 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import { R49Archive } from '@rails49/r49';
+import type { ManifestData } from '@rails49/r49';
 import {
+  READ_ONLY_NOTICE,
   fileStem,
   supportsFileSystemAccess,
   timestampedName,
   writeArchive,
   type FileBinding
 } from '../src/persistence.js';
+import { archiveBase } from '../src/liveContract.js';
 
 /**
  * jsdom has no File System Access API, which is the honest baseline: it is the
@@ -13,7 +17,31 @@ import {
  * routes are covered by installing fakes on `window` — this proves the module
  * *routes* correctly, not that Chromium's API behaves as documented, which no
  * test in jsdom could show.
+ *
+ * The service route (#333) needs no handle, so it is the one route jsdom can
+ * run end to end, against a stubbed `fetch`.
  */
+
+/** A v4 manifest with no images, which is all these routes need. */
+function manifest(): ManifestData {
+  return {
+    version: 4,
+    layout: { name: 'west-yard', scale: 'N', calibration: { points: [] }, sensors: [] },
+    camera: { resolution: { width: 1920, height: 1080 } },
+    images: [],
+  } as ManifestData;
+}
+
+/**
+ * An archive whose `export()` answers `bytes`, so a test can assert on what
+ * reached the file rather than on a zip it would have to re-open.
+ */
+function archiveOf(bytes: Uint8Array): R49Archive {
+  const archive = new R49Archive();
+  archive.setManifest(manifest());
+  vi.spyOn(archive, 'export').mockResolvedValue(bytes);
+  return archive;
+}
 
 /** The handle plus the two methods `lib.dom` does not declare, so a test can assert on them. */
 interface FakeHandle extends FileSystemFileHandle {
@@ -108,7 +136,7 @@ describe('writeArchive', () => {
   it('downloads a timestamped generation when there is no API', async () => {
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
 
-    const outcome = await writeArchive(bytes, { stem: 'west-yard' });
+    const outcome = await writeArchive(archiveOf(bytes), { stem: 'west-yard' });
 
     expect(click).toHaveBeenCalled();
     expect(outcome.kind).toBe('downloaded');
@@ -123,7 +151,7 @@ describe('writeArchive', () => {
     (window as any).showSaveFilePicker = showSaveFilePicker;
 
     const binding: FileBinding = { stem: 'west-yard', handle };
-    const outcome = await writeArchive(bytes, binding);
+    const outcome = await writeArchive(archiveOf(bytes), binding);
 
     expect(showSaveFilePicker).not.toHaveBeenCalled();
     expect(written).toEqual([bytes]);
@@ -134,7 +162,7 @@ describe('writeArchive', () => {
   it('does not re-prompt when write permission already stands', async () => {
     const { handle, written } = fakeHandle('west-yard.r49', 'granted');
 
-    await writeArchive(bytes, { stem: 'west-yard', handle });
+    await writeArchive(archiveOf(bytes), { stem: 'west-yard', handle });
 
     expect(handle.requestPermission).not.toHaveBeenCalled();
     expect(written).toEqual([bytes]);
@@ -143,7 +171,7 @@ describe('writeArchive', () => {
   it('prompts for write permission at the first save, and writes once granted', async () => {
     const { handle, written } = fakeHandle('west-yard.r49', 'prompt', 'granted');
 
-    await writeArchive(bytes, { stem: 'west-yard', handle });
+    await writeArchive(archiveOf(bytes), { stem: 'west-yard', handle });
 
     expect(handle.requestPermission).toHaveBeenCalledWith({ mode: 'readwrite' });
     expect(written).toEqual([bytes]);
@@ -157,7 +185,7 @@ describe('writeArchive', () => {
     const showSaveFilePicker = vi.fn();
     (window as any).showSaveFilePicker = showSaveFilePicker;
 
-    const outcome = await writeArchive(bytes, { stem: 'west-yard', handle });
+    const outcome = await writeArchive(archiveOf(bytes), { stem: 'west-yard', handle });
 
     expect(showSaveFilePicker).not.toHaveBeenCalled();
     expect(click).toHaveBeenCalled();
@@ -171,7 +199,7 @@ describe('writeArchive', () => {
     const showSaveFilePicker = vi.fn().mockResolvedValue(handle);
     (window as any).showSaveFilePicker = showSaveFilePicker;
 
-    const outcome = await writeArchive(bytes, { stem: 'New Layout' });
+    const outcome = await writeArchive(archiveOf(bytes), { stem: 'New Layout' });
 
     expect(showSaveFilePicker).toHaveBeenCalledWith(
       expect.objectContaining({ suggestedName: 'New Layout.r49' })
@@ -190,7 +218,7 @@ describe('writeArchive', () => {
     (window as any).showSaveFilePicker = vi.fn().mockResolvedValue(chosen.handle);
 
     const outcome = await writeArchive(
-      bytes,
+      archiveOf(bytes),
       { stem: 'west-yard', handle: bound.handle },
       { rebind: true }
     );
@@ -205,7 +233,7 @@ describe('writeArchive', () => {
       .fn()
       .mockRejectedValue(new DOMException('dismissed', 'AbortError'));
 
-    const outcome = await writeArchive(bytes, { stem: 'New Layout' });
+    const outcome = await writeArchive(archiveOf(bytes), { stem: 'New Layout' });
 
     expect(outcome).toEqual({ kind: 'cancelled' });
   });
@@ -219,7 +247,209 @@ describe('writeArchive', () => {
       abort
     });
 
-    await expect(writeArchive(bytes, { stem: 'west-yard', handle })).rejects.toThrow('disk full');
+    await expect(writeArchive(archiveOf(bytes), { stem: 'west-yard', handle })).rejects.toThrow('disk full');
     expect(abort).toHaveBeenCalled();
+  });
+});
+
+/**
+ * The service route (#333). The archive is a real one loaded from a base URL
+ * against a stubbed `fetch`, so what these assert is the routing: which of the
+ * three places a save goes, and what the binding is afterwards.
+ */
+describe('writeArchive on a service binding', () => {
+  const BASE = '/live';
+
+  /** The requests `fetch` was given, as `<METHOD> <url>`. */
+  let seen: string[];
+
+  /** Answers every write with a 204, and the manifest read with the manifest. */
+  function stubService(answer: (key: string) => Response = () => new Response(null, { status: 204 })) {
+    seen = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        // The path, not the URL: `R49Archive.load` is given the absolute base
+        // and the writer's requests are origin-relative.
+        const key = `${init?.method ?? 'GET'} ${new URL(url, window.location.href).pathname}`;
+        seen.push(key);
+        if (key === 'GET /live/archive/manifest.json') {
+          return new Response(JSON.stringify(manifest()), {
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        return answer(key);
+      })
+    );
+  }
+
+  async function opened() {
+    stubService();
+    return await R49Archive.load(archiveBase(BASE));
+  }
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('writes to the service, and hands back the new ETag in the binding', async () => {
+    const archive = await opened();
+    stubService(() => new Response(null, { status: 204, headers: { etag: '"v2"' } }));
+
+    const outcome = await writeArchive(archive, {
+      stem: '',
+      service: { base: BASE, etag: '"v1"' },
+    });
+
+    expect(seen).toEqual(['PUT /live/archive/manifest.json']);
+    expect(outcome).toEqual({
+      kind: 'served',
+      binding: { stem: '', service: { base: BASE, etag: '"v2"' } },
+    });
+  });
+
+  it('needs no handle, so it runs where there is no File System Access API', async () => {
+    const archive = await opened();
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    stubService();
+
+    const outcome = await writeArchive(archive, {
+      stem: '',
+      service: { base: BASE, etag: '"v1"' },
+    });
+
+    expect(outcome.kind).toBe('served');
+    expect(click).not.toHaveBeenCalled();
+  });
+
+  it('reports a refusal and leaves the binding on the service', async () => {
+    const archive = await opened();
+    stubService(() => new Response(null, { status: 412 }));
+    const binding: FileBinding = { stem: '', service: { base: BASE, etag: '"v1"' } };
+
+    const outcome = await writeArchive(archive, binding);
+
+    expect(outcome.kind).toBe('refused');
+    expect(outcome.kind === 'refused' && outcome.binding).toEqual(binding);
+    expect(outcome.kind === 'refused' && outcome.message).toMatch(/Save As/);
+  });
+
+  // A read-only copy: a `.r49` zip on the service, or a folder it cannot write.
+  it('says a read-only archive is read-only, then takes the download', async () => {
+    const archive = await opened();
+    const notice = vi.fn();
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    stubService();
+
+    const outcome = await writeArchive(
+      archive,
+      { stem: 'west-yard', service: { base: BASE, etag: null } },
+      { notice }
+    );
+
+    expect(notice).toHaveBeenCalledWith(READ_ONLY_NOTICE);
+    expect(click).toHaveBeenCalled();
+    expect(outcome.kind).toBe('downloaded');
+    // Nothing was written to the service.
+    expect(seen).toEqual([]);
+  });
+
+  it('tells the person before the picker opens, not after', async () => {
+    const archive = await opened();
+    const order: string[] = [];
+    const notice = vi.fn(() => void order.push('notice'));
+    (window as any).showSaveFilePicker = vi.fn(() => {
+      order.push('picker');
+      return Promise.reject(new DOMException('dismissed', 'AbortError'));
+    });
+    stubService();
+
+    await writeArchive(
+      archive,
+      { stem: 'west-yard', service: { base: BASE, etag: null } },
+      { notice }
+    );
+
+    expect(order).toEqual(['notice', 'picker']);
+  });
+
+  // Save As from a service binding: the work moves to the file, and nothing
+  // goes to the service.
+  it('moves the binding to the file a Save As chose', async () => {
+    const archive = await opened();
+    vi.spyOn(archive, 'export').mockResolvedValue(new Uint8Array([7, 7]));
+    const chosen = fakeHandle('copy.r49');
+    (window as any).showSaveFilePicker = vi.fn().mockResolvedValue(chosen.handle);
+    stubService();
+
+    const outcome = await writeArchive(
+      archive,
+      { stem: 'west-yard', service: { base: BASE, etag: '"v1"' } },
+      { rebind: true }
+    );
+
+    expect(seen).toEqual([]);
+    expect(chosen.written).toEqual([new Uint8Array([7, 7])]);
+    expect(outcome).toEqual({
+      kind: 'wrote',
+      binding: { stem: 'copy', handle: chosen.handle },
+      filename: 'copy.r49',
+    });
+    expect(outcome.kind === 'wrote' && outcome.binding.service).toBeUndefined();
+  });
+
+  // A download binds nothing, here as everywhere: the archive is still the
+  // service's and the next Save goes back to it.
+  it('leaves a service binding alone when a Save As downloads', async () => {
+    const archive = await opened();
+    vi.spyOn(archive, 'export').mockResolvedValue(new Uint8Array([7, 7]));
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    stubService();
+    const binding: FileBinding = { stem: 'west-yard', service: { base: BASE, etag: '"v1"' } };
+
+    const outcome = await writeArchive(archive, binding, { rebind: true });
+
+    expect(outcome.kind).toBe('downloaded');
+    expect(outcome.kind === 'downloaded' && outcome.binding).toEqual(binding);
+  });
+
+  // An image on a service may not read, so an export can fail — and it has to
+  // fail before a picker has named a file, or an empty `.r49` lands at that
+  // name and truncates whatever was there.
+  it('exports before the picker, so a failed export names no file', async () => {
+    const archive = await opened();
+    vi.spyOn(archive, 'export').mockRejectedValue(new Error('could not read IMG 1.jpg'));
+    const picker = vi.fn();
+    (window as any).showSaveFilePicker = picker;
+    stubService();
+
+    await expect(
+      writeArchive(archive, { stem: 'west-yard', service: { base: BASE, etag: '"v1"' } }, {
+        rebind: true,
+      })
+    ).rejects.toThrow('IMG 1.jpg');
+    expect(picker).not.toHaveBeenCalled();
+  });
+
+  // A binding and an archive that disagree is a bug here, not a save the
+  // person can do anything about; the format refuses it rather than writing a
+  // zip's files to a URL.
+  it('refuses to write an archive that did not come from a service', async () => {
+    await expect(
+      writeArchive(archiveOf(new Uint8Array([1])), {
+        stem: '',
+        service: { base: BASE, etag: '"v1"' },
+      })
+    ).rejects.toThrow(/URL archive/);
+  });
+
+  // The service route writes changed files, never an archive: exporting for it
+  // would fetch every image the page has not looked at for nothing.
+  it('exports nothing for a save that goes to the service', async () => {
+    const archive = await opened();
+    const exported = vi.spyOn(archive, 'export');
+    stubService();
+
+    await writeArchive(archive, { stem: '', service: { base: BASE, etag: '"v1"' } });
+
+    expect(exported).not.toHaveBeenCalled();
   });
 });

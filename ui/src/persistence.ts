@@ -1,6 +1,6 @@
 /**
- * Where a session's work goes when it is saved, and the two ways of putting it
- * there (#48).
+ * Where a session's work goes when it is saved, and the three ways of putting
+ * it there (#48, #333).
  *
  * A browser cannot write to a file it was handed through `<input type="file">`;
  * only the File System Access API yields a handle that can be written back, and
@@ -10,27 +10,58 @@
  * is an enhancement over a download path that stays permanently, never a
  * replacement for it.
  *
+ * The third way is an occupancy service (#333): an archive this page opened
+ * from one is written back to it a file at a time, which needs no handle and so
+ * works in every supported browser, on a phone too.
+ *
  * The module exists so that split lives in one place. `rr-app` holds a
  * {@link FileBinding} and calls {@link openArchive} and {@link writeArchive};
- * which of the two paths runs is decided here, and the only part that can be
- * unit-tested in jsdom — {@link timestampedName} — is a pure function rather
- * than a branch inside a component. `capture.ts` wraps `getUserMedia` the same
- * way and for the same reason.
+ * which of the three routes runs is decided here, which is why this takes the
+ * **archive** rather than exported bytes — the service route writes changed
+ * files and never an archive, and exporting for it would fetch every image the
+ * page has not looked at for nothing. `capture.ts` wraps `getUserMedia` the
+ * same way and for the same reason.
  */
 
+import type { R49Archive } from '@rails49/r49';
+import { saveToService } from './serviceArchive.js';
+
 /**
- * The file on disk this session writes back to.
+ * The archive on an occupancy service this session writes back to (#333).
  *
- * `handle` present means Save **overwrites**; absent means Save **downloads a
- * new generation**. The `stem` is carried separately because the fallback path
- * has no handle to read a name from and still needs one to build a filename —
- * and because it survives a binding that never gains a handle.
+ * `etag` is the version the manifest was read at, and it is what `If-Match`
+ * holds: a save over a copy that moved on is refused rather than merged.
+ * `null` is a service that serves the archive read-only — a `.r49` zip, or a
+ * folder it cannot write — and Save then takes the picker or the download.
+ */
+export interface ServiceBinding {
+  /** Where the service answers, as `liveContract.ts`'s `LIVE_BASE`. */
+  readonly base: string;
+  /** The manifest's `ETag` as last seen, or `null` for a read-only copy. */
+  readonly etag: string | null;
+}
+
+/**
+ * Where this session writes back to, in one of three kinds.
+ *
+ * * `service` present — Save writes to the **occupancy service**, where the
+ *   binding carries an `ETag`.
+ * * `handle` present — Save **overwrites** that file.
+ * * neither — Save **downloads a new generation**.
+ *
+ * The `stem` is carried separately because the download path has no handle to
+ * read a name from and still needs one to build a filename, and because it
+ * survives a binding that never gains a handle. A service binding carries
+ * none: an archive on a service has no filename here, so the name a Save As
+ * suggests comes from `layout.name` at the moment of saving.
  */
 export interface FileBinding {
-  /** Filename without the `.r49` extension. */
+  /** Filename without the `.r49` extension. Empty for a service binding. */
   readonly stem: string;
   /** Present only where the File System Access API exists. */
   readonly handle?: FileSystemFileHandle;
+  /** Present only for an archive opened from an occupancy service (#333). */
+  readonly service?: ServiceBinding;
 }
 
 /** What a save actually did, so the caller can say so. */
@@ -39,8 +70,25 @@ export type SaveOutcome =
   | { kind: 'wrote'; binding: FileBinding; filename: string }
   /** A new generation landed in the browser's download folder. */
   | { kind: 'downloaded'; binding: FileBinding; filename: string }
+  /** Written back to the occupancy service; `binding` carries the new `ETag`. */
+  | { kind: 'served'; binding: FileBinding }
+  /**
+   * The service said no, in its own words (#333). Nothing was written, nothing
+   * rebound, and the archive is still dirty and still bound to the service —
+   * this page does not fall back to a file by itself and merges nothing.
+   */
+  | { kind: 'refused'; binding: FileBinding; message: string }
   /** The user dismissed the picker. Nothing was written, nothing rebound. */
   | { kind: 'cancelled' };
+
+/**
+ * What a read-only service binding is told, when Save goes to a file instead.
+ *
+ * Said rather than silently rerouted: the person opened the archive from the
+ * service and has every reason to believe Save puts it back there.
+ */
+export const READ_ONLY_NOTICE =
+  'The archive on the occupancy service is read-only, so this save goes to a file.';
 
 /** An archive chosen to open, and the binding that opening it establishes. */
 export interface OpenedArchive {
@@ -147,40 +195,78 @@ export async function openArchive(): Promise<OpenedArchive | null> {
 }
 
 /**
- * Writes the archive, in place where the binding allows it and as a new
- * timestamped download where it does not.
+ * Writes the archive: back to the occupancy service it came from, in place
+ * where the binding has a handle, and as a new timestamped download where it
+ * has neither.
  *
- * Four routes, in order:
+ * Five routes, in order:
  *
- * 1. A bound handle, `rebind` false — overwrite it, silently. `createWritable`
+ * 0. A service binding with an `ETag`, `rebind` false — the changed files, the
+ *    manifest and the deletes go to the service (`serviceArchive.ts`'s writer
+ *    over `R49Archive.writeChanges`). No
+ *    handle is involved, so this one route works on a phone as well as on
+ *    Chromium desktop. A refusal comes back as `refused` and leaves the
+ *    binding alone; a network failure throws, as every other route's write
+ *    failure does.
+ * 1. A service binding with **no** `ETag` — the service serves the archive
+ *    read-only. `options.notice` is told so, and the save takes route 2, 3 or
+ *    4 from here.
+ * 2. A bound handle, `rebind` false — overwrite it, silently. `createWritable`
  *    stages into a swap file and commits on `close()`, so an interrupted write
  *    cannot truncate the original; that atomicity is the whole safety net, by
  *    decision (#48). There is no `.bak` and no verification read: re-parsing
  *    every image on every save costs more than the failure it guards.
- * 2. A bound handle whose write permission is refused — falls through to (4)
+ * 3. A bound handle whose write permission is refused — falls through to (5)
  *    rather than failing. A denied prompt must not cost the user a save.
- * 3. No handle (or `rebind`) with the API present — the picker, suggesting the
+ * 4. No handle (or `rebind`) with the API present — the picker, suggesting the
  *    binding's plain stem. Dismissing it returns `cancelled`; nothing is
- *    written and the old binding stands.
- * 4. No API — a timestamped download. The binding is returned unchanged: a
- *    download binds nothing, so the next save asks the same question again.
+ *    written and the old binding stands, and the export it already cost is the
+ *    price of not truncating a file it could not fill. A picker save from a
+ *    service binding **moves the binding to the file**: the returned one
+ *    carries the handle and no service.
+ * 5. No API — a timestamped download. The binding is returned unchanged: a
+ *    download binds nothing, so the next save asks the same question again,
+ *    and a service binding stays one.
  *
- * `rebind` is Save As. On route 4 it is indistinguishable from a plain save,
- * which is why the affordance is a Shift-click rather than a button: a control
- * that did nothing different on Safari would still have to be explained there.
+ * `rebind` is Save As. It skips the service and exports through the archive,
+ * which fetches whatever the page has not read. On route 5 it is
+ * indistinguishable from a plain save, which is why the affordance is a
+ * Shift-click rather than a button: a control that did nothing different on
+ * Safari would still have to be explained there.
+ *
+ * The bytes are exported **once the service route is out of the way, and
+ * before any file is touched**: the service route needs none, and an export
+ * that fails — an image on a service that will not read — must fail before a
+ * picker has named a file, or it would leave an empty `.r49` at that name and
+ * truncate whatever was there.
  */
 export async function writeArchive(
-  bytes: Uint8Array,
+  archive: R49Archive,
   binding: FileBinding,
-  options: { rebind?: boolean } = {}
+  options: { rebind?: boolean; notice?: (message: string) => void } = {}
 ): Promise<SaveOutcome> {
+  const service = options.rebind ? undefined : binding.service;
+  if (service) {
+    if (service.etag !== null) {
+      const written = await saveToService(archive, service.base, service.etag);
+      return written.kind === 'wrote'
+        ? { kind: 'served', binding: { ...binding, service: { ...service, etag: written.etag } } }
+        : { kind: 'refused', binding, message: written.message };
+    }
+    options.notice?.(READ_ONLY_NOTICE);
+  }
+
+  // Before the picker and before the first write: a failed export must not have
+  // named, or truncated, a file.
+  const bytes = await archive.export();
+
   const handle = options.rebind ? undefined : binding.handle;
   if (handle && (await canWrite(handle))) {
     await writeThrough(handle, bytes);
     return { kind: 'wrote', binding, filename: `${binding.stem}.r49` };
   }
 
-  // A truthy `handle` here means route 2: the write permission was refused, and
+  // A truthy `handle` here means route 3: the write permission was refused, and
   // the answer is the download, not a second dialog asking for a location.
   const showSaveFilePicker = handle ? undefined : picker().showSaveFilePicker;
   if (showSaveFilePicker) {
