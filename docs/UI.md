@@ -677,8 +677,8 @@ clear only once it is wider than two margins, over 4 G.
 **The service's own L1 cases run against `occupancy()`**, from a copy of its `conformance/l1.json`
 in `tests/fixtures/` with the source commit recorded beside it —
 `tests/occupancy.shared.test.ts`, the same arrangement `lib/drift` has for the shared drift cases.
-The two implementations answer one question for one layout, so a geometry that drifted apart fails
-there rather than reaching a controller. What it does **not** compare is the `unknown` reason,
+The two implementations answer one question for one layout, so a geometry that diverged fails there
+rather than reaching a controller. What it does **not** compare is the `unknown` reason,
 which is the vocabulary split below.
 
 It is pure and total — one state per sensor, always — so the live view hands `rr-viewer`'s sensor
