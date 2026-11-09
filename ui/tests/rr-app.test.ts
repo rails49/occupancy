@@ -5,6 +5,7 @@ import { RRApp } from '../src/rr-app.js';
 import { R49Archive, getDPT } from '@rails49/r49';
 import type { NotifyDetail } from '../src/rr-editor-view.js';
 import type { EditHistory } from '../src/history.js';
+import type { FileBinding } from '../src/persistence.js';
 import type SlIcon from '@shoelace-style/shoelace/dist/components/icon/icon.js';
 
 // Mock global fetch
@@ -501,7 +502,7 @@ describe('rr-app', () => {
     });
   });
 
-  describe('the occupancy service on this origin (#331)', () => {
+  describe('the occupancy service on this origin (#331, #333)', () => {
     const originalFetch = global.fetch;
     // jsdom has no EventSource. The live view opens the service's stream; these
     // tests never connect it.
@@ -519,34 +520,74 @@ describe('rr-app', () => {
       fixtureCleanup();
       global.fetch = originalFetch;
       vi.unstubAllGlobals();
+      delete (window as any).showSaveFilePicker;
     });
 
-    const served = {
-      version: 4,
-      layout: { name: 'Served', scale: 'N', calibration: { points: [] }, sensors: [] },
-      camera: { resolution: { width: 640, height: 480 } },
-      images: [],
+    /** The manifest the service serves. One test gives it an image to delete. */
+    let served: {
+      version: number;
+      layout: unknown;
+      camera: unknown;
+      images: { filename: string; labeled_complete: boolean; labels: [] }[];
     };
+    beforeEach(() => {
+      served = {
+        version: 4,
+        layout: { name: 'Served', scale: 'N', calibration: { points: [] }, sensors: [] },
+        camera: { resolution: { width: 640, height: 480 } },
+        images: [],
+      };
+    });
+
+    /**
+     * Every request the page made, as `<METHOD> <path>`, in order.
+     *
+     * The path rather than the URL: the check and the writes are
+     * origin-relative, and `R49Archive.load` is given the absolute base
+     * `archiveBase()` resolves. Both reach the same path.
+     */
+    let seen: string[];
 
     /**
      * Answer the manifest path with `manifest` and hold every `latest` open.
      *
      * Holding rather than answering keeps the loop parked on its first request:
-     * what these tests are about is whether the page found a service, not what
-     * it does with its frames.
+     * what these tests are about is whether the page found a service and what it
+     * opened, not what it does with its frames.
+     *
+     * `manifest` is called per request, so a test can answer the `ETag` read and
+     * the load that follows it differently — which is how the two reads are told
+     * apart at all. Writes answer 204 unless `write` says otherwise.
      */
-    function serve(manifest: Response | Error) {
-      global.fetch = vi.fn(async (url: string) => {
+    function serve(
+      manifest: () => Response | Error,
+      write: (key: string) => Response | Promise<Response> = () => new Response(null, { status: 204, headers: { etag: '"v2"' } })
+    ) {
+      seen = [];
+      global.fetch = vi.fn(async (url: string, init?: RequestInit) => {
+        const key = `${init?.method ?? 'GET'} ${new URL(String(url), window.location.href).pathname}`;
+        seen.push(key);
+        if (init?.method !== undefined) return await write(key);
         if (String(url).includes('manifest.json')) {
-          if (manifest instanceof Error) throw manifest;
-          return manifest.clone();
+          const answer = manifest();
+          if (answer instanceof Error) throw answer;
+          return answer;
+        }
+        // Any other file of the archive: bytes, as the service serves an image.
+        if (String(url).includes('/archive/')) {
+          return new Response(new Uint8Array([1, 2, 3]) as unknown as BodyInit);
         }
         return new Promise<Response>(() => {});
       }) as unknown as typeof fetch;
     }
 
-    const jsonManifest = () =>
-      new Response(JSON.stringify(served), { headers: { 'content-type': 'application/json' } });
+    const jsonManifest = (etag?: string) =>
+      new Response(JSON.stringify(served), {
+        headers: { 'content-type': 'application/json', ...(etag === undefined ? {} : { etag }) },
+      });
+
+    /** A service serving a writable archive: both reads carry the same version. */
+    const writable = () => serve(() => jsonManifest('"v1"'));
 
     /** Mount, let the check settle, and hand back the app and its toasts. */
     async function mounted() {
@@ -562,28 +603,79 @@ describe('rr-app', () => {
       return el.updateComplete.then(() => el.shadowRoot!.querySelector('rr-live-view'));
     };
 
+    const binding = (el: RRApp) =>
+      (el as unknown as { _binding: FileBinding | null })._binding;
+    const session = (el: RRApp) =>
+      (el as unknown as { _session: { history: EditHistory; editLayout(l: unknown): Promise<void> } | null })._session;
+    const save = (el: RRApp, rebind = false) =>
+      (el as unknown as { _onFileSave(rebind?: boolean): Promise<void> })._onFileSave(rebind);
+
     it('hands a service it found to the live view, as both of its sources', async () => {
-      serve(jsonManifest());
-      const { el, notify } = await mounted();
+      writable();
+      const { el } = await mounted();
 
       const view = (await liveSources(el))!;
       expect(view.sources).to.not.be.null;
       // One object answers a frame and that frame's L1 together, so it is both.
       expect(view.sources!.frames).toBe(view.sources!.results);
-      // And no archive: the page starts with none, and opening one is what
-      // leaves the service behind.
-      expect(view.archive).to.be.null;
-      expect(notify).not.toHaveBeenCalled();
+      // And it says what it is, so the view shows the service's judgement
+      // rather than measuring drift against the archive now bound (#333).
+      expect(view.sources!.service).toBe(true);
     });
 
     // The page still opens in the editor; the check only decides what Live
     // shows when the person presses it.
     it('still starts in the editor', async () => {
-      serve(jsonManifest());
+      writable();
       const { el } = await mounted();
 
       expect(el.shadowRoot!.querySelector('rr-editor-view')).to.exist;
       expect(el.shadowRoot!.querySelector('rr-live-view')).to.be.null;
+    });
+
+    it('opens the archive the service serves, writable, and says so', async () => {
+      writable();
+      const { el, notify } = await mounted();
+
+      expect(session(el)).to.not.be.null;
+      expect(binding(el)).toEqual({ stem: '', service: { base: '/live', etag: '"v1"' } });
+      expect(notify).toHaveBeenCalledWith(
+        expect.stringContaining('occupancy service'),
+        'success',
+        'file-earmark-check'
+      );
+      // The band says where a save goes, as it does for a bound file.
+      expect(el.shadowRoot!.querySelector('look-reading')!.textContent).toContain(
+        'occupancy service'
+      );
+    });
+
+    // A `.r49` zip on the service, or a folder it cannot write: it serves the
+    // manifest and no version to write against.
+    it('opens an archive with no ETag read-only', async () => {
+      serve(() => jsonManifest());
+      const { el } = await mounted();
+
+      expect(session(el)).to.not.be.null;
+      expect(binding(el)).toEqual({ stem: '', service: { base: '/live', etag: null } });
+      // Nothing writable is named in the band.
+      expect(el.shadowRoot!.querySelector('look-reading')).to.be.null;
+    });
+
+    // The version is read from the answer the check already has, and the load
+    // reads the manifest again. A save landing between the two leaves this page
+    // holding the older version — and its own save refused, rather than
+    // overwriting work it never saw.
+    it('reads the ETag before it loads the manifest', async () => {
+      const etags = ['"v1"', '"v2"'];
+      serve(() => jsonManifest(etags.shift() ?? '"v3"'));
+      const { el } = await mounted();
+
+      expect(seen).toEqual([
+        'GET /live/archive/manifest.json',
+        'GET /live/archive/manifest.json',
+      ]);
+      expect(binding(el)!.service!.etag).toBe('"v1"');
     });
 
     const noService: [string, () => Response | Error][] = [
@@ -595,10 +687,12 @@ describe('rr-app', () => {
     ];
 
     for (const [what, answer] of noService) {
-      it(`finds no service in ${what}, and says nothing about it`, async () => {
-        serve(answer());
+      it(`finds no service in ${what}, opens nothing, and says nothing about it`, async () => {
+        serve(answer);
         const { el, notify } = await mounted();
 
+        expect(session(el)).to.be.null;
+        expect(binding(el)).to.be.null;
         const view = (await liveSources(el))!;
         expect(view.sources).to.be.null;
         // Silent: a page with no service is the page as it has always been,
@@ -607,8 +701,31 @@ describe('rr-app', () => {
       });
     }
 
+    // Found, so the live view watches it; the archive did not load, and that
+    // is a failed load like any other.
+    it('toasts a manifest that will not load the way it toasts any failed load', async () => {
+      let first = true;
+      serve(() => {
+        if (first) {
+          first = false;
+          return jsonManifest('"v1"');
+        }
+        return new Response('{"version": 3}', { headers: { 'content-type': 'application/json' } });
+      });
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      const { el, notify } = await mounted();
+
+      expect(session(el)).to.be.null;
+      expect(notify).toHaveBeenCalledWith(
+        expect.stringContaining('Load failed'),
+        'danger',
+        'exclamation-octagon'
+      );
+      expect((await liveSources(el))!.sources).to.not.be.null;
+    });
+
     it('leaves the service behind when an archive is created', async () => {
-      serve(jsonManifest());
+      writable();
       const { el } = await mounted();
       expect((await liveSources(el))!.sources).to.not.be.null;
 
@@ -619,9 +736,10 @@ describe('rr-app', () => {
       const view = (await liveSources(el))!;
       expect(view.sources).to.be.null;
       expect(view.archive).to.not.be.null;
+      expect(binding(el)).to.be.null;
     });
 
-    it('ignores a service that answers after an archive has been opened', async () => {
+    it('ignores a service that answers after an archive has been created', async () => {
       // The race the check's own latency opens: the person pressed New before
       // the manifest came back.
       let answer!: (response: Response) => void;
@@ -631,11 +749,244 @@ describe('rr-app', () => {
 
       const el = await fixture<RRApp>(html`<rr-app></rr-app>`);
       await (el as unknown as { _onFileNew(): Promise<void> })._onFileNew();
-      answer(jsonManifest());
+      answer(jsonManifest('"v1"'));
       await new Promise(resolve => setTimeout(resolve, 0));
       await el.updateComplete;
 
       expect((await liveSources(el))!.sources).to.be.null;
+      // And the archive on screen is the one the person made.
+      expect(binding(el)).to.be.null;
+      expect(session(el)!.history.isDirty).toBe(false);
+    });
+
+    it('ignores a manifest that loads after an archive has been created', async () => {
+      // The second half of the same race: the check answered, and the load it
+      // started was still in flight when the person pressed New.
+      let answer!: (response: Response) => void;
+      let reads = 0;
+      global.fetch = vi.fn(async (url: string) => {
+        if (!String(url).includes('manifest.json')) return new Promise<Response>(() => {});
+        if (++reads === 1) return jsonManifest('"v1"');
+        return new Promise<Response>(resolve => (answer = resolve));
+      }) as unknown as typeof fetch;
+
+      const el = await fixture<RRApp>(html`<rr-app></rr-app>`);
+      await new Promise(resolve => setTimeout(resolve, 0));
+      await (el as unknown as { _onFileNew(): Promise<void> })._onFileNew();
+      answer(jsonManifest('"v1"'));
+      await new Promise(resolve => setTimeout(resolve, 0));
+      await el.updateComplete;
+
+      expect(binding(el)).to.be.null;
+      expect((el as unknown as { _session: { archive: R49Archive } })._session.archive
+        .getManifest().layout.name).toBe('New Layout');
+    });
+
+    describe('Save on a service binding (#333)', () => {
+      it('writes to the service and marks the archive saved', async () => {
+        writable();
+        const { el, notify } = await mounted();
+        await session(el)!.editLayout({ name: 'Renamed', scale: 'N' });
+        expect(session(el)!.history.isDirty).toBe(true);
+
+        await save(el);
+
+        expect(seen).toContain('PUT /live/archive/manifest.json');
+        expect(session(el)!.history.isDirty).toBe(false);
+        // The new version, so the next save is not refused as stale.
+        expect(binding(el)!.service!.etag).toBe('"v2"');
+        expect(notify).toHaveBeenCalledWith(
+          'Saved to the occupancy service',
+          'success',
+          'floppy'
+        );
+      });
+
+      const refusals: [number, (key: string) => Response, RegExp][] = [
+        [412, () => new Response(null, { status: 412 }), /Save As/],
+        [
+          422,
+          () =>
+            new Response(JSON.stringify({ error: 'manifest/provenance' }), {
+              status: 422,
+              headers: { 'content-type': 'application/json' },
+            }),
+          /manifest\/provenance/,
+        ],
+        [405, () => new Response(null, { status: 405 }), /405/],
+        [403, () => new Response(null, { status: 403 }), /403/],
+      ];
+
+      for (const [status, answer, says] of refusals) {
+        it(`leaves the archive dirty and bound to the service on a ${status}`, async () => {
+          serve(() => jsonManifest('"v1"'), answer);
+          const { el, notify } = await mounted();
+          await session(el)!.editLayout({ name: 'Renamed', scale: 'N' });
+
+          await save(el);
+
+          expect(session(el)!.history.isDirty).toBe(true);
+          expect(binding(el)).toEqual({ stem: '', service: { base: '/live', etag: '"v1"' } });
+          expect(notify).toHaveBeenCalledWith(
+            expect.stringMatching(says),
+            'danger',
+            'exclamation-diamond',
+            Infinity
+          );
+        });
+      }
+
+      it('reports a network failure as a failed save, dirty and still bound', async () => {
+        serve(
+          () => jsonManifest('"v1"'),
+          () => Promise.reject(new TypeError('Failed to fetch'))
+        );
+        const { el, notify } = await mounted();
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        await session(el)!.editLayout({ name: 'Renamed', scale: 'N' });
+
+        await save(el);
+
+        expect(session(el)!.history.isDirty).toBe(true);
+        expect(binding(el)!.service).to.not.be.undefined;
+        expect(notify).toHaveBeenCalledWith(
+          expect.stringContaining('Save failed'),
+          'danger',
+          'exclamation-diamond'
+        );
+      });
+
+      it('sends nothing for a Save pressed while one is running', async () => {
+        let release!: () => void;
+        const held = new Promise<void>(resolve => (release = resolve));
+        serve(
+          () => jsonManifest('"v1"'),
+          async () => {
+            await held;
+            return new Response(null, { status: 204, headers: { etag: '"v2"' } });
+          }
+        );
+        const { el } = await mounted();
+
+        const first = save(el);
+        await save(el);
+        release();
+        await first;
+
+        expect(seen.filter(call => call.startsWith('PUT'))).toHaveLength(1);
+      });
+
+      // The position is taken when the save starts, so an edit made while the
+      // requests were in flight is not in what went.
+      it('leaves an edit made during the save dirty', async () => {
+        let release!: () => void;
+        const held = new Promise<void>(resolve => (release = resolve));
+        serve(
+          () => jsonManifest('"v1"'),
+          async () => {
+            await held;
+            return new Response(null, { status: 204, headers: { etag: '"v2"' } });
+          }
+        );
+        const { el } = await mounted();
+
+        const saving = save(el);
+        await session(el)!.editLayout({ name: 'Renamed', scale: 'N' });
+        release();
+        await saving;
+
+        expect(session(el)!.history.isDirty).toBe(true);
+      });
+
+      // occupancy-service#7 accepts an orphan file, so a delete that did not
+      // land is a stray file on the service rather than a save that did not
+      // happen. The archive is what the manifest names.
+      it('marks the archive saved when a DELETE fails', async () => {
+        served.images = [{ filename: 'img_1.jpg', labeled_complete: false, labels: [] }];
+        serve(() => jsonManifest('"v1"'), key =>
+          key.startsWith('DELETE')
+            ? new Response(null, { status: 405 })
+            : new Response(null, { status: 204, headers: { etag: '"v2"' } })
+        );
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const { el } = await mounted();
+        await (
+          el as unknown as { _session: { deleteImage(name: string): Promise<void> } }
+        )._session.deleteImage('img_1.jpg');
+        expect(session(el)!.history.isDirty).toBe(true);
+
+        await save(el);
+
+        expect(seen).toContain('DELETE /live/archive/img_1.jpg');
+        expect(session(el)!.history.isDirty).toBe(false);
+        expect(binding(el)!.service!.etag).toBe('"v2"');
+      });
+
+      it('moves the work to the file a Save As chose, and the live view with it', async () => {
+        writable();
+        const { el } = await mounted();
+        const written: unknown[] = [];
+        const chosen = {
+          name: 'west-yard.r49',
+          createWritable: vi.fn().mockResolvedValue({
+            write: vi.fn(async (data: unknown) => void written.push(data)),
+            close: vi.fn(async () => {}),
+            abort: vi.fn(),
+          }),
+        };
+        (window as any).showSaveFilePicker = vi.fn().mockResolvedValue(chosen);
+
+        await save(el, true);
+
+        expect(written).toHaveLength(1);
+        expect(binding(el)).toEqual({ stem: 'west-yard', handle: chosen });
+        expect(seen.filter(call => call.startsWith('PUT'))).toHaveLength(0);
+        // The archive is the person's file now, so the live view goes back to
+        // the camera and the model in this page.
+        const view = (await liveSources(el))!;
+        expect(view.sources).to.be.null;
+        expect(view.archive).to.not.be.null;
+
+        // And the next plain Save goes to that file, not to the service.
+        (el as unknown as { _viewMode: string })._viewMode = 'editor';
+        await save(el);
+        expect(written).toHaveLength(2);
+        expect(seen.filter(call => call.startsWith('PUT'))).toHaveLength(0);
+      });
+
+      it('names the layout in the picker, since an archive on a service has no filename here', async () => {
+        writable();
+        const { el } = await mounted();
+        const picker = vi.fn().mockRejectedValue(new DOMException('dismissed', 'AbortError'));
+        (window as any).showSaveFilePicker = picker;
+
+        await save(el, true);
+
+        expect(picker).toHaveBeenCalledWith(
+          expect.objectContaining({ suggestedName: 'Served.r49' })
+        );
+      });
+
+      it('says a read-only archive is read-only, and downloads instead', async () => {
+        serve(() => jsonManifest());
+        const { el, notify } = await mounted();
+
+        await save(el);
+
+        expect(seen.filter(call => call.startsWith('PUT'))).toHaveLength(0);
+        expect(notify).toHaveBeenCalledWith(
+          expect.stringContaining('read-only'),
+          'warning',
+          'exclamation-triangle'
+        );
+        expect(notify).toHaveBeenCalledWith(
+          expect.stringMatching(/^Downloaded Served-\d{8}-\d{4}\.r49$/),
+          'success',
+          'download'
+        );
+        // A download binds nothing: the archive is still the service's.
+        expect(binding(el)!.service).toEqual({ base: '/live', etag: null });
+      });
     });
   });
 

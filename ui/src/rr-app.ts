@@ -12,7 +12,7 @@ import { openArchive, supportsFileSystemAccess, writeArchive, type FileBinding }
 // see `keyboard.ts` for why the rule has one home.
 import { isInsideOpenDialog, isTypingTarget } from './keyboard.js';
 import { GATE_REASON, TOOLS } from './tools.js';
-import { findService } from './liveContract.js';
+import { LIVE_BASE, archiveBase, findService, readEtag } from './liveContract.js';
 import { occupancyService } from './occupancyService.js';
 import type { LiveSources } from './liveSources.js';
 import './rr-editor-view.js';
@@ -25,6 +25,7 @@ import './rr-discard-dialog.js';
 import type { RRDiscardDialog } from './rr-discard-dialog.js';
 import { setBasePath } from '@shoelace-style/shoelace/dist/utilities/base-path.js';
 import '@shoelace-style/shoelace/dist/components/alert/alert.js';
+import type SlAlert from '@shoelace-style/shoelace/dist/components/alert/alert.js';
 import '@shoelace-style/shoelace/dist/components/icon/icon.js';
 
 // Set the base path for Shoelace assets (icons, etc.)
@@ -66,15 +67,26 @@ export class RRApp extends LitElement {
   @query('rr-discard-dialog') private _discardDialog!: RRDiscardDialog;
 
   /**
-   * The file this session writes back to, or null for a layout that has never
+   * Where this session writes back to, or null for a layout that has never
    * been saved (#48).
    *
-   * A binding carrying a handle makes Save an overwrite; one without makes it a
-   * timestamped download; null means the stem is not decided yet and comes from
-   * `layout.name` at the moment of saving. New clears it — the new archive is
-   * emphatically not the file that was open — and Save As re-points it.
+   * A binding carrying a service writes to the occupancy service it was opened
+   * from (#333); one carrying a handle makes Save an overwrite; one with
+   * neither makes it a timestamped download; null means the stem is not decided
+   * yet and comes from `layout.name` at the moment of saving. New clears it —
+   * the new archive is emphatically not the file that was open — and Save As
+   * re-points it.
    */
   @state() private _binding: FileBinding | null = null;
+
+  /**
+   * Whether a save is running (#333).
+   *
+   * A save is no longer instant: writing to an occupancy service is several
+   * requests over the network. A Save pressed while one is in flight does
+   * nothing rather than starting a second pass over the same files.
+   */
+  private _saving = false;
 
   /**
    * The occupancy service this origin serves, or `null` where there is none
@@ -88,8 +100,8 @@ export class RRApp extends LitElement {
   /**
    * Whether an archive of the person's own has taken over.
    *
-   * New and Open leave the service behind. This also ignores a service check
-   * that answers after that.
+   * New, Open and a Save As that lands in a file leave the service behind
+   * (#333). This also ignores a service check that answers after that.
    */
   private _leftService = false;
 
@@ -112,11 +124,35 @@ export class RRApp extends LitElement {
 
   /** Shows `message`, as text, in a Shoelace `sl-alert` toast (#264). */
   private _notify(message: string, variant: 'primary' | 'success' | 'danger' | 'warning' = 'primary', icon = 'info-circle', duration = 3000) {
+    const alert = this._alert(message, variant, icon, duration);
+    return alert.toast();
+  }
+
+  /**
+   * A toast that stays up until the returned function closes it — what a save
+   * in flight shows (#333).
+   *
+   * Separate from {@link _notify} because a toast with no duration has to be
+   * closed by whoever put it up, and {@link _notify}'s callers do not keep it.
+   */
+  private _progress(message: string): () => void {
+    const alert = this._alert(message, 'primary', 'hourglass-split', Infinity);
+    void alert.toast();
+    return () => void alert.hide();
+  }
+
+  /** The `sl-alert` both of those show. */
+  private _alert(
+    message: string,
+    variant: 'primary' | 'success' | 'danger' | 'warning',
+    icon: string,
+    duration: number
+  ): SlAlert {
     const alert = Object.assign(document.createElement('sl-alert'), { variant, closable: true, duration });
     const iconEl = Object.assign(document.createElement('sl-icon'), { slot: 'icon', name: icon });
     alert.append(iconEl, message);
     this.renderRoot.appendChild(alert);
-    return alert.toast();
+    return alert;
   }
 
   /**
@@ -142,15 +178,50 @@ export class RRApp extends LitElement {
   }
 
   /**
-   * Ask whether this origin serves an occupancy service, and hold it if it
-   * does (#331).
+   * Ask whether this origin serves an occupancy service and, where it does,
+   * watch it and open the archive it serves (#331, #333).
    *
-   * No toast either way. The check is `liveContract.ts`'s, and #333 reuses it.
+   * No toast where there is none: only a 2xx with a JSON content type is a
+   * service, and any other answer — the cloud copy's own HTML, a 404, a
+   * network failure — leaves the page exactly as it has always been.
+   *
+   * The manifest's **`ETag` is read before the archive loads**, from the answer
+   * the check already has, and `R49Archive.load` reads the manifest again. A
+   * save landing between the two therefore leaves this page holding the older
+   * version, and this page's first save is refused rather than overwriting
+   * somebody's work — which is the right way round. An answer with no `ETag` is
+   * a service serving the archive read-only, and it opens that way.
+   *
+   * There is no command for any of this and no re-read: a newer copy is one
+   * page reload away. An archive the person opened or created first wins, here
+   * and after either await.
    */
   private async _lookForService() {
-    if ((await findService()) === null || this._leftService) return;
+    const found = await findService();
+    if (found === null || this._taken()) return;
+    const etag = readEtag(found);
     const service = occupancyService();
-    this._service = { frames: service, results: service };
+    this._service = { frames: service, results: service, service: true };
+
+    let archive: R49Archive;
+    try {
+      // The base URL, not bytes: the manifest comes now and each image when
+      // something asks for it.
+      archive = await R49Archive.load(archiveBase(LIVE_BASE));
+    } catch (err) {
+      console.error('Failed to load the archive on the occupancy service', err);
+      this._notify(`Load failed: ${String(err)}`, 'danger', 'exclamation-octagon');
+      return;
+    }
+    if (this._taken()) return;
+    this._open(archive, { keepService: true });
+    this._binding = { stem: '', service: { base: LIVE_BASE, etag } };
+    this._notify('Opened the archive on the occupancy service', 'success', 'file-earmark-check');
+  }
+
+  /** Whether an archive of the person's own has already taken this page over. */
+  private _taken(): boolean {
+    return this._leftService || this._session !== null;
   }
 
   /**
@@ -241,14 +312,18 @@ export class RRApp extends LitElement {
     await this._session?.redo();
   }
 
-  /** Starts editing `archive`, dropping the previous session and its history. */
-  private _open(archive: R49Archive) {
+  /**
+   * Starts editing `archive`, dropping the previous session and its history.
+   *
+   * New and Open leave an occupancy service behind (#331); the archive the
+   * service itself serves keeps it, and the live view goes on showing that
+   * service for as long as the archive is bound to it (#333). A cancelled New
+   * or Open opens nothing and reaches neither this nor `_leaveService`.
+   */
+  private _open(archive: R49Archive, options: { keepService?: boolean } = {}) {
     this._session = new EditSession(archive);
     this._session.subscribe(() => this.requestUpdate());
-    // New and Open both pass here, and both leave an occupancy service behind
-    // (#331). A cancelled New or Open opens
-    // nothing and reaches neither this nor `_leaveService`.
-    this._leaveService();
+    if (!options.keepService) this._leaveService();
   }
 
   /**
@@ -326,33 +401,65 @@ export class RRApp extends LitElement {
   /**
    * Save, and Save As when the rail reports a Shift-click (#48).
    *
-   * Where the bytes land is `persistence.ts`'s decision, not this component's:
-   * an overwrite where the browser has a handle for it, a timestamped download
-   * everywhere else. Both count as saved — the fallback did write a file, and
-   * refusing to mark it would leave the phone permanently dirty.
+   * Where the work lands is `persistence.ts`'s decision, not this component's:
+   * the occupancy service the archive was opened from (#333), an overwrite
+   * where the browser has a handle for it, or a timestamped download. All three
+   * count as saved — the download did write a file, and refusing to mark it
+   * would leave the phone permanently dirty.
+   *
+   * The archive goes down rather than its bytes, because the service route
+   * writes the files that changed and never an archive.
+   *
+   * **The history position is taken before the first request** and that
+   * position is what is marked saved, so an edit made while the save was in
+   * flight leaves the archive dirty: it is not in what went. A Save pressed
+   * while one is running does nothing, and a toast stays up while it runs.
+   *
+   * A refusal leaves everything where it was — dirty, and still bound to the
+   * service — and says what the service said. This page does not fall back to a
+   * file by itself, and it merges nothing.
    *
    * The stem is the binding's, falling back to `layout.name` for an archive
-   * that has never been saved. It does not follow a later rename: the file's
-   * identity is the file, and `layout.name` is metadata stored inside it.
+   * that has never been saved, which is every archive on a service. It does not
+   * follow a later rename: the file's identity is the file, and `layout.name`
+   * is metadata stored inside it.
    */
   private async _onFileSave(rebind = false) {
     const session = this._session;
-    if (!session) return;
+    if (!session || this._saving) return;
+    this._saving = true;
+    const position = session.history.position;
+    const done = this._progress('Saving…');
     try {
-      const data = await session.archive.export();
       const stem = this._binding?.stem || session.archive.getManifest().layout.name || 'layout';
-      const outcome = await writeArchive(data, { ...this._binding, stem }, { rebind });
+      const outcome = await writeArchive(
+        session.archive,
+        { ...this._binding, stem },
+        { rebind, notice: message => this._notify(message, 'warning', 'exclamation-triangle') }
+      );
       if (outcome.kind === 'cancelled') return;
+      if (outcome.kind === 'refused') {
+        // Up until it is closed: a refusal the person has to answer with Save
+        // As must not vanish after three seconds.
+        this._notify(outcome.message, 'danger', 'exclamation-diamond', Infinity);
+        return;
+      }
 
+      // A save that landed in a file takes the work off the service, and the
+      // live view goes back to the camera and the model in this page (#333).
+      if (this._binding?.service && !outcome.binding.service) this._leaveService();
       this._binding = outcome.binding;
-      // Saving marks the position rather than clearing the stack: the bytes on
-      // disk are unaffected by anything undone afterwards, so undoing past a
+      // Saving marks the position rather than clearing the stack: what was
+      // written is unaffected by anything undone afterwards, so undoing past a
       // save stays legitimate. The marker is what `isDirty` is measured from.
-      session.history.markSaved();
-      // The verb is half the message: overwriting `west-yard.r49` and dropping
-      // a new `west-yard-20260802-1432.r49` into Downloads are different
-      // enough that "Saved to disk" would hide which one just happened.
-      if (outcome.kind === 'wrote') {
+      session.history.markSaved(position);
+      // The verb is half the message: writing back to the service, overwriting
+      // `west-yard.r49` and dropping a new `west-yard-20260802-1432.r49` into
+      // Downloads are different enough that "Saved" would hide which one just
+      // happened.
+      if (outcome.kind === 'served') {
+        this._notify('Saved to the occupancy service', 'success', 'floppy');
+      } else if (outcome.kind === 'wrote') {
         this._notify(`Saved ${outcome.filename}`, 'success', 'floppy');
       } else {
         this._notify(`Downloaded ${outcome.filename}`, 'success', 'download');
@@ -361,6 +468,9 @@ export class RRApp extends LitElement {
     } catch (err) {
       console.error('Failed to save archive', err);
       this._notify(`Save failed: ${String(err)}`, 'danger', 'exclamation-diamond');
+    } finally {
+      this._saving = false;
+      done();
     }
   }
 
@@ -397,24 +507,28 @@ export class RRApp extends LitElement {
   }
 
   /**
-   * The band: the UI name, the layout's name and scale, and the file a save
-   * would land in.
+   * The band: the UI name, the layout's name and scale, and where a save would
+   * land.
    *
    * With no archive open there is no `look-about`: it would repeat the UI
-   * name. The scale is what the layout's geometry means (#52). The bound
-   * filename is shown only when Save would overwrite it: the question "where
+   * name. The scale is what the layout's geometry means (#52). The
+   * `look-reading` is shown only where Save writes over something that exists:
+   * the bound filename where there is a handle, and the occupancy service where
+   * the archive came from one and it took an `ETag` (#333). The question "where
    * does my work go?" is asked before the click, and a toast answers it only
-   * afterwards. A binding without a handle names no file that exists yet, so
-   * it stays quiet.
+   * afterwards — and a binding that names nothing writable stays quiet, which a
+   * read-only service and a download both are.
    */
   private _renderBand(layout: Layout | null) {
     return html`<look-band ui="occupancy">
       ${layout
         ? html`<look-about name=${layout.name ?? ''} detail=${layout.scale}></look-about>`
         : nothing}
-      ${this._binding?.handle
-        ? html`<look-reading>${this._binding.stem}.r49</look-reading>`
-        : nothing}
+      ${this._binding?.service?.etag
+        ? html`<look-reading>occupancy service</look-reading>`
+        : this._binding?.handle
+          ? html`<look-reading>${this._binding.stem}.r49</look-reading>`
+          : nothing}
       <look-gear @look-press=${() => this._settingsDialog.show()}></look-gear>
     </look-band>`;
   }
