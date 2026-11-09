@@ -30,6 +30,12 @@ export const nextAnimationFrame = () =>
  * first few frames of a session, not an error to report. A video being seeked
  * drops back below it and comes back, which is the same case.
  *
+ * What a `null` means is the **caller's**, and the two local sources answer it
+ * differently: the camera turns it into a turn that is not fresh, because a
+ * camera that has stopped giving pictures must not leave the last rate and the
+ * last answers on screen (#345), while a video file holds the loop, because a
+ * file that is paused or still loading has a picture that is simply not new.
+ *
  * The size is the element's **intrinsic** size — what the camera settled on, or
  * what the file was recorded at — because that is the grid the pixels are in:
  * `drawImage` blits the element at exactly that size, and the drift grab and
