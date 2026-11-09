@@ -3,12 +3,14 @@ import { occupancyService } from '../src/occupancyService.js';
 import { LATEST_TIMEOUT_MS } from '../src/liveContract.js';
 import type { SourceFrame } from '../src/liveSources.js';
 import {
+  FRAME_BYTES,
   errorAnswer,
   htmlAnswer,
   jsonAnswer,
   multipartAnswer,
   useNodeFileGlobals,
 } from './liveFixture.js';
+import { jpeg, xmpApp1 } from './jpegFixture.js';
 
 // The service as a source (#331): a stubbed `fetch` over real multipart bodies,
 // a fake `EventSource` — jsdom has none — and a stubbed `decode`, which jsdom
@@ -501,6 +503,104 @@ describe('occupancyService', () => {
       // And the handle is still live: nothing released it.
       expect(revoked).toEqual([]);
       source.close();
+    });
+  });
+
+  describe('the frame on screen, for Freeze (#334)', () => {
+    /** The bytes of a second frame, told apart from `FRAME_BYTES` by its XMP block. */
+    const OTHER_BYTES = jpeg(xmpApp1());
+
+    const bytesOf = async (frame: { bytes: Blob }) =>
+      new Uint8Array(await frame.bytes.arrayBuffer());
+
+    it("holds the frame part's bytes and the id its answer came in", async () => {
+      const { source } = await opened([multipartAnswer(payload('f-7'))]);
+
+      // Before the first frame there is nothing to add, which is what disables
+      // the button.
+      expect(source.shownFrame).to.be.null;
+
+      await source.next();
+
+      expect(source.shownFrame!.id).toBe('f-7');
+      // The `frame` part as it arrived: nothing here re-encodes or decodes it.
+      expect(await bytesOf(source.shownFrame!)).toEqual(FRAME_BYTES);
+      source.close();
+    });
+
+    it('keeps the picture on screen while a newer answer is still decoding', async () => {
+      // What Freeze adds is the frame the person is looking at. The answer
+      // after it is not on screen until it decodes, and this object does not
+      // hand over its bytes before then.
+      let decoded = 0;
+      HTMLImageElement.prototype.decode = () => {
+        if (++decoded === 1) return Promise.resolve();
+        return new Promise<void>(resolve => decodes.push({ resolve }));
+      };
+      const { source } = await opened([
+        multipartAnswer(payload('f-1')),
+        multipartAnswer(payload('f-2'), OTHER_BYTES),
+      ]);
+
+      await source.next();
+      const onScreen = source.shownFrame!;
+      void source.next();
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(source.shownFrame).toBe(onScreen);
+      expect(await bytesOf(source.shownFrame!)).toEqual(FRAME_BYTES);
+
+      decodes[0].resolve();
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      // The second frame is on screen now, so it is the one on offer — and the
+      // first frame's object URL went with it, which is why the bytes are held
+      // beside the URL rather than read back out of it.
+      expect(source.shownFrame!.id).toBe('f-2');
+      expect(await bytesOf(source.shownFrame!)).toEqual(OTHER_BYTES);
+      expect(revoked).toContain('blob:frame-0');
+      source.close();
+    });
+
+    it('offers nothing on an answer with no frame, and the next frame again', async () => {
+      const { source } = await opened([
+        multipartAnswer(payload('f-1')),
+        multipartAnswer(noFrame(), null),
+        multipartAnswer(payload('f-3')),
+      ]);
+
+      await source.next();
+      expect(source.shownFrame!.id).toBe('f-1');
+
+      await source.next();
+      // The picture stays up, but it is out of date: the service has just said
+      // it cannot see the camera.
+      expect(source.shownFrame).to.be.null;
+
+      await source.next();
+      expect(source.shownFrame!.id).toBe('f-3');
+      source.close();
+    });
+
+    it('offers nothing after a request that failed', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      const { source } = await opened([multipartAnswer(payload('f-1')), errorAnswer(500)]);
+
+      await source.next();
+      expect(source.shownFrame).to.not.be.null;
+
+      await source.next();
+      expect(source.shownFrame).to.be.null;
+      source.close();
+    });
+
+    it('offers nothing once the view has been left', async () => {
+      const { source } = await opened([multipartAnswer(payload('f-1'))]);
+      await source.next();
+
+      source.close();
+
+      expect(source.shownFrame).to.be.null;
     });
   });
 

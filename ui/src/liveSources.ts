@@ -81,6 +81,28 @@ export interface SourceFrame {
 }
 
 /**
+ * The frame on screen as the bytes it arrived in, for a view that can put it
+ * into the archive (#334).
+ *
+ * Held beside the object URL the picture is shown through, and for as long as
+ * that picture is up: the URL is released when the next frame replaces it, and
+ * these bytes go at the same moment. A `Blob` rather than an array because
+ * that is what arrived and nothing here decodes it — whoever stores it reads
+ * the bytes out once, at the press.
+ */
+export interface ShownFrame {
+  /**
+   * The source's id for the answer this frame came in — a service's
+   * `frame_id`, which it sends back as `after`. It is a token, never parsed:
+   * all a reader may do is compare it with another, which is how a second
+   * press on one frame is told from a press on the next.
+   */
+  readonly id: string;
+  /** The frame's bytes, exactly as the source received them. */
+  readonly bytes: Blob;
+}
+
+/**
  * Where frames come from: a camera, a video file, a service.
  *
  * `next()` is the loop's pacing as well as its input — it resolves when there is
@@ -104,6 +126,19 @@ export interface FrameSource {
    * a service's frames arrive one at a time as {@link SourceFrame.src} (#331).
    */
   readonly stream: MediaStream | null;
+  /**
+   * The frame the **current answer** carried, for Freeze to add (#334), or
+   * `null`/absent where that answer carried none.
+   *
+   * `null` rather than the last frame on a turn with no picture, even though
+   * that picture stays on screen: it is out of date, and adding it to the
+   * archive as the layout now would be recording a photograph of a moment the
+   * service has already said it cannot see. A stream source leaves this
+   * absent — the camera path has `captureFromCamera` for the same job.
+   *
+   * A getter, read by the view per turn: it changes with the picture.
+   */
+  readonly shownFrame?: ShownFrame | null;
   /** The camera settings the drift rows record (#217), empty when there are none. */
   readonly settings: MediaTrackSettings;
 }

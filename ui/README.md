@@ -1711,6 +1711,15 @@ recovers on its next answer. An answer repeating the id is not a frame and it as
 resolves only once the frame has **decoded**, so asks cannot outrun a slow device, and each object
 URL is released when the next frame replaces it on screen and on leaving.
 
+**`shownFrame` is the frame on screen, for Freeze** ([#334]): its `frame_id` and the part's bytes as
+a `Blob`, held beside the object URL and replaced at the moment that URL is, so what Freeze adds is
+the picture the person is looking at and never a newer answer still decoding. The bytes are held
+rather than read back out of the URL — a revoked URL reads nothing, and fetching it would be a
+second read of a frame this object already has. It is **`null`** where the current answer carried no
+frame: before the first one, on a `json`-only answer, on a failed request, and after `close()`. The
+picture stays on screen in those cases, which is why the frame on offer and the picture are not the
+same question.
+
 **The manifest is the service's.** Read from `<base>/archive/manifest.json` at `open()` and validated
 by `R49Archive.setManifest`, it is what `ResultSource.layout` reports and therefore what the view
 draws — so an unsaved edit in the editor cannot move it. One `<base>/events` connection is held and
