@@ -148,6 +148,7 @@ rr-app                          ← shell: owns the editing session and the view
 > [#260]: https://github.com/rails49/occupancy/issues/260
 > [#262]: https://github.com/rails49/occupancy/issues/262
 > [#265]: https://github.com/rails49/occupancy/issues/265
+> [#273]: https://github.com/rails49/occupancy/issues/273
 > [#274]: https://github.com/rails49/occupancy/issues/274
 > [#284]: https://github.com/rails49/occupancy/issues/284
 > [#298]: https://github.com/rails49/occupancy/issues/298
@@ -1861,9 +1862,30 @@ Camera helpers, shared by both views.
 
 | Export | Description |
 |---|---|
-| `DEFAULT_CAMERA_CONSTRAINTS` | 1920×1080 ideal, rear-facing, no audio |
+| `DEFAULT_CAMERA_CONSTRAINTS` | 1920×1080 ideal, rear-facing, no audio. The live view's stream, and what a capture **opens** before it raises the track |
 | `getCameraStream(constraints?)` | `getUserMedia` wrapper; returns a `MediaStream` |
-| `captureFromCamera()` | Opens the camera, grabs one JPEG frame as a `Uint8Array`, and always stops the tracks — with a 5 s timeout |
+| `captureFromCamera()` | Opens the camera, **raises the track to the largest frame it says it can deliver** ([#273]), grabs that frame as one JPEG `Uint8Array`, and always stops the tracks — with a 5 s timeout |
+
+**A capture is the largest frame the camera offers; the live view's stream is still 1080p** ([#273]).
+The stream opens at `DEFAULT_CAMERA_CONSTRAINTS`, which every device can give and which is about
+DPT 8; a capture then asks the track it got for the largest width × height its `getCapabilities()`
+reports, as **one `exact` request**. The capability maxima need not be jointly achievable — 3840 wide
+and 2448 tall can be two different modes of one camera — so that request can fail, and where it
+fails, or the browser offers no `getCapabilities`, or reports no maxima, the capture is the stream as
+it opened. A second, looser request would settle the track on a size nobody asked for.
+
+**The raise happens before the stream reaches the `<video>`**, so the element's own size is already
+the raised one and the first frame it ever decodes is one the track took after the switch: there is
+no earlier frame to grab by mistake. The frame is then grabbed at **the element's** size, which is
+what the camera settled on rather than what was asked for — a camera may accept the request and
+settle elsewhere, and what a new archive takes as `camera.resolution` has to be the pixels that
+arrived. It is also the size `drawImage` blits, so a canvas sized from anything else would crop or
+pad the stored photograph wherever the two disagreed.
+
+Judging the frame is `imageAdd.ts`'s, the same way for a pick and for Freeze, so nothing here is a
+second size rule: a 4K capture into an archive declared at 1080p is refused in those words ([#260]),
+and a capture into an archive where nothing is positioned sets `camera.resolution` to the size it
+came at ([#254]).
 
 ---
 
@@ -2057,4 +2079,7 @@ it('renders <img> when src is set', async () => {
 are absent, so `rr-viewer`'s tests stub `createSVGPoint`/`getScreenCTM` per test. Assert DOM
 structure, attributes, and emitted events — visual appearance cannot be verified here.
 
-`capture.ts` has no tests yet.
+`capture.ts`'s tests fake all three things jsdom has none of — `getUserMedia`, the `<video>` the
+frame is read from and the `<canvas>` it is drawn into — so what they cover is which size the track
+is asked for, when it is asked, and the size the frame is grabbed at ([#273]). That a 4K frame then
+actually arrives is the browser's, and is checked by hand.
