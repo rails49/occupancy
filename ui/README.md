@@ -165,6 +165,7 @@ rr-app                          ← shell: owns the editing session and the view
 > [#331]: https://github.com/rails49/occupancy/issues/331
 > [#332]: https://github.com/rails49/occupancy/issues/332
 > [#333]: https://github.com/rails49/occupancy/issues/333
+> [#334]: https://github.com/rails49/occupancy/issues/334
 > [#335]: https://github.com/rails49/occupancy/issues/335
 > [#336]: https://github.com/rails49/occupancy/issues/336
 > [#341]: https://github.com/rails49/occupancy/pull/341
@@ -1055,7 +1056,8 @@ nothing) goes up as `{ message, duration: 3000 }` ([#324]).
 * Makes a blob URL for each image when it first appears in the image list and revokes it when the
   image goes. A new session revokes them all.
 * **An added image is prepared before it is stored** ([#255], `exifOrientation.ts`), the same way
-  for the file picker and for Capture from Camera. A JPEG's EXIF orientation tag is set to 1 in the
+  for the file picker and for Capture from Camera — and for Live's Freeze ([#334]), which is why
+  the three steps live in `imageAdd.ts` rather than here. A JPEG's EXIF orientation tag is set to 1 in the
   bytes the archive holds — that value alone, with no re-encode — so the browser and the detector's
   readers see one array; `imageSize` then measures those bytes, which is where `camera.resolution`
   comes from ([#254]). An image whose stored array is **portrait** is refused: nothing is recorded
@@ -1068,7 +1070,8 @@ nothing) goes up as `{ message, duration: 3000 }` ([#324]).
   names the `capture_<id>.jpg` the archive would have held. An image that does not decode has no
   size to judge and is added as before. Undo and redo restore bytes the archive already accepted and
   are not checked.
-* **One pick adds several files** ([#262]). The picker is `multiple`, and `addPickedFiles` prepares
+* **One pick adds several files** ([#262]). The picker is `multiple`, and `imageAdd.ts`'s
+  `addPickedFiles` prepares
   and judges each file in **filename order** — numerically and against a fixed locale, so
   `shot9.jpg` precedes `shot10.jpg` and the order does not move with the browser's — then hands what
   survives to `session.addImages`: one history entry, "add images", and the first new image on
@@ -1828,6 +1831,28 @@ Camera helpers, shared by both views.
 | `DEFAULT_CAMERA_CONSTRAINTS` | 1920×1080 ideal, rear-facing, no audio |
 | `getCameraStream(constraints?)` | `getUserMedia` wrapper; returns a `MediaStream` |
 | `captureFromCamera()` | Opens the camera, grabs one JPEG frame as a `Uint8Array`, and always stops the tracks — with a 5 s timeout |
+
+---
+
+### `imageAdd.ts`
+
+The three steps every image add takes — prepare, judge, record — shared by the ways in ([#255],
+[#260], [#334]).
+
+| Export | Description |
+|---|---|
+| `captureFilename()` | `capture_<id>.jpg`, the name a captured or frozen frame is stored under |
+| `portraitRefusal(name, size)` | Why a portrait image was not added, naming the file and its shape |
+| `sizeRefusal(name, size, required)` | Why an image of another size was not added, naming both sizes |
+| `addPrepared(session, filename, name, picked)` | One image: prepare, judge, `session.addImage` — the notice, or null |
+| `addPickedFiles(session, files)` | A whole pick as one history entry, in filename order — one notice, or null |
+
+It was private to `rr-editor-view` while the editor was the only way in. Capture from Camera, the
+file picker and Live's **Freeze** ([#334]) now all come through here, so there is one set of
+refusals to keep in step rather than two. `prepareImage` and `addRefusal` stay internal: a caller
+that judged without recording, or recorded without preparing, is the bug this module exists to
+prevent. Nothing here owns a toast — each function **returns** the notice and the component that was
+pressed shows it, which is why the message names what the user chose and the session never sees it.
 
 ---
 

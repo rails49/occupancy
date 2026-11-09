@@ -8,7 +8,10 @@ import { EditSession } from '../src/editSession.js';
 import { HIGHLIGHT_DURATION_MS } from '../src/highlight.js';
 import { classChoices, rootClass } from '../src/vocabulary.js';
 import '../src/rr-editor-view.js';
-import { RREditorView, portraitRefusal, sizeRefusal } from '../src/rr-editor-view.js';
+import { RREditorView } from '../src/rr-editor-view.js';
+// The three steps of an image add moved to `imageAdd.ts` when Live's Freeze
+// started taking them too (#334); these tests are otherwise unchanged.
+import { portraitRefusal, sizeRefusal } from '../src/imageAdd.js';
 import { readExifOrientation } from '../src/exifOrientation.js';
 import { jpeg, jpegWithOrientation } from './jpegFixture.ts';
 import type { RRCalibrationDialog } from '../src/rr-calibration-dialog.js';

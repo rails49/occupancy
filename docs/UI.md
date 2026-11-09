@@ -31,10 +31,12 @@ then refused rather than rotated, recording nothing and naming the file in a toa
 stored array is not the size `camera.resolution` declares is refused the same way, naming both
 sizes, once anything in the archive is positioned in those pixels; while nothing is, the image sets
 the resolution instead. The invariant is that the editor labels the array a downstream reader gets,
-so every add — a capture through `addPrepared`, a pick through `addPickedFiles` — goes through
-`prepareImage` first, and the size `camera.resolution` takes is measured on the prepared bytes. The
-size rule is the session's — `requiredImageSize` answers it, and `addRefusal` words it, because the
-message names the file the user picked. `../SPEC.md` § Images states all three rules, why rotating
+so every add — a capture or a frozen frame through `addPrepared`, a pick through `addPickedFiles` —
+goes through `prepareImage` first, and the size `camera.resolution` takes is measured on the
+prepared bytes. All three live in `imageAdd.ts` and not in this element: Live's Freeze (#334) adds
+through the same steps, and a second copy of them would be a second set of refusals to keep in
+step. The size rule is the session's — `requiredImageSize` answers it, and `addRefusal` words it,
+because the message names the file the user picked. `../SPEC.md` § Images states all three rules, why rotating
 in the browser was rejected, and why an image of another size is not something the screen can show.
 
 The **track tool** (#284, #317) does what `../SPEC.md` § Track centerlines says; this section
