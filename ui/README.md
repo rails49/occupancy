@@ -148,8 +148,10 @@ rr-app                          ← shell: owns the editing session and the view
 > [#260]: https://github.com/rails49/occupancy/issues/260
 > [#262]: https://github.com/rails49/occupancy/issues/262
 > [#265]: https://github.com/rails49/occupancy/issues/265
+> [#273]: https://github.com/rails49/occupancy/issues/273
 > [#274]: https://github.com/rails49/occupancy/issues/274
 > [#284]: https://github.com/rails49/occupancy/issues/284
+> [#286]: https://github.com/rails49/occupancy/issues/286
 > [#298]: https://github.com/rails49/occupancy/issues/298
 > [#302]: https://github.com/rails49/occupancy/issues/302
 > [#303]: https://github.com/rails49/occupancy/issues/303
@@ -471,6 +473,7 @@ image pixel coordinates.
 |---|---|---|
 | `src` | `string \| null` | Image URL (editor mode) |
 | `stream` | `MediaStream \| null` | Video stream (live mode) |
+| `videoSrc` | `string \| null` | A video file to play, as an object URL (live mode, [#286]). Muted and autoplaying, with no native `controls` — the overlay takes every pointer, so the transport is the live view's. At most one of `src`, `stream` and this is ever set |
 | `calibrationPoints` | `readonly ReferencePoint[]` | Crosshairs to draw; empty in the live view |
 | `sensors` | `readonly Sensor[]` | Diamonds to draw. Per **layout**, so the same list draws over every image; the live view passes the same list |
 | `sensorStates` | `ReadonlyMap<string, SensorState> \| null` | L1 per sensor, keyed by `id`. **`null` is the editor** — nothing is reading these sensors, which is not the same as reading them and finding nothing |
@@ -492,7 +495,8 @@ image pixel coordinates.
 `rr-pointer-dblclick` (`ViewerDoubleClickDetail`, after the pointer events of its two clicks), `rr-wheel`
 (`ViewerWheelDetail`, without `preventDefault`), `rr-media-frame`
 (`ViewerMediaFrameDetail`, once per media load) and `rr-viewport` (`ViewerViewportDetail`, whenever
-the measured viewport changes size). All ten fire in both `src` and `stream` mode. They are declared in `HTMLElementEventMap`, so a listener anywhere up
+the measured viewport changes size). All ten fire in `src`, `stream` and `videoSrc` mode.
+`rr-video-pause` (no detail) fires in `videoSrc` mode when the file pauses, including at its end. They are declared in `HTMLElementEventMap`, so a listener anywhere up
 the tree gets the detail typed without a cast.
 
 | Detail field | Type | Description |
@@ -1418,7 +1422,7 @@ screen-pixel grab radius. The hit-test scene is the layout's reference points an
 
 ### `rr-live-view`
 
-Camera stream under the two layers of the occupancy output ([#85]).
+Camera stream — or a video file ([#286]) — under the two layers of the occupancy output ([#85]).
 
 | Property | Type |
 |---|---|
@@ -1441,6 +1445,12 @@ against it would be this page second-guessing the judgement it is only relaying.
   connect**: a different source is a different session. The `null` the frame source gives after
   `stop()` is what ends the loop, and the source's pacing is the loop's — one animation frame per
   frame for the camera.
+* **A video file stands in for the camera** ([#286], `videoFileFrameSource.ts`). A **Video file…**
+  button beside the recorder opens one, and Play/Pause, a seek slider and a clock appear beside it.
+  The loop, the drift check, the recorder and the stats bar run on its frames as they do on the
+  camera. A file the browser cannot play is refused in a danger bar naming the file. Not offered in
+  service mode. **Camera** goes back. How the swap works: [`../docs/UI.md`](../docs/UI.md) § Frames
+  and results come from sources.
 * **A source may hand over a picture instead of a stream, and may bring its own layout** ([#331]).
   `SourceFrame.src` is shown through `rr-viewer`'s `src` — the source owns the object URL and
   releases it, and nothing reads pixels back out of the viewer — and `ResultSource.layout` gives the
@@ -1861,9 +1871,13 @@ Camera helpers, shared by both views.
 
 | Export | Description |
 |---|---|
-| `DEFAULT_CAMERA_CONSTRAINTS` | 1920×1080 ideal, rear-facing, no audio |
+| `DEFAULT_CAMERA_CONSTRAINTS` | 1920×1080 ideal, rear-facing, no audio. The live view's stream, and what a capture **opens** before it raises the track |
 | `getCameraStream(constraints?)` | `getUserMedia` wrapper; returns a `MediaStream` |
-| `captureFromCamera()` | Opens the camera, grabs one JPEG frame as a `Uint8Array`, and always stops the tracks — with a 5 s timeout |
+| `captureFromCamera()` | Opens the camera, **raises the track to the largest frame it says it can deliver** ([#273]), grabs that frame as one JPEG `Uint8Array`, and always stops the tracks — with a 5 s timeout |
+
+The live view's stream stays at 1080p. A capture asks for the largest frame with one `exact`
+request; where that fails, the capture is the stream as opened. When the raise happens and which
+size is grabbed: `capture.ts`'s docstrings ([#273]).
 
 ---
 
@@ -2057,4 +2071,7 @@ it('renders <img> when src is set', async () => {
 are absent, so `rr-viewer`'s tests stub `createSVGPoint`/`getScreenCTM` per test. Assert DOM
 structure, attributes, and emitted events — visual appearance cannot be verified here.
 
-`capture.ts` has no tests yet.
+`capture.ts`'s tests fake all three things jsdom has none of — `getUserMedia`, the `<video>` the
+frame is read from and the `<canvas>` it is drawn into — so what they cover is which size the track
+is asked for, when it is asked, and the size the frame is grabbed at ([#273]). That a 4K frame then
+actually arrives is the browser's, and is checked by hand.

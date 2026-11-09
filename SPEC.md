@@ -359,9 +359,11 @@ Provenance is per label, so it cannot express a car that was never labeled. A pr
 
 The UI also runs the detector:
 
-1. On a live camera stream: the live view draws L0 boxes and reports L1 per sensor ([#85](https://github.com/rails49/occupancy/issues/85)). Testing and demo only; throughput is not critical. Built.
+1. On a live camera stream, or on a **video file the person opens** ([#286](https://github.com/rails49/occupancy/issues/286)): the live view draws L0 boxes and reports L1 per sensor ([#85](https://github.com/rails49/occupancy/issues/85)). Testing and demo only; throughput is not critical. Built.
 2. Highlight detection errors and high-loss samples (training or test set) for diagnosis. Partly built: archive diagnostics ([#87](https://github.com/rails49/occupancy/issues/87)) scores the detector against one archive's labels. Nothing yet reviews the training and test splits.
 3. Real-time occupancy, for example on a phone, sent over MQTT to a controller such as [Rocrail](https://www.rocrail.online/). Measured and viable; see rails49/detector's [SPEC § Inference cost](https://github.com/rails49/detector/blob/main/SPEC.md#inference-cost) and the runtime contract below. Not built.
+
+**A recorded video runs in the live view, as an alternative to the camera** ([#286](https://github.com/rails49/occupancy/issues/286)). This is the demo for somebody deciding whether the system is worth pursuing on their own layout, with nothing but a smartphone: the camera has to be up near the ceiling, where the phone's screen cannot be reached, and the ways of driving it from a computer are blocked (iPhone Mirroring turns the camera off) or need developer settings (scrcpy). So the phone records in its own Camera app, goes up, runs a train, comes down, and the clip is opened in the live view. The same L0→L1 loop, drift check and drift recording run on its frames, with Play, Pause and seek over the clip. The file is read locally and never uploaded — there is no backend to upload it to. A file the browser cannot play is refused with a message naming it: iPhone video is HEVC in a `.mov` by default, which not every browser decodes. A video goes through the frame-size handling a camera stream does, which is the frame's own decoded size: `detect` answers in `camera.resolution` with the DPT in those pixels, and the drift check reads the pixels as they came. Choosing the source is the live view's, not an archive setting: nothing about the clip is stored.
 
 #### Live-view runtime contract
 

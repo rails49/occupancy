@@ -103,6 +103,33 @@ export interface ShownFrame {
 }
 
 /**
+ * Play, pause and seek, for a source whose frames come from a file somebody
+ * opened (#286).
+ *
+ * A camera and a service leave {@link FrameSource.playback} absent: there is
+ * nothing to pause in a feed of the present, and a transport over one would be
+ * a control that lies. Where it is there, the view renders the transport and
+ * owns none of the state — every reading is a **getter**, read at render time,
+ * because the element is playing and a copy taken earlier is already wrong.
+ *
+ * Seconds throughout, as the `<video>` reports them.
+ */
+export interface Playback {
+  /** Whether the file is stopped on a frame rather than running. */
+  readonly paused: boolean;
+  /** How far into the file the frame on screen is. */
+  readonly currentTime: number;
+  /** How long the file is, or `0` before its metadata arrives or where it has no duration. */
+  readonly duration: number;
+  /** Run from where it is. */
+  play(): void;
+  /** Stop on the frame that is up. The loop holds: a paused file has no new pixels. */
+  pause(): void;
+  /** Move to `seconds`, playing or paused. */
+  seek(seconds: number): void;
+}
+
+/**
  * Where frames come from: a camera, a video file, a service.
  *
  * `next()` is the loop's pacing as well as its input — it resolves when there is
@@ -123,9 +150,38 @@ export interface FrameSource {
   next(): Promise<SourceFrame | null>;
   /**
    * What `rr-viewer` shows, or `null` when the source is not a stream —
-   * a service's frames arrive one at a time as {@link SourceFrame.src} (#331).
+   * a service's frames arrive one at a time as {@link SourceFrame.src} (#331),
+   * and a video file plays through {@link videoSrc} (#286).
    */
   readonly stream: MediaStream | null;
+  /**
+   * The video file `rr-viewer` plays, as an object URL, or `null`/absent where
+   * the source is not a file (#286).
+   *
+   * The source created it and the source releases it on `stop()`, as the owner
+   * of a {@link SourceFrame.src} does; the view holds only what to show, and
+   * reads the pixels back out of the element the viewer mounted rather than
+   * decoding the file twice.
+   */
+  readonly videoSrc?: string | null;
+  /**
+   * The transport for a file, or absent for a feed of the present (#286).
+   * See {@link Playback}.
+   */
+  readonly playback?: Playback | null;
+  /**
+   * Why no frames are coming, as the message to show, or `null`/absent where
+   * they are.
+   *
+   * Read when `next()` answers `null` while the view is still running, which is
+   * a source that stopped itself rather than being stopped — a file the browser
+   * cannot decode is the one way that happens today (#286). The camera reports
+   * its own refusal to the console and simply never hands over a frame, and a
+   * service says why through `ResultSource.open()`; this is for a source whose
+   * refusal is about the thing the person just chose, and nothing else on the
+   * page would say so.
+   */
+  readonly error?: string | null;
   /**
    * The frame the **current answer** carried, for Freeze to add (#334), or
    * `null`/absent where that answer carried none.

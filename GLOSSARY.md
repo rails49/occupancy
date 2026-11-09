@@ -204,3 +204,7 @@ An L1 state: the system could not look, because no model is loaded, DPT is unres
 
 **Live contract**:
 `occupancy-service`'s word, owned by its [GLOSSARY.md](https://github.com/rails49/occupancy-service/blob/main/GLOSSARY.md).
+
+**Video file**:
+A clip of the layout the live view plays in place of the camera, read locally. See [SPEC § Testing and Demo](SPEC.md#testing-and-demo).
+_Avoid_: recording (a recording is the drift recording's CSV of samples), video stream (that is the camera's)

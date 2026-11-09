@@ -91,6 +91,53 @@ describe('rr-viewer', () => {
     expect(el.shadowRoot!.querySelector('img')).to.not.exist;
   });
 
+  it('renders <video> playing a file when videoSrc is set (#286)', async () => {
+    // A video file is the live view's other local source: the viewer plays it
+    // and the frame source reads the pixels back out of this element, exactly
+    // as it does for the camera stream.
+    const el = await fixture<RrViewer>(html`
+      <rr-viewer .videoSrc=${'blob:test-video'} .resolution=${resolution}></rr-viewer>
+    `);
+    const video = el.shadowRoot!.querySelector('video')!;
+    expect(video).to.exist;
+    expect(video.src).to.contain('blob:test-video');
+    // Muted, because a layout recording's sound is not part of the picture —
+    // and because no browser autoplays an unmuted one.
+    expect(video.muted).to.be.true;
+    expect(el.shadowRoot!.querySelector('img')).to.not.exist;
+  });
+
+  it('clears the media size when the video file changes (#286)', async () => {
+    // A new file is a new pixel grid, and a viewBox left at the previous one's
+    // size would draw every object against a frame it was never authored in.
+    const el = await fixture<RrViewer>(html`
+      <rr-viewer .videoSrc=${'blob:first'} .resolution=${resolution}></rr-viewer>
+    `);
+    const video = el.shadowRoot!.querySelector('video')!;
+    Object.defineProperty(video, 'videoWidth', { value: 1280, configurable: true });
+    Object.defineProperty(video, 'videoHeight', { value: 720, configurable: true });
+    video.dispatchEvent(new Event('loadedmetadata'));
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector('svg')!.getAttribute('viewBox')).to.equal('0 0 1280 720');
+
+    el.videoSrc = 'blob:second';
+    await el.updateComplete;
+
+    expect(el.shadowRoot!.querySelector('svg')!.getAttribute('viewBox')).to.equal('0 0 1000 1000');
+  });
+
+  it('relays the file pausing, which does not leave the shadow root (#286)', async () => {
+    const el = await fixture<RrViewer>(html`
+      <rr-viewer .videoSrc=${'blob:test-video'} .resolution=${resolution}></rr-viewer>
+    `);
+    const paused = vi.fn();
+    el.addEventListener('rr-video-pause', paused);
+
+    el.shadowRoot!.querySelector('video')!.dispatchEvent(new Event('pause'));
+
+    expect(paused.mock.calls.length).to.equal(1);
+  });
+
   describe('setting srcObject (#343)', () => {
     // jsdom has no `srcObject`. In a browser each set restarts the element's load.
     let sets: unknown[];
