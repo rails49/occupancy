@@ -268,39 +268,6 @@ describe('saveToService', () => {
     expect(calls(fetchMock)).toEqual(['PUT /live/archive/manifest.json']);
   });
 
-  // `LIVE.md` has the answer carry the new version. A service that does not
-  // send one would otherwise leave this page holding the version from *before*
-  // its own write, refusing every DELETE after it and the next save too.
-  it('reads the version back when the answer carries no new ETag', async () => {
-    stubFetch({ 'GET /live/archive/manifest.json': () => jsonAnswer(manifest()) });
-    const archive = await open();
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
-
-    const fetchMock = stubFetch({
-      'PUT /live/archive/manifest.json': () => wrote(),
-      'GET /live/archive/manifest.json': () => jsonAnswer(manifest(), 200, '"v2"'),
-    });
-    expect(await saveToService(archive, BASE, '"v1"')).toEqual({ kind: 'wrote', etag: '"v2"' });
-    expect(calls(fetchMock)).toEqual([
-      'PUT /live/archive/manifest.json',
-      'GET /live/archive/manifest.json',
-    ]);
-  });
-
-  // The write landed, so the save stands; what this page does not know is what
-  // the service holds now, and the next save is refused as stale for it. Said
-  // out loud, because the refusal's toast names Save As for the wrong reason.
-  it('keeps the version it held when it cannot be read back either, and says so', async () => {
-    stubFetch({ 'GET /live/archive/manifest.json': () => jsonAnswer(manifest()) });
-    const archive = await open();
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const said = vi.spyOn(console, 'error').mockImplementation(() => {});
-
-    stubFetch({ 'PUT /live/archive/manifest.json': () => wrote() });
-    expect(await saveToService(archive, BASE, '"v1"')).toEqual({ kind: 'wrote', etag: '"v1"' });
-    expect(said).toHaveBeenCalled();
-  });
-
   it('deletes nothing for an image that was added and taken back here', async () => {
     stubFetch({ 'GET /live/archive/manifest.json': () => jsonAnswer(manifest()) });
     const archive = await open();

@@ -26,7 +26,6 @@ import {
   SAVE_REFUSED,
   SAVE_STALE,
   deleteArchiveFile,
-  manifestUrl,
   putArchiveFile,
   readEtag,
   saveRefusalRule,
@@ -110,24 +109,8 @@ export class ServiceWriter implements ArchiveWriter {
     const answer = await putArchiveFile(this.base, name, this.etag, bodyOf(name, bytes));
     if (!answer.ok) throw new ServiceRefusal(await refusalMessage(answer));
     if (name !== MANIFEST_NAME) return;
-    // Holding the version from before the write would refuse every `DELETE`
-    // after it, and the next save too, reporting a copy somebody else changed
-    // when nobody did.
-    const next = readEtag(answer) ?? (await this._readEtag());
-    if (next === null) {
-      // Neither the answer nor a read of the manifest gave one, so this page
-      // does not know what the service holds. The write landed, so the save
-      // stands — but the version held is stale, and the deletes after this and
-      // the next save are refused. Said out loud because the toast that
-      // refusal produces names Save As, which is the right advice for a
-      // service this page cannot write safely, for the wrong reason.
-      console.error(
-        'The occupancy service gave no version for the manifest it just wrote. ' +
-          'This save stands; the next one will be refused as stale. Reload the page.'
-      );
-      return;
-    }
-    this.etag = next;
+    // `LIVE.md` has the answer carry the new version.
+    this.etag = readEtag(answer) ?? this.etag;
   }
 
   /**
@@ -150,25 +133,6 @@ export class ServiceWriter implements ArchiveWriter {
       }
     } catch (err) {
       console.error(`Failed to delete ${name} from the occupancy service`, err);
-    }
-  }
-
-  /**
-   * The version the service holds now, read back from the manifest.
-   *
-   * Only for an answer to a manifest write that carried no `ETag`. `LIVE.md`
-   * says one comes; this is what the pass does when it does not. `null` where
-   * that read did not give one either — see {@link put} for what then stands.
-   */
-  private async _readEtag(): Promise<string | null> {
-    console.warn(
-      'The occupancy service answered the manifest write with no ETag; reading the version back.'
-    );
-    try {
-      const response = await fetch(manifestUrl(this.base));
-      return response.ok ? readEtag(response) : null;
-    } catch {
-      return null;
     }
   }
 }
