@@ -93,9 +93,11 @@ const DRIFT_SAMPLE_INTERVAL_MS = 3000;
  * and the frame rate — the view's own judgement, which is the same whatever is
  * answering.
  *
- * In service mode (sources handed in, no archive, #331) the view runs no drift
- * check and shows no recorder, alignment readout, or model and DPT notices: the
- * service publishes states this page cannot withhold. See `_judging`. In its
+ * In service mode (sources that declare themselves a service's, #331) the view
+ * runs no drift check and shows no recorder, alignment readout, or model and
+ * DPT notices: the service publishes states this page cannot withhold. An
+ * archive may be bound at the same time — the service's own, since #333 — and
+ * it changes none of that. See `_judging`. In its
  * place a Details button opens `rr-service-details` below the viewer, and
  * while it is open the viewer draws the layout's tracks and the service is
  * asked for patches (#332).
@@ -302,16 +304,22 @@ export class RRLiveView extends LitElement {
   }
 
   /**
-   * Whether this page runs the model itself: the camera path, with or without
-   * an archive. False in service mode, which is sources handed in with no
-   * archive (#331).
+   * Whether this page runs the model itself: the camera path, and a video file
+   * standing in for it, with or without an archive. False in service mode,
+   * which the sources declare (#331).
    *
    * The drift check, the recorder, the alignment readout, Cars and Inference
    * before a first answer, and the notices about a missing model or DPT belong
    * to the camera path only.
+   *
+   * It read "sources handed in and no archive" until #333. An archive opened
+   * from the service is now bound to the page while the live view watches that
+   * same service, so the absence of an archive no longer tells the two apart —
+   * and measuring drift against the service's own archive would be this page
+   * second-guessing the judgement it is only relaying.
    */
   private get _judging(): boolean {
-    return this.sources === null || this.archive !== null;
+    return this.sources?.service !== true;
   }
 
   async connectedCallback() {
@@ -351,9 +359,10 @@ export class RRLiveView extends LitElement {
    * Open the result source, prepare the drift check, then run the loop.
    *
    * The result source is the one requirement, not the archive (#331): an
-   * occupancy service brings its own layout, and the page holds none while it
-   * is watching one. Without a source there is nothing to ask — no archive and
-   * no service — and the frames go on showing with nothing read off them.
+   * occupancy service brings its own layout, and what the view draws comes from
+   * it whether or not an archive is bound as well. Without a source there is
+   * nothing to ask — no archive and no service — and the frames go on showing
+   * with nothing read off them.
    */
   private async _run() {
     if (!this._results) return;
@@ -387,7 +396,9 @@ export class RRLiveView extends LitElement {
    * claim than reporting no drift and the only honest one available.
    */
   private async _openDriftCheck() {
-    if (!this.archive) return;
+    // Not in service mode, whatever archive is bound: the service runs its own
+    // check (#336), and since #333 the archive bound may be the service's own.
+    if (!this._judging || !this.archive) return;
     try {
       this._driftSession = await openDriftCheck(this.archive);
       this._driftError =

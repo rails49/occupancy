@@ -386,9 +386,12 @@ describe('rr-live-view with sources of its own', () => {
       return source satisfies FrameSource & ResultSource;
     }
 
-    const mount = (source: FrameSource & ResultSource) =>
+    const mount = (source: FrameSource & ResultSource, archive: R49Archive | null = null) =>
       fixture<RRLiveView>(
-        html`<rr-live-view .sources=${{ frames: source, results: source }}></rr-live-view>`
+        html`<rr-live-view
+          .archive=${archive}
+          .sources=${{ frames: source, results: source, service: true }}
+        ></rr-live-view>`
       );
 
     it('shows the frame through src and draws the layout the source declares', async () => {
@@ -569,6 +572,23 @@ describe('rr-live-view with sources of its own', () => {
       expect(stats.alignmentTolerance).to.be.null;
     });
 
+    // #333 binds the service's own archive to the page while the live view is
+    // watching that service, so "no archive" stopped being what tells service
+    // mode apart. Measuring drift against the service's archive would be this
+    // page second-guessing the judgement it is only relaying.
+    it('measures no drift with the service\'s own archive bound (#333)', async () => {
+      const source = fakeService([{ src: 'blob:one' }]);
+
+      const el = await mount(source, archive);
+      await waitFor(el, () => el.shadowRoot!.querySelector('rr-viewer')!.src !== null);
+
+      expect(openDriftCheck).not.toHaveBeenCalled();
+      expect(loadDetector).not.toHaveBeenCalled();
+      expect(el.shadowRoot!.querySelector('.recorder')).to.be.null;
+      // The layout drawn is still the source's, not the archive's.
+      expect(el.shadowRoot!.querySelector('rr-viewer')!.dpt).toBe(20);
+    });
+
     describe('Details (#332)', () => {
       const detailsButton = (el: RRLiveView) =>
         [...el.shadowRoot!.querySelectorAll('button')].find(b => b.textContent!.trim() === 'Details');
@@ -724,7 +744,9 @@ describe('rr-live-view with sources of its own', () => {
     const mountService = () => {
       const service = occupancyService('/live');
       return fixture<RRLiveView>(
-        html`<rr-live-view .sources=${{ frames: service, results: service }}></rr-live-view>`
+        html`<rr-live-view
+          .sources=${{ frames: service, results: service, service: true }}
+        ></rr-live-view>`
       );
     };
     const latest = () => asked.filter(url => url.includes('/latest'));

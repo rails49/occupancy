@@ -255,4 +255,16 @@ export interface ResultSource {
 export interface LiveSources {
   readonly frames: FrameSource;
   readonly results: ResultSource;
+  /**
+   * Whether these are an occupancy service's, in which case what the view
+   * shows is the service's own judgement: no drift check and no model notices
+   * here, no recorder, and a Details button in their place (#331).
+   *
+   * The view read that as "sources handed in and no archive" until #333, which
+   * binds the service's **own** archive to the page while the live view is
+   * watching it — so the absence of an archive stopped being the question, and
+   * the source says what it is instead. A video file standing in for the
+   * camera (#286) leaves it absent: the judgement there is still this page's.
+   */
+  readonly service?: boolean;
 }
