@@ -870,12 +870,26 @@ export class EditSession {
   }
 
 
-  /** Deletes an image. Deleting the one on screen shows its neighbour. */
+  /**
+   * Deletes an image. Deleting the one on screen shows its neighbour.
+   *
+   * An image whose bytes cannot be read is **left in place** and the refusal is
+   * stated (#333). `retain` reads them before the mutation, so a read that
+   * failed — an archive on an occupancy service that could not answer — refuses
+   * the delete before anything is removed. The alternative is a delete whose
+   * undo would restore a manifest entry naming an image the archive no longer
+   * has, which is the hole this design refuses everywhere.
+   */
   async deleteImage(filename: string) {
     // `retain` keeps the bytes, which removeImage drops, so the delete can be undone.
-    await this._record('delete image', { kind: 'images' }, () => this.archive.removeImage(filename), {
-      retain: [filename],
-    });
+    try {
+      await this._record('delete image', { kind: 'images' }, () => this.archive.removeImage(filename), {
+        retain: [filename],
+      });
+    } catch (err) {
+      console.error(`Failed to read ${filename}, so it was not deleted`, err);
+      this._notify(`Could not read ${filename}, so it was not deleted.`);
+    }
   }
 
   /** Moves the image at `from` to `to`. The image on screen stays on screen. */

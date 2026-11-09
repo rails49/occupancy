@@ -1840,6 +1840,26 @@ describe('EditSession', () => {
       expect(cars(s, 'c.jpg')).toEqual([]);
     });
 
+    // An archive on an occupancy service reads its images over the network, and
+    // a read can fail (#333). `retain` reads them before the mutation, so the
+    // refusal lands before anything is removed.
+    it('leaves an image whose bytes cannot be read in place, and says so', async () => {
+      const s = await withBytes(['a.jpg', 'b.jpg']);
+      const heard: string[] = [];
+      s.subscribeNotices(message => heard.push(message));
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      vi.spyOn(s.archive, 'getImage').mockRejectedValue(new Error('the service answered 500'));
+
+      await s.deleteImage('a.jpg');
+
+      expect(s.archive.getManifest().images.map(image => image.filename)).toEqual([
+        'a.jpg',
+        'b.jpg',
+      ]);
+      expect(s.history.canUndo).toBe(false);
+      expect(heard).toEqual(['Could not read a.jpg, so it was not deleted.']);
+    });
+
     it('undoes a delete with the image\'s bytes', async () => {
       const s = await withBytes(['a.jpg', 'b.jpg']);
 

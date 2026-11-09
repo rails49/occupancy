@@ -216,7 +216,17 @@ export class RRDiagnosticsView extends LitElement {
       for (const image of images) {
         if (abandon.signal.aborted) return releaseUrls(urls);
 
-        const bytes = await archive.getImage(image.filename);
+        let bytes: Uint8Array | null;
+        try {
+          bytes = await archive.getImage(image.filename);
+        } catch (err) {
+          // An archive on an occupancy service reads its images over the
+          // network, and a read can fail (#333). The sweep goes on to the next
+          // image: a score over the images it did read is worth more than no
+          // report at all, and the count under the bar says how many it saw.
+          console.error(`Failed to read ${image.filename} for the sweep`, err);
+          continue;
+        }
         if (!bytes) continue;
 
         const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'image/jpeg' }));

@@ -435,6 +435,17 @@ function revokeImageUrls(urls: ImageUrls) {
 const NOTICE_MS = 3000;
 
 /**
+ * One notice for everything a read pass could not get (#333).
+ *
+ * Named rather than counted up to three, because the name is what tells the
+ * person whether the image they are about to label is one of them.
+ */
+function unreadNotice(filenames: readonly string[]): string {
+  const what = filenames.length === 1 ? 'image' : 'images';
+  return `Could not read ${filenames.length} ${what}: ${filenames.join(', ')}`;
+}
+
+/**
  * Main editor view: shows an archive's images and what is authored on them,
  * and turns pointer, dialog and menu events into calls on an `EditSession`.
  *
@@ -477,6 +488,21 @@ export class RREditorView extends LitElement {
    * stated here, above the image it is about.
    */
   @state() private _frameMismatch: ViewerMediaFrameDetail | null = null;
+  /**
+   * Images whose bytes this session could not get: a read that failed, or a
+   * name the archive has no bytes under (#333). Not asked for again — see
+   * {@link _syncImageUrls} — and dropped when the name leaves the archive, or
+   * with the session.
+   */
+  private _unreadable = new Set<string>();
+  /**
+   * The session a read pass is running for, or null when none is.
+   *
+   * The **session** and not a flag: a pass whose read is still awaiting the
+   * network when the archive is replaced must not hold the next session's pass
+   * shut, and must not clear a claim that is no longer its own.
+   */
+  private _reading: EditSession | null = null;
   /** Stops listening to the session. */
   private _unsubscribe: (() => void) | null = null;
   /** Stops listening to the session's notices. */
@@ -670,6 +696,11 @@ export class RREditorView extends LitElement {
       this._cursor = null;
       this._imageUrls.forEach(revokeImageUrls);
       this._imageUrls = new Map();
+      // What the last archive could not read says nothing about this one.
+      this._unreadable = new Set();
+      // A pass still awaiting the old archive's bytes will see the session has
+      // changed and stand down; it must not hold the next pass shut until then.
+      this._reading = null;
       // Zoom rects mean nothing on the next archive.
       this._fitZoom();
     }
@@ -726,6 +757,25 @@ export class RREditorView extends LitElement {
    * stays valid for as long as its image is in the list. Every full-size URL is
    * made before any thumbnail, so the image on screen does not wait for the
    * strip. An image that does not decode uses its full-size URL in the strip.
+   *
+   * **The image on screen is read first, and the screen is painted after each
+   * one** (#333). An archive on an occupancy service reads its images over the
+   * network, one request each, so reading them in manifest order and painting
+   * once at the end would leave the photograph the person is looking at waiting
+   * behind every image before it. The next image to read is chosen afresh on
+   * each turn, so selecting one that has not been read yet reads it next rather
+   * than at the end of the queue; the rest follow one at a time, because the
+   * thumbnail strip is made of them.
+   *
+   * **A read that fails costs that image and nothing else.** The pass goes on
+   * to the next one and ends with a single toast naming what it could not read
+   * — one for the pass, not one per image. A name that failed is not asked for
+   * again: `updated()` runs this after every render, and a retry per render
+   * would be an unbounded loop of failing requests behind an unbroken wall of
+   * toasts.
+   *
+   * One pass at a time, for the same reason: a `requestUpdate` inside it
+   * re-enters here through `updated()`.
    */
   private async _syncImageUrls() {
     const session = this.session;
@@ -738,18 +788,54 @@ export class RREditorView extends LitElement {
       this._imageUrls.delete(filename);
       changed = true;
     }
-    const made = new Map<ImageUrls, Blob>();
-    for (const filename of filenames) {
-      if (this._imageUrls.has(filename)) continue;
-      const data = await session.archive.getImage(filename);
-      if (this.session !== session || this._imageUrls.has(filename) || !data) continue;
-      const blob = new Blob([data as BlobPart], { type: 'image/jpeg' });
-      const urls: ImageUrls = { full: URL.createObjectURL(blob), thumbnail: null };
-      this._imageUrls.set(filename, urls);
-      made.set(urls, blob);
-      changed = true;
+    // A name that leaves the archive takes its failure with it, so an image
+    // stored under that name later gets a read of its own.
+    for (const filename of this._unreadable) {
+      if (!filenames.has(filename)) this._unreadable.delete(filename);
     }
     if (changed) this.requestUpdate();
+    if (this._reading === session) return;
+
+    this._reading = session;
+    const made = new Map<ImageUrls, Blob>();
+    const unread: string[] = [];
+    try {
+      for (;;) {
+        const filename = this._nextToRead();
+        if (filename === null) break;
+        let data: Uint8Array | null;
+        try {
+          data = await session.archive.getImage(filename);
+        } catch (err) {
+          console.error(`Failed to read ${filename}`, err);
+          this._unreadable.add(filename);
+          unread.push(filename);
+          continue;
+        }
+        if (this.session !== session) return;
+        if (this._imageUrls.has(filename)) continue;
+        if (!data) {
+          // No bytes under that name: a hole in the archive, which
+          // `imageMismatches()` is the question for, and not a failed read.
+          this._unreadable.add(filename);
+          continue;
+        }
+        const blob = new Blob([data as BlobPart], { type: 'image/jpeg' });
+        const urls: ImageUrls = { full: URL.createObjectURL(blob), thumbnail: null };
+        this._imageUrls.set(filename, urls);
+        made.set(urls, blob);
+        // After each one, so the photograph on screen appears as soon as it is
+        // here rather than when the last of them is.
+        this.requestUpdate();
+      }
+    } finally {
+      // Only if this pass is still the one running: the archive may have been
+      // replaced while it was waiting, and the next session's pass owns the
+      // claim by then.
+      if (this._reading === session) this._reading = null;
+    }
+    if (unread.length > 0) this._notify(unreadNotice(unread));
+
     for (const [urls, blob] of made) {
       const thumbnail = await makeThumbnail(blob).catch(() => blob);
       // Revoked while the thumbnail was made: the image went, or the session did.
@@ -757,6 +843,22 @@ export class RREditorView extends LitElement {
       urls.thumbnail = URL.createObjectURL(thumbnail);
       this.requestUpdate();
     }
+  }
+
+  /**
+   * The next image to read: the one on screen where it has no URL yet, else
+   * the first in manifest order that has none. `null` when there is nothing
+   * left to read.
+   *
+   * Asked again before every read, which is what lets a selection made while
+   * the pass is running jump the queue.
+   */
+  private _nextToRead(): string | null {
+    const wanted = (filename: string) =>
+      !this._imageUrls.has(filename) && !this._unreadable.has(filename);
+    const shown = this.session?.image?.filename;
+    if (shown !== undefined && wanted(shown)) return shown;
+    return this._images().find(image => wanted(image.filename))?.filename ?? null;
   }
 
   /**
