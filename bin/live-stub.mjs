@@ -51,9 +51,23 @@ const DIST = join(ROOT, 'ui', 'dist');
 
 const args = process.argv.slice(2);
 const flag = name => args.includes(name);
+/**
+ * An option's value, or `fallback` where it was not given.
+ *
+ * A name with nothing after it, or the next flag after it, is a mistake rather
+ * than a value — `--archive --churn` would otherwise serve a folder called
+ * `--churn`, and the page would find no service with nothing on screen to say
+ * why.
+ */
 const option = (name, fallback) => {
   const at = args.indexOf(name);
-  return at === -1 ? fallback : args[at + 1];
+  if (at === -1) return fallback;
+  const value = args[at + 1];
+  if (value === undefined || value.startsWith('--')) {
+    console.error(`live-stub: ${name} needs a value`);
+    process.exit(2);
+  }
+  return value;
 };
 
 const PORT = Number(option('--port', '8080'));

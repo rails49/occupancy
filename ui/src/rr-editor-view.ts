@@ -808,6 +808,12 @@ export class RREditorView extends LitElement {
           data = await session.archive.getImage(filename);
         } catch (err) {
           console.error(`Failed to read ${filename}`, err);
+          // Checked here too, and before anything is recorded: a read that
+          // rejects after the archive was replaced must not put the old
+          // archive's name into the new session's `_unreadable` — which would
+          // leave an image of the new one permanently unread — nor toast names
+          // from an archive nobody is looking at any more.
+          if (this.session !== session) return;
           this._unreadable.add(filename);
           unread.push(filename);
           continue;

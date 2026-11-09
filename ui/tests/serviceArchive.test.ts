@@ -287,13 +287,18 @@ describe('saveToService', () => {
     ]);
   });
 
-  it('keeps the version it held when it cannot be read back either', async () => {
+  // The write landed, so the save stands; what this page does not know is what
+  // the service holds now, and the next save is refused as stale for it. Said
+  // out loud, because the refusal's toast names Save As for the wrong reason.
+  it('keeps the version it held when it cannot be read back either, and says so', async () => {
     stubFetch({ 'GET /live/archive/manifest.json': () => jsonAnswer(manifest()) });
     const archive = await open();
     vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const said = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     stubFetch({ 'PUT /live/archive/manifest.json': () => wrote() });
     expect(await saveToService(archive, BASE, '"v1"')).toEqual({ kind: 'wrote', etag: '"v1"' });
+    expect(said).toHaveBeenCalled();
   });
 
   it('deletes nothing for an image that was added and taken back here', async () => {

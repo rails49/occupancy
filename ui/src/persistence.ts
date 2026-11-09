@@ -223,7 +223,10 @@ export async function openArchive(): Promise<OpenedArchive | null> {
  *    written and the old binding stands, and the export it already cost is the
  *    price of not truncating a file it could not fill. A picker save from a
  *    service binding **moves the binding to the file**: the returned one
- *    carries the handle and no service.
+ *    carries the handle and no service. The *archive* is still the one loaded
+ *    from the base URL, so every later save to that file exports and fetches
+ *    whatever the page is not holding — `docs/UI.md` § Saving is three routes
+ *    has what that costs and why nothing here swaps the archive out.
  * 5. No API — a timestamped download. The binding is returned unchanged: a
  *    download binds nothing, so the next save asks the same question again,
  *    and a service binding stays one.

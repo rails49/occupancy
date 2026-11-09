@@ -8,7 +8,7 @@
  * names. **None of that lives here** — a `.r49` reader in `ui/` would be a
  * second implementation of the format (org ADR-0022).
  *
- * What is left is the one thing the format cannot state: how a *this* page
+ * What is left is the one thing the format cannot state: how *this* page
  * reaches a service. `writeChanges` asks for an {@link ArchiveWriter} with a
  * `put` and a `remove`, and {@link ServiceWriter} is that pair over
  * `liveContract.ts`'s requests — `If-Match` on each, the new `ETag` carried out
@@ -113,7 +113,21 @@ export class ServiceWriter implements ArchiveWriter {
     // Holding the version from before the write would refuse every `DELETE`
     // after it, and the next save too, reporting a copy somebody else changed
     // when nobody did.
-    this.etag = readEtag(answer) ?? (await this._readEtag()) ?? this.etag;
+    const next = readEtag(answer) ?? (await this._readEtag());
+    if (next === null) {
+      // Neither the answer nor a read of the manifest gave one, so this page
+      // does not know what the service holds. The write landed, so the save
+      // stands — but the version held is stale, and the deletes after this and
+      // the next save are refused. Said out loud because the toast that
+      // refusal produces names Save As, which is the right advice for a
+      // service this page cannot write safely, for the wrong reason.
+      console.error(
+        'The occupancy service gave no version for the manifest it just wrote. ' +
+          'This save stands; the next one will be refused as stale. Reload the page.'
+      );
+      return;
+    }
+    this.etag = next;
   }
 
   /**
@@ -143,7 +157,8 @@ export class ServiceWriter implements ArchiveWriter {
    * The version the service holds now, read back from the manifest.
    *
    * Only for an answer to a manifest write that carried no `ETag`. `LIVE.md`
-   * says one comes; this is what the pass does when it does not.
+   * says one comes; this is what the pass does when it does not. `null` where
+   * that read did not give one either — see {@link put} for what then stands.
    */
   private async _readEtag(): Promise<string | null> {
     console.warn(

@@ -2185,6 +2185,38 @@ describe('rr-editor-view', () => {
         expect(el.shadowRoot!.querySelector('rr-viewer')!.src).to.not.be.null;
       });
 
+      it('says nothing for a read that failed after the archive was replaced', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const el = await mount();
+        const notices = noticesOf(el);
+        await flush();
+        expect(asked).to.deep.equal(['img1.jpg']);
+
+        // The next archive names the same image, so a failure recorded against
+        // the name by the abandoned pass would be recorded against *this*
+        // archive's image.
+        const next = new R49Archive();
+        next.setManifest({
+          version: 4,
+          layout: { name: 'Next', scale: 'N', calibration: { points: [] }, sensors: [] },
+          camera: { resolution: { width: 100, height: 100 } },
+          images: [{ filename: 'img1.jpg', labeled_complete: false, labels: [] }],
+        });
+        vi.spyOn(next, 'getImage').mockResolvedValue(new Uint8Array([9]));
+        el.session = new EditSession(next);
+        await el.updateComplete;
+        await flush();
+        expect(viewer(el).src).to.not.be.null;
+
+        // The old archive's read rejects now, with nobody looking at it.
+        await fail(el, 'img1.jpg');
+
+        // No toast naming an archive that is no longer open, and the image the
+        // new archive does have is still on screen.
+        expect(notices).to.have.length(0);
+        expect(viewer(el).src).to.not.be.null;
+      });
+
       it('gives a name that left the archive a fresh read when it comes back', async () => {
         // An image the archive had no bytes for is not asked for again — until
         // its name goes, and something else is stored under it.

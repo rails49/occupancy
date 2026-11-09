@@ -212,7 +212,12 @@ person chose, truncating whatever was there.
   and have every reason to believe Save puts it back.
 * **A picker Save As moves the binding to the file**, and `rr-app` then leaves the service for good,
   so the live view goes back to the camera and the model in this page. A *download* binds nothing,
-  here as everywhere, so the archive stays the service's.
+  here as everywhere, so the archive stays the service's. **The archive itself stays the one loaded
+  from the base URL**, because nothing can swap it out without taking the undo stack with it — so
+  every later save to the chosen file exports, and an export fetches each image the page is not
+  holding. That costs requests to a service the work has already left, and a save that fails outright
+  once the service is gone. Reloading the page and opening the file is the way out; closing it
+  properly means r49 taking an archive off its base, which is rails49/r49's.
 * **A save is no longer instant, and three things follow.** The history position is taken when the
   save starts and *that* position is what is marked, so an edit made while the requests were in
   flight leaves the archive dirty — it is not in what went. A Save pressed while one is running does
