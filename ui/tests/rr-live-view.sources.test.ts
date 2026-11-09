@@ -326,6 +326,8 @@ describe('rr-live-view with sources of its own', () => {
       details?: ServiceDetails;
       /** The frame this answer carried, which Freeze offers (#334). */
       frame?: { id: string; bytes: Blob };
+      /** Make `resultFor` reject for this answer, which the contract forbids. */
+      fail?: boolean;
     }
 
     function fakeService(
@@ -390,6 +392,7 @@ describe('rr-live-view with sources of its own', () => {
         async resultFor() {
           const answer = answers[Math.max(turn, 0)];
           source.asked++;
+          if (answer.fail) throw new Error('the source broke its contract');
           return {
             ...(answer.detections !== undefined ? { detections: answer.detections } : {}),
             ...(answer.l0Age !== undefined ? { l0Age: answer.l0Age } : {}),
@@ -675,6 +678,31 @@ describe('rr-live-view with sources of its own', () => {
         source.say({ src: 'blob:two', frame: frame('f-2', 'second') });
         await waitFor(el, () => freeze(el)!.disabled === false);
         expect(freeze(el)!.disabled).toBe(false);
+      });
+
+      it('offers the picture on screen even while the answers are being skipped', async () => {
+        // `resultFor` is contracted never to reject and the loop skips a frame
+        // that does: the frame on offer therefore goes with the **picture**,
+        // not with the answers, or Freeze could add a frame nobody is looking
+        // at.
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const second = frame('f-2', 'second frame');
+        const source = fakeService([{ src: 'blob:one', frame: frame('f-1', 'first frame') }]);
+
+        const el = await mount(source);
+        const sent = adds(el);
+        await waitFor(el, () => freeze(el)?.disabled === false);
+
+        source.say({ src: 'blob:two', frame: second, fail: true });
+        const viewer = el.shadowRoot!.querySelector('rr-viewer')!;
+        await waitFor(el, () => viewer.src === 'blob:two');
+
+        freeze(el)!.click();
+        await el.updateComplete;
+
+        expect(sent).toHaveLength(1);
+        expect(sent[0].frameId).toBe('f-2');
+        expect(sent[0].bytes).toBe(second.bytes);
       });
 
       it('sends nothing while there is no frame to send', async () => {

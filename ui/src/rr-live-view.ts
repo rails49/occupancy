@@ -644,11 +644,18 @@ export class RRLiveView extends LitElement {
         if (this._lastFrameTime) this._fps = 1000 / (startTime - this._lastFrameTime);
         this._lastFrameTime = startTime;
         if (frame.src !== undefined) this._src = frame.src;
+        // Beside the picture, not beside the answers: what Freeze offers is
+        // the frame on screen, and the two must not be able to disagree — the
+        // answer below may be skipped (#334).
+        this._shownFrame = frames.shownFrame ?? null;
       } else {
         // The next new frame starts the count again rather than being timed
         // from before the gap.
         this._fps = 0;
         this._lastFrameTime = 0;
+        // This turn carried no frame, so there is nothing to add, even though
+        // the last picture is still up.
+        this._shownFrame = null;
       }
 
       // `drifted` is the refusal and `_dpt` is resolved once — from the source's
@@ -690,10 +697,6 @@ export class RRLiveView extends LitElement {
       // Absent is "nothing inferred", so the readout keeps the last real
       // measurement rather than dropping to zero for a frame.
       if (result.inference !== undefined) this._inference = result.inference;
-      // Read every turn, fresh or not: the frame Freeze offers goes with the
-      // answers rather than with the picture, so an answer that carried none
-      // disables the button while the last picture stays on screen (#334).
-      this._shownFrame = frames.shownFrame ?? null;
       // Read every frame: a service that re-read its manifest on a reconnect
       // has new sensor positions, and the states below are keyed on them.
       this._sourceLayout = results.layout ?? null;

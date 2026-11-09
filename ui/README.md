@@ -1458,9 +1458,11 @@ against it would be this page second-guessing the judgement it is only relaying.
   is [#336]). The camera path, with or without an archive, is as it was. A service's `open()`
   failure is still shown, in its own words.
 * **Freeze adds the frame on screen to the archive** ([#334]). In service mode only, beside Details.
-  A press reads `FrameSource.shownFrame` — the frame **this view last rendered**, not whatever the
-  source holds now, because between the source taking a newer frame and this view drawing it the
-  source is ahead of the screen — and sends it up as `rr-frame-add`. The picture does not stop and
+  A press reads `FrameSource.shownFrame` as of **the turn that last put a picture up**, not whatever
+  the source holds now — between the source taking a newer frame and this view drawing it the source
+  is ahead of the screen, and the read sits beside `_src` rather than beside the answers so a frame
+  whose answer the loop skipped cannot leave an older frame on offer — and sends it up as
+  `rr-frame-add`. The picture does not stop and
   the loop is untouched: freezing a frame is taking a copy of it. The button is **disabled while the
   current answer carried no frame**: before the first one, on a `json`-only answer, and on a failed
   request. The last picture is still up in all three and it is out of date, so adding it would
