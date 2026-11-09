@@ -6,19 +6,15 @@
  * looking at and a second video element would be a second decode of the same
  * stream. That is why this takes a getter rather than an element — `@query`
  * resolves after the first render, and the camera is acquired before it.
+ *
+ * The seam onto that element, the pacing and the readiness rule are
+ * `viewerVideo.ts`'s, shared with the video-file source (#286).
  */
 
 import { getCameraStream } from './capture.js';
 import type { FrameSource, SourceFrame } from './liveSources.js';
-
-/** What the source needs of `rr-viewer`: the `<video>` it mounted, once it has one. */
-export interface VideoHost {
-  getVideoElement(): HTMLVideoElement | null;
-}
-
-/** One animation frame, which is what paces the live loop. */
-const nextAnimationFrame = () =>
-  new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+import { decodedFrame, nextAnimationFrame } from './viewerVideo.js';
+import type { VideoHost } from './viewerVideo.js';
 
 /**
  * The camera, read through the viewer's `<video>`.
@@ -34,17 +30,11 @@ export function cameraFrameSource(host: () => VideoHost | null | undefined): Fra
   /**
    * The frame on screen, or `null` while there is nothing to read.
    *
-   * The readiness check is here rather than inside `detect`, which throws on a
-   * source with no dimensions: a video before its metadata arrives is the
-   * normal first few frames of a session, not an error to report.
-   *
    * There is no image branch. The live view never sets `src`, so the one that
    * stood here could not run (#330).
    */
   function decoded(): SourceFrame | null {
-    const video = host()?.getVideoElement();
-    if (!video || video.readyState < 2 || video.videoWidth === 0) return null;
-    return { source: video, width: video.videoWidth, height: video.videoHeight };
+    return decodedFrame(host()?.getVideoElement());
   }
 
   return {
