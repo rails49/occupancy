@@ -12,6 +12,11 @@ import type { Point, Sensor } from '@rails49/r49';
  * it (issue #12 → #94); the other three describe missing capability, and this
  * one describes measurement that would be wrong.
  *
+ * `no-frame` is the camera giving nothing to look at — before its first
+ * picture, after they stop, or where access to it was refused (#345). It is
+ * the absence that precedes all the others: the model was never asked, because
+ * there were no pixels to ask it about.
+ *
  * `no-service` and `not-reported` are this page's findings about an occupancy
  * service (#331): its answer could not be read, or it named no state for a
  * sensor in its manifest. A cause the service itself reports is its own words,
@@ -19,6 +24,7 @@ import type { Point, Sensor } from '@rails49/r49';
  */
 export type UnknownReason =
   | 'no-model'
+  | 'no-frame'
   | 'no-calibration'
   | 'outside-frame'
   | 'drift'
@@ -99,6 +105,11 @@ export const MARGIN_GAUGES = 2;
  *                         check running is not asserting that the camera is
  *                         steady — it is saying it does not know, and that was
  *                         every caller before #94.
+ * @param input.noFrame    Whether this turn carried no frame at all — the
+ *                         camera gave no picture, so nothing was looked at
+ *                         (`SourceFrame.fresh: false`, #345). Optional,
+ *                         defaulting to `false`: every caller before it was
+ *                         answering a picture it had just been handed.
  */
 export function occupancy(input: {
   detections: readonly Detection[] | null;
@@ -106,8 +117,9 @@ export function occupancy(input: {
   dpt: number | null;
   frame: Frame;
   drifted?: boolean;
+  noFrame?: boolean;
 }): ReadonlyMap<string, SensorState> {
-  const { detections, sensors, dpt, frame, drifted = false } = input;
+  const { detections, sensors, dpt, frame, drifted = false, noFrame = false } = input;
   const states = new Map<string, SensorState>();
 
   // Precedence: the whole-system conditions first, then the per-sensor one.
@@ -121,6 +133,18 @@ export function occupancy(input: {
   // behind a missing model for its turn. It is also the only one that survives
   // being fixed elsewhere: build the model, calibrate the layout, and a drifted
   // camera is still drifted.
+  //
+  // `no-frame` is above drift, and above the DPT, for the opposite reason:
+  // without a picture neither could be measured for this turn at all. Drift is
+  // a displacement read off pixels that did not arrive, and the DPT is what
+  // boxes would have been resampled by had there been any (#345). A model that
+  // never loaded still outranks it — `detections === null` is a session-long
+  // fact no frame would have fixed, and it is the one that tells a human what
+  // to fix — which is why this guard asks for both.
+  if (noFrame && detections !== null) {
+    for (const sensor of sensors) states.set(sensor.id, unknown('no-frame'));
+    return states;
+  }
   if (drifted) {
     for (const sensor of sensors) states.set(sensor.id, unknown('drift'));
     return states;

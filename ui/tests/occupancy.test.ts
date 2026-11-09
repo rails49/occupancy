@@ -128,6 +128,58 @@ describe('unknown', () => {
     ).toEqual({ state: 'unknown', reason: 'drift' });
   });
 
+  it('says no-frame when the turn carried no frame to look at', () => {
+    // A camera that has stopped giving pictures, or has not given one yet
+    // (#345). Distinct from an empty detection list once more: the model was
+    // never asked, because there were no pixels to ask it about.
+    const states = occupancy({
+      detections: [],
+      sensors,
+      dpt: DPT,
+      frame: FRAME,
+      noFrame: true,
+    });
+    expect(states.get('a')).toEqual({ state: 'unknown', reason: 'no-frame' });
+  });
+
+  it('puts no-frame under no-model and over the per-frame reasons', () => {
+    // Without a frame nothing else could be measured: drift is measured against
+    // pixels this turn did not bring, and the DPT the boxes would have been
+    // resampled by had nothing to resample. A model that never loaded is the
+    // exception — that is a session-long fact a frame would not have fixed, and
+    // it is the one that tells a human what to fix.
+    const over = { sensors, frame: FRAME, noFrame: true } as const;
+    expect(occupancy({ ...over, detections: null, dpt: DPT }).get('a')).toEqual({
+      state: 'unknown',
+      reason: 'no-model',
+    });
+    expect(occupancy({ ...over, detections: [], dpt: DPT, drifted: true }).get('a')).toEqual({
+      state: 'unknown',
+      reason: 'no-frame',
+    });
+    expect(occupancy({ ...over, detections: [], dpt: null }).get('a')).toEqual({
+      state: 'unknown',
+      reason: 'no-frame',
+    });
+    // The per-sensor reason too: a sensor off the edge of a frame that never
+    // arrived is unanswerable for the whole-system cause first.
+    expect(
+      occupancy({ ...over, sensors: [sensor('left', -1, 540)], detections: [], dpt: DPT }).get(
+        'left'
+      )
+    ).toEqual({ state: 'unknown', reason: 'no-frame' });
+  });
+
+  it('treats a caller that passes no frame flag as having had one', () => {
+    // Every caller before #345 omitted it, and all of them were answering a
+    // picture they had just been handed.
+    const answered = occupancy({ detections: [], sensors, dpt: DPT, frame: FRAME });
+    expect(answered.get('a')).toEqual({ state: 'clear' });
+    expect(
+      occupancy({ detections: [], sensors, dpt: DPT, frame: FRAME, noFrame: false }).get('a')
+    ).toEqual({ state: 'clear' });
+  });
+
   it('treats a caller that passes no drift flag as not asserting anything', () => {
     // Every caller before #94 omitted it, and none of them was claiming the
     // camera was steady — so the default cannot be a refusal.

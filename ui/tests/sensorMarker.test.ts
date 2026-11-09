@@ -259,6 +259,7 @@ describe('renderSensor() — L1 state (#85)', () => {
   it('says why it could not answer, which the colour cannot', () => {
     const reasons: Record<UnknownReason, RegExp> = {
       'no-model': /no model/i,
+      'no-frame': /no camera frame/i,
       'no-calibration': /calibration/i,
       'outside-frame': /frame/i,
       drift: /drift/i,
