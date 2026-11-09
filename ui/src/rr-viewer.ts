@@ -287,8 +287,8 @@ export interface ViewerDoubleClickDetail extends Omit<ViewerPointerDetail, 'orig
 
 /**
  * Display surface, shared by the editor (`src` → `<img>`) and the live view
- * (`stream` → `<video>`), with annotations drawn over it in image pixel
- * coordinates.
+ * (`stream` → `<video>` of a camera, `videoSrc` → `<video>` of a file, #286),
+ * with annotations drawn over it in image pixel coordinates.
  *
  * **What it draws splits by view, and the split is the two things the archive
  * holds against the two the model says.** The editor passes authored objects —
@@ -331,7 +331,7 @@ export interface ViewerDoubleClickDetail extends Omit<ViewerPointerDetail, 'orig
  * arithmetic changed anywhere: annotations stay a constant **screen** size,
  * objects stay a constant **world** size, and a grab radius stays a fingertip.
  *
- * **Properties:** `src`, `stream`, `calibrationPoints`, `sensors`,
+ * **Properties:** `src`, `stream`, `videoSrc`, `calibrationPoints`, `sensors`,
  * `sensorStates`, `detections`, `cars`, `pendingCar`, `highlight`, `zoom`,
  * `zoomPreview`, `dpt`, `resolution`.
  *
@@ -364,6 +364,23 @@ export class RrViewer extends LitElement {
 
   @property({ type: String }) src: string | null = null;
   @property({ attribute: false }) stream: MediaStream | null = null;
+  /**
+   * A video file to play, as an object URL, or `null` where none is (#286).
+   *
+   * The live view's other local source: a recording of the layout stands in for
+   * the camera, and the frame source reads its pixels back out of this element
+   * exactly as it does for the stream. Muted and autoplaying — the transport is
+   * the live view's, which is why this element shows no `controls` of its own:
+   * the overlay above it takes every pointer, so a native control under it
+   * could not be pressed. Muted is set as a **property**, before the `src`
+   * beside it starts the load: the content attribute only seeds `defaultMuted`,
+   * and what the autoplay policy reads is the property.
+   *
+   * At most one of `src`, `stream` and this is set. The editor sets `src`, the
+   * live view sets one of the other two, and a second element would be a
+   * second box to fit (#41).
+   */
+  @property({ type: String }) videoSrc: string | null = null;
   /**
    * The layout's calibration points, drawn as labelled crosshairs.
    *
@@ -610,7 +627,9 @@ export class RrViewer extends LitElement {
    * against a frame it was never authored in.
    */
   protected willUpdate(changed: Map<string, unknown>) {
-    if (changed.has('src') || changed.has('stream')) this.mediaSize = null;
+    if (changed.has('src') || changed.has('stream') || changed.has('videoSrc')) {
+      this.mediaSize = null;
+    }
   }
 
   /**
@@ -957,6 +976,15 @@ export class RrViewer extends LitElement {
         ${this.stream
           ? html`<video
               .srcObject=${live(this.stream)}
+              autoplay
+              playsinline
+              @loadedmetadata=${this.onMediaLoad}
+            ></video>`
+          : ''}
+        ${this.videoSrc
+          ? html`<video
+              .muted=${true}
+              .src=${this.videoSrc}
               autoplay
               playsinline
               @loadedmetadata=${this.onMediaLoad}

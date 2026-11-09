@@ -151,6 +151,7 @@ rr-app                          ← shell: owns the editing session and the view
 > [#273]: https://github.com/rails49/occupancy/issues/273
 > [#274]: https://github.com/rails49/occupancy/issues/274
 > [#284]: https://github.com/rails49/occupancy/issues/284
+> [#286]: https://github.com/rails49/occupancy/issues/286
 > [#298]: https://github.com/rails49/occupancy/issues/298
 > [#302]: https://github.com/rails49/occupancy/issues/302
 > [#303]: https://github.com/rails49/occupancy/issues/303
@@ -472,6 +473,7 @@ image pixel coordinates.
 |---|---|---|
 | `src` | `string \| null` | Image URL (editor mode) |
 | `stream` | `MediaStream \| null` | Video stream (live mode) |
+| `videoSrc` | `string \| null` | A video file to play, as an object URL (live mode, [#286]). Muted and autoplaying, with no native `controls` — the overlay takes every pointer, so the transport is the live view's. At most one of `src`, `stream` and this is ever set |
 | `calibrationPoints` | `readonly ReferencePoint[]` | Crosshairs to draw; empty in the live view |
 | `sensors` | `readonly Sensor[]` | Diamonds to draw. Per **layout**, so the same list draws over every image; the live view passes the same list |
 | `sensorStates` | `ReadonlyMap<string, SensorState> \| null` | L1 per sensor, keyed by `id`. **`null` is the editor** — nothing is reading these sensors, which is not the same as reading them and finding nothing |
@@ -493,7 +495,7 @@ image pixel coordinates.
 `rr-pointer-dblclick` (`ViewerDoubleClickDetail`, after the pointer events of its two clicks), `rr-wheel`
 (`ViewerWheelDetail`, without `preventDefault`), `rr-media-frame`
 (`ViewerMediaFrameDetail`, once per media load) and `rr-viewport` (`ViewerViewportDetail`, whenever
-the measured viewport changes size). All ten fire in both `src` and `stream` mode. They are declared in `HTMLElementEventMap`, so a listener anywhere up
+the measured viewport changes size). All ten fire in `src`, `stream` and `videoSrc` mode. They are declared in `HTMLElementEventMap`, so a listener anywhere up
 the tree gets the detail typed without a cast.
 
 | Detail field | Type | Description |
