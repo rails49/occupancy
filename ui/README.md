@@ -172,6 +172,7 @@ rr-app                          ← shell: owns the editing session and the view
 > [#336]: https://github.com/rails49/occupancy/issues/336
 > [#341]: https://github.com/rails49/occupancy/pull/341
 > [#345]: https://github.com/rails49/occupancy/issues/345
+> [#353]: https://github.com/rails49/occupancy/issues/353
 
 ## State and data flow
 
@@ -1458,6 +1459,12 @@ against it would be this page second-guessing the judgement it is only relaying.
   sensors, the resolution and the DPT the answers are keyed on, read **every frame** so a manifest
   the source re-read reaches the viewer. With a layout the view takes all three from there rather
   than from `archive`, which is why an unsaved edit in the editor cannot move what it draws.
+* **In service mode the `archive` is not a fallback for that layout** ([#353]). With no layout yet —
+  on mount before `open()` returns, and for as long as the service's manifest will not read — the
+  viewer and the Details panel get **no sensors**, DPT `null` and the default resolution, whatever
+  archive is bound; since [#333] that archive is the service's own copy and carries the editor's
+  unsaved edits. The camera path keeps the fallback: there the archive is what the model answers
+  about.
 * **A turn with `fresh: false` carried no new picture.** The last one stays on screen, the rate
   drops to **0** rather than going stale, no drift sample is taken from it, and the answers that
   came with it are taken as usual — which is how every sensor reads `unknown` while a source is
@@ -1471,7 +1478,8 @@ against it would be this page second-guessing the judgement it is only relaying.
   `localModelResultSource` answers such a turn without calling `detect`: every sensor `unknown` /
   `no-frame`, no L0, and no inference time, so that readout keeps its last real measurement. A video file still holds the loop instead — a paused or seeking clip has a picture
   that is simply not new.
-* **Service mode is `sources` set with no `archive`** ([#331]). It shows no drift banner,
+* **Service mode is the sources' `service: true`, not the absence of an `archive`** ([#331],
+  [#333]). It shows no drift banner,
   recorder, alignment readout, or model and DPT notices, and no Inference row (drift in service mode
   is [#336]). The camera path, with or without an archive, is as it was. A service's `open()`
   failure is still shown, in its own words.
