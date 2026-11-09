@@ -1416,6 +1416,10 @@ Camera stream under the two layers of the occupancy output ([#85]).
 | `archive` | `R49Archive \| null` |
 | `sources` | `LiveSources \| null` |
 
+**Emits:** `rr-frame-add` (`FrameAddDetail`: `{ bytes, frameId }`) when **Freeze** is pressed
+([#334]). `rr-app` owns the session and the toasts, so it is what adds the frame; this view holds no
+session and says nothing about the outcome.
+
 An occupancy service is handed in as **both** sources at once, by `rr-app`, with `service: true`
 ([#331]) — see `occupancyService.ts`. That flag, and not the absence of an `archive`, is what makes
 it **service mode**: since [#333] the archive bound may be the service's own, and measuring drift
@@ -1444,6 +1448,15 @@ against it would be this page second-guessing the judgement it is only relaying.
   recorder, alignment readout, or model and DPT notices, and no Inference row (drift in service mode
   is [#336]). The camera path, with or without an archive, is as it was. A service's `open()`
   failure is still shown, in its own words.
+* **Freeze adds the frame on screen to the archive** ([#334]). In service mode only, beside Details.
+  A press reads `FrameSource.shownFrame` — the frame **this view last rendered**, not whatever the
+  source holds now, because between the source taking a newer frame and this view drawing it the
+  source is ahead of the screen — and sends it up as `rr-frame-add`. The picture does not stop and
+  the loop is untouched: freezing a frame is taking a copy of it. The button is **disabled while the
+  current answer carried no frame**: before the first one, on a `json`-only answer, and on a failed
+  request. The last picture is still up in all three and it is out of date, so adding it would
+  record a moment the service has just said it cannot see. Nothing here judges or records the add,
+  and the camera path has no Freeze — the editor's Capture from Camera is that path.
 * **Details** ([#332]): in service mode a Details button stands where the recorder does in local
   mode. It is closed each time the view opens. While it is open, `rr-service-details` sits below the
   viewer with the last answer's `FrameResult.details`, the viewer draws the layout's tracks as

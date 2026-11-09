@@ -12,6 +12,7 @@ import type {
   LiveSources,
   ResultSource,
   ServiceDetails,
+  ShownFrame,
   SourceFrame,
   SourceLayout,
 } from './liveSources.js';
@@ -52,6 +53,21 @@ const DEFAULT_RESOLUTION: Frame = { width: 1920, height: 1080 };
  * device stretches the gap instead of queueing checks it cannot finish.
  */
 const DRIFT_SAMPLE_INTERVAL_MS = 3000;
+
+/**
+ * A frame the person asked to be put into the archive — Freeze (#334).
+ *
+ * The view owns no session and no toast, so this is everything the add needs:
+ * the bytes to store, and the id of the answer they came in so `rr-app` can
+ * tell a second press on one frame from a press on the next. Neither is read
+ * here.
+ */
+export interface FrameAddDetail {
+  /** The frame on screen, exactly as the service sent it. */
+  readonly bytes: Blob;
+  /** The source's id for the answer it came in; a token, only ever compared. */
+  readonly frameId: string;
+}
 
 /**
  * The live view: a frame, its occupancy answer, and the two layers of that
@@ -100,9 +116,12 @@ const DRIFT_SAMPLE_INTERVAL_MS = 3000;
  * it changes none of that. See `_judging`. In its
  * place a Details button opens `rr-service-details` below the viewer, and
  * while it is open the viewer draws the layout's tracks and the service is
- * asked for patches (#332).
+ * asked for patches (#332). **Freeze** stands beside it: one press sends the
+ * frame on screen up as `rr-frame-add` for `rr-app` to add to the archive
+ * (#334), and the feed goes on running.
  *
- * **Properties:** `archive`, `sources`.
+ * **Properties:** `archive`, `sources`. **Emits:** `rr-frame-add`
+ * ({@link FrameAddDetail}).
  */
 @customElement('rr-live-view')
 export class RRLiveView extends LitElement {
@@ -210,6 +229,16 @@ export class RRLiveView extends LitElement {
   @state() private _recording: { started: Date; rows: readonly DriftRow[] } | null = null;
   /** Whether the Details panel is open (#332). Closed each time the view opens. */
   @state() private _detailsOpen = false;
+  /**
+   * The frame on screen, or `null` where the current answer carried none
+   * (#334) — which is what disables Freeze.
+   *
+   * The source's, read once per turn beside the answers rather than at the
+   * press: between the source taking a newer frame and this view rendering it
+   * there is a window where the source is ahead of the screen, and Freeze adds
+   * what the person is looking at.
+   */
+  @state() private _shownFrame: ShownFrame | null = null;
   /** What the service sent beyond L0 and L1 with the last answer, or `null` (#332). */
   @state() private _details: ServiceDetails | null = null;
 
@@ -280,6 +309,13 @@ export class RRLiveView extends LitElement {
       border: 1px solid currentColor;
       border-radius: 4px;
       cursor: pointer;
+    }
+
+    /* Freeze with no frame to add: it stays in place and says it cannot be
+       pressed, rather than coming and going with the service's answers. */
+    .details-bar button[disabled] {
+      opacity: 0.5;
+      cursor: default;
     }
   `,
   ];
@@ -525,11 +561,41 @@ export class RRLiveView extends LitElement {
     this._results?.setPatches?.(this._detailsOpen);
   }
 
-  private _renderDetailsButton() {
+  /**
+   * Send the frame on screen up to be added to the archive (#334).
+   *
+   * The picture does not stop and the loop is not touched: freezing a frame is
+   * taking a copy of it, not pausing the feed. What becomes of the copy is
+   * `rr-app`'s — this view owns no session, so it cannot judge the add, record
+   * it, or say what happened to it.
+   */
+  private _freeze() {
+    const frame = this._shownFrame;
+    if (frame === null) return;
+    this.dispatchEvent(
+      new CustomEvent<FrameAddDetail>('rr-frame-add', {
+        detail: { bytes: frame.bytes, frameId: frame.id },
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
+
+  /**
+   * The service bar: Details, and Freeze beside it.
+   *
+   * Freeze is disabled while the current answer has no frame — before the
+   * first one, on an answer with only the `json` part, and on a request that
+   * failed. The last picture is still on screen in all three, and it is out of
+   * date; a button that added it anyway would write a photograph of a moment
+   * the service has just said it cannot see.
+   */
+  private _renderServiceBar() {
     return html`<div class="details-bar">
       <button aria-pressed=${this._detailsOpen ? 'true' : 'false'} @click=${this._toggleDetails}>
         Details
       </button>
+      <button ?disabled=${this._shownFrame === null} @click=${this._freeze}>Freeze</button>
     </div>`;
   }
 
@@ -624,6 +690,10 @@ export class RRLiveView extends LitElement {
       // Absent is "nothing inferred", so the readout keeps the last real
       // measurement rather than dropping to zero for a frame.
       if (result.inference !== undefined) this._inference = result.inference;
+      // Read every turn, fresh or not: the frame Freeze offers goes with the
+      // answers rather than with the picture, so an answer that carried none
+      // disables the button while the last picture stays on screen (#334).
+      this._shownFrame = frames.shownFrame ?? null;
       // Read every frame: a service that re-read its manifest on a reconnect
       // has new sensor positions, and the states below are keyed on them.
       this._sourceLayout = results.layout ?? null;
@@ -759,7 +829,7 @@ export class RRLiveView extends LitElement {
 
       ${this._judging ? this._renderDriftNotice() : ''}
 
-      ${this._judging ? this._renderRecorder() : this._renderDetailsButton()}
+      ${this._judging ? this._renderRecorder() : this._renderServiceBar()}
 
       <rr-viewer
         .src=${this._src}
