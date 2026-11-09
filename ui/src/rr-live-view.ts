@@ -123,15 +123,10 @@ export interface FrameAddDetail {
  * and the frame rate — the view's own judgement, which is the same whatever is
  * answering.
  *
- * **A video file stands in for the camera** (#286). The camera path offers a
- * Video file button, and a pick swaps the frame source in place — the one thing
- * `sources` being read on connect does not cover, because the result source,
- * the model it holds, the drift check and the recording are about the layout
- * and not about where the pixels come from. The transport beside it is this
- * view's rather than the `<video>`'s own `controls`: the marker overlay covers
- * the picture and takes every pointer, so a native control under it could not
- * be pressed. A file the browser cannot play is refused in the frame source's
- * words — see `_framesError`.
+ * A video file stands in for the camera (#286). The camera path offers a Video
+ * file button and a transport; a pick swaps the frame source in place
+ * (`_openFrames`). A file the browser cannot play is refused in the frame
+ * source's words — see `_framesError`.
  *
  * In service mode (sources that declare themselves a service's, #331) the view
  * runs no drift check and shows no recorder, Video file button, alignment
@@ -159,10 +154,8 @@ export class RRLiveView extends LitElement {
    * swapping a source mid-session would mean tearing down and rebuilding all
    * three. A different source is a different session.
    *
-   * A video file is the exception that proves the rule (#286, `_openFrames`):
-   * it changes the *frames* and leaves the result source, the model, the drift
-   * check and the archive where they are, which is one source swapped rather
-   * than a session rebuilt.
+   * A video file swaps the frame source alone, in place (#286, `_openFrames`).
+   * The result source, the model, the drift check and the archive stay.
    */
   @property({ attribute: false }) sources: LiveSources | null = null;
 
@@ -183,12 +176,7 @@ export class RRLiveView extends LitElement {
    * `stop()`, and this holds only what to show.
    */
   @state() private _videoSrc: string | null = null;
-  /**
-   * The name of the video file being played, or `null` on the camera (#286).
-   *
-   * Shown in the transport, because the demo this is for is somebody opening a
-   * clip they shot minutes ago and a second one that looks much like it.
-   */
+  /** The name of the video file being played, shown in the transport, or `null` on the camera (#286). */
   @state() private _videoName: string | null = null;
   /**
    * Why no frames are coming, as the frame source worded it, or `null` where
@@ -365,8 +353,7 @@ export class RRLiveView extends LitElement {
       gap: 0.5rem;
     }
 
-    /* The slider takes what is left, because a seek is only as precise as the
-       bar is wide — on a phone that is the whole of it. */
+    /* The slider takes the rest of the row. */
     .video-seek {
       flex: 1 1 auto;
       min-width: 4rem;
@@ -399,8 +386,7 @@ export class RRLiveView extends LitElement {
       cursor: pointer;
     }
 
-    /* The row's gap is the spacing in the transport, so the shared margin above
-       would double it. */
+    /* The row's gap spaces the transport's buttons. */
     .video-bar button {
       margin-left: 0;
     }
@@ -575,14 +561,6 @@ export class RRLiveView extends LitElement {
     }
   }
 
-  /**
-   * Play a video file instead of the camera (#286).
-   *
-   * The demo this is for: the camera has to sit near the ceiling, where a
-   * phone's screen cannot be reached, so the phone records in its own Camera
-   * app and the clip is opened here. The file is read locally as an object URL
-   * and goes nowhere near a network — the page has no backend to send it to.
-   */
   /** Open the picker. The input is hidden so the bar reads like its neighbours. */
   private _pickVideo() {
     this.renderRoot.querySelector<HTMLInputElement>('input[type="file"]')?.click();

@@ -47,14 +47,11 @@ function largestCapableSize(track: RaisableTrack): Size | null {
  * Raises a track to the largest frame it says it can deliver (#273).
  *
  * The stream opens at {@link DEFAULT_CAMERA_CONSTRAINTS}' 1080p, which is about
- * DPT 8; the camera in a phone has several times that, and the archive these
- * captures build is read by the classifier in the page (rails49/classifier#12),
- * so the pixels are worth asking for.
+ * DPT 8.
  *
- * **One `exact` request, and a refusal is the stream as opened.** The capability
+ * One `exact` request, and a refusal leaves the stream as opened. The capability
  * maxima need not be jointly achievable — 3840 wide and 2448 tall can be two
- * different modes of one camera — so the request can fail, and a second looser
- * request would settle the track on a size nobody asked for. Where the browser
+ * different modes of one camera — so the request can fail. Where the browser
  * offers no `getCapabilities`, reports no maxima, or has no `applyConstraints`,
  * there is nothing to ask for and the capture is the stream as it opened.
  */
@@ -76,8 +73,8 @@ async function raiseToLargestCapableSize(track: RaisableTrack): Promise<void> {
  * It opens the camera, grabs one frame, and then stops the stream.
  *
  * The frame is the largest the camera offers, not the 1080p the stream opens at
- * ({@link raiseToLargestCapableSize}, #273). **The raise happens before the
- * stream reaches the `<video>`**, so the element's own size is already the
+ * ({@link raiseToLargestCapableSize}, #273). The raise happens before the
+ * stream reaches the `<video>`, so the element's own size is already the
  * raised one, and the first frame it ever decodes is one the track took after
  * the switch: there is no earlier frame to grab by mistake.
  *

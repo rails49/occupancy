@@ -719,35 +719,35 @@ the whole point: a video file or a service (#286, #331, rails49/detector#64) rea
 the person picked through the `<video>` `rr-viewer` mounts — `videoSrc`, a third media branch beside
 `src` and `stream` — and reads the frames back out of that element, which is `cameraFrameSource`'s
 arrangement with a file where the stream was; the seam onto the element, the animation-frame pacing
-and the readiness rule are `viewerVideo.ts`'s, shared by both. The demo it exists for is in
-`SPEC.md` § Testing and Demo: the camera has to sit near the ceiling, where a phone's screen cannot
-be reached, so the phone records in its own Camera app and the clip is opened here.
+and the readiness rule are `viewerVideo.ts`'s, shared by both. The demo it serves is in `SPEC.md`
+§ Testing and Demo.
 
 * **One picture is one frame.** A frame is handed over only at a `currentTime` the loop has not run
   on, so a paused file **holds** the loop instead of re-detecting one still per animation frame, and
   a seek runs the frame it landed on whether the file is playing or paused.
-* **A pick during the model load joins the loop it already started.** `_run` opens the result source
-  and the drift check, which takes seconds, and the Video file button is live for all of them — so
-  the pick's `_openFrames` starts the loop and `_run` finds `_frameRun` moved on and starts none.
-  Two loops over one source would read it twice and write two sets of answers into one view.
+* **A pick during the camera prompt or the model load joins the loop it already started.** The
+  Video file button is live through both. `connectedCallback` takes `_frameRun` before the prompt
+  and hands it to `_run`, which opens the result source and the drift check, finds `_frameRun`
+  moved on, and starts no loop of its own. Two loops over one source would read it twice and write
+  two sets of answers into one view.
 * **The frame source is swapped in place; the session is not.** `sources` is still read on connect,
   because a service *is* a different session — a video file is not. `rr-live-view._openFrames`
   stops the old source, starts the new one and restarts the loop, and leaves the result source, its
   model, the drift check, the archive and the recording where they are: a pick must not reload the
   detector to answer the same sensors. `_frameRun` is bumped per swap, because the old loop's
   `resultFor` may still be in flight and must not write the camera's last answer over the file's
-  first. The drift reading is dropped — it was measured against other pixels, and a readout that
-  kept it would report the camera's alignment under a file's picture.
+  first. The drift reading is dropped, and a sample still in flight is checked against `_frameRun`
+  too: both were measured against other pixels.
 * **Three optional `FrameSource` fields** carry what only a file has: `videoSrc` (the object URL,
   created and released by the source, as the owner of a `SourceFrame.src` is), `playback` (play,
   pause, seek, with every reading a **getter** read at render time, because the element is moving)
   and `error` (why no frames are coming).
 * **The transport is the view's, not the element's.** The overlay covers the picture and takes every
-  pointer, so a native `controls` bar under it could not be pressed. Pressing Play or dragging the
-  slider calls `requestUpdate()`: a paused file hands over no frames, so nothing else would re-render
-  the bar.
+  pointer, so a native `controls` bar under it could not be pressed. A paused file hands over no
+  frames, so the bar re-renders on its own triggers: Play and the slider call `requestUpdate()`, and
+  so does `rr-viewer`'s `rr-video-pause`, which covers a file reaching its end.
 * **A file the browser cannot play is refused, in a danger bar naming it.** iPhone video is HEVC in a
-  `.mov` by default and only Safari decodes it, so it is the first file a new user will pick.
+  `.mov` by default, which not every browser decodes.
   `next()` polls the element's own `MediaError` and answers `null` — the loop's one way out — and
   the view reads `FrameSource.error` when a `null` arrives while the loop is still live. Where no
   archive is open there is **no loop** — nothing is being asked about the pixels — so the view reads

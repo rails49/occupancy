@@ -1,12 +1,8 @@
 /**
- * A video file as a frame source (#286).
- *
- * The demo this exists for: the camera has to go up near the ceiling, where a
- * phone's screen cannot be reached, and iPhone Mirroring blocks the camera
- * while scrcpy needs a computer. So the phone records in its own Camera app,
- * comes down, and the file is opened here — and the same L0→L1 loop, drift check
- * and drift recording run on its frames, because nothing downstream of
- * `FrameSource` can tell which source it is reading.
+ * A video file as a frame source (#286; the demo it serves is in `SPEC.md`
+ * § Testing and Demo). The same L0→L1 loop, drift check and drift recording run
+ * on its frames, because nothing downstream of `FrameSource` can tell which
+ * source it is reading.
  *
  * It owns the object URL and nothing else. The pixels are read back out of the
  * `<video>` **`rr-viewer` mounted** — the viewer is what the user is looking at,
@@ -27,16 +23,15 @@ import type { VideoHost } from './viewerVideo.js';
  * Why a file will never give a frame, in words that name the usual cause.
  *
  * The browser's own `MediaError` message is empty in Chrome and unhelpful in
- * the others, so the refusal says what a person can act on: an iPhone records
- * HEVC in a `.mov` by default, which is the first file somebody trying this
- * will reach for, and no browser but Safari decodes it.
+ * the others, so the refusal names the usual cause and what to do: an iPhone
+ * records HEVC in a `.mov` by default, which not every browser decodes.
  */
 function refusal(file: File, error: MediaError): string {
   const detail = error.message ? ` (${error.message})` : '';
   return (
     `this browser cannot play ${file.name}${detail}. An iPhone records HEVC in a ` +
-    '.mov by default, which only Safari decodes — share or export the clip as ' +
-    'H.264 .mp4, or open it in Safari'
+    '.mov by default, which not every browser decodes — share or export the ' +
+    'clip as H.264 .mp4, or try another browser'
   );
 }
 

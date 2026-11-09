@@ -1446,22 +1446,11 @@ against it would be this page second-guessing the judgement it is only relaying.
   `stop()` is what ends the loop, and the source's pacing is the loop's — one animation frame per
   frame for the camera.
 * **A video file stands in for the camera** ([#286], `videoFileFrameSource.ts`). A **Video file…**
-  button beside the recorder opens one; the viewer plays it through `videoSrc` and the source reads
-  its frames back out of that same `<video>`, so the loop, the drift check, the recorder and the
-  stats bar run exactly as they do on the camera. The frame source is **swapped in place**, which is
-  the one thing `sources` being read on connect does not cover: the result source, its model, the
-  drift check and the recording are about the layout and not about where the pixels come from, so a
-  pick does not reload the detector. `_frameRun` is bumped per swap, which is what stops an answer
-  still in flight from writing into the next source's session; the drift reading is dropped, because
-  it was measured against other pixels. Three optional `FrameSource` fields carry what only a file
-  has — `videoSrc` (the object URL, created and released by the source), `playback` (play, pause,
-  seek; every reading a getter) and `error` (why no frames are coming). The transport is this view's
-  rather than the element's native `controls`: the overlay covers the picture and takes every
-  pointer. A file the browser cannot play is **refused in a danger bar naming the file** — an iPhone
-  records HEVC `.mov` by default — which the view shows when `next()` answers `null` while the loop
-  is still live, and which it waits for itself where no archive is open and no loop runs. The file is
-  read locally as an object URL and goes nowhere: this package has no backend. Not offered in service
-  mode, where the frames are the service's. **Camera** goes back.
+  button beside the recorder opens one, and Play/Pause, a seek slider and a clock appear beside it.
+  The loop, the drift check, the recorder and the stats bar run on its frames as they do on the
+  camera. A file the browser cannot play is refused in a danger bar naming the file. Not offered in
+  service mode. **Camera** goes back. How the swap works: [`../docs/UI.md`](../docs/UI.md) § Frames
+  and results come from sources.
 * **A source may hand over a picture instead of a stream, and may bring its own layout** ([#331]).
   `SourceFrame.src` is shown through `rr-viewer`'s `src` — the source owns the object URL and
   releases it, and nothing reads pixels back out of the viewer — and `ResultSource.layout` gives the
@@ -1886,26 +1875,9 @@ Camera helpers, shared by both views.
 | `getCameraStream(constraints?)` | `getUserMedia` wrapper; returns a `MediaStream` |
 | `captureFromCamera()` | Opens the camera, **raises the track to the largest frame it says it can deliver** ([#273]), grabs that frame as one JPEG `Uint8Array`, and always stops the tracks — with a 5 s timeout |
 
-**A capture is the largest frame the camera offers; the live view's stream is still 1080p** ([#273]).
-The stream opens at `DEFAULT_CAMERA_CONSTRAINTS`, which every device can give and which is about
-DPT 8; a capture then asks the track it got for the largest width × height its `getCapabilities()`
-reports, as **one `exact` request**. The capability maxima need not be jointly achievable — 3840 wide
-and 2448 tall can be two different modes of one camera — so that request can fail, and where it
-fails, or the browser offers no `getCapabilities`, or reports no maxima, the capture is the stream as
-it opened. A second, looser request would settle the track on a size nobody asked for.
-
-**The raise happens before the stream reaches the `<video>`**, so the element's own size is already
-the raised one and the first frame it ever decodes is one the track took after the switch: there is
-no earlier frame to grab by mistake. The frame is then grabbed at **the element's** size, which is
-what the camera settled on rather than what was asked for — a camera may accept the request and
-settle elsewhere, and what a new archive takes as `camera.resolution` has to be the pixels that
-arrived. It is also the size `drawImage` blits, so a canvas sized from anything else would crop or
-pad the stored photograph wherever the two disagreed.
-
-Judging the frame is `imageAdd.ts`'s, the same way for a pick and for Freeze, so nothing here is a
-second size rule: a 4K capture into an archive declared at 1080p is refused in those words ([#260]),
-and a capture into an archive where nothing is positioned sets `camera.resolution` to the size it
-came at ([#254]).
+The live view's stream stays at 1080p. A capture asks for the largest frame with one `exact`
+request; where that fails, the capture is the stream as opened. When the raise happens and which
+size is grabbed: `capture.ts`'s docstrings ([#273]).
 
 ---
 

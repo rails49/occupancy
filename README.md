@@ -105,9 +105,7 @@ uvx --from git+https://github.com/rails49/occupancy-service live-check http://lo
 
 Press Live, then **Video file…**, and the live view runs on a clip instead of this
 device's camera ([#286](https://github.com/rails49/occupancy/issues/286)). It is the
-demo for a layout you have not instrumented: the camera has to sit near the ceiling,
-where a phone's screen cannot be reached, and iPhone Mirroring turns the camera off
-while the Android route (scrcpy) needs a computer and developer settings.
+demo for a layout you have not instrumented; why: `SPEC.md` § Testing and Demo.
 
 1. Record in the phone's own Camera app, put the phone up high, run a train, take it
    down.
@@ -120,9 +118,9 @@ The same loop runs on its frames: the detector per frame, L1 per sensor, the dri
 check against the archive's reference image, and Record drift. The file is read
 locally and goes nowhere — there is no backend to send it to.
 
-**Export as H.264 `.mp4` where you can.** An iPhone records HEVC in a `.mov` by
-default, which only Safari plays; the other browsers refuse the file and say so.
-Sharing the clip out of Photos, or AirDropping it to a Mac, converts it.
+Export as H.264 `.mp4` where you can. An iPhone records HEVC in a `.mov` by
+default, which not every browser plays; a browser that cannot refuses the file and
+says so.
 
 ## 📷 Capture
 
