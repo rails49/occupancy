@@ -608,6 +608,63 @@ describe('rr-live-view with sources of its own', () => {
       expect(el.shadowRoot!.querySelector('rr-viewer')!.dpt).toBe(20);
     });
 
+    // In service mode the archive is no fallback at all (#353). Since #333 the
+    // bound archive is the service's own and carries the editor's unsaved
+    // edits, so falling back to it on the turns before `open()` returns — or
+    // for as long as the manifest will not read — would draw an edit nobody
+    // saved as the service's answer.
+    describe('with an archive bound and no layout from the service yet (#353)', () => {
+      it('draws no sensors and no DPT, then draws the layout once it arrives', async () => {
+        const source = fakeService([{ src: 'blob:one' }], { layoutLate: true });
+
+        const el = await mount(source, archive);
+        const viewer = el.shadowRoot!.querySelector('rr-viewer')!;
+        await waitFor(el, () => viewer.src !== null);
+
+        // The archive has a sensor and a calibration; neither is the service's.
+        expect(viewer.sensors).toEqual([]);
+        expect(viewer.dpt).to.be.null;
+        expect(viewer.resolution).toEqual({ width: 1920, height: 1080 });
+
+        source.readLayout();
+        await waitFor(el, () => viewer.sensors.length > 0);
+
+        expect(viewer.sensors).toEqual(SENSORS);
+        expect(viewer.dpt).toBe(20);
+        expect(viewer.resolution).toEqual({ width: 640, height: 480 });
+      });
+
+      it("never draws the archive's sensors while the manifest read keeps failing", async () => {
+        const source = fakeService([{ src: 'blob:one' }], {
+          openError: 'the manifest answered 503',
+          layoutLate: true,
+        });
+
+        const el = await mount(source, archive);
+        const viewer = el.shadowRoot!.querySelector('rr-viewer')!;
+
+        for (let turn = 0; turn < 4; turn++) {
+          const asked = source.asked;
+          await waitFor(el, () => source.asked > asked);
+          expect(viewer.sensors).toEqual([]);
+          expect(viewer.dpt).to.be.null;
+        }
+      });
+
+      it('gives the Details panel no sensors either', async () => {
+        const source = fakeService([{ src: 'blob:one' }], { layoutLate: true });
+
+        const el = await mount(source, archive);
+        await waitFor(el, () => source.asked > 0);
+        [...el.shadowRoot!.querySelectorAll('button')]
+          .find(b => b.textContent!.trim() === 'Details')!
+          .click();
+        await el.updateComplete;
+
+        expect(el.shadowRoot!.querySelector('rr-service-details')!.sensors).toEqual([]);
+      });
+    });
+
     describe('Freeze (#334)', () => {
       const button = (el: RRLiveView, label: string) =>
         [...el.shadowRoot!.querySelectorAll('button')].find(b => b.textContent!.trim() === label);

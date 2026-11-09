@@ -411,14 +411,17 @@ export class RRLiveView extends LitElement {
 
   /**
    * The DPT everything here reads: the source's layout where it brings one,
-   * this view's archive otherwise.
+   * this view's archive on the camera path, and `null` in service mode with no
+   * layout yet.
    *
    * A service's DPT is the service's manifest's, and it is what the service's
    * own boxes are sized by (#331). Nothing in this file resolves it twice, so
-   * #166 stays one fix either way.
+   * #166 stays one fix either way. The archive is a fallback for the camera
+   * only, for the reason `render()` gives (#353).
    */
   private get _dpt(): number | null {
-    return this._sourceLayout ? this._sourceLayout.dpt : this._archiveDpt;
+    if (this._sourceLayout) return this._sourceLayout.dpt;
+    return this._judging ? this._archiveDpt : null;
   }
 
   /**
@@ -1094,11 +1097,16 @@ export class RRLiveView extends LitElement {
   }
 
   render() {
-    const manifest = this.archive?.getManifest();
-    // The source's layout wins where it brings one: a service answers from a
-    // manifest it read from the service, so an unsaved edit in the editor
-    // cannot move what this view draws (#331).
+    // The source's layout is the only thing a service's frames are drawn
+    // against: it answers from a manifest it read from the service, so an
+    // unsaved edit in the editor cannot move what this view draws (#331). With
+    // no layout yet — before the first `open()` returns, or for as long as the
+    // service's manifest will not read — service mode draws no sensors at all
+    // rather than the bound archive's, which since #333 is the service's own
+    // copy carrying exactly those unsaved edits (#353). The archive is the
+    // fallback on the camera path, where it is what the model answers about.
     const layout = this._sourceLayout;
+    const manifest = this._judging ? this.archive?.getManifest() : undefined;
     const sensors = layout?.sensors ?? manifest?.layout.sensors ?? [];
     const resolution = layout?.resolution ?? manifest?.camera.resolution ?? DEFAULT_RESOLUTION;
     const showDetails = this._detailsOpen && !this._judging;
