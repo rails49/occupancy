@@ -3,13 +3,9 @@ import { createDriftCheck } from '../src/driftCheck.ts';
 import type { GrayPlane } from '../src/types.ts';
 import shared from './fixtures/drift.json';
 
-/**
- * The cases rails49/occupancy-service's drift check also passes, so the page
- * and the service give the same readings. The copy's source is in
- * `fixtures/README.md`; the format is the service's `LIVE.md` § Drift cases.
- */
+// The drift cases rails49/occupancy-service shares. Source and format: `fixtures/README.md`.
 
-function plane(name: string): GrayPlane {
+function sharedPlane(name: string): GrayPlane {
   const raw = Buffer.from((shared.images as Record<string, string>)[name], 'base64');
   const data = new Float32Array(raw.length);
   for (let i = 0; i < raw.length; i++) data[i] = raw[i] / 255;
@@ -19,8 +15,8 @@ function plane(name: string): GrayPlane {
 describe('the shared drift cases', () => {
   for (const c of shared.cases) {
     it(c.name, async () => {
-      const check = await createDriftCheck([plane(c.reference)]);
-      const result = await check.check(plane(c.frame));
+      const check = await createDriftCheck([sharedPlane(c.reference)]);
+      const result = await check.check(sharedPlane(c.frame));
       expect(Math.abs(result.displacementPx - c.expected_px)).toBeLessThanOrEqual(1e-6);
     });
   }
