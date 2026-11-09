@@ -12,6 +12,12 @@
  * state SPEC names and the user needs to see. That is also what a failed
  * `detect` reports, for one frame: refusing to answer is better than leaving the
  * previous frame's answers on screen.
+ *
+ * **The loop also runs on turns that carried no frame.** A camera with no
+ * picture to give takes its turn anyway (#345), and the answer is every sensor
+ * `unknown` / `no-frame` with no L0 at all — for the same reason: the previous
+ * frame's answers staying on screen is the one outcome worse than saying
+ * nothing.
  */
 
 import type { R49Archive } from '@rails49/r49';
@@ -71,12 +77,37 @@ export function localModelResultSource(archive: R49Archive): ResultSource {
       // this file only to put the DPT in the capture's pixels.
       const authored = manifest.camera.resolution;
 
+      const { dpt } = context;
+
+      // A turn that carried no frame: the camera has none to give, before its
+      // first picture or after they stopped (#345). Nothing may read pixels
+      // from it (`SourceFrame.fresh`), so the detector is not asked at all —
+      // there is no frame to ask it about.
+      if (frame.fresh === false) {
+        return {
+          // No `detections` and no `inference`, both absent rather than empty:
+          // nothing published L0 for this turn, so no boxes are drawn and no
+          // car count is claimed, and the inference readout keeps the last real
+          // measurement rather than dropping to zero.
+          sensorStates: occupancy({
+            // An empty list where a model is loaded, so `occupancy` gets past
+            // `no-model` to `no-frame`; `null` where none is, which is the one
+            // reason that outranks it.
+            detections: detector ? [] : null,
+            sensors: manifest.layout.sensors,
+            dpt,
+            frame: authored,
+            drifted: context.drifted,
+            noFrame: true,
+          }),
+        };
+      }
+
       // `null` is the distinction `occupancy` reads: no model at all, rather
       // than a model that found nothing. An empty array would report every
       // sensor `clear`, which is the confident-looking miss SPEC forbids.
       let detections: readonly Detection[] | null = null;
       let inference: number | undefined;
-      const { dpt } = context;
       if (detector) {
         if (dpt === null) {
           // `detect` resamples by the DPT, so with none there are no boxes. An
