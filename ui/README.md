@@ -244,7 +244,7 @@ Application shell. Owns the editing session and routes between the views.
 binding; where this origin serves an occupancy service, both arrive from it ([#333]).
 
 **Handles:** `look-view` and `look-press` from its own band and rail, `rr-layout-change`,
-`rr-camera-height-change`, `rr-notify`.
+`rr-camera-height-change`, `rr-notify`, `rr-frame-add`.
 
 `rr-notify` is a child's transient message, toasted here because this is where toasts live. A toast
 shows its message as text, never as HTML. It is raised at `warning`, never `danger`: everything that
@@ -294,6 +294,15 @@ hijack Cmd+Z mid-typing. A press with a drag still live does nothing (see `histo
   exists**: the bound filename where there is a handle, "occupancy service" where the archive came
   from one and took an `ETag`. A download, and a read-only service, name nothing writable and stay
   quiet.
+* **Freeze adds the frame the live view had on screen** ([#334]). `rr-frame-add` goes through
+  `imageAdd.ts`'s `addPrepared` under a `captureFilename()` name, which is Capture from Camera's
+  path exactly: the same orientation step, the same two refusals in the same words, one history
+  entry, and the new image selected. It is **one entry and no save** — Live has neither Save nor
+  undo, so the toast names the file and says to save it in the editor, and the archive is left
+  dirty. A refusal is the warning toast the editor's refusals get. **A second press on one frame id
+  adds nothing**, and so does a press while an add is running: the first would store the same
+  picture twice under a second name, and two adds at once would interleave over one history entry.
+  A press with no session — a service whose manifest would not load — says so rather than nothing.
 * At page start, with nothing open, it looks for an occupancy service and **opens the archive it
   serves** ([#333]): the check's `ETag` first, then `R49Archive.load` on the service's `archive/`
   base URL. An archive the person

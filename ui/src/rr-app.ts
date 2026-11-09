@@ -12,12 +12,14 @@ import { openArchive, supportsFileSystemAccess, writeArchive, type FileBinding }
 // see `keyboard.ts` for why the rule has one home.
 import { isInsideOpenDialog, isTypingTarget } from './keyboard.js';
 import { GATE_REASON, TOOLS } from './tools.js';
+import { addPrepared, captureFilename } from './imageAdd.js';
 import { LIVE_BASE, archiveBase, findService, readEtag } from './liveContract.js';
 import { occupancyService } from './occupancyService.js';
 import type { LiveSources } from './liveSources.js';
 import './rr-editor-view.js';
 import type { NotifyDetail } from './rr-editor-view.js';
 import './rr-live-view.js';
+import type { FrameAddDetail } from './rr-live-view.js';
 import './rr-diagnostics-view.js';
 import './rr-settings-dialog.js';
 import type { RRSettingsDialog } from './rr-settings-dialog.js';
@@ -87,6 +89,27 @@ export class RRApp extends LitElement {
    * nothing rather than starting a second pass over the same files.
    */
   private _saving = false;
+
+  /**
+   * The frame id of the last Freeze this acted on, or `null` before the first
+   * (#334).
+   *
+   * A second press on one frame adds nothing: the picture has not changed, so
+   * the second add would be a duplicate photograph of the same moment under a
+   * second generated name. Recorded whatever the add then did — a frame this
+   * page refused is refused again for the same reason, and saying so twice
+   * would be the same toast twice.
+   */
+  private _frozenId: string | null = null;
+
+  /**
+   * Whether a Freeze is being added (#334).
+   *
+   * A press while one is running does nothing, for the reason a second Save
+   * does nothing: the add reads the archive and writes it, and two at once
+   * would interleave over one history entry.
+   */
+  private _freezing = false;
 
   /**
    * The occupancy service this origin serves, or `null` where there is none
@@ -474,6 +497,58 @@ export class RRApp extends LitElement {
     }
   }
 
+  /**
+   * Freeze: the frame the live view had on screen, added to the archive (#334).
+   *
+   * It takes the editor's path exactly — `imageAdd.ts`'s `addPrepared`, so the
+   * orientation tag, the two refusals and the single history entry are the
+   * ones a picked file gets — and it is **one history entry and no save**. The
+   * person goes to the editor, where undo removes it and Save writes it; the
+   * live view has neither, and what it draws does not change until that save,
+   * because it draws the service's own manifest (#331).
+   *
+   * The toast names the file and where to save it, because a frame added with
+   * no visible result is indistinguishable from a button that did nothing. A
+   * refusal is the warning toast the editor's refusals get, in the same words.
+   */
+  private async _onFrameAdd(e: CustomEvent<FrameAddDetail>) {
+    const session = this._session;
+    const { bytes, frameId } = e.detail;
+    if (this._freezing || frameId === this._frozenId) return;
+    if (!session) {
+      // A service whose manifest would not load leaves the live view watching
+      // it with nothing open to add to. Silence would read as a dead button.
+      this._notify(
+        'No layout is open, so the frame was not added.',
+        'warning',
+        'exclamation-triangle',
+        Infinity
+      );
+      return;
+    }
+    this._freezing = true;
+    this._frozenId = frameId;
+    try {
+      const filename = captureFilename();
+      const refusal = await addPrepared(
+        session,
+        filename,
+        filename,
+        new Uint8Array(await bytes.arrayBuffer())
+      );
+      if (refusal) {
+        this._notify(refusal, 'warning', 'exclamation-triangle', Infinity);
+        return;
+      }
+      this._notify(`Added ${filename} — save it in the editor`, 'success', 'file-earmark-plus');
+    } catch (err) {
+      console.error('Failed to add the frame on screen', err);
+      this._notify(`Add failed: ${String(err)}`, 'danger', 'exclamation-octagon');
+    } finally {
+      this._freezing = false;
+    }
+  }
+
   private _onViewChange(e: CustomEvent<LookViewDetail>) {
     this._viewMode = e.detail.name as ViewMode;
   }
@@ -643,6 +718,7 @@ export class RRApp extends LitElement {
               ? html`<rr-live-view
                   .archive=${this._session?.archive ?? null}
                   .sources=${this._service}
+                  @rr-frame-add=${this._onFrameAdd}
                 ></rr-live-view>`
               // Each mode is torn down when it leaves: the live view stops the
               // camera, the diagnostics view abandons an in-flight sweep and

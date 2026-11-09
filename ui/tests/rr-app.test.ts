@@ -6,6 +6,8 @@ import { R49Archive, getDPT } from '@rails49/r49';
 import type { NotifyDetail } from '../src/rr-editor-view.js';
 import type { EditHistory } from '../src/history.js';
 import type { FileBinding } from '../src/persistence.js';
+import type { FrameAddDetail } from '../src/rr-live-view.js';
+import { FRAME_BYTES, multipartAnswer, useNodeFileGlobals } from './liveFixture.js';
 import type SlIcon from '@shoelace-style/shoelace/dist/components/icon/icon.js';
 
 // Mock global fetch
@@ -986,6 +988,210 @@ describe('rr-app', () => {
         );
         // A download binds nothing: the archive is still the service's.
         expect(binding(el)!.service).toEqual({ base: '/live', etag: null });
+      });
+    });
+
+    describe('Freeze adds the frame on screen (#334)', () => {
+      // The multipart bodies are real bytes, so the frame travels the whole
+      // way: `readLatest`, the source, the live view's button, this component's
+      // add. `Response.formData()` here is Node's, which brand-checks the
+      // global `File` — see `liveFixture.ts`.
+      const fileGlobals = useNodeFileGlobals();
+      beforeEach(() => {
+        fileGlobals.install();
+        // jsdom implements neither, and the source's decode step needs both.
+        vi.spyOn(URL, 'createObjectURL').mockImplementation(() => 'blob:frame');
+        vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+        HTMLImageElement.prototype.decode = () => Promise.resolve();
+      });
+      afterEach(() => fileGlobals.restore());
+
+      /** How many `latest` answers the stand-in has sent. `serve` does not see those. */
+      let frames = 0;
+
+      /**
+       * The manifest, writable unless `readOnly`, and a frame per `latest`.
+       *
+       * The frames go through a wrapper around `serve`'s stub rather than
+       * through it, because `serve` holds every `latest` open on purpose:
+       * these tests are the ones that need the loop to be fed.
+       */
+      function serveFrames({ readOnly = false } = {}) {
+        frames = 0;
+        serve(() => (readOnly ? jsonManifest() : jsonManifest('"v1"')));
+        const manifests = global.fetch;
+        global.fetch = vi.fn(async (url: string, init?: RequestInit) => {
+          if (!String(url).includes('/latest')) {
+            return await (manifests as unknown as typeof fetch)(url, init);
+          }
+          // Paced as `after` paces a service, so the loop does not spin.
+          await new Promise(resolve => setTimeout(resolve, 5));
+          return multipartAnswer({
+            version: 1,
+            frame_id: `f-${++frames}`,
+            captured_at: '2026-11-09T10:00:01.500Z',
+            l1: {},
+          });
+        }) as unknown as typeof fetch;
+      }
+
+      const archiveOf = (el: RRApp) =>
+        (el as unknown as { _session: { archive: R49Archive } })._session.archive;
+      const images = (el: RRApp) => archiveOf(el).getManifest().images;
+
+      /** The live view, mounted, with the frame it last rendered ready to add. */
+      async function live(el: RRApp) {
+        const view = (await liveSources(el))!;
+        for (let waited = 0; waited < 1000; waited += 10) {
+          await new Promise(resolve => setTimeout(resolve, 10));
+          await view.updateComplete;
+          if (freeze(view)?.disabled === false) break;
+        }
+        return view;
+      }
+
+      const freeze = (view: Element) =>
+        [...view.shadowRoot!.querySelectorAll('button')].find(
+          b => b.textContent!.trim() === 'Freeze'
+        );
+
+      /** A press the view would send, for the cases a real frame cannot stage. */
+      const press = (view: Element, frameId: string, bytes: Uint8Array) =>
+        view.dispatchEvent(
+          new CustomEvent<FrameAddDetail>('rr-frame-add', {
+            detail: { frameId, bytes: new Blob([bytes as BlobPart]) },
+            bubbles: true,
+            composed: true,
+          })
+        );
+
+      const settle = () => new Promise(resolve => setTimeout(resolve, 10));
+
+      it('stores the frame the service sent, under a capture_ name, and says to save it', async () => {
+        serveFrames();
+        const { el, notify } = await mounted();
+        const view = await live(el);
+
+        freeze(view)!.click();
+        await settle();
+
+        expect(images(el)).toHaveLength(1);
+        const { filename } = images(el)[0];
+        expect(filename).to.match(/^capture_[^.]+\.jpg$/);
+        // The `frame` part byte for byte: this JPEG carries no orientation tag,
+        // so preparing it changes nothing.
+        expect(await archiveOf(el).getImage(filename)).toEqual(FRAME_BYTES);
+        // One entry, and the archive is dirty: Live has no Save and no undo,
+        // so the toast says where both of them are.
+        expect(session(el)!.history.isDirty).toBe(true);
+        expect(notify).toHaveBeenCalledWith(
+          `Added ${filename} — save it in the editor`,
+          'success',
+          'file-earmark-plus'
+        );
+      });
+
+      it('keeps the feed running, and the live view drawing the service', async () => {
+        serveFrames();
+        const { el } = await mounted();
+        const view = await live(el);
+        const sent = frames;
+
+        freeze(view)!.click();
+        await settle();
+
+        // The picture does not stop: the loop asked again after the press.
+        expect(frames).toBeGreaterThan(sent);
+        // The held manifest is untouched until a save (#331): the image added
+        // is in this page's archive and not in what the view draws.
+        expect(view.sources).to.not.be.null;
+      });
+
+      it('adds nothing on a second press on the same frame', async () => {
+        writable();
+        const { el } = await mounted();
+        const view = (await liveSources(el))!;
+
+        press(view, 'f-1', FRAME_BYTES);
+        await settle();
+        press(view, 'f-1', FRAME_BYTES);
+        await settle();
+
+        expect(images(el)).toHaveLength(1);
+      });
+
+      it('adds nothing for a press while an add is running', async () => {
+        writable();
+        const { el } = await mounted();
+        const view = (await liveSources(el))!;
+        let release!: () => void;
+        const held = new Promise<void>(resolve => (release = resolve));
+        const stored = R49Archive.prototype.addImage;
+        const gated = vi
+          .spyOn(R49Archive.prototype, 'addImage')
+          .mockImplementation(async function (
+            this: R49Archive,
+            name: string,
+            bytes: Parameters<R49Archive['addImage']>[1]
+          ) {
+            await held;
+            return await stored.call(this, name, bytes);
+          });
+
+        press(view, 'f-1', FRAME_BYTES);
+        await settle();
+        // A different frame: the second press is dropped because an add is
+        // running, not because it is the same picture.
+        press(view, 'f-2', FRAME_BYTES);
+        await settle();
+        release();
+        await settle();
+        gated.mockRestore();
+
+        expect(images(el)).toHaveLength(1);
+      });
+
+      it('is offered on a read-only service, which Save As then takes off', async () => {
+        serveFrames({ readOnly: true });
+        const { el } = await mounted();
+        expect(binding(el)).toEqual({ stem: '', service: { base: '/live', etag: null } });
+        const view = await live(el);
+
+        expect(freeze(view)!.disabled).toBe(false);
+        freeze(view)!.click();
+        await settle();
+
+        expect(images(el)).toHaveLength(1);
+        expect(session(el)!.history.isDirty).toBe(true);
+      });
+
+      it('says so rather than nothing when a service left nothing open', async () => {
+        // The service was found and its manifest would not load, so the live
+        // view watches it with no session behind this component.
+        let first = true;
+        serve(() => {
+          if (first) {
+            first = false;
+            return jsonManifest('"v1"');
+          }
+          return new Response('{"version": 3}', {
+            headers: { 'content-type': 'application/json' },
+          });
+        });
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const { el, notify } = await mounted();
+        expect(session(el)).to.be.null;
+        const view = (await liveSources(el))!;
+
+        press(view, 'f-1', FRAME_BYTES);
+        await settle();
+
+        expect(notify).toHaveBeenCalledWith(
+          expect.stringContaining('No layout is open'),
+          'warning',
+          'exclamation-triangle',
+          Infinity
+        );
       });
     });
   });
