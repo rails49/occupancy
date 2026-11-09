@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { MockInstance } from 'vitest';
 import { videoFileFrameSource } from '../src/videoFileFrameSource.js';
 
 // A video file's half of the live loop, away from the view (#286). What this
@@ -48,6 +49,8 @@ describe('videoFileFrameSource', () => {
   let video: StandInVideo | null;
   let host: { getVideoElement: () => HTMLVideoElement | null };
   let created: unknown[];
+  let createObjectURL: MockInstance<typeof URL.createObjectURL>;
+  let revokeObjectURL: MockInstance<typeof URL.revokeObjectURL>;
 
   beforeEach(() => {
     video = standIn();
@@ -55,15 +58,20 @@ describe('videoFileFrameSource', () => {
     created = [];
     // `setup.ts`'s global returns `undefined` for every call, which cannot tell
     // one handle from another — so both are stubbed per test file.
-    vi.spyOn(URL, 'createObjectURL').mockImplementation(file => {
+    createObjectURL = vi.spyOn(URL, 'createObjectURL').mockImplementation(file => {
       created.push(file);
       return 'blob:the-video';
     });
-    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
   });
 
   afterEach(() => {
-    vi.restoreAllMocks();
+    // Restored one spy at a time: `vi.restoreAllMocks()` also resets the
+    // `vi.fn()`s `setup.ts` installs for the globals jsdom lacks, which leaves
+    // `new ResizeObserver()` answering `undefined` for every test after this
+    // one.
+    createObjectURL.mockRestore();
+    revokeObjectURL.mockRestore();
   });
 
   it('hands the viewer the file to play, and reads no stream', async () => {
@@ -203,7 +211,7 @@ describe('videoFileFrameSource', () => {
     source.stop();
 
     expect(video!.pause).toHaveBeenCalledTimes(1);
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:the-video');
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:the-video');
     expect(source.videoSrc).toBeNull();
     expect(await source.next()).toBeNull();
   });

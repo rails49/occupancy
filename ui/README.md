@@ -1421,7 +1421,7 @@ screen-pixel grab radius. The hit-test scene is the layout's reference points an
 
 ### `rr-live-view`
 
-Camera stream under the two layers of the occupancy output ([#85]).
+Camera stream — or a video file ([#286]) — under the two layers of the occupancy output ([#85]).
 
 | Property | Type |
 |---|---|
@@ -1444,6 +1444,23 @@ against it would be this page second-guessing the judgement it is only relaying.
   connect**: a different source is a different session. The `null` the frame source gives after
   `stop()` is what ends the loop, and the source's pacing is the loop's — one animation frame per
   frame for the camera.
+* **A video file stands in for the camera** ([#286], `videoFileFrameSource.ts`). A **Video file…**
+  button beside the recorder opens one; the viewer plays it through `videoSrc` and the source reads
+  its frames back out of that same `<video>`, so the loop, the drift check, the recorder and the
+  stats bar run exactly as they do on the camera. The frame source is **swapped in place**, which is
+  the one thing `sources` being read on connect does not cover: the result source, its model, the
+  drift check and the recording are about the layout and not about where the pixels come from, so a
+  pick does not reload the detector. `_frameRun` is bumped per swap, which is what stops an answer
+  still in flight from writing into the next source's session; the drift reading is dropped, because
+  it was measured against other pixels. Three optional `FrameSource` fields carry what only a file
+  has — `videoSrc` (the object URL, created and released by the source), `playback` (play, pause,
+  seek; every reading a getter) and `error` (why no frames are coming). The transport is this view's
+  rather than the element's native `controls`: the overlay covers the picture and takes every
+  pointer. A file the browser cannot play is **refused in a danger bar naming the file** — an iPhone
+  records HEVC `.mov` by default — which the view shows when `next()` answers `null` while the loop
+  is still live, and which it waits for itself where no archive is open and no loop runs. The file is
+  read locally as an object URL and goes nowhere: this package has no backend. Not offered in service
+  mode, where the frames are the service's. **Camera** goes back.
 * **A source may hand over a picture instead of a stream, and may bring its own layout** ([#331]).
   `SourceFrame.src` is shown through `rr-viewer`'s `src` — the source owns the object URL and
   releases it, and nothing reads pixels back out of the viewer — and `ResultSource.layout` gives the

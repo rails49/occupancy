@@ -7,9 +7,11 @@ import type { Detection, Frame } from '@rails49/detector';
 import type { DriftResult } from '@occupancy/drift';
 import { cameraFrameSource } from './cameraFrameSource.js';
 import { localModelResultSource } from './localModelResultSource.js';
+import { videoFileFrameSource } from './videoFileFrameSource.js';
 import type {
   FrameSource,
   LiveSources,
+  Playback,
   ResultSource,
   ServiceDetails,
   ShownFrame,
@@ -35,6 +37,12 @@ import type { RrViewer } from './rr-viewer.js';
 
 /** What `camera.resolution` stands in as when an archive declares none. */
 const DEFAULT_RESOLUTION: Frame = { width: 1920, height: 1080 };
+
+/** `m:ss`: where a video file is, and how long it is, for the transport (#286). */
+function clockText(seconds: number): string {
+  const whole = Math.max(0, Math.floor(seconds));
+  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`;
+}
 
 /**
  * How long to wait after one drift sample before taking the next.
@@ -109,9 +117,19 @@ export interface FrameAddDetail {
  * and the frame rate — the view's own judgement, which is the same whatever is
  * answering.
  *
+ * **A video file stands in for the camera** (#286). The camera path offers a
+ * Video file button, and a pick swaps the frame source in place — the one thing
+ * `sources` being read on connect does not cover, because the result source,
+ * the model it holds, the drift check and the recording are about the layout
+ * and not about where the pixels come from. The transport beside it is this
+ * view's rather than the `<video>`'s own `controls`: the marker overlay covers
+ * the picture and takes every pointer, so a native control under it could not
+ * be pressed. A file the browser cannot play is refused in the frame source's
+ * words — see `_framesError`.
+ *
  * In service mode (sources that declare themselves a service's, #331) the view
- * runs no drift check and shows no recorder, alignment readout, or model and
- * DPT notices: the service publishes states this page cannot withhold. An
+ * runs no drift check and shows no recorder, Video file button, alignment
+ * readout, or model and DPT notices: the service publishes states this page cannot withhold. An
  * archive may be bound at the same time — the service's own, since #333 — and
  * it changes none of that. See `_judging`. In its
  * place a Details button opens `rr-service-details` below the viewer, and
@@ -134,6 +152,11 @@ export class RRLiveView extends LitElement {
    * check and the result source's lifetime all hang off one mount, and
    * swapping a source mid-session would mean tearing down and rebuilding all
    * three. A different source is a different session.
+   *
+   * A video file is the exception that proves the rule (#286, `_openFrames`):
+   * it changes the *frames* and leaves the result source, the model, the drift
+   * check and the archive where they are, which is one source swapped rather
+   * than a session rebuilt.
    */
   @property({ attribute: false }) sources: LiveSources | null = null;
 
@@ -146,6 +169,31 @@ export class RRLiveView extends LitElement {
    * only what to show.
    */
   @state() private _src: string | null = null;
+  /**
+   * The video file the viewer is playing, as the source's object URL, or `null`
+   * where the frames are a camera's or a service's (#286).
+   *
+   * The URL is the source's, like `_src`: it created it and it releases it on
+   * `stop()`, and this holds only what to show.
+   */
+  @state() private _videoSrc: string | null = null;
+  /**
+   * The name of the video file being played, or `null` on the camera (#286).
+   *
+   * Shown in the transport, because the demo this is for is somebody opening a
+   * clip they shot minutes ago and a second one that looks much like it.
+   */
+  @state() private _videoName: string | null = null;
+  /**
+   * Why no frames are coming, as the frame source worded it, or `null` where
+   * they are (#286).
+   *
+   * Distinct from `_sourceError`, which is why the *answers* cannot be given:
+   * this one is about the pixels, and today the one source that reports it is a
+   * video file the browser cannot decode. Cleared when another source is
+   * opened — the refusal is about the file that was chosen, not the view.
+   */
+  @state() private _framesError: string | null = null;
   /**
    * L0 for the frame on screen. Empty, not stale, when a model looked and found
    * nothing; `null` where the source published no L0 at all (#331) — then no
@@ -251,6 +299,17 @@ export class RRLiveView extends LitElement {
   private _driftSampledAt = 0;
   private _running = false;
   private _lastFrameTime = 0;
+  /**
+   * Which frame source the loop is running on, bumped by every swap (#286).
+   *
+   * The session outlives the swap — the result source, the model, the drift
+   * check and the recording are about the archive and not about where the
+   * pixels come from — so the old loop has to be told it is over by something
+   * other than `_running`, which the new one sets straight back to `true`. A
+   * `resultFor` still in flight when the file is opened would otherwise write
+   * the camera's last answer over the file's first.
+   */
+  private _frameRun = 0;
 
   static styles = [
     lookTheme,
@@ -284,11 +343,33 @@ export class RRLiveView extends LitElement {
     }
 
     .recorder,
-    .details-bar {
+    .details-bar,
+    .video-bar {
       padding: 0.25rem 1rem;
       background: var(--sl-color-neutral-100);
       color: var(--sl-color-neutral-700);
       font-size: 0.9rem;
+    }
+
+    /* The transport is a row: the file, the controls, and the clock beside the
+       slider that moves it. */
+    .video-bar {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    /* The slider takes what is left, because a seek is only as precise as the
+       bar is wide — on a phone that is the whole of it. */
+    .video-seek {
+      flex: 1 1 auto;
+      min-width: 4rem;
+    }
+
+    .video-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     /* The table's width must not widen the view: the panel scrolls it. */
@@ -300,7 +381,8 @@ export class RRLiveView extends LitElement {
 
     .notice button,
     .recorder button,
-    .details-bar button {
+    .details-bar button,
+    .video-bar button {
       margin-left: 0.75rem;
       padding: 0.15rem 0.6rem;
       font: inherit;
@@ -309,6 +391,12 @@ export class RRLiveView extends LitElement {
       border: 1px solid currentColor;
       border-radius: 4px;
       cursor: pointer;
+    }
+
+    /* The row's gap is the spacing in the transport, so the shared margin above
+       would double it. */
+    .video-bar button {
+      margin-left: 0;
     }
 
     /* Freeze with no frame to add: it stays in place and says it cannot be
@@ -367,6 +455,10 @@ export class RRLiveView extends LitElement {
       this.sources?.results ?? (this.archive ? localModelResultSource(this.archive) : null);
     this._detailsOpen = false;
     this._results?.setPatches?.(false);
+    // A new session starts on the camera, whatever the last one was playing
+    // (#286) — as `_detailsOpen` starts closed, and for the same reason.
+    this._videoName = null;
+    this._frameRun++;
     await this._frames.start();
     // Left again while the frames were being acquired — the permission prompt
     // is a dialog the user can walk away from. `disconnectedCallback` has
@@ -374,21 +466,149 @@ export class RRLiveView extends LitElement {
     // reference for a detached element would cost a WASM heap and hundreds of
     // milliseconds for a session that is over.
     if (!this.isConnected) return;
-    this._stream = this._frames.stream;
+    this._readFrames();
     void this._run();
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     this._running = false;
+    // A swap still acquiring its source reads this and stops it rather than
+    // starting a loop on a detached view (#286).
+    this._frameRun++;
     this._frames?.stop();
     this._stream = null;
+    this._videoSrc = null;
     // Leaving the view mid-recording downloads the rows rather than dropping them.
     this._stopRecording();
     this._results?.close();
     // Nothing to dispose — a drift check holds only JS memory — but dropping it
     // is what stops an in-flight sample from writing state into a detached view.
     this._driftSession = null;
+  }
+
+  /**
+   * What the view shows and says for the frame source it now holds.
+   *
+   * Three readings, taken together because a source answers exactly one of the
+   * first two: a camera hands over a `MediaStream`, a video file an object URL
+   * (#286), and a service neither — its pictures arrive one frame at a time as
+   * `SourceFrame.src`.
+   */
+  private _readFrames() {
+    this._stream = this._frames?.stream ?? null;
+    this._videoSrc = this._frames?.videoSrc ?? null;
+    this._framesError = this._frames?.error ?? null;
+  }
+
+  /**
+   * Run on a different frame source, without ending the session (#286).
+   *
+   * Opening a video file, or going back to the camera, changes where the pixels
+   * come from and nothing else: the result source, the model it holds, the
+   * drift check, the recording and the archive are all about the layout, and
+   * tearing them down would reload the detector to answer the same sensors.
+   * This is why `sources` is still read once, on connect — a *service* is a
+   * different session, and a frame source is not.
+   *
+   * The loop running on the old source ends on the `null` its `stop()` makes
+   * `next()` give, and `_frameRun` is what keeps an answer still in flight from
+   * writing into the new one.
+   *
+   * The drift reading is dropped rather than carried over: it was measured
+   * against other pixels entirely, and a readout that kept it would be
+   * reporting the camera's alignment under a video file's picture. The next
+   * sample is taken at once, because `_drift` is `null` again.
+   */
+  private async _openFrames(frames: FrameSource) {
+    const run = ++this._frameRun;
+    this._running = false;
+    this._frames?.stop();
+    this._frames = frames;
+    this._framesError = null;
+    this._drift = null;
+    this._driftSampledAt = 0;
+    this._fps = 0;
+    this._lastFrameTime = 0;
+    await frames.start();
+    // Left, or a second file picked, while this one was being acquired.
+    if (!this.isConnected || run !== this._frameRun) {
+      frames.stop();
+      return;
+    }
+    this._readFrames();
+    this._running = true;
+    if (this._results) void this._loop();
+    else void this._watchForRefusal(frames, run);
+  }
+
+  /**
+   * Wait for a source with nothing reading it to say why it has no frames.
+   *
+   * The loop does this as part of running, but it does not run at all without a
+   * result source — no archive is open, so nothing is being asked about the
+   * pixels. A video file still has something to say in that state: the browser
+   * could not play it, and the person who just chose it is owed the refusal
+   * rather than a black rectangle. One frame is enough to tell the two apart,
+   * and the frame itself is dropped — there is nobody to answer it.
+   */
+  private async _watchForRefusal(frames: FrameSource, run: number) {
+    const frame = await frames.next();
+    if (frame === null && this._running && run === this._frameRun) {
+      this._framesError = frames.error ?? null;
+    }
+  }
+
+  /**
+   * Play a video file instead of the camera (#286).
+   *
+   * The demo this is for: the camera has to sit near the ceiling, where a
+   * phone's screen cannot be reached, so the phone records in its own Camera
+   * app and the clip is opened here. The file is read locally as an object URL
+   * and goes nowhere near a network — the page has no backend to send it to.
+   */
+  /** Open the picker. The input is hidden so the bar reads like its neighbours. */
+  private _pickVideo() {
+    this.renderRoot.querySelector<HTMLInputElement>('input[type="file"]')?.click();
+  }
+
+  private _onVideoPick(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    // Cleared so that picking the same file again fires `change` again, which
+    // is how a clip is watched a second time.
+    input.value = '';
+    if (!file) return;
+    this._videoName = file.name;
+    void this._openFrames(videoFileFrameSource(() => this._viewer, file));
+  }
+
+  /** Go back to this device's camera, releasing the file (#286). */
+  private _useCamera() {
+    this._videoName = null;
+    void this._openFrames(cameraFrameSource(() => this._viewer));
+  }
+
+  /** The transport the frame source offers, or `null` for a feed of the present. */
+  private get _playback(): Playback | null {
+    return this._frames?.playback ?? null;
+  }
+
+  /** Run the file, or stop it on the frame that is up (#286). */
+  private _togglePlay() {
+    const playback = this._playback;
+    if (!playback) return;
+    if (playback.paused) playback.play();
+    else playback.pause();
+    // A paused file hands over no frames, so nothing else would re-render the
+    // transport to say which state it is in now.
+    this.requestUpdate();
+  }
+
+  /** Move the file to where the slider was dragged (#286). */
+  private _onSeek(e: Event) {
+    this._playback?.seek(Number((e.target as HTMLInputElement).value));
+    this.requestUpdate();
   }
 
   /**
@@ -599,6 +819,51 @@ export class RRLiveView extends LitElement {
     </div>`;
   }
 
+  /**
+   * The video-file control, and the transport while one is playing (#286).
+   *
+   * The camera path only: in service mode the frames are the service's, and a
+   * page that chose a source for them would be deciding what it is only
+   * relaying (#331).
+   *
+   * The transport is here rather than on the `<video>` as native `controls`
+   * because the marker overlay covers the picture and takes every pointer — a
+   * control under it could not be pressed. It is dropped while the file is
+   * refused: there is nothing to play.
+   */
+  private _renderVideoBar() {
+    const playback = this._framesError === null ? this._playback : null;
+    const duration = playback?.duration ?? 0;
+    const at = playback?.currentTime ?? 0;
+    return html`<div class="video-bar">
+      <button class="video-open" @click=${this._pickVideo}>Video file…</button>
+      <input type="file" accept="video/*" hidden @change=${this._onVideoPick} />
+      ${this._videoName ? html`<span class="video-name">${this._videoName}</span>` : ''}
+      ${playback
+        ? html`
+            <button class="video-play" @click=${this._togglePlay}>
+              ${playback.paused ? 'Play' : 'Pause'}
+            </button>
+            <input
+              class="video-seek"
+              type="range"
+              min="0"
+              max=${duration}
+              step="0.1"
+              aria-label="Seek"
+              ?disabled=${duration === 0}
+              .value=${String(at)}
+              @input=${this._onSeek}
+            />
+            <span class="video-time">${clockText(at)} / ${clockText(duration)}</span>
+          `
+        : ''}
+      ${this._videoName
+        ? html`<button class="video-camera" @click=${this._useCamera}>Camera</button>`
+        : ''}
+    </div>`;
+  }
+
   private _renderRecorder() {
     const rows = this._recording?.rows.length ?? 0;
     return html`<div class="recorder">
@@ -626,10 +891,21 @@ export class RRLiveView extends LitElement {
     // Captured once: the context below reads the refusal off the view, and an
     // object literal's getter cannot see `this`.
     const view = this;
+    // Which source this loop is reading. A swap bumps it, and every check
+    // below is what stops two loops from answering into one view (#286).
+    const run = this._frameRun;
 
-    while (this._running) {
+    while (this._running && run === this._frameRun) {
       const frame = await frames.next();
-      if (frame === null || !this._running) return;
+      if (!this._running || run !== this._frameRun) return;
+      if (frame === null) {
+        // Not a stop — those are the two checks above — so this source ran out
+        // on its own, which today means a file the browser could not play
+        // (#286). The refusal is the source's to word; showing it is this
+        // view's.
+        this._framesError = frames.error ?? null;
+        return;
+      }
 
       // A turn that carried no new picture carries no new pixels either, so
       // there is nothing to measure drift against and nothing to count toward
@@ -682,9 +958,9 @@ export class RRLiveView extends LitElement {
         console.error('The result source rejected this frame', err);
         continue;
       }
-      // An answer that lands after the view was left is about a session that is
-      // over.
-      if (!this._running) return;
+      // An answer that lands after the view was left, or after another source
+      // took over, is about a session or a file that is over.
+      if (!this._running || run !== this._frameRun) return;
 
       // Absent is "no L0 at all", which draws no boxes and shows no car count;
       // an empty list is a model that looked and found none, which shows 0.
@@ -774,6 +1050,20 @@ export class RRLiveView extends LitElement {
   }
 
   /**
+   * Why no frames are coming, where the frame source said (#286).
+   *
+   * A refusal rather than a notice: the page is being asked to run on a file it
+   * cannot decode, and nothing it could say about occupancy would be about the
+   * layout. The words are the source's — it knows which file was chosen.
+   */
+  private _renderFramesError() {
+    if (this._framesError === null) return '';
+    return html`<div class="notice refusing">
+      <strong>No frames to run on</strong> — ${this._framesError}.
+    </div>`;
+  }
+
+  /**
    * Why the source cannot answer at all, in the words that fit who it is.
    *
    * The local case names the one job that failed and the command that fixes it:
@@ -818,6 +1108,8 @@ export class RRLiveView extends LitElement {
         .alignmentTolerance=${this._judging ? this._driftTolerancePx : null}
       ></rr-stats-bar>
 
+      ${this._renderFramesError()}
+
       ${this._renderSourceError()}
 
       ${this._notice ? html`<div class="notice">${this._notice}</div>` : ''}
@@ -834,9 +1126,12 @@ export class RRLiveView extends LitElement {
 
       ${this._judging ? this._renderRecorder() : this._renderServiceBar()}
 
+      ${this._judging ? this._renderVideoBar() : ''}
+
       <rr-viewer
         .src=${this._src}
         .stream=${this._stream}
+        .videoSrc=${this._videoSrc}
         .detections=${this._detections ?? []}
         .sensors=${sensors}
         .sensorStates=${this._sensorStates}
