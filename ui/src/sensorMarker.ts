@@ -160,6 +160,7 @@ export interface SensorSymbolSize {
  */
 const UNKNOWN_REASONS: Record<UnknownReason, string> = {
   'no-model': 'no model loaded',
+  'no-frame': 'no camera frame',
   'no-calibration': 'no calibration — DPT does not resolve',
   'outside-frame': 'outside the frame',
   // The only refusal in the set: everything needed to answer is present, and
