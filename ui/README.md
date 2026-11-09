@@ -171,6 +171,7 @@ rr-app                          ← shell: owns the editing session and the view
 > [#335]: https://github.com/rails49/occupancy/issues/335
 > [#336]: https://github.com/rails49/occupancy/issues/336
 > [#341]: https://github.com/rails49/occupancy/pull/341
+> [#345]: https://github.com/rails49/occupancy/issues/345
 
 ## State and data flow
 
@@ -1459,10 +1460,17 @@ against it would be this page second-guessing the judgement it is only relaying.
   than from `archive`, which is why an unsaved edit in the editor cannot move what it draws.
 * **A turn with `fresh: false` carried no new picture.** The last one stays on screen, the rate
   drops to **0** rather than going stale, no drift sample is taken from it, and the answers that
-  came with it are taken as usual — which is how every sensor reads `unknown` while a service is
+  came with it are taken as usual — which is how every sensor reads `unknown` while a source is
   quiet instead of the last good answers freezing. `FrameResult.notice` is the reason, shown as a
   notice and cleared by the next answer; `FrameResult.detections` absent means no L0 was published
   at all (no boxes, no car count), where an empty list means a model looked and found none.
+* **The camera sends those turns too** ([#345]). `next()` resolves once per animation frame whether
+  or not the `<video>` can be read, so a camera with no picture to give — before the first one,
+  after frames stop, or with access refused — no longer holds the loop and leaves the rate, the
+  boxes and the sensor states at whatever the last frame set them to.
+  `localModelResultSource` answers such a turn without calling `detect`: every sensor `unknown` /
+  `no-frame`, no L0, and no inference time, so that readout keeps its last real measurement. A video file still holds the loop instead — a paused or seeking clip has a picture
+  that is simply not new.
 * **Service mode is `sources` set with no `archive`** ([#331]). It shows no drift banner,
   recorder, alignment readout, or model and DPT notices, and no Inference row (drift in service mode
   is [#336]). The camera path, with or without an archive, is as it was. A service's `open()`
