@@ -310,6 +310,29 @@ describe('rr-live-view playing a video file', () => {
     loop.mockRestore();
   });
 
+  it('loads one model when the view is left and re-entered during the camera prompt', async () => {
+    // The first connect's prompt answers after the second connect started its
+    // own session. Opening the result source from both would load a second
+    // detector that nothing disposes.
+    const grants: ((stream: unknown) => void)[] = [];
+    (navigator as unknown as { mediaDevices: unknown }).mediaDevices = {
+      getUserMedia: vi.fn(() => new Promise(resolve => grants.push(resolve))),
+    };
+    const el = await fixture<RRLiveView>(
+      html`<rr-live-view .archive=${archive}></rr-live-view>`,
+    );
+    const parent = el.parentNode!;
+    el.remove();
+    parent.appendChild(el);
+    await el.updateComplete;
+
+    for (const grant of grants) grant({ getTracks: () => [track], getVideoTracks: () => [track] });
+    await waitFor(el, () => loadDetector.mock.calls.length > 1, 300);
+
+    expect(grants).toHaveLength(2);
+    expect(loadDetector).toHaveBeenCalledTimes(1);
+  });
+
   it('names the file it is playing', async () => {
     const el = await fixture<RRLiveView>(
       html`<rr-live-view .archive=${archive}></rr-live-view>`,

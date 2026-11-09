@@ -118,9 +118,9 @@ The same loop runs on its frames: the detector per frame, L1 per sensor, the dri
 check against the archive's reference image, and Record drift. The file is read
 locally and goes nowhere — there is no backend to send it to.
 
-Export as H.264 `.mp4` where you can. An iPhone records HEVC in a `.mov` by
-default, which not every browser plays; a browser that cannot refuses the file and
-says so.
+An iPhone records HEVC in a `.mov` by default, which not every browser plays; a
+browser that cannot play it refuses the file and says so. To record H.264 instead,
+set Settings → Camera → Formats to Most Compatible before recording.
 
 ## 📷 Capture
 

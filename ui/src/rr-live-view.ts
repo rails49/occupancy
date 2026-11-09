@@ -304,6 +304,8 @@ export class RRLiveView extends LitElement {
    * the camera's last answer over the file's first.
    */
   private _frameRun = 0;
+  /** Bumped on each connect, so a `connectedCallback` still awaiting its frames can tell it was replaced. */
+  private _connects = 0;
 
   static styles = [
     lookTheme,
@@ -450,14 +452,15 @@ export class RRLiveView extends LitElement {
     // A new session starts on the camera, whatever the last one was playing
     // (#286) — as `_detailsOpen` starts closed, and for the same reason.
     this._videoName = null;
+    const connect = ++this._connects;
     const run = ++this._frameRun;
     await this._frames.start();
-    // Left again while the frames were being acquired — the permission prompt
-    // is a dialog the user can walk away from. `disconnectedCallback` has
-    // already stopped the source; opening a model and decoding the drift
-    // reference for a detached element would cost a WASM heap and hundreds of
-    // milliseconds for a session that is over.
-    if (!this.isConnected) return;
+    // Left while the frames were being acquired — the permission prompt is a
+    // dialog the user can walk away from — and maybe come back, which started
+    // a session of its own. `disconnectedCallback` has already stopped this
+    // one's source; opening the model here as well would load a second
+    // detector that nothing disposes.
+    if (!this.isConnected || connect !== this._connects) return;
     // A file picked during the prompt has read its own frames and started its
     // own loop. `_run` still opens the result source and the drift check.
     if (run === this._frameRun) this._readFrames();
