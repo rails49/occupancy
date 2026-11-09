@@ -715,6 +715,50 @@ the recording, `_dpt` — resolved once from the archive, so #166 stays one fix 
 showing the source's error and inference time. None of it changes with what is answering, which is
 the whole point: a video file or a service (#286, #331, rails49/detector#64) reaches the same gate.
 
+**A video file is the other local frame source** (#286). `videoFileFrameSource.ts` plays the file
+the person picked through the `<video>` `rr-viewer` mounts — `videoSrc`, a third media branch beside
+`src` and `stream` — and reads the frames back out of that element, which is `cameraFrameSource`'s
+arrangement with a file where the stream was; the seam onto the element, the animation-frame pacing
+and the readiness rule are `viewerVideo.ts`'s, shared by both. The demo it exists for is in
+`SPEC.md` § Testing and Demo: the camera has to sit near the ceiling, where a phone's screen cannot
+be reached, so the phone records in its own Camera app and the clip is opened here.
+
+* **One picture is one frame.** A frame is handed over only at a `currentTime` the loop has not run
+  on, so a paused file **holds** the loop instead of re-detecting one still per animation frame, and
+  a seek runs the frame it landed on whether the file is playing or paused.
+* **The frame source is swapped in place; the session is not.** `sources` is still read on connect,
+  because a service *is* a different session — a video file is not. `rr-live-view._openFrames`
+  stops the old source, starts the new one and restarts the loop, and leaves the result source, its
+  model, the drift check, the archive and the recording where they are: a pick must not reload the
+  detector to answer the same sensors. `_frameRun` is bumped per swap, because the old loop's
+  `resultFor` may still be in flight and must not write the camera's last answer over the file's
+  first. The drift reading is dropped — it was measured against other pixels, and a readout that
+  kept it would report the camera's alignment under a file's picture.
+* **Three optional `FrameSource` fields** carry what only a file has: `videoSrc` (the object URL,
+  created and released by the source, as the owner of a `SourceFrame.src` is), `playback` (play,
+  pause, seek, with every reading a **getter** read at render time, because the element is moving)
+  and `error` (why no frames are coming).
+* **The transport is the view's, not the element's.** The overlay covers the picture and takes every
+  pointer, so a native `controls` bar under it could not be pressed. Pressing Play or dragging the
+  slider calls `requestUpdate()`: a paused file hands over no frames, so nothing else would re-render
+  the bar.
+* **A file the browser cannot play is refused, in a danger bar naming it.** iPhone video is HEVC in a
+  `.mov` by default and only Safari decodes it, so it is the first file a new user will pick.
+  `next()` polls the element's own `MediaError` and answers `null` — the loop's one way out — and
+  the view reads `FrameSource.error` when a `null` arrives while the loop is still live. Where no
+  archive is open there is **no loop**, so the view waits for that one answer itself
+  (`_watchForRefusal`): a file that cannot play must not leave a black rectangle and no explanation.
+* **The file is read locally and goes nowhere.** It is an object URL on a `<video>`, and this package
+  has no backend to send it to.
+* **Frame size is the element's intrinsic size**, exactly as it is for the camera
+  (`viewerVideo.decodedFrame`). A 4K clip against an archive declared at 1080p runs the way a 4K
+  camera stream does: `detect` is asked to answer in `camera.resolution` and given the DPT in the
+  frame's own pixels, and the drift grab reads the real pixels. #273 settled the same reading for a
+  capture — `drawImage` blits the element at exactly that size, so nothing may size a canvas from
+  anything else.
+* **Not offered in service mode**: the frames there are the service's, and choosing a source for
+  them would be this page deciding what it is only relaying.
+
 **A source may show a picture, and may bring its own layout** (#331). Two optional fields carry
 that, and both exist because a service is one object answering both halves:
 
@@ -762,6 +806,14 @@ hands the same object in twice; a frame may carry data only its own source reads
 The frame check used to have an image branch, reading `rr-viewer`'s `getImageElement()`. It is gone:
 the live view never sets `src`, so it could not run. `getImageElement()` itself stays on the viewer
 with no caller.
+
+`tests/rr-live-view.video.test.ts` is the third live-view suite, and it drives the **real** video
+file source through the view: the control offered on the camera path and withheld in service mode,
+a pick that plays the file and lets the camera go, the loop and the drift check running on its
+frames with one model loaded for the session, the refusal with and without an archive open, the
+transport, and Camera going back. The `<video>` is stood in for, as it is in the two files below:
+jsdom plays nothing, so that a frame of a real `.mp4` reaches the detector is measured by hand in
+Chromium.
 
 `tests/rr-live-view.sources.test.ts` drives the view with **fake** sources — each result reaching the
 viewer and the stats bar, `drifted` and `dpt` reaching `resultFor`, leaving the view stopping both,

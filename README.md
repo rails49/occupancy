@@ -101,6 +101,29 @@ still on screen is out of date.
 uvx --from git+https://github.com/rails49/occupancy-service live-check http://localhost:8080/live
 ```
 
+## 🎥 A demo from a recorded video
+
+Press Live, then **Video file…**, and the live view runs on a clip instead of this
+device's camera ([#286](https://github.com/rails49/occupancy/issues/286)). It is the
+demo for a layout you have not instrumented: the camera has to sit near the ceiling,
+where a phone's screen cannot be reached, and iPhone Mirroring turns the camera off
+while the Android route (scrcpy) needs a computer and developer settings.
+
+1. Record in the phone's own Camera app, put the phone up high, run a train, take it
+   down.
+2. Open an archive of the layout — the sensors, the calibration and the reference
+   image are what the view answers against.
+3. Live → **Video file…** → the clip. Play, Pause and the slider move it; **Camera**
+   goes back to this device.
+
+The same loop runs on its frames: the detector per frame, L1 per sensor, the drift
+check against the archive's reference image, and Record drift. The file is read
+locally and goes nowhere — there is no backend to send it to.
+
+**Export as H.264 `.mp4` where you can.** An iPhone records HEVC in a `.mov` by
+default, which only Safari plays; the other browsers refuse the file and say so.
+Sharing the clip out of Photos, or AirDropping it to a Mac, converts it.
+
 ## 📷 Capture
 
 A 48 MP ceiling capture of the layout, from the iPhone into an archive with no
