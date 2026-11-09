@@ -110,11 +110,19 @@ export function multipartAnswer(
   return new Response(concat(parts), { headers: { 'content-type': MULTIPART_TYPE } });
 }
 
-/** A plain JSON answer, as the manifest is served. */
-export function jsonAnswer(payload: unknown, status = 200): Response {
+/**
+ * A plain JSON answer, as the manifest is served.
+ *
+ * `etag` is the version a writable archive comes with (#333); a service serving
+ * a read-only copy sends none.
+ */
+export function jsonAnswer(payload: unknown, status = 200, etag?: string): Response {
   return new Response(JSON.stringify(payload), {
     status,
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      ...(etag === undefined ? {} : { etag }),
+    },
   });
 }
 
