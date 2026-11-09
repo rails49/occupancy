@@ -49,34 +49,74 @@ describe('cameraFrameSource', () => {
     expect(await source.next()).toEqual({ source: video, width: 1280, height: 720 });
   });
 
-  it('waits for the video to decode rather than reporting a frame with no pixels', async () => {
+  it('takes a turn with no frame while the video has no pixels to read', async () => {
     // `detect` throws on a source with no dimensions, and a video before its
-    // metadata arrives is the normal first few frames of a session.
+    // metadata arrives — or after the camera stopped giving pictures (#343) —
+    // is not a frame. It is still a *turn*: holding the loop here left the
+    // rate, the boxes and every sensor state at whatever the last frame set
+    // them to (#345).
     video = undecoded;
     const source = cameraFrameSource(() => host);
     await source.start();
 
-    let arrived = false;
-    const next = source.next().then(frame => ((arrived = true), frame));
-    await frames();
-    expect(arrived).toBe(false);
+    const quiet = await source.next();
+
+    expect(quiet?.fresh).toBe(false);
+    // Nothing may read pixels from it, so the size it reports is the
+    // element's own — zero until something decodes.
+    expect(quiet?.width).toBe(0);
 
     video = decoded;
-    expect(await next).toEqual({ source: decoded, width: 1280, height: 720 });
+    expect(await source.next()).toEqual({ source: decoded, width: 1280, height: 720 });
   });
 
-  it('waits for the viewer to mount its video at all', async () => {
+  it('takes a turn with no frame before the viewer has mounted a video at all', async () => {
     // `@query('rr-viewer')` resolves after the first render, so the source is
-    // given a getter rather than an element.
+    // given a getter rather than an element. With nothing to show, the turn
+    // carries an empty image, which nothing reads.
     video = null;
     const source = cameraFrameSource(() => host);
     await source.start();
 
-    let arrived = false;
-    void source.next().then(() => (arrived = true));
-    await frames();
+    const quiet = await source.next();
 
-    expect(arrived).toBe(false);
+    expect(quiet).not.toBeNull();
+    expect(quiet!.fresh).toBe(false);
+    expect(quiet!.width).toBe(0);
+    expect(quiet!.height).toBe(0);
+  });
+
+  it('takes one turn per animation frame while there is nothing to read', async () => {
+    // The pacing is the same whether or not a picture arrives: the loop runs as
+    // fast as the display and no faster, so a camera that has stopped does not
+    // spin it.
+    video = undecoded;
+    const source = cameraFrameSource(() => host);
+    await source.start();
+
+    let turns = 0;
+    void (async () => {
+      while ((await source.next()) !== null) turns++;
+    })();
+    await frames(3);
+    source.stop();
+
+    expect(turns).toBeGreaterThan(0);
+    expect(turns).toBeLessThan(20);
+  });
+
+  it('gives a fresh turn again once the video comes back', async () => {
+    // A video being seeked, or a camera that started giving pictures again.
+    video = undecoded;
+    const source = cameraFrameSource(() => host);
+    await source.start();
+
+    expect((await source.next())?.fresh).toBe(false);
+    video = decoded;
+    const back = await source.next();
+
+    expect(back).toEqual({ source: decoded, width: 1280, height: 720 });
+    expect(back?.fresh).toBeUndefined();
   });
 
   it('gives null once stopped, which is what ends the loop', async () => {
@@ -87,7 +127,9 @@ describe('cameraFrameSource', () => {
     expect(await source.next()).toBeNull();
   });
 
-  it('gives null to a frame already being waited for when it stops', async () => {
+  it('gives null to a turn already being waited for when it stops', async () => {
+    // `null` after `stop()` stays the one way out of the loop — a turn with no
+    // frame is not it.
     video = undecoded;
     const source = cameraFrameSource(() => host);
     await source.start();

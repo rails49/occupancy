@@ -26,6 +26,12 @@ import type { VideoHost } from './viewerVideo.js';
 export function cameraFrameSource(host: () => VideoHost | null | undefined): FrameSource {
   let stream: MediaStream | null = null;
   let running = false;
+  /**
+   * What a turn with no frame carries before the viewer has mounted anything:
+   * one image for the session rather than one per animation frame, since every
+   * such turn hands over the same nothing.
+   */
+  const blank = new Image();
 
   /**
    * The frame on screen, or `null` while there is nothing to read.
@@ -35,6 +41,21 @@ export function cameraFrameSource(host: () => VideoHost | null | undefined): Fra
    */
   function decoded(): SourceFrame | null {
     return decodedFrame(host()?.getVideoElement());
+  }
+
+  /**
+   * A turn that carried no frame, for a video there are no pixels to read from
+   * (#345). See {@link SourceFrame.fresh}.
+   *
+   * The element itself where there is one — it is the picture still on screen,
+   * and the source every other turn hands over — with the size it reports,
+   * which is 0 until something decodes. With no element yet it is an empty
+   * image. Nothing reads either: the turn is not fresh.
+   */
+  function noFrame(): SourceFrame {
+    const video = host()?.getVideoElement();
+    if (!video) return { source: blank, width: 0, height: 0, fresh: false };
+    return { source: video, width: video.videoWidth, height: video.videoHeight, fresh: false };
   }
 
   return {
@@ -69,16 +90,18 @@ export function cameraFrameSource(host: () => VideoHost | null | undefined): Fra
     },
 
     async next() {
-      // One frame per animation frame, waiting for the next rather than
+      // One turn per animation frame, waiting for the next rather than
       // polling: the loop runs as fast as the display and no faster, which is
       // what the rAF loop in the view did before the split.
-      while (running) {
-        await nextAnimationFrame();
-        if (!running) return null;
-        const frame = decoded();
-        if (frame) return frame;
-      }
-      return null;
+      if (!running) return null;
+      await nextAnimationFrame();
+      if (!running) return null;
+      // A video with no pixels to read is a turn with no frame, not a turn
+      // withheld. Holding the loop here is what left the rate reading 7.2 for
+      // twelve seconds with the camera giving nothing (#343, #345); the view
+      // takes a turn that is not fresh, reads the rate as 0 and reports every
+      // sensor `unknown`. `null` after `stop()` stays the one way out.
+      return decoded() ?? noFrame();
     },
   };
 }
