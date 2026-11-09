@@ -991,6 +991,82 @@ describe('rr-app', () => {
       });
     });
 
+    // A service save is several requests, and nothing holds New or Open shut
+    // while one runs — `_saving` stops only a second Save. The outcome belongs
+    // to the session that was saved (#354).
+    describe('Save on a session that was replaced while it ran (#354)', () => {
+      /** A writable service whose `PUT` waits for the returned release. */
+      function heldService() {
+        let release!: () => void;
+        const held = new Promise<void>(resolve => (release = resolve));
+        serve(
+          () => jsonManifest('"v1"'),
+          async () => {
+            await held;
+            return new Response(null, { status: 204, headers: { etag: '"v2"' } });
+          }
+        );
+        return () => release();
+      }
+
+      it('binds nothing to the archive New made, and keeps the next Save off the service', async () => {
+        const release = heldService();
+        const { el, notify } = await mounted();
+
+        const saving = save(el);
+        await (el as unknown as { _onFileNew(): Promise<void> })._onFileNew();
+        release();
+        await saving;
+
+        // The empty archive is this page's, not the service's.
+        expect(binding(el)).to.be.null;
+        expect((await liveSources(el))!.sources).to.be.null;
+        // The write did land, so it still says where.
+        expect(notify).toHaveBeenCalledWith(
+          'Saved to the occupancy service',
+          'success',
+          'floppy'
+        );
+
+        // Which is the harm: a second Save would otherwise put the empty
+        // manifest on the service, and the service deletes every image the
+        // real layout named.
+        (el as unknown as { _viewMode: string })._viewMode = 'editor';
+        await save(el);
+        expect(seen.filter(call => call.startsWith('PUT'))).toHaveLength(1);
+        expect(notify).toHaveBeenCalledWith(
+          expect.stringMatching(/^Downloaded New Layout-\d{8}-\d{4}\.r49$/),
+          'success',
+          'download'
+        );
+      });
+
+      it('leaves the binding Open set, and still says the write landed', async () => {
+        const release = heldService();
+        const { el, notify } = await mounted();
+        const handle = { getFile: async () => new File([], 'west-yard.r49') };
+        (window as any).showOpenFilePicker = vi.fn().mockResolvedValue([handle]);
+        onTestFinished(() => {
+          delete (window as any).showOpenFilePicker;
+        });
+        const load = vi.spyOn(R49Archive, 'load').mockResolvedValue(archive);
+        onTestFinished(() => load.mockRestore());
+
+        const saving = save(el);
+        await (el as unknown as { _onFileOpen(): Promise<void> })._onFileOpen();
+        release();
+        await saving;
+
+        // The opened file, not the service: the next Save overwrites that file.
+        expect(binding(el)).toEqual({ stem: 'west-yard', handle });
+        expect(notify).toHaveBeenCalledWith(
+          'Saved to the occupancy service',
+          'success',
+          'floppy'
+        );
+      });
+    });
+
     describe('Freeze adds the frame on screen (#334)', () => {
       // The multipart bodies are real bytes, so the frame travels the whole
       // way: `readLatest`, the source, the live view's button, this component's
