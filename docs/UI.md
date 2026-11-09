@@ -797,6 +797,14 @@ that, and both exist because a service is one object answering both halves:
   stream reconnects, and a sensor that moved has to reach the viewer along with the state keyed on
   it. With a layout present the view takes sensors, resolution and DPT from there instead of from
   `archive` — which is why an unsaved edit in the editor cannot move what the live view draws.
+* **In service mode the `archive` is no fallback for it** (#353). A service with no layout yet — on
+  mount before its first `open()` returns, and for as long as its manifest will not read — draws
+  **no sensors**, gets DPT `null` and the default resolution, whatever archive is bound. The
+  fallback to `archive` is the camera path's, where that archive is what the model answers about.
+  Since #333 the archive bound while the live view watches a service **is that service's own copy**,
+  carrying whatever the editor has not saved, so a fallback to it would publish an unsaved edit as
+  the service's answer — the one thing the paragraph above says cannot happen. The layout arriving
+  later, on the first `open()` or on a reconnect's re-read, is drawn as it always was.
 
 **`SourceFrame.fresh: false` is a turn that carried no new picture.** The service answered, and the
 answer held no frame: it has none, or the request failed. The last picture stays up, the rate reads
@@ -913,7 +921,9 @@ to a different frame than the picture under it. The rules it keeps:
   `EventSource` does not retry — is reopened after a few seconds.
 * **The manifest is the service's**, validated by `R49Archive.setManifest`, and it is what
   `ResultSource.layout` reports. So an unsaved edit in the editor cannot move what the live view
-  draws, and a sensor the manifest does not have is not drawn and so is not answered.
+  draws, and a sensor the manifest does not have is not drawn and so is not answered. Until that
+  manifest has been read there is **no layout at all**, and the view draws nothing rather than the
+  bound archive (#353) — see § Frames and results come from sources.
 
 **Details shows only the current answer** (#332). While the panel is open the object asks with
 `patches=1`, and each result carries the answer's optional fields as `details`, with every patch as
