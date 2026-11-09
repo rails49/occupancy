@@ -220,10 +220,15 @@ person chose, truncating whatever was there.
   holding. That costs requests to a service the work has already left, and a save that fails outright
   once the service is gone. Reloading the page and opening the file is the way out; closing it
   properly means r49 taking an archive off its base, which is rails49/r49's.
-* **A save is no longer instant, and three things follow.** The history position is taken when the
+* **A save is no longer instant, and four things follow.** The history position is taken when the
   save starts and *that* position is what is marked, so an edit made while the requests were in
   flight leaves the archive dirty — it is not in what went. A Save pressed while one is running does
-  nothing. A toast stays up while it runs.
+  nothing. A toast stays up while it runs. And **the outcome is applied only while the session that
+  was saved is still the current one** (#354): New and Open are not held shut while a save runs, and
+  a stale save that re-pointed the binding would aim the next Save at what this one wrote with an
+  archive it never held — on a service, an empty manifest, whose missing names the service deletes.
+  The success toast is shown either way, because the write did land. It is the question
+  `rr-editor-view` asks after each of its awaits, in § An image is read when it is needed.
 * **The timestamp is the download path's, and only its.** A written-back file keeps its name across
   every overwrite, so a timestamp in the picker's suggestion would assert a save time the file no
   longer has. The format exists so a **lexical sort of the folder is a chronological one** — that,
