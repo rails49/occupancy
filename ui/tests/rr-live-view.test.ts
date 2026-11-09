@@ -533,4 +533,86 @@ describe('rr-live-view', () => {
       });
     });
   });
+
+  describe('a camera that stops giving frames (#345)', () => {
+    // Calibrated, as the drift tests calibrate it: 100 px over 10 model mm in N
+    // scale resolves a DPT, so the sensor reads `clear` while the camera is
+    // feeding the loop rather than `no-calibration`. That is the answer that
+    // used to freeze on screen.
+    beforeEach(() => {
+      archive.getManifest().layout.calibration = {
+        points: [
+          { px: { x: 0, y: 0 }, world: { x: 0, y: 0, z: 0 } },
+          { px: { x: 100, y: 0 }, world: { x: 10, y: 0, z: 0 } },
+        ],
+      };
+    });
+
+    /**
+     * A stand-in `<video>` the test can take the pixels away from.
+     *
+     * `standInReadySource` hands back a fresh object per call, which cannot
+     * stop; this one is the element the camera source reads every animation
+     * frame, so flipping its fields is the camera going quiet. jsdom decodes no
+     * video, which is why both exist.
+     */
+    function standInSource(el: RRLiveView) {
+      const video = { readyState: 2, videoWidth: 100, videoHeight: 100 };
+      const viewer = el.shadowRoot!.querySelector('rr-viewer')! as any;
+      viewer.getVideoElement = () => video;
+      return video;
+    }
+
+    it('reads rate 0 and every sensor unknown / no-frame, instead of the last answer', async () => {
+      // #343: the bar read 7.2 for twelve seconds with the `<video>` at
+      // `readyState` 0, and the sensor states were the last frame's too.
+      const el = await fixture<RRLiveView>(html`<rr-live-view .archive=${archive}></rr-live-view>`);
+      const video = standInSource(el);
+      const viewer = el.shadowRoot!.querySelector('rr-viewer')!;
+      const stats = el.shadowRoot!.querySelector('rr-stats-bar')! as any;
+
+      await waitFor(
+        el,
+        () => stats.fps > 0 && viewer.sensorStates?.get('S1abcdefghi')?.state === 'clear'
+      );
+      expect(stats.fps, 'the rate while frames arrive').to.be.greaterThan(0);
+
+      // The camera stops.
+      video.readyState = 0;
+      video.videoWidth = 0;
+
+      await waitFor(
+        el,
+        () => stats.fps === 0 && viewer.sensorStates?.get('S1abcdefghi')?.state === 'unknown'
+      );
+
+      expect(stats.fps).to.equal(0);
+      expect([...viewer.sensorStates!.values()]).to.deep.equal([
+        { state: 'unknown', reason: 'no-frame' },
+      ]);
+      // No L0 came with the turn, so nothing is drawn over the picture.
+      expect(viewer.detections).to.deep.equal([]);
+    });
+
+    it('answers frames again when the camera comes back', async () => {
+      const el = await fixture<RRLiveView>(html`<rr-live-view .archive=${archive}></rr-live-view>`);
+      const video = standInSource(el);
+      const viewer = el.shadowRoot!.querySelector('rr-viewer')!;
+      const stats = el.shadowRoot!.querySelector('rr-stats-bar')! as any;
+
+      video.readyState = 0;
+      video.videoWidth = 0;
+      await waitFor(el, () => viewer.sensorStates?.get('S1abcdefghi')?.state === 'unknown');
+
+      video.readyState = 2;
+      video.videoWidth = 100;
+      await waitFor(el, () => viewer.sensorStates?.get('S1abcdefghi')?.state === 'clear');
+
+      expect(viewer.sensorStates!.get('S1abcdefghi')).to.deep.equal({ state: 'clear' });
+      // The rate is counted again from the frame that came back rather than
+      // timed across the gap.
+      await waitFor(el, () => stats.fps > 0);
+      expect(stats.fps).to.be.greaterThan(0);
+    });
+  });
 });
