@@ -65,13 +65,15 @@ export interface SourceFrame {
   /**
    * Whether this turn carried a picture the view has not shown.
    *
-   * Absent is `true` — a camera hands over the frame it just read. `false` is
-   * an answer that carried no new frame: an occupancy service with nothing
-   * to send, or a request of its that failed (#331). The view keeps the picture
-   * already on screen, stops counting the turn toward the rate, and takes the
-   * answers that came with it — which is how every sensor reads `unknown` and
-   * the rate reads 0 while the service is quiet, instead of the last good
-   * answers staying frozen on screen.
+   * Absent is `true` — a frame the source just read. `false` is a turn that
+   * carried no new frame: an occupancy service with nothing to send or a
+   * request of its that failed (#331), and a camera whose `<video>` has no
+   * pixels to read — before its first picture, after frames stop, or where
+   * access was refused (#345). The view keeps the picture already on screen,
+   * stops counting the turn toward the rate, and takes the answers that came
+   * with it — which is how every sensor reads `unknown` and the rate reads 0
+   * while the source is quiet, instead of the last good answers staying frozen
+   * on screen.
    *
    * Nothing may read pixels from a turn that is not fresh. `source` is then
    * whatever picture is still up, or an empty image where there has never been
@@ -142,10 +144,15 @@ export interface FrameSource {
   /** Release it. A `next()` already being waited for resolves `null`. */
   stop(): void;
   /**
-   * The next frame to run on, once there is one.
+   * The next turn to run, once there is one.
    *
    * `null` after {@link stop}, which is what ends the loop — the one way out, so
    * a stopped source cannot leave the view running on frames nobody owns.
+   *
+   * A source with no picture to give may resolve a turn that is not fresh
+   * rather than holding the loop, and the camera does ({@link
+   * SourceFrame.fresh}, #345): the view can only report that it is getting
+   * nothing on a turn it takes.
    */
   next(): Promise<SourceFrame | null>;
   /**

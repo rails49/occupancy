@@ -681,6 +681,15 @@ over L0 answers with a box; a classifier answers with P(occupied) and no box at 
 the number is the part every occupied state has and the box is the extra. `clear` still carries
 nothing.
 
+**The reasons have an order, and the order is the argument.** `drift` is first: everything needed to
+answer is present and the answer is withheld because the camera moved (#94). `no-frame` comes above
+it, and above `no-calibration` and `outside-frame`, where the turn carried no picture (#345) —
+there was nothing to measure a displacement off and nothing for the DPT to resample — but below
+`no-model`, which is a session-long fact no frame would have fixed and the one that tells a human
+what to fix. `occupancy()` takes `noFrame` for it, beside `drifted`, and both default to `false`
+because a caller that passes neither is not claiming either. `tests/occupancy.test.ts` pins the
+order.
+
 **`unknown` has two shapes, and that is a compile-time check.** A cause *this page* found is one of
 the closed `UnknownReason` set, which `sensorMarker.ts` words in a total `Record` — adding a cause
 is a type error there. That set includes the two causes this page finds about a service: its answer
@@ -798,6 +807,16 @@ freezing on screen, which is the failure mode #341 named for a source that canno
 `FrameResult.notice` is the reason, rendered as a notice and cleared by the next answer, and
 `FrameResult.detections` **absent** means no L0 was published at all — no boxes and no car count —
 where an empty list means a model looked and found none.
+
+**The camera sends those turns too** (#345). `cameraFrameSource.next()` resolves once per animation
+frame whether or not the `<video>` can be read, and marks the turn `fresh: false` where it cannot —
+before the first picture, after frames stop, and where camera access was refused. It used to wait
+instead, so the loop took no turn at all and the rate kept its last value: 7.2 for twelve seconds
+with `readyState` 0 (#343). `null` after `stop()` stays the loop's one way out, so a turn with no
+frame cannot end it. `localModelResultSource` answers such a turn without calling `detect` — nothing
+may read pixels from it — with every sensor `unknown` / `no-frame`, no L0 and no inference time. The
+video-file source still holds the loop on a `null` from `viewerVideo.decodedFrame`: a paused or
+seeking file has a picture that is simply not new, and the rate there is the loop's speed.
 
 **Service mode is sources handed in with no archive** (#331, `_judging`). In it the view runs no
 drift check and shows no drift banner, recorder, alignment readout, or model and DPT notices, and the
