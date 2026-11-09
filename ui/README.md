@@ -173,6 +173,7 @@ rr-app                          ← shell: owns the editing session and the view
 > [#341]: https://github.com/rails49/occupancy/pull/341
 > [#345]: https://github.com/rails49/occupancy/issues/345
 > [#353]: https://github.com/rails49/occupancy/issues/353
+> [#354]: https://github.com/rails49/occupancy/issues/354
 
 ## State and data flow
 
@@ -291,6 +292,9 @@ hijack Cmd+Z mid-typing. A press with a drag still live does nothing (see `histo
 * **The history position is taken before the first request** and that position is marked, so an
   edit made while the save was in flight leaves the archive dirty. A Save pressed while one is
   running does nothing, and a toast stays up while it runs ([#333]).
+* **The outcome is applied only while the session that was saved is still the current one** — New
+  and Open are not held shut while a save runs, so a save they answered leaves `_binding` and the
+  service alone, and still toasts, because the write did land ([#354]).
 * The **stem** is the binding's, falling back to `layout.name` for an archive that has never been
   saved — which an archive on a service always is. It does not follow a later rename: the file's
   identity is the file, and `layout.name` is metadata stored inside it.
