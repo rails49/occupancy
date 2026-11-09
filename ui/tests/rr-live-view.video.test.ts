@@ -283,6 +283,33 @@ describe('rr-live-view playing a video file', () => {
     expect(viewer.detections).toEqual(detections);
   });
 
+  it('runs one loop on a file picked during the camera prompt', async () => {
+    // The prompt is a dialog, and the button is live behind it. The file's
+    // loop starts on the pick; the session must not start a second one when
+    // the prompt is answered.
+    let grant!: (stream: unknown) => void;
+    (navigator as unknown as { mediaDevices: unknown }).mediaDevices = {
+      getUserMedia: vi.fn(() => new Promise(resolve => (grant = resolve))),
+    };
+    const loop = vi.spyOn(RRLiveView.prototype as unknown as { _loop(): Promise<void> }, '_loop');
+    const el = await fixture<RRLiveView>(
+      html`<rr-live-view .archive=${archive}></rr-live-view>`,
+    );
+    const viewer = el.shadowRoot!.querySelector('rr-viewer')!;
+    standInVideo(el, standIn());
+    await pickVideo(el, VIDEO);
+    await waitFor(el, () => viewer.videoSrc !== null);
+
+    grant({ getTracks: () => [track], getVideoTracks: () => [track] });
+    await waitFor(el, () => loop.mock.calls.length > 1, 300);
+
+    expect(loop).toHaveBeenCalledTimes(1);
+    expect(viewer.videoSrc).toBe('blob:the-video');
+    // The late grant is let go: nothing reads the camera any more.
+    expect(track.stop).toHaveBeenCalled();
+    loop.mockRestore();
+  });
+
   it('names the file it is playing', async () => {
     const el = await fixture<RRLiveView>(
       html`<rr-live-view .archive=${archive}></rr-live-view>`,
@@ -361,6 +388,27 @@ describe('rr-live-view playing a video file', () => {
 
     el.shadowRoot!.querySelector<HTMLButtonElement>('.video-play')!.click();
     expect(video.play).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers Play again when the file reaches its end', async () => {
+    // An ended file pauses itself and hands over no more frames, so the
+    // viewer's `rr-video-pause` is what re-renders the transport.
+    const el = await fixture<RRLiveView>(
+      html`<rr-live-view .archive=${archive}></rr-live-view>`,
+    );
+    const viewer = el.shadowRoot!.querySelector('rr-viewer')!;
+    const video = standIn();
+    standInVideo(el, video);
+    await pickVideo(el, VIDEO);
+    await waitFor(el, () => viewer.detections.length > 0 && check.mock.calls.length > 0);
+    await waitFor(el, () => false, 100);
+    expect(el.shadowRoot!.querySelector('.video-play')!.textContent!.trim()).toBe('Pause');
+
+    video.paused = true;
+    viewer.dispatchEvent(new CustomEvent('rr-video-pause', { bubbles: true, composed: true }));
+    await el.updateComplete;
+
+    expect(el.shadowRoot!.querySelector('.video-play')!.textContent!.trim()).toBe('Play');
   });
 
   it('seeks to where the slider is dragged, and reads the position out', async () => {
@@ -450,5 +498,22 @@ describe('rr-live-view playing a video file', () => {
 
     await waitFor(el, () => stats.alignment !== null);
     expect(stats.alignment).toBe(1);
+  });
+
+  it('drops a camera drift sample that lands after the switch to a file', async () => {
+    let answer!: (result: { displacementPx: number; refIndex: number }) => void;
+    check.mockImplementation(() => new Promise(resolve => (answer = resolve)));
+    const el = await fixture<RRLiveView>(
+      html`<rr-live-view .archive=${archive}></rr-live-view>`,
+    );
+    const stats = el.shadowRoot!.querySelector('rr-stats-bar')!;
+    standInVideo(el, standIn());
+    await waitFor(el, () => check.mock.calls.length > 0);
+
+    await pickVideo(el, VIDEO);
+    answer({ displacementPx: 60, refIndex: 0 });
+    await waitFor(el, () => stats.alignment !== null, 200);
+
+    expect(stats.alignment).toBeNull();
   });
 });

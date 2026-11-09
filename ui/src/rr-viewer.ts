@@ -345,6 +345,7 @@ export interface ViewerDoubleClickDetail extends Omit<ViewerPointerDetail, 'orig
  * @fires rr-wheel - Mouse wheel over the image. Detail: {@link ViewerWheelDetail}
  * @fires rr-media-frame - Media loaded, with its size against the archive's. Detail: {@link ViewerMediaFrameDetail}
  * @fires rr-viewport - The viewport was measured at a new size. Detail: {@link ViewerViewportDetail}
+ * @fires rr-video-pause - The `videoSrc` file paused, including at its end. No detail.
  */
 @customElement('rr-viewer')
 export class RrViewer extends LitElement {
@@ -367,8 +368,8 @@ export class RrViewer extends LitElement {
   /**
    * A video file to play, as an object URL, or `null` where none is (#286).
    *
-   * The live view's other local source: a recording of the layout stands in for
-   * the camera, and the frame source reads its pixels back out of this element
+   * The live view's other local source: a video file of the layout stands in
+   * for the camera, and the frame source reads its pixels back out of this element
    * exactly as it does for the stream. Muted and autoplaying — the transport is
    * the live view's, which is why this element shows no `controls` of its own:
    * the overlay above it takes every pointer, so a native control under it
@@ -719,6 +720,11 @@ export class RrViewer extends LitElement {
     );
   }
 
+  /** Relay the file's `pause`, which does not leave this shadow root. */
+  private onVideoPause() {
+    this.dispatchEvent(new CustomEvent('rr-video-pause', { bubbles: true, composed: true }));
+  }
+
   /**
    * The media reported its own size. Record it, and say whether it is the shape
    * the archive claims.
@@ -988,6 +994,7 @@ export class RrViewer extends LitElement {
               autoplay
               playsinline
               @loadedmetadata=${this.onMediaLoad}
+              @pause=${this.onVideoPause}
             ></video>`
           : ''}
 
@@ -1100,5 +1107,6 @@ declare global {
     'rr-wheel': CustomEvent<ViewerWheelDetail>;
     'rr-media-frame': CustomEvent<ViewerMediaFrameDetail>;
     'rr-viewport': CustomEvent<ViewerViewportDetail>;
+    'rr-video-pause': CustomEvent<void>;
   }
 }

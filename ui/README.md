@@ -495,7 +495,8 @@ image pixel coordinates.
 `rr-pointer-dblclick` (`ViewerDoubleClickDetail`, after the pointer events of its two clicks), `rr-wheel`
 (`ViewerWheelDetail`, without `preventDefault`), `rr-media-frame`
 (`ViewerMediaFrameDetail`, once per media load) and `rr-viewport` (`ViewerViewportDetail`, whenever
-the measured viewport changes size). All ten fire in `src`, `stream` and `videoSrc` mode. They are declared in `HTMLElementEventMap`, so a listener anywhere up
+the measured viewport changes size). All ten fire in `src`, `stream` and `videoSrc` mode.
+`rr-video-pause` (no detail) fires in `videoSrc` mode when the file pauses, including at its end. They are declared in `HTMLElementEventMap`, so a listener anywhere up
 the tree gets the detail typed without a cast.
 
 | Detail field | Type | Description |

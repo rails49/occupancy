@@ -126,6 +126,18 @@ describe('rr-viewer', () => {
     expect(el.shadowRoot!.querySelector('svg')!.getAttribute('viewBox')).to.equal('0 0 1000 1000');
   });
 
+  it('relays the file pausing, which does not leave the shadow root (#286)', async () => {
+    const el = await fixture<RrViewer>(html`
+      <rr-viewer .videoSrc=${'blob:test-video'} .resolution=${resolution}></rr-viewer>
+    `);
+    const paused = vi.fn();
+    el.addEventListener('rr-video-pause', paused);
+
+    el.shadowRoot!.querySelector('video')!.dispatchEvent(new Event('pause'));
+
+    expect(paused.mock.calls.length).to.equal(1);
+  });
+
   describe('setting srcObject (#343)', () => {
     // jsdom has no `srcObject`. In a browser each set restarts the element's load.
     let sets: unknown[];

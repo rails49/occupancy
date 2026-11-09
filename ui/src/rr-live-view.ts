@@ -464,7 +464,7 @@ export class RRLiveView extends LitElement {
     // A new session starts on the camera, whatever the last one was playing
     // (#286) — as `_detailsOpen` starts closed, and for the same reason.
     this._videoName = null;
-    this._frameRun++;
+    const run = ++this._frameRun;
     await this._frames.start();
     // Left again while the frames were being acquired — the permission prompt
     // is a dialog the user can walk away from. `disconnectedCallback` has
@@ -472,8 +472,10 @@ export class RRLiveView extends LitElement {
     // reference for a detached element would cost a WASM heap and hundreds of
     // milliseconds for a session that is over.
     if (!this.isConnected) return;
-    this._readFrames();
-    void this._run();
+    // A file picked during the prompt has read its own frames and started its
+    // own loop. `_run` still opens the result source and the drift check.
+    if (run === this._frameRun) this._readFrames();
+    void this._run(run);
   }
 
   disconnectedCallback() {
@@ -633,15 +635,16 @@ export class RRLiveView extends LitElement {
    * it whether or not an archive is bound as well. Without a source there is
    * nothing to ask — no archive and no service — and the frames go on showing
    * with nothing read off them.
+   *
+   * @param run the `_frameRun` the session opened its frames on. Taken before
+   *            the camera prompt, so a file picked during the prompt or the
+   *            model load counts as a later source.
    */
-  private async _run() {
+  private async _run(run: number) {
     if (!this._results) return;
     // Set before the awaits, so that leaving the view while a model is still
     // loading stops the loop before it starts.
     this._running = true;
-    // Which source this session opened on. A model takes seconds to load, and
-    // the Video file button is live for all of them (#286).
-    const run = this._frameRun;
 
     // A source that cannot answer is not fatal, and deliberately so — see the
     // class comment. The loop starts anyway and every sensor reports `unknown`.
@@ -652,10 +655,8 @@ export class RRLiveView extends LitElement {
 
     await this._openDriftCheck();
 
-    // A file picked while the model was loading has a loop of its own already,
-    // started by `_openFrames` — which also means the opening above and the
-    // drift check have landed in time for it. A second loop here would read one
-    // source twice and write two sets of answers into one view.
+    // A file picked during the camera prompt or the model load has a loop of
+    // its own already, started by `_openFrames`.
     if (run !== this._frameRun) return;
 
     await this._loop();
@@ -749,6 +750,7 @@ export class RRLiveView extends LitElement {
     }
 
     this._driftInFlight = true;
+    const run = this._frameRun;
     void (async () => {
       try {
         // The grab is synchronous and must happen now, on this frame: awaiting
@@ -757,10 +759,10 @@ export class RRLiveView extends LitElement {
         const at = new Date();
         const plane = grabPlane(frame.source, frame.width, frame.height);
         const result = await session.check.check(plane);
-        // A view that was disconnected mid-check, or handed a different archive,
-        // must not take the answer: it is about references this view no longer
-        // holds.
-        if (this._running && this._driftSession === session) {
+        // A view that was disconnected mid-check, handed a different archive,
+        // or switched to another frame source must not take the answer: it is
+        // about references or pixels this view no longer holds.
+        if (this._running && this._driftSession === session && run === this._frameRun) {
           this._drift = result;
           this._driftError = null;
           // A frame grabbed before recording started is not part of the recording.
@@ -771,7 +773,7 @@ export class RRLiveView extends LitElement {
           }
         }
       } catch (err) {
-        if (this._running && this._driftSession === session) {
+        if (this._running && this._driftSession === session && run === this._frameRun) {
           this._driftError = err instanceof Error ? err.message : String(err);
         }
         console.error('Camera-drift check failed for this frame', err);
@@ -1161,6 +1163,7 @@ export class RRLiveView extends LitElement {
         .dpt=${this._dpt}
         .resolution=${resolution}
         .tracks=${showDetails ? layout?.tracks ?? [] : []}
+        @rr-video-pause=${() => this.requestUpdate()}
       ></rr-viewer>
 
       ${showDetails
