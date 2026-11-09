@@ -438,6 +438,12 @@ export class RRApp extends LitElement {
    * flight leaves the archive dirty: it is not in what went. A Save pressed
    * while one is running does nothing, and a toast stays up while it runs.
    *
+   * **A New or an Open answered while the save ran takes the binding** — the
+   * outcome is applied only while `_session` is still the session that was
+   * saved (#354). The toast stands either way: the write did land. Marking the
+   * replaced session's history saved changes nothing anybody can see, since
+   * its stack went with it.
+   *
    * A refusal leaves everything where it was — dirty, and still bound to the
    * service — and says what the service said. This page does not fall back to a
    * file by itself, and it merges nothing.
@@ -468,10 +474,20 @@ export class RRApp extends LitElement {
         return;
       }
 
-      // A save that landed in a file takes the work off the service, and the
-      // live view goes back to the camera and the model in this page (#333).
-      if (this._binding?.service && !outcome.binding.service) this._leaveService();
-      this._binding = outcome.binding;
+      // The outcome belongs to the session that was saved, and a service save
+      // is several requests: New or Open answered while they were in flight
+      // replaced that session, and nothing holds either shut (#354). Binding
+      // the archive that replaced it would aim the next Save at the file — or
+      // the service — this one wrote, with an archive it never held, so the
+      // next Save to a service puts an empty manifest there and the service
+      // deletes every image the real layout named. `rr-editor-view` asks the
+      // same question after each of its awaits.
+      if (this._session === session) {
+        // A save that landed in a file takes the work off the service, and the
+        // live view goes back to the camera and the model in this page (#333).
+        if (this._binding?.service && !outcome.binding.service) this._leaveService();
+        this._binding = outcome.binding;
+      }
       // Saving marks the position rather than clearing the stack: what was
       // written is unaffected by anything undone afterwards, so undoing past a
       // save stays legitimate. The marker is what `isDirty` is measured from.
