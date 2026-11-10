@@ -455,6 +455,9 @@ export class RRLiveView extends LitElement {
   private _readFrames() {
     this._stream = this._frames?.stream ?? null;
     this._videoSrc = this._frames?.videoSrc ?? null;
+    // The one read of the source's refusal. It is re-read when the source runs
+    // out as well as when one is opened (`_frameTurns`), because running out is
+    // when a file the browser cannot play has something to say.
     this._framesError = this._frames?.error ?? null;
   }
 
@@ -500,6 +503,42 @@ export class RRLiveView extends LitElement {
   }
 
   /**
+   * Every turn one frame source has to give, and no turn belonging to another.
+   *
+   * The two loops below read a source — `_loop` to answer the frames,
+   * `_drainFrames` to drop them — and the reading is the same for both: take
+   * turns while this session and this source are still the ones the view
+   * holds, and stop on the `null` that says the source is done.
+   *
+   * That `null` is what makes the reading worth one place rather than two. It
+   * means either that the view stopped the source, which says nothing, or that
+   * the source ran out on its own, which has a refusal to show — and each loop
+   * used to decide which for itself, off its own copy of the two checks that
+   * tell them apart.
+   *
+   * @param frames the source, which is `this._frames` for as long as `run`
+   *               holds — a swap bumps `_frameRun`.
+   * @param run the `_frameRun` this loop reads on.
+   */
+  private async *_frameTurns(frames: FrameSource, run: number): AsyncGenerator<SourceFrame> {
+    while (this._running && run === this._frameRun) {
+      const frame = await frames.next();
+      // Left the view, or another source took over, while this turn was being
+      // waited for: the turn is about a session or a file that is over.
+      if (!this._running || run !== this._frameRun) return;
+      if (frame === null) {
+        // Not a stop — the check above is that — so this source ran out on its
+        // own, which today means a file the browser could not play (#286). The
+        // refusal is the source's to word and `_readFrames` is where the view
+        // reads it; showing it is `_renderFramesError`'s.
+        this._readFrames();
+        return;
+      }
+      yield frame;
+    }
+  }
+
+  /**
    * Read the frames of a source nothing is answering, and say where they stop.
    *
    * `_loop` does this as part of running, but it does not run at all without a
@@ -513,13 +552,7 @@ export class RRLiveView extends LitElement {
    * The frames themselves are dropped: there is nobody to answer them.
    */
   private async _drainFrames(frames: FrameSource, run: number) {
-    while (this._running && run === this._frameRun) {
-      const frame = await frames.next();
-      if (!this._running || run !== this._frameRun) return;
-      if (frame === null) {
-        this._framesError = frames.error ?? null;
-        return;
-      }
+    for await (const _frame of this._frameTurns(frames, run)) {
       this.requestUpdate();
     }
   }
@@ -805,10 +838,10 @@ export class RRLiveView extends LitElement {
    * One frame at a time: ask the frame source for pixels, then the result
    * source for what they mean.
    *
-   * The loop's one way out is the `null` a stopped source gives, which is why
-   * `next()` is awaited rather than polled — the pacing belongs to the source
-   * (an animation frame for the camera, a poll for a service), and the view
-   * runs exactly as fast as it is fed.
+   * The turns are `_frameTurns`', and so is the one way out: the `null` a
+   * source that is done gives. They are awaited rather than polled — the
+   * pacing belongs to the source (an animation frame for the camera, a poll
+   * for a service), and the view runs exactly as fast as it is fed.
    */
   private async _loop() {
     const frames = this._frames;
@@ -817,22 +850,12 @@ export class RRLiveView extends LitElement {
     // Captured once: the context below reads the refusal off the view, and an
     // object literal's getter cannot see `this`.
     const view = this;
-    // Which source this loop is reading. A swap bumps it, and every check
-    // below is what stops two loops from answering into one view (#286).
+    // Which source this loop is reading. A swap bumps it, and checking it
+    // here, in `_frameTurns` and after each answer is what stops two loops
+    // from answering into one view (#286).
     const run = this._frameRun;
 
-    while (this._running && run === this._frameRun) {
-      const frame = await frames.next();
-      if (!this._running || run !== this._frameRun) return;
-      if (frame === null) {
-        // Not a stop — those are the two checks above — so this source ran out
-        // on its own, which today means a file the browser could not play
-        // (#286). The refusal is the source's to word; showing it is this
-        // view's.
-        this._framesError = frames.error ?? null;
-        return;
-      }
-
+    for await (const frame of this._frameTurns(frames, run)) {
       // A turn that carried no new picture carries no new pixels either, so
       // there is nothing to measure drift against and nothing to count toward
       // the rate — and the rate is 0 rather than stale, because none is what
