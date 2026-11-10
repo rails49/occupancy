@@ -862,8 +862,9 @@ frame. It read `0` there between #331 and #362, which asserted a count nothing h
 
 **Only a path where the model looked publishes an L0** (#368). `localModelResultSource` leaves
 `detections` absent on all four paths that measured nothing — no model loaded, no DPT to resample
-by, a `detect` that threw for this frame, and a turn that carried no frame — each of which already
-shows its own notice; it publishes an empty list only where the model ran and found nothing, and
+by, a `detect` that threw for this frame, and a turn that carried no frame. The first two also raise
+a notice; on the other two only the sensors reading `unknown` say so. It publishes an empty list
+only where the model ran and found nothing, and
 Cars reads `0` there. The first three published `[]` between #330 and #368, which is the same
 untaken count #362 fixed on the view side. `occupancy()` still gets its own argument per path, and
 the sensor states are unchanged: `null` with no model and for a failed frame, `[]` with no DPT, so

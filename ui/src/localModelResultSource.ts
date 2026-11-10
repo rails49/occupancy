@@ -20,8 +20,9 @@
  *
  * **Only a path where the model looked publishes an L0** (#368). The four that
  * did not — no model, no DPT to resample by, a `detect` that threw, a turn with
- * no frame — leave `detections` absent, each beside its own notice, so the
- * stats bar withholds Cars rather than claiming a count nothing took. An empty
+ * no frame — leave `detections` absent, so the stats bar withholds Cars rather
+ * than claiming a count nothing took. The first two also raise a notice; the
+ * other two show only the sensors reading `unknown`. An empty
  * list is the other answer: a model looked and there was nothing there.
  */
 
@@ -114,9 +115,9 @@ export function localModelResultSource(archive: R49Archive): ResultSource {
       let detections: readonly Detection[] | null = null;
       // L0 as published, absent on every path below that measured nothing
       // (#368): with no model, with no DPT to resample by, and for a frame
-      // whose `detect` threw. Each of those already says why, and an empty
-      // list beside the notice would have the stats bar read "Cars: 0" — a
-      // count nothing took. Only a model that looked publishes one, and what
+      // whose `detect` threw. The sensors already read `unknown` on each, and
+      // an empty list would have the stats bar read "Cars: 0" — a count
+      // nothing took. Only a model that looked publishes one, and what
       // it found, including nothing.
       let measured: readonly Detection[] | undefined;
       let inference: number | undefined;
