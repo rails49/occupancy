@@ -1,4 +1,4 @@
-import { vi } from 'vitest';
+import { beforeEach, vi } from 'vitest';
 
 // The DOM polyfills below are guarded on a DOM being there at all: a test file
 // that runs `vite build` asks for the node environment, where esbuild refuses
@@ -64,5 +64,14 @@ if (hasDom && typeof window.matchMedia === 'undefined') {
       removeEventListener: vi.fn(),
       dispatchEvent: vi.fn(),
     })),
+  });
+}
+
+// `sl-alert`'s `toast()` leaves the alert where it was appended, unopened, so it goes with its
+// fixture (#376).
+if (hasDom) {
+  beforeEach(() => {
+    const alert = customElements.get('sl-alert');
+    if (alert) vi.spyOn(alert.prototype, 'toast').mockResolvedValue(undefined);
   });
 }
