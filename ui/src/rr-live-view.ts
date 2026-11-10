@@ -165,8 +165,6 @@ export class RRLiveView extends LitElement {
    * `stop()`, and this holds only what to show.
    */
   @state() private _videoSrc: string | null = null;
-  /** The name of the video file being played, shown in the transport, or `null` on the camera (#286). */
-  @state() private _videoName: string | null = null;
   /**
    * Why no frames are coming, as the frame source worded it, or `null` where
    * they are (#286).
@@ -414,9 +412,6 @@ export class RRLiveView extends LitElement {
       this.sources?.results ?? (this.archive ? localModelResultSource(this.archive) : null);
     this._detailsOpen = false;
     this._results?.setPatches?.(false);
-    // A new session starts on the camera, whatever the last one was playing
-    // (#286) — as `_detailsOpen` starts closed, and for the same reason.
-    this._videoName = null;
     const connect = ++this._connects;
     const run = ++this._frameRun;
     await this._frames.start();
@@ -531,19 +526,28 @@ export class RRLiveView extends LitElement {
 
   /** Run on the file the bar reports was picked (#286). */
   private _onVideoPick(e: CustomEvent<File>) {
-    this._videoName = e.detail.name;
     void this._openFrames(videoFileFrameSource(() => this._viewer, e.detail));
   }
 
   /** Go back to this device's camera, releasing the file (#286). */
   private _useCamera() {
-    this._videoName = null;
     void this._openFrames(cameraFrameSource(() => this._viewer));
   }
 
   /** The transport the frame source offers, or `null` for a feed of the present. */
   private get _playback(): Playback | null {
     return this._frames?.playback ?? null;
+  }
+
+  /**
+   * What the frames are coming from, where it has a name: the open file (#359).
+   *
+   * Read off the source at render time, as `_playback` is, rather than written
+   * beside each `_openFrames` call. A new session needs no reset either — it
+   * starts on a camera, which names nothing.
+   */
+  private get _framesName(): string | null {
+    return this._frames?.name ?? null;
   }
 
   /**
@@ -780,7 +784,7 @@ export class RRLiveView extends LitElement {
   private _renderVideoBar() {
     return html`<rr-video-bar
       .playback=${this._framesError === null ? this._playback : null}
-      .name=${this._videoName}
+      .name=${this._framesName}
       @rr-video-pick=${this._onVideoPick}
       @rr-camera-use=${this._useCamera}
     ></rr-video-bar>`;

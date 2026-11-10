@@ -86,6 +86,16 @@ describe('videoFileFrameSource', () => {
     expect(source.settings).toEqual({});
   });
 
+  it('names the file it is playing, before it is even started', async () => {
+    // The transport shows it, and the source is what holds the `File` — so it
+    // is read from here rather than kept beside every `_openFrames` call
+    // (#359). Available at once: the name is known at the pick, and the bar
+    // renders before the first frame.
+    const source = videoFileFrameSource(() => host, FILE);
+
+    expect(source.name).toBe('IMG_4312.mov');
+  });
+
   it('hands over the element at the size the file decoded at', async () => {
     // The element's intrinsic size, as the camera path reads it: that is the
     // grid the pixels are in, whatever `camera.resolution` declares.
