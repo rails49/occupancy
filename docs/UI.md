@@ -764,14 +764,25 @@ and the readiness rule are `viewerVideo.ts`'s, shared by both. The demo it serve
   `resultFor` may still be in flight and must not write the camera's last answer over the file's
   first. The drift reading is dropped, and a sample still in flight is checked against `_frameRun`
   too: both were measured against other pixels.
-* **Three optional `FrameSource` fields** carry what only a file has: `videoSrc` (the object URL,
+* **Four optional `FrameSource` fields** carry what only a file has: `videoSrc` (the object URL,
   created and released by the source, as the owner of a `SourceFrame.src` is), `playback` (play,
-  pause, seek, with every reading a **getter** read at render time, because the element is moving)
-  and `error` (why no frames are coming).
-* **The transport is the view's, not the element's.** The overlay covers the picture and takes every
-  pointer, so a native `controls` bar under it could not be pressed. A paused file hands over no
+  pause, seek, with every reading a **getter** read at render time, because the element is moving),
+  `error` (why no frames are coming) and `name` (what to call the file, which the transport shows).
+  `name` is the source's because the source holds the `File`: the view kept a `_videoName` beside
+  every `_openFrames` call until #359, which was a second place for one fact.
+* **The transport is `rr-video-bar`'s, not the `<video>`'s** (#359). The overlay covers the picture
+  and takes every pointer, so a native `controls` bar under it could not be pressed. The element
+  reads a `Playback` and a name and acts on the `Playback`; which file to run on and going back to
+  the camera leave it as `rr-video-pick` (the `File`) and `rr-camera-use`, because swapping the
+  frame source is the view's job and nothing about the controls (#359). A paused file hands over no
   frames, so the bar re-renders on its own triggers: Play and the slider call `requestUpdate()`, and
-  so does `rr-viewer`'s `rr-video-pause`, which covers a file reaching its end.
+  so does `rr-viewer`'s `rr-video-pause` — through the view — which covers a file reaching its end.
+* **`playback` is declared `hasChanged: () => true`, and that is load-bearing.** The view hands the
+  bar the **same object** on every frame, because every reading on it is a getter over a `<video>`
+  that is moving; Lit re-renders a child only when a property changes, so the default identity check
+  would render the bar once, when the file was opened, and leave the clock and the slider there
+  while the picture ran on. The refusal is passed as `playback: null` rather than as a second input:
+  there is nothing to play, and the picker stays to choose another file with.
 * **A file the browser cannot play is refused, in a danger bar naming it.** iPhone video is HEVC in a
   `.mov` by default, which not every browser decodes.
   `next()` polls the element's own `MediaError` and answers `null` — the loop's one way out — and
@@ -779,7 +790,10 @@ and the readiness rule are `viewerVideo.ts`'s, shared by both. The demo it serve
   archive is open there is **no loop** — nothing is being asked about the pixels — so the view reads
   the frames itself and drops them (`_drainFrames`): a file that cannot play must not leave a black
   rectangle and no explanation, and the transport's clock is rendered from the element, so without a
-  turn per frame it would sit where the file was opened while the picture ran on.
+  turn per frame it would sit where the file was opened while the picture ran on. Both loops take
+  their turns from `_frameTurns` (#359), which is the one place that tells a `null` the view caused
+  by stopping the source from a source that ran out on its own and has a refusal to show — and so
+  the one place `_framesError` is read off the source.
 * **The file is read locally and goes nowhere.** It is an object URL on a `<video>`, and this package
   has no backend to send it to.
 * **Frame size is the element's intrinsic size**, exactly as it is for the camera
@@ -863,7 +877,9 @@ a pick that plays the file and lets the camera go, the loop and the drift check 
 frames with one model loaded for the session, the refusal with and without an archive open, the
 transport, and Camera going back. The `<video>` is stood in for, as it is in the two files below:
 jsdom plays nothing, so that a frame of a real `.mp4` reaches the detector is measured by hand in
-Chromium.
+Chromium. Its assertions survived the transport moving into `rr-video-bar` unchanged — what moved is
+where a control is looked for, through one helper that reaches into the bar's shadow root — and
+`tests/rr-video-bar.test.ts` covers the bar on its own, against a `Playback` the test moves by hand.
 
 `tests/rr-live-view.sources.test.ts` drives the view with **fake** sources — each result reaching the
 viewer and the stats bar, `drifted` and `dpt` reaching `resultFor`, leaving the view stopping both,
