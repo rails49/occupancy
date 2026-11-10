@@ -35,6 +35,7 @@ const PANES = [
   'rr-editor-view.ts',
   'rr-live-view.ts',
   'rr-stats-bar.ts',
+  'rr-video-bar.ts',
   'rr-thumbnail-bar.ts',
   'rr-diagnostics-view.ts',
   'rr-diagnostics-queue.ts',
