@@ -925,7 +925,7 @@ describe('rr-live-view with sources of its own', () => {
 
     let asked: string[];
     let extra: Record<string, unknown>;
-    /** The spies this block makes, restored one by one: `vi.restoreAllMocks` would also strip `setup.ts`'s `ResizeObserver`. */
+    /** The spies this block makes, restored one by one: `vi.restoreAllMocks` would also strip `setup.ts`'s `ResizeObserver` and `toast()` stubs. */
     let spies: { mockRestore(): void }[];
 
     beforeEach(() => {

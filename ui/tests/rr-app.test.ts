@@ -38,6 +38,15 @@ describe('rr-app', () => {
     expect(el).to.be.instanceOf(RRApp);
   });
 
+  it('keeps a toast inside the app, so removing the app removes it (#376)', async () => {
+    const el = await fixture<RRApp>(html`<rr-app></rr-app>`);
+    void (el as unknown as { _notify(message: string): Promise<void> })._notify('Saved');
+
+    fixtureCleanup();
+
+    expect(document.body.querySelector('sl-alert')).toBeNull();
+  });
+
   // Save no longer validates calibration. The v3 check read {p0, p1, size_mm}
   // structurally, which v4 does not have: calibration is a list of points that
   // legitimately starts empty, so "uncalibrated" is a state to report, not an
@@ -140,12 +149,8 @@ describe('rr-app', () => {
   describe('toasts show their message as text (#264)', () => {
     const MARKUP = '<img src=x onerror=alert(1)>';
 
-    /** The alerts the app built; `toast()` is stubbed so each stays where it was appended. */
+    /** The alerts the app built, each where it was appended: `setup.ts` stubs `toast()`. */
     async function mountWithToasts() {
-      const toast = vi
-        .spyOn(customElements.get('sl-alert')!.prototype, 'toast')
-        .mockResolvedValue(undefined);
-      onTestFinished(() => toast.mockRestore());
       const el = await fixture<RRApp>(html`<rr-app></rr-app>`);
       return { el, alerts: () => [...el.renderRoot.querySelectorAll('sl-alert')] };
     }
