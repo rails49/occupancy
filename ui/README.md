@@ -177,6 +177,7 @@ rr-app                          ← shell: owns the editing session and the view
 > [#354]: https://github.com/rails49/occupancy/issues/354
 > [#359]: https://github.com/rails49/occupancy/issues/359
 > [#362]: https://github.com/rails49/occupancy/issues/362
+> [#368]: https://github.com/rails49/occupancy/issues/368
 
 ## State and data flow
 
@@ -1496,6 +1497,12 @@ against it would be this page second-guessing the judgement it is only relaying.
   as well — before its first inferred frame, and on any later turn that carried no frame. It read
   `0` there between [#331] and [#362], which claimed a count nothing had taken. Inference is a
   distinction: it is this page's own measurement and starts at `0` on the camera path.
+* **On the camera path an L0 is published only where the model looked** ([#368]). So Cars is
+  withheld on four turns, not one: no model loaded, no DPT to resample by, a `detect` that threw
+  for this frame, and a turn that carried no frame. Each already shows its own notice, and an empty
+  list beside one claimed a count nothing had taken — the view-side half of the same defect
+  [#362] fixed. A model that ran and found nothing publishes `[]`, and Cars reads `0`. The sensor
+  states on those turns are unchanged.
 * **Freeze adds the frame on screen to the archive** ([#334]). In service mode only, beside Details.
   A press reads `FrameSource.shownFrame` as of **the turn that last put a picture up**, not whatever
   the source holds now — between the source taking a newer frame and this view drawing it the source
