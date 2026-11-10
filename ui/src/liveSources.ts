@@ -177,6 +177,18 @@ export interface FrameSource {
    */
   readonly playback?: Playback | null;
   /**
+   * What to call the thing the frames are coming from, or `null`/absent where
+   * it has no name a person would recognise (#359).
+   *
+   * Today that is the open file's name, which the transport shows beside the
+   * picker. It is read from the source because the source is what holds the
+   * `File`: a copy kept beside each swap is a second place for the same fact,
+   * and one of the two is wrong for as long as they disagree. A camera and a
+   * service leave it absent — "this device's camera" is not a name the source
+   * chose.
+   */
+  readonly name?: string | null;
+  /**
    * Why no frames are coming, as the message to show, or `null`/absent where
    * they are.
    *

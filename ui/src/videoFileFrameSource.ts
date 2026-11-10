@@ -103,6 +103,9 @@ export function videoFileFrameSource(
     stream: null,
     settings: {},
     playback,
+    // Known at the pick, not at the load: the bar renders beside a file that
+    // is still decoding, and the name is what says which one.
+    name: file.name,
 
     get videoSrc() {
       return url;
