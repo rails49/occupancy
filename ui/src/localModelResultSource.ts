@@ -15,9 +15,14 @@
  *
  * **The loop also runs on turns that carried no frame.** A camera with no
  * picture to give takes its turn anyway (#345), and the answer is every sensor
- * `unknown` / `no-frame` with no L0 at all — for the same reason: the previous
- * frame's answers staying on screen is the one outcome worse than saying
- * nothing.
+ * `unknown` / `no-frame` — for the same reason: the previous frame's answers
+ * staying on screen is the one outcome worse than saying nothing.
+ *
+ * **Only a path where the model looked publishes an L0** (#368). The four that
+ * did not — no model, no DPT to resample by, a `detect` that threw, a turn with
+ * no frame — leave `detections` absent, each beside its own notice, so the
+ * stats bar withholds Cars rather than claiming a count nothing took. An empty
+ * list is the other answer: a model looked and there was nothing there.
  */
 
 import type { R49Archive } from '@rails49/r49';
@@ -86,8 +91,8 @@ export function localModelResultSource(archive: R49Archive): ResultSource {
       if (frame.fresh === false) {
         return {
           // No `detections` and no `inference`, both absent rather than empty:
-          // nothing published L0 for this turn, so no boxes are drawn and no
-          // car count is claimed, and the inference readout keeps the last real
+          // nothing looked at this turn, so no boxes are drawn and no car count
+          // is claimed, and the inference readout keeps the last real
           // measurement rather than dropping to zero.
           sensorStates: occupancy({
             // An empty list where a model is loaded, so `occupancy` gets past
@@ -107,6 +112,13 @@ export function localModelResultSource(archive: R49Archive): ResultSource {
       // than a model that found nothing. An empty array would report every
       // sensor `clear`, which is the confident-looking miss SPEC forbids.
       let detections: readonly Detection[] | null = null;
+      // L0 as published, absent on every path below that measured nothing
+      // (#368): with no model, with no DPT to resample by, and for a frame
+      // whose `detect` threw. Each of those already says why, and an empty
+      // list beside the notice would have the stats bar read "Cars: 0" — a
+      // count nothing took. Only a model that looked publishes one, and what
+      // it found, including nothing.
+      let measured: readonly Detection[] | undefined;
       let inference: number | undefined;
       if (detector) {
         if (dpt === null) {
@@ -121,6 +133,7 @@ export function localModelResultSource(archive: R49Archive): ResultSource {
               authored,
               sourceDpt(dpt, frame.width, authored.width)
             );
+            measured = detections;
             // The detect call alone — preprocessing, the session, the decode. Not
             // the whole frame: L1 and the render are the part that scales with
             // the layout, and folding them in would hide which one is slow.
@@ -138,8 +151,9 @@ export function localModelResultSource(archive: R49Archive): ResultSource {
         // computed in the live frame and are true of it. `drifted` is what
         // withholds L1, and it is `occupancy()` that turns it into one
         // `unknown` per sensor, so nothing here builds an unknown-map of its
-        // own (the whole reason that function is total).
-        detections: detections ?? [],
+        // own (the whole reason that function is total). Absent where nothing
+        // measured, which is not the same answer as an empty list.
+        detections: measured,
         sensorStates: occupancy({
           detections,
           sensors: manifest.layout.sensors,
