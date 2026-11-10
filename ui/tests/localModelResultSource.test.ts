@@ -119,7 +119,9 @@ describe('localModelResultSource', () => {
     const result = await source.resultFor(frame, { drifted: false, dpt: DPT });
 
     expect(detect).not.toHaveBeenCalled();
-    expect(result.detections).toEqual([]);
+    // No L0 at all, rather than an empty list: nothing measured this frame, so
+    // no car count is claimed and the stats bar withholds Cars (#368).
+    expect(result.detections).toBeUndefined();
     expect([...result.sensorStates.values()]).toEqual([{ state: 'unknown', reason: 'no-model' }]);
     // Nothing inferred, so nothing to time — and the stats bar keeps the last
     // number it was given rather than being handed a zero.
@@ -185,7 +187,9 @@ describe('localModelResultSource', () => {
 
     // A frame that fails is one frame: `unknown` for it, not the previous
     // answer frozen on screen, and not a rejection the loop would die on.
-    expect(failed.detections).toEqual([]);
+    // Nothing measured it either, so it publishes no L0 and claims no count
+    // (#368) — the failure already has its own notice.
+    expect(failed.detections).toBeUndefined();
     expect([...failed.sensorStates.values()]).toEqual([{ state: 'unknown', reason: 'no-model' }]);
     expect(failed.inference).toBeUndefined();
 
@@ -225,7 +229,25 @@ describe('localModelResultSource', () => {
     const result = await source.resultFor(frame, { drifted: false, dpt: null });
 
     expect(detect).not.toHaveBeenCalled();
+    // So no L0 either: the DPT notice says why, and a count of zero beside it
+    // would be one nothing took (#368).
+    expect(result.detections).toBeUndefined();
+    // `occupancy` still gets the empty list that carries it past `no-model`.
+    expect([...result.sensorStates.values()]).toEqual([
+      { state: 'unknown', reason: 'no-calibration' },
+    ]);
+  });
+
+  it('publishes an empty L0 where the model ran and found nothing', async () => {
+    // The one case that reads `Cars: 0`: a model looked, and nothing was there.
+    detect.mockResolvedValueOnce([]);
+    const source = localModelResultSource(archive);
+    await source.open();
+
+    const result = await source.resultFor(frame, { drifted: false, dpt: DPT });
+
     expect(result.detections).toEqual([]);
+    expect([...result.sensorStates.values()]).toEqual([{ state: 'clear' }]);
   });
 
   it('reads the sensors per frame, so one authored later is answered', async () => {

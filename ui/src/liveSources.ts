@@ -259,9 +259,10 @@ export interface FrameResult {
    * L0 for this frame, or absent where the source publishes no L0 at all.
    *
    * Empty, never stale, when a model looked and found nothing. Absent is the
-   * other fact: an occupancy service that has no DPT produces no boxes to
-   * publish (#331), and nothing counted cars for this frame — so no boxes are
-   * drawn and the stats bar shows no car count, where an empty list shows 0.
+   * other fact: nothing counted cars for this frame — an occupancy service that
+   * has no DPT produces no boxes to publish (#331), and the local model leaves
+   * it absent wherever it did not look (#368) — so no boxes are drawn and the
+   * stats bar shows no car count, where an empty list shows 0.
    */
   readonly detections?: readonly Detection[];
   /** L1 for the same frame, keyed by sensor id — one entry per sensor. */
