@@ -200,7 +200,7 @@ describe('rr-live-view with sources of its own', () => {
     expect(stats.fps).toBeGreaterThan(0);
   });
 
-  it('withholds the car count on a turn that published no L0, off a service too', async () => {
+  it('withholds the car count on the camera path for a turn that published no L0', async () => {
     // The camera path, where #331 used to read 0 for want of an L0 and claim a
     // count nothing had taken (#362).
     const frames = fakeFrames();
