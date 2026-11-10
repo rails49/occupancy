@@ -857,6 +857,15 @@ path: the row is the length of the L0 the source published and absent where it p
 the camera path withholds it before its first inferred frame and on any later turn that carried no
 frame. It read `0` there between #331 and #362, which asserted a count nothing had taken.
 
+**Only a path where the model looked publishes an L0** (#368). `localModelResultSource` leaves
+`detections` absent on all four paths that measured nothing — no model loaded, no DPT to resample
+by, a `detect` that threw for this frame, and a turn that carried no frame — each of which already
+shows its own notice; it publishes an empty list only where the model ran and found nothing, and
+Cars reads `0` there. The first three published `[]` between #330 and #368, which is the same
+untaken count #362 fixed on the view side. `occupancy()` still gets its own argument per path, and
+the sensor states are unchanged: `null` with no model and for a failed frame, `[]` with no DPT, so
+L1 still reads `no-model` and `no-calibration` as it did.
+
 **`sources` is read on connect.** The loop, the drift check and the result source's lifetime all hang
 off one mount; swapping a source mid-session would mean tearing down and rebuilding all three, and a
 different source is a different session.
