@@ -277,7 +277,11 @@ export class RRLiveView extends LitElement {
 
   @query('rr-viewer') private _viewer!: RrViewer;
 
-  private _frames: FrameSource | null = null;
+  /**
+   * Where the frames come from. Replacing it re-renders the transport and the
+   * file's name at once, before the new source has started (#366).
+   */
+  @state() private _frames: FrameSource | null = null;
   private _results: ResultSource | null = null;
   private _driftSession: DriftSession | null = null;
   private _driftInFlight = false;

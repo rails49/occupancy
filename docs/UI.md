@@ -783,6 +783,9 @@ and the readiness rule are `viewerVideo.ts`'s, shared by both. The demo it serve
   would render the bar once, when the file was opened, and leave the clock and the slider there
   while the picture ran on. The refusal is passed as `playback: null` rather than as a second input:
   there is nothing to play, and the picker stays to choose another file with.
+* **The view's frame source is reactive state** (#366). `_playback` and `_framesName` are getters
+  over it, read at render time, so a swap re-renders at once: pressing Camera takes down the file's
+  name, Pause, slider and clock before `getUserMedia` resolves, with or without an archive open.
 * **A file the browser cannot play is refused, in a danger bar naming it.** iPhone video is HEVC in a
   `.mov` by default, which not every browser decodes.
   `next()` polls the element's own `MediaError` and answers `null` — the loop's one way out — and

@@ -497,6 +497,37 @@ describe('rr-live-view playing a video file', () => {
     expect(transport(el, '.video-play')).to.be.null;
   });
 
+  it.each([
+    ['with no archive open', false],
+    ['with an archive open', true],
+  ])('drops the transport the moment Camera is pressed, %s', async (_, open) => {
+    // The press releases the file there and then, while the camera takes as
+    // long as a permission prompt to arrive. A transport left up for that
+    // window names a file that is gone and acts on the viewer's `<video>`.
+    const el = await fixture<RRLiveView>(
+      open
+        ? html`<rr-live-view .archive=${archive}></rr-live-view>`
+        : html`<rr-live-view></rr-live-view>`,
+    );
+    standInVideo(el, standIn());
+    await pickVideo(el, VIDEO);
+    await waitFor(el, () => transport(el, '.video-camera') !== null);
+    expect(transport(el, '.video-name')!.textContent).toContain('IMG_4312.mov');
+
+    // Never granted: the assertions below are about what is on screen while
+    // the prompt is still up.
+    (navigator as unknown as { mediaDevices: unknown }).mediaDevices = {
+      getUserMedia: vi.fn(() => new Promise(() => {})),
+    };
+    transport<HTMLButtonElement>(el, '.video-camera')!.click();
+    await el.updateComplete;
+
+    expect(transport(el, '.video-name')).to.be.null;
+    expect(transport(el, '.video-play')).to.be.null;
+    expect(transport(el, '.video-seek')).to.be.null;
+    expect(transport(el, '.video-time')).to.be.null;
+  });
+
   it('releases the file when the view is left', async () => {
     const el = await fixture<RRLiveView>(
       html`<rr-live-view .archive=${archive}></rr-live-view>`,
