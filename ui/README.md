@@ -176,6 +176,7 @@ rr-app                          ← shell: owns the editing session and the view
 > [#353]: https://github.com/rails49/occupancy/issues/353
 > [#354]: https://github.com/rails49/occupancy/issues/354
 > [#359]: https://github.com/rails49/occupancy/issues/359
+> [#362]: https://github.com/rails49/occupancy/issues/362
 
 ## State and data flow
 
@@ -1490,6 +1491,11 @@ against it would be this page second-guessing the judgement it is only relaying.
   recorder, alignment readout, or model and DPT notices, and no Inference row (drift in service mode
   is [#336]). The camera path, with or without an archive, is as it was. A service's `open()`
   failure is still shown, in its own words.
+* **Cars is not one of those distinctions** ([#362]). The row is the length of the L0 the source
+  published and absent where it published none, on **both** paths, so the camera path withholds it
+  as well — before its first inferred frame, and on any later turn that carried no frame. It read
+  `0` there between [#331] and [#362], which claimed a count nothing had taken. Inference is a
+  distinction: it is this page's own measurement and starts at `0` on the camera path.
 * **Freeze adds the frame on screen to the archive** ([#334]). In service mode only, beside Details.
   A press reads `FrameSource.shownFrame` as of **the turn that last put a picture up**, not whatever
   the source holds now — between the source taking a newer frame and this view drawing it the source

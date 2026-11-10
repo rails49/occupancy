@@ -847,10 +847,15 @@ seeking file has a picture that is simply not new, and the rate there is the loo
 
 **Service mode is sources handed in with no archive** (#331, `_judging`). In it the view runs no
 drift check and shows no drift banner, recorder, alignment readout, or model and DPT notices, and the
-stats bar shows Cars only with L0 and never Inference: the service publishes states this page cannot
-withhold (drift in service mode is #336). The camera path, with or without an archive, is as it was.
-Opening or creating an archive leaves a service behind in `rr-app`. The source's `open()` error is
-still shown either way, in the words that fit who failed.
+stats bar never shows Inference: the service publishes states this page cannot withhold (drift in
+service mode is #336). The camera path, with or without an archive, is as it was. Opening or
+creating an archive leaves a service behind in `rr-app`. The source's `open()` error is still shown
+either way, in the words that fit who failed.
+
+**Cars is not one of those distinctions** (#362). The stats bar shows it only with an L0, on either
+path: the row is the length of the L0 the source published and absent where it published none, so
+the camera path withholds it before its first inferred frame and on any later turn that carried no
+frame. It read `0` there between #331 and #362, which asserted a count nothing had taken.
 
 **`sources` is read on connect.** The loop, the drift check and the result source's lifetime all hang
 off one mount; swapping a source mid-session would mean tearing down and rebuilding all three, and a
