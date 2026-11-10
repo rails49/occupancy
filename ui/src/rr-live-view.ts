@@ -389,9 +389,11 @@ export class RRLiveView extends LitElement {
    * standing in for it, with or without an archive. False in service mode,
    * which the sources declare (#331).
    *
-   * The drift check, the recorder, the alignment readout, Cars and Inference
-   * before a first answer, and the notices about a missing model or DPT belong
-   * to the camera path only.
+   * The drift check, the recorder, the alignment readout, Inference before a
+   * first answer, and the notices about a missing model or DPT belong to the
+   * camera path only. Cars is not among them: it is the length of the current
+   * L0 wherever the L0 came from, and `null` on every path where there is none
+   * (#362).
    *
    * It read "sources handed in and no archive" until #333. An archive opened
    * from the service is now bound to the page while the live view watches that
@@ -1054,7 +1056,7 @@ export class RRLiveView extends LitElement {
     return html`
       <rr-stats-bar
         .fps=${this._fps}
-        .cars=${this._detections?.length ?? (this._judging ? 0 : null)}
+        .cars=${this._detections?.length ?? null}
         .occupied=${this._occupiedCount}
         .inference=${this._judging ? this._inference ?? 0 : null}
         .l0Age=${this._l0Age}
