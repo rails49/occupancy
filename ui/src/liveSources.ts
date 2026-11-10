@@ -239,8 +239,10 @@ export interface ResultContext {
    */
   readonly drifted: boolean;
   /**
-   * The layout's DPT, or `null` when calibration resolves none. Resolved once
-   * from the archive by the view, so #166 stays one fix.
+   * The DPT the view resolved: the source's layout's where it brings one, the
+   * view's archive's on the camera path, and `null` in service mode with no
+   * layout yet (#353). `null` too wherever that calibration resolves none.
+   * Resolved once by the view, so #166 stays one fix.
    */
   readonly dpt: number | null;
 }
@@ -340,8 +342,10 @@ export interface ResultSource {
   /** L0 and L1 for one frame. Never rejects. */
   resultFor(frame: SourceFrame, context: ResultContext): Promise<FrameResult>;
   /**
-   * The layout these answers are about, or `null`/absent where the view's
-   * `archive` is it.
+   * The layout these answers are about, or `null`/absent where the source
+   * brings none. The view then falls back to its `archive` on the camera path
+   * only; in service mode nothing stands in for it — no sensors drawn and DPT
+   * `null` (#353).
    *
    * A getter, read by the view on every frame rather than once at `open()`:
    * a service re-reads its manifest whenever its event stream reconnects, and a
