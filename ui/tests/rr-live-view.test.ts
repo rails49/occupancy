@@ -133,13 +133,16 @@ describe('rr-live-view', () => {
     expect(el.shadowRoot!.querySelector('rr-stats-bar')).to.exist;
   });
 
-  it('shows Cars and Inference before the first frame, as it did before #331', async () => {
-    // Only service mode withholds them, with or without an archive here.
+  it('withholds Cars before the first frame and shows Inference, with or without an archive', async () => {
+    // Cars is the length of an L0 and nothing has published one yet, so the row
+    // is withheld on this path too rather than reading 0 (#362). Inference is
+    // this page's own measurement and still starts at 0 on the camera path;
+    // only service mode, which runs no model here, withholds it.
     for (const loaded of [archive, null]) {
       const el = await fixture<RRLiveView>(html`<rr-live-view .archive=${loaded}></rr-live-view>`);
       const stats = el.shadowRoot!.querySelector('rr-stats-bar')!;
 
-      expect(stats.cars, `archive ${loaded ? 'open' : 'none'}`).toBe(0);
+      expect(stats.cars, `archive ${loaded ? 'open' : 'none'}`).to.be.null;
       expect(stats.inference, `archive ${loaded ? 'open' : 'none'}`).toBe(0);
     }
   });

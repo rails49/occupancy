@@ -106,13 +106,24 @@ function fakeResults() {
     },
     /** Set to make the next `resultFor` reject, which the contract forbids. */
     failNext: false,
+    /**
+     * The L0 every answer from now on carries: the cars found, `[]` for a model
+     * that looked and found none, and `null` for a turn that published no L0 at
+     * all — which is what `localModelResultSource` answers a turn that carried
+     * no frame (#345).
+     */
+    l0: detections as readonly Detection[] | null,
     async resultFor(_frame: SourceFrame, context: ResultContext) {
       source.asked.push(context);
       if (source.failNext) {
         source.failNext = false;
         throw new Error('the source broke its contract');
       }
-      return { detections, sensorStates, inference: 7 };
+      return {
+        ...(source.l0 === null ? {} : { detections: source.l0 }),
+        sensorStates,
+        inference: 7,
+      };
     },
   };
   return source satisfies ResultSource;
@@ -187,6 +198,42 @@ describe('rr-live-view with sources of its own', () => {
     expect(stats.occupied).toBe(1);
     expect(stats.inference).toBe(7);
     expect(stats.fps).toBeGreaterThan(0);
+  });
+
+  it('withholds the car count on a turn that published no L0, off a service too', async () => {
+    // The camera path, where #331 used to read 0 for want of an L0 and claim a
+    // count nothing had taken (#362).
+    const frames = fakeFrames();
+    const results = fakeResults();
+
+    const el = await fixture<RRLiveView>(
+      html`<rr-live-view .archive=${archive} .sources=${{ frames, results }}></rr-live-view>`
+    );
+    const stats = el.shadowRoot!.querySelector('rr-stats-bar')!;
+    await waitFor(el, () => stats.cars === 1);
+
+    expect(stats.cars).toBe(1);
+
+    results.l0 = null;
+    await waitFor(el, () => stats.cars === null);
+
+    expect(stats.cars).to.be.null;
+  });
+
+  it('shows 0 cars on the camera path for an L0 that found none', async () => {
+    const frames = fakeFrames();
+    const results = fakeResults();
+    results.l0 = [];
+
+    const el = await fixture<RRLiveView>(
+      html`<rr-live-view .archive=${archive} .sources=${{ frames, results }}></rr-live-view>`
+    );
+    const stats = el.shadowRoot!.querySelector('rr-stats-bar')!;
+    await waitFor(el, () => results.asked.length > 0 && stats.cars !== null);
+
+    // A model looked and found nothing, which is a count — not the absence of
+    // one.
+    expect(stats.cars).toBe(0);
   });
 
   it('asks the result source with the drift verdict and the layout DPT', async () => {
