@@ -1146,7 +1146,19 @@ describe('rr-app', () => {
           })
         );
 
-      const settle = () => new Promise(resolve => setTimeout(resolve, 10));
+      const adding = (el: RRApp) =>
+        el as unknown as { _freezing: boolean; _frozenId: string | null };
+
+      /**
+       * Resolves once no add is running. A press the guard lets through sets
+       * `_freezing` before `rr-frame-add` returns, and the add clears it when it
+       * has finished, history entry included, or been refused (#373).
+       */
+      const idle = (el: RRApp) =>
+        vi.waitFor(() => expect(adding(el)._freezing).toBe(false), {
+          timeout: 2000,
+          interval: 5,
+        });
 
       it('stores the frame the service sent, under a capture_ name, and says to save it', async () => {
         serveFrames();
@@ -1154,7 +1166,7 @@ describe('rr-app', () => {
         const view = await live(el);
 
         freeze(view)!.click();
-        await settle();
+        await idle(el);
 
         expect(images(el)).toHaveLength(1);
         const { filename } = images(el)[0];
@@ -1179,10 +1191,13 @@ describe('rr-app', () => {
         const sent = frames;
 
         freeze(view)!.click();
-        await settle();
 
-        // The picture does not stop: the loop asked again after the press.
-        expect(frames).toBeGreaterThan(sent);
+        // The picture does not stop: the loop asks again after the press.
+        await vi.waitFor(() => expect(frames).toBeGreaterThan(sent + 1), {
+          timeout: 2000,
+          interval: 5,
+        });
+        await idle(el);
         // The held manifest is untouched until a save (#331): the image added
         // is in this page's archive and not in what the view draws.
         expect(view.sources).to.not.be.null;
@@ -1194,9 +1209,9 @@ describe('rr-app', () => {
         const view = (await liveSources(el))!;
 
         press(view, 'f-1', FRAME_BYTES);
-        await settle();
+        await idle(el);
         press(view, 'f-1', FRAME_BYTES);
-        await settle();
+        await idle(el);
 
         expect(images(el)).toHaveLength(1);
       });
@@ -1220,13 +1235,12 @@ describe('rr-app', () => {
           });
 
         press(view, 'f-1', FRAME_BYTES);
-        await settle();
         // A different frame: the second press is dropped because an add is
         // running, not because it is the same picture.
         press(view, 'f-2', FRAME_BYTES);
-        await settle();
+        expect(adding(el)._frozenId).toBe('f-1');
         release();
-        await settle();
+        await idle(el);
         gated.mockRestore();
 
         expect(images(el)).toHaveLength(1);
@@ -1240,7 +1254,7 @@ describe('rr-app', () => {
 
         expect(freeze(view)!.disabled).toBe(false);
         freeze(view)!.click();
-        await settle();
+        await idle(el);
 
         expect(images(el)).toHaveLength(1);
         expect(session(el)!.history.isDirty).toBe(true);
@@ -1265,7 +1279,6 @@ describe('rr-app', () => {
         const view = (await liveSources(el))!;
 
         press(view, 'f-1', FRAME_BYTES);
-        await settle();
 
         expect(notify).toHaveBeenCalledWith(
           expect.stringContaining('No layout is open'),
