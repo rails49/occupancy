@@ -66,7 +66,7 @@ both themes and `prefers-color-scheme` decides**; there is no toggle. Components
 tokens, so use those rather than hardcoding new colors.
 
 **The work panes follow the theme** (#151). Every surface and ink in `rr-app`, the three
-`rr-diagnostics-*` elements, `rr-thumbnail-bar`, `rr-stats-bar`, `rr-live-view` and
+`rr-diagnostics-*` elements, `rr-thumbnail-bar`, `rr-stats-bar`, `rr-video-bar`, `rr-live-view` and
 `rr-editor-view`'s `.main-content` is an `--sl-*` neutral, which inverts when the operating system's
 preference changes. The vocabulary is the one `rr-editor-view` and `index.html` already used, and
 new code takes it rather than picking a fresh step: `neutral-0` a pane, `neutral-50` a raised card,
