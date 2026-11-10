@@ -199,8 +199,12 @@ export class RRLiveView extends LitElement {
    */
   @state() private _notice: string | null = null;
   /**
-   * The layout the source answers against, or `null` where `archive` is it
+   * The layout the source answers against, or `null` where it brings none
    * (#331).
+   *
+   * Where it is `null` the camera path falls back to `archive`, and service
+   * mode has no fallback at all: no sensors drawn and DPT `null`, whatever
+   * archive is bound (#353).
    *
    * Re-read on every frame, not once: a service re-reads its manifest when its
    * event stream reconnects, and a sensor that moved has to reach the viewer.
@@ -886,7 +890,8 @@ export class RRLiveView extends LitElement {
       }
 
       // `drifted` is the refusal and `_dpt` is resolved once — from the source's
-      // layout where it brings one, from the archive otherwise — rather than per
+      // layout where it brings one, from the archive on the camera path, and
+      // `null` in service mode with no layout yet (#353) — rather than per
       // frame, so #166 stays one fix. The source turns the two into one state
       // per sensor: this view never builds an `unknown` of its own.
       //
