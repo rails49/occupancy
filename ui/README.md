@@ -61,6 +61,7 @@ rr-app                          ← shell: owns the editing session and the view
 │   └── rr-context-menu         ← right-click verbs on one object (sl-menu)
 ├── rr-live-view                ← live mode; owns the L0→L1 loop, over a frame and a result source
 │   ├── rr-stats-bar            ← FPS / cars / occupied / inference / L0 age / drift overlay
+│   ├── rr-video-bar            ← the camera path's video-file picker and transport (#286)
 │   ├── rr-viewer               ← SAME component, video source instead of img
 │   │   ├── sensorMarker.ts     ← the diamond, coloured by occupied / clear / unknown
 │   │   ├── carMarker.ts        ← renderDetection: the dashed L0 box
@@ -174,6 +175,7 @@ rr-app                          ← shell: owns the editing session and the view
 > [#345]: https://github.com/rails49/occupancy/issues/345
 > [#353]: https://github.com/rails49/occupancy/issues/353
 > [#354]: https://github.com/rails49/occupancy/issues/354
+> [#359]: https://github.com/rails49/occupancy/issues/359
 
 ## State and data flow
 
@@ -1451,12 +1453,13 @@ against it would be this page second-guessing the judgement it is only relaying.
   connect**: a different source is a different session. The `null` the frame source gives after
   `stop()` is what ends the loop, and the source's pacing is the loop's — one animation frame per
   frame for the camera.
-* **A video file stands in for the camera** ([#286], `videoFileFrameSource.ts`). A **Video file…**
-  button beside the recorder opens one, and Play/Pause, a seek slider and a clock appear beside it.
-  The loop, the drift check, the recorder and the stats bar run on its frames as they do on the
-  camera. A file the browser cannot play is refused in a danger bar naming the file. Not offered in
-  service mode. **Camera** goes back. How the swap works: [`../docs/UI.md`](../docs/UI.md) § Frames
-  and results come from sources.
+* **A video file stands in for the camera** ([#286], `videoFileFrameSource.ts`). `rr-video-bar`
+  draws the controls beside the recorder — a **Video file…** button, and Play/Pause, a seek slider
+  and a clock once one is playing — and this view opens what the bar reports was picked. The loop,
+  the drift check, the recorder and the stats bar run on its frames as they do on the camera. A file
+  the browser cannot play is refused in a danger bar naming the file, and the bar is handed no
+  `Playback` while it is. Not offered in service mode. **Camera** goes back. How the swap works:
+  [`../docs/UI.md`](../docs/UI.md) § Frames and results come from sources.
 * **A source may hand over a picture instead of a stream, and may bring its own layout** ([#331]).
   `SourceFrame.src` is shown through `rr-viewer`'s `src` — the source owns the object URL and
   releases it, and nothing reads pixels back out of the viewer — and `ResultSource.layout` gives the
@@ -1663,6 +1666,37 @@ measurement against tolerance rather than a red/green dot, because the ratio is 
 `null` renders as `—`, never `0.0`: "not measured yet" and "measured, and the camera has not moved" are
 different facts, and this is the one readout where a zero is a claim. Past the tolerance the row turns
 amber, not red — the refusal banner is already red and carries the button that acts on it.
+
+---
+
+### `rr-video-bar`
+
+The live view's video transport ([#286], split out in [#359]): which file to run on, and the
+controls for the one that is playing.
+
+| Property | Type | Description |
+|---|---|---|
+| `playback` | `Playback \| null` | The transport of the file playing, acted on directly by Play/Pause and the slider. `null` for a feed of the present and for a file the source refused, and then only the picker shows |
+| `name` | `string \| null` | The open file's name, shown beside the picker. `null` on the camera, which is also what withholds **Camera** |
+
+**Emits:** `rr-video-pick` (`File`) when a file is chosen, and `rr-camera-use` (no detail) for
+**Camera**. Both are declared in `HTMLElementEventMap`. `rr-live-view` acts on them: swapping the
+frame source is the view's job, and the bar knows nothing about frame sources.
+
+* It sits under `rr-live-view`, where `_renderVideoBar` puts it — below the recorder, above the
+  viewer, on the camera path only.
+* **`playback` is declared `hasChanged: () => true`.** The view hands over the *same* object every
+  frame, because every reading on it is a getter over a `<video>` that is moving; Lit's default
+  identity check would render the bar once, when the file was opened, and leave the clock and the
+  slider there while the picture ran on.
+* The file input is hidden and the **Video file…** button clicks it, so the control reads like
+  Record drift beside it. The input is cleared on each pick, which is how the same clip is watched a
+  second time.
+* `m:ss / m:ss`, and a disabled slider where the length is `0` — `Playback.duration` answers `0`
+  both before the metadata arrives and for a file with no end, and neither may reach the screen as
+  `NaN:NaN`.
+* It owns no state. A press re-renders it (`requestUpdate`), because a paused file hands over no
+  frames and nothing else would.
 
 ---
 

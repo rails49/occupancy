@@ -88,9 +88,18 @@ function standInVideo(el: RRLiveView, video: StandInVideo | null) {
   viewer.getVideoElement = () => video as unknown as HTMLVideoElement | null;
 }
 
+/**
+ * A control of the transport, which `rr-video-bar` draws in its own shadow
+ * root (#359). `null` where the bar is not rendered at all.
+ */
+function transport<E extends Element>(el: RRLiveView, selector: string): E | null {
+  const bar = el.shadowRoot!.querySelector('rr-video-bar');
+  return bar?.shadowRoot?.querySelector<E>(selector) ?? null;
+}
+
 /** Pick a file, the way the file input reports one. */
 async function pickVideo(el: RRLiveView, file: File) {
-  const input = el.shadowRoot!.querySelector<HTMLInputElement>('input[type="file"]')!;
+  const input = transport<HTMLInputElement>(el, 'input[type="file"]')!;
   Object.defineProperty(input, 'files', { value: [file], configurable: true });
   input.dispatchEvent(new Event('change'));
   await el.updateComplete;
@@ -171,8 +180,8 @@ describe('rr-live-view playing a video file', () => {
       html`<rr-live-view .archive=${archive}></rr-live-view>`,
     );
 
-    expect(el.shadowRoot!.querySelector('.video-open')).to.not.be.null;
-    expect(el.shadowRoot!.querySelector('input[type="file"]')).to.not.be.null;
+    expect(transport(el, '.video-open')).to.not.be.null;
+    expect(transport(el, 'input[type="file"]')).to.not.be.null;
   });
 
   it('opens the picker from the bar, not from a bare file input', async () => {
@@ -180,10 +189,10 @@ describe('rr-live-view playing a video file', () => {
     const el = await fixture<RRLiveView>(
       html`<rr-live-view .archive=${archive}></rr-live-view>`,
     );
-    const input = el.shadowRoot!.querySelector<HTMLInputElement>('input[type="file"]')!;
+    const input = transport<HTMLInputElement>(el, 'input[type="file"]')!;
     const opened = vi.spyOn(input, 'click');
 
-    el.shadowRoot!.querySelector<HTMLButtonElement>('.video-open')!.click();
+    transport<HTMLButtonElement>(el, '.video-open')!.click();
 
     expect(input.hidden).toBe(true);
     expect(opened).toHaveBeenCalledTimes(1);
@@ -192,7 +201,7 @@ describe('rr-live-view playing a video file', () => {
   it('offers it with nothing open, where the camera shows and nothing reads it', async () => {
     const el = await fixture<RRLiveView>(html`<rr-live-view></rr-live-view>`);
 
-    expect(el.shadowRoot!.querySelector('.video-open')).to.not.be.null;
+    expect(transport(el, '.video-open')).to.not.be.null;
   });
 
   it('does not offer it in service mode', async () => {
@@ -222,7 +231,7 @@ describe('rr-live-view playing a video file', () => {
       html`<rr-live-view .sources=${{ frames, results, service: true }}></rr-live-view>`,
     );
 
-    expect(el.shadowRoot!.querySelector('.video-open')).to.be.null;
+    expect(transport(el, '.video-open')).to.be.null;
   });
 
   it('plays the file, releases the camera, and runs the loop on its frames', async () => {
@@ -339,9 +348,9 @@ describe('rr-live-view playing a video file', () => {
     );
     standInVideo(el, standIn());
     await pickVideo(el, VIDEO);
-    await waitFor(el, () => el.shadowRoot!.querySelector('.video-name') !== null);
+    await waitFor(el, () => transport(el, '.video-name') !== null);
 
-    expect(el.shadowRoot!.querySelector('.video-name')!.textContent).toContain('IMG_4312.mov');
+    expect(transport(el, '.video-name')!.textContent).toContain('IMG_4312.mov');
   });
 
   it('refuses a file the browser cannot play, and says why', async () => {
@@ -356,7 +365,7 @@ describe('rr-live-view playing a video file', () => {
     expect(notice.textContent).toContain('IMG_4312.mov');
     expect(notice.textContent).toContain('HEVC');
     // No transport over a file that will never play.
-    expect(el.shadowRoot!.querySelector('.video-play')).to.be.null;
+    expect(transport(el, '.video-play')).to.be.null;
   });
 
   it('refuses it with no archive open, where no loop is running', async () => {
@@ -380,15 +389,15 @@ describe('rr-live-view playing a video file', () => {
     const video = standIn({ currentTime: 3 });
     standInVideo(el, video);
     await pickVideo(el, VIDEO);
-    await waitFor(el, () => el.shadowRoot!.querySelector('.video-time') !== null);
-    expect(el.shadowRoot!.querySelector('.video-time')!.textContent).toContain('0:03');
+    await waitFor(el, () => transport(el, '.video-time') !== null);
+    expect(transport(el, '.video-time')!.textContent).toContain('0:03');
 
     video.currentTime = 20;
     await waitFor(el, () =>
-      el.shadowRoot!.querySelector('.video-time')!.textContent!.includes('0:20'),
+      transport(el, '.video-time')!.textContent!.includes('0:20'),
     );
 
-    expect(el.shadowRoot!.querySelector('.video-time')!.textContent).toContain('0:20 / 1:30');
+    expect(transport(el, '.video-time')!.textContent).toContain('0:20 / 1:30');
   });
 
   it('plays and pauses the file', async () => {
@@ -398,18 +407,18 @@ describe('rr-live-view playing a video file', () => {
     const video = standIn();
     standInVideo(el, video);
     await pickVideo(el, VIDEO);
-    await waitFor(el, () => el.shadowRoot!.querySelector('.video-play') !== null);
+    await waitFor(el, () => transport(el, '.video-play') !== null);
 
-    const button = el.shadowRoot!.querySelector<HTMLButtonElement>('.video-play')!;
+    const button = transport<HTMLButtonElement>(el, '.video-play')!;
     expect(button.textContent!.trim()).toBe('Pause');
 
     button.click();
     video.paused = true;
     await el.updateComplete;
     expect(video.pause).toHaveBeenCalledTimes(1);
-    expect(el.shadowRoot!.querySelector('.video-play')!.textContent!.trim()).toBe('Play');
+    expect(transport(el, '.video-play')!.textContent!.trim()).toBe('Play');
 
-    el.shadowRoot!.querySelector<HTMLButtonElement>('.video-play')!.click();
+    transport<HTMLButtonElement>(el, '.video-play')!.click();
     expect(video.play).toHaveBeenCalledTimes(1);
   });
 
@@ -425,13 +434,13 @@ describe('rr-live-view playing a video file', () => {
     await pickVideo(el, VIDEO);
     await waitFor(el, () => viewer.detections.length > 0 && check.mock.calls.length > 0);
     await waitFor(el, () => false, 100);
-    expect(el.shadowRoot!.querySelector('.video-play')!.textContent!.trim()).toBe('Pause');
+    expect(transport(el, '.video-play')!.textContent!.trim()).toBe('Pause');
 
     video.paused = true;
     viewer.dispatchEvent(new CustomEvent('rr-video-pause', { bubbles: true, composed: true }));
     await el.updateComplete;
 
-    expect(el.shadowRoot!.querySelector('.video-play')!.textContent!.trim()).toBe('Play');
+    expect(transport(el, '.video-play')!.textContent!.trim()).toBe('Play');
   });
 
   it('seeks to where the slider is dragged, and reads the position out', async () => {
@@ -441,19 +450,19 @@ describe('rr-live-view playing a video file', () => {
     const video = standIn({ currentTime: 12 });
     standInVideo(el, video);
     await pickVideo(el, VIDEO);
-    await waitFor(el, () => el.shadowRoot!.querySelector('.video-seek') !== null);
+    await waitFor(el, () => transport(el, '.video-seek') !== null);
 
-    const seek = el.shadowRoot!.querySelector<HTMLInputElement>('.video-seek')!;
+    const seek = transport<HTMLInputElement>(el, '.video-seek')!;
     expect(seek.max).toBe('90');
     expect(Number(seek.value)).toBe(12);
-    expect(el.shadowRoot!.querySelector('.video-time')!.textContent).toContain('0:12 / 1:30');
+    expect(transport(el, '.video-time')!.textContent).toContain('0:12 / 1:30');
 
     seek.value = '45';
     seek.dispatchEvent(new Event('input'));
     await el.updateComplete;
 
     expect(video.currentTime).toBe(45);
-    expect(el.shadowRoot!.querySelector('.video-time')!.textContent).toContain('0:45 / 1:30');
+    expect(transport(el, '.video-time')!.textContent).toContain('0:45 / 1:30');
   });
 
   it('reads 0:00 for a file whose length is not known yet', async () => {
@@ -464,10 +473,10 @@ describe('rr-live-view playing a video file', () => {
     );
     standInVideo(el, standIn({ currentTime: 0, duration: NaN }));
     await pickVideo(el, VIDEO);
-    await waitFor(el, () => el.shadowRoot!.querySelector('.video-time') !== null);
+    await waitFor(el, () => transport(el, '.video-time') !== null);
 
-    expect(el.shadowRoot!.querySelector('.video-time')!.textContent).toContain('0:00 / 0:00');
-    expect(el.shadowRoot!.querySelector<HTMLInputElement>('.video-seek')!.disabled).toBe(true);
+    expect(transport(el, '.video-time')!.textContent).toContain('0:00 / 0:00');
+    expect(transport<HTMLInputElement>(el, '.video-seek')!.disabled).toBe(true);
   });
 
   it('goes back to the camera, releasing the file', async () => {
@@ -479,13 +488,13 @@ describe('rr-live-view playing a video file', () => {
     await pickVideo(el, VIDEO);
     await waitFor(el, () => viewer.videoSrc !== null);
 
-    el.shadowRoot!.querySelector<HTMLButtonElement>('.video-camera')!.click();
+    transport<HTMLButtonElement>(el, '.video-camera')!.click();
     await waitFor(el, () => viewer.stream !== null);
 
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:the-video');
     expect(viewer.videoSrc).toBeNull();
     expect(viewer.stream).to.not.be.null;
-    expect(el.shadowRoot!.querySelector('.video-play')).to.be.null;
+    expect(transport(el, '.video-play')).to.be.null;
   });
 
   it('releases the file when the view is left', async () => {

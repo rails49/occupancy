@@ -32,23 +32,12 @@ import type { DriftRow } from './driftRecording.js';
 import './rr-viewer.js';
 import './rr-stats-bar.js';
 import './rr-service-details.js';
+import './rr-video-bar.js';
 
 import type { RrViewer } from './rr-viewer.js';
 
 /** What `camera.resolution` stands in as when an archive declares none. */
 const DEFAULT_RESOLUTION: Frame = { width: 1920, height: 1080 };
-
-/**
- * `m:ss`: where a video file is, and how long it is, for the transport (#286).
- *
- * Both numbers are finite by the time they get here: a `<video>` reports `NaN`
- * for the duration of a file whose metadata has not arrived and `Infinity` for
- * one with no end, and `Playback.duration` answers `0` for both.
- */
-function clockText(seconds: number): string {
-  const whole = Math.max(0, Math.floor(seconds));
-  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`;
-}
 
 /**
  * How long to wait after one drift sample before taking the next.
@@ -339,32 +328,11 @@ export class RRLiveView extends LitElement {
     }
 
     .recorder,
-    .details-bar,
-    .video-bar {
+    .details-bar {
       padding: 0.25rem 1rem;
       background: var(--sl-color-neutral-100);
       color: var(--sl-color-neutral-700);
       font-size: 0.9rem;
-    }
-
-    /* The transport is a row: the file, the controls, and the clock beside the
-       slider that moves it. */
-    .video-bar {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-
-    /* The slider takes the rest of the row. */
-    .video-seek {
-      flex: 1 1 auto;
-      min-width: 4rem;
-    }
-
-    .video-name {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
     }
 
     /* The table's width must not widen the view: the panel scrolls it. */
@@ -376,8 +344,7 @@ export class RRLiveView extends LitElement {
 
     .notice button,
     .recorder button,
-    .details-bar button,
-    .video-bar button {
+    .details-bar button {
       margin-left: 0.75rem;
       padding: 0.15rem 0.6rem;
       font: inherit;
@@ -386,11 +353,6 @@ export class RRLiveView extends LitElement {
       border: 1px solid currentColor;
       border-radius: 4px;
       cursor: pointer;
-    }
-
-    /* The row's gap spaces the transport's buttons. */
-    .video-bar button {
-      margin-left: 0;
     }
 
     /* Freeze with no frame to add: it stays in place and says it cannot be
@@ -567,20 +529,10 @@ export class RRLiveView extends LitElement {
     }
   }
 
-  /** Open the picker. The input is hidden so the bar reads like its neighbours. */
-  private _pickVideo() {
-    this.renderRoot.querySelector<HTMLInputElement>('input[type="file"]')?.click();
-  }
-
-  private _onVideoPick(e: Event) {
-    const input = e.target as HTMLInputElement;
-    const file = input.files?.[0];
-    // Cleared so that picking the same file again fires `change` again, which
-    // is how a clip is watched a second time.
-    input.value = '';
-    if (!file) return;
-    this._videoName = file.name;
-    void this._openFrames(videoFileFrameSource(() => this._viewer, file));
+  /** Run on the file the bar reports was picked (#286). */
+  private _onVideoPick(e: CustomEvent<File>) {
+    this._videoName = e.detail.name;
+    void this._openFrames(videoFileFrameSource(() => this._viewer, e.detail));
   }
 
   /** Go back to this device's camera, releasing the file (#286). */
@@ -592,23 +544,6 @@ export class RRLiveView extends LitElement {
   /** The transport the frame source offers, or `null` for a feed of the present. */
   private get _playback(): Playback | null {
     return this._frames?.playback ?? null;
-  }
-
-  /** Run the file, or stop it on the frame that is up (#286). */
-  private _togglePlay() {
-    const playback = this._playback;
-    if (!playback) return;
-    if (playback.paused) playback.play();
-    else playback.pause();
-    // A paused file hands over no frames, so nothing else would re-render the
-    // transport to say which state it is in now.
-    this.requestUpdate();
-  }
-
-  /** Move the file to where the slider was dragged (#286). */
-  private _onSeek(e: Event) {
-    this._playback?.seek(Number((e.target as HTMLInputElement).value));
-    this.requestUpdate();
   }
 
   /**
@@ -835,42 +770,20 @@ export class RRLiveView extends LitElement {
    * page that chose a source for them would be deciding what it is only
    * relaying (#331).
    *
-   * The transport is here rather than on the `<video>` as native `controls`
-   * because the marker overlay covers the picture and takes every pointer — a
-   * control under it could not be pressed. It is dropped while the file is
-   * refused: there is nothing to play.
+   * `rr-video-bar` draws it and acts on the `Playback`; what comes back here is
+   * the file to open and the press that goes back to the camera, because
+   * swapping the frame source is this view's job (#359). The transport is
+   * dropped while the file is refused — there is nothing to play — by handing
+   * over no `Playback`, which leaves the picker in place to choose another file
+   * with.
    */
   private _renderVideoBar() {
-    const playback = this._framesError === null ? this._playback : null;
-    const duration = playback?.duration ?? 0;
-    const at = playback?.currentTime ?? 0;
-    return html`<div class="video-bar">
-      <button class="video-open" @click=${this._pickVideo}>Video file…</button>
-      <input type="file" accept="video/*" hidden @change=${this._onVideoPick} />
-      ${this._videoName ? html`<span class="video-name">${this._videoName}</span>` : ''}
-      ${playback
-        ? html`
-            <button class="video-play" @click=${this._togglePlay}>
-              ${playback.paused ? 'Play' : 'Pause'}
-            </button>
-            <input
-              class="video-seek"
-              type="range"
-              min="0"
-              max=${duration}
-              step="0.1"
-              aria-label="Seek"
-              ?disabled=${duration === 0}
-              .value=${String(at)}
-              @input=${this._onSeek}
-            />
-            <span class="video-time">${clockText(at)} / ${clockText(duration)}</span>
-          `
-        : ''}
-      ${this._videoName
-        ? html`<button class="video-camera" @click=${this._useCamera}>Camera</button>`
-        : ''}
-    </div>`;
+    return html`<rr-video-bar
+      .playback=${this._framesError === null ? this._playback : null}
+      .name=${this._videoName}
+      @rr-video-pick=${this._onVideoPick}
+      @rr-camera-use=${this._useCamera}
+    ></rr-video-bar>`;
   }
 
   private _renderRecorder() {
