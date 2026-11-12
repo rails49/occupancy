@@ -26,7 +26,7 @@ G is one track gauge, 9 mm in N. DPT is pixels per G, so a tolerance of 0.5 G is
 3. #336 set the tolerance at 0.5 G: all 32 photos pass, and the worst fold keeps false clear inside a
    train under 1% (decision 3).
 4. It is provisional. One rig, one camera, one classifier. The readings that confirm or change it
-   come from the occupancy service on `gleis49`
+   come from the occupancy service on a 2018 Mac mini, Ubuntu 26.04
    ([rails49/occupancy-service#12](https://github.com/rails49/occupancy-service/issues/12)). Until
    then the live view's refusal keeps its override. [INF]
 
