@@ -281,7 +281,8 @@ describe('saveToService', () => {
     expect(calls(fetchMock)).toEqual(['PUT /live/archive/manifest.json']);
   });
 
-  it('says the copy changed on a 412, and names Save As', async () => {
+  // The page reloads on a 412 rather than show the service's words (#381).
+  it('reports a 412 as stale', async () => {
     const archive = await edited();
     stubFetch({
       'PUT /live/archive/IMG%202.jpg': () => wrote(),
@@ -290,9 +291,7 @@ describe('saveToService', () => {
 
     const result = await saveToService(archive, BASE, '"v1"');
 
-    expect(result.kind).toBe('refused');
-    expect(result.kind === 'refused' && result.message).toMatch(/changed/);
-    expect(result.kind === 'refused' && result.message).toMatch(/Save As/);
+    expect(result).toEqual({ kind: 'stale' });
   });
 
   it('quotes the rule on a 422', async () => {

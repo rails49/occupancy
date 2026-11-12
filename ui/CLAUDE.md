@@ -113,7 +113,8 @@ opens a bump pull request here
   `look-about` (the layout's name and scale, absent with nothing loaded), a `look-reading` naming
   the bound file once Save would overwrite it, and `look-gear` for the settings dialog. `look-rail` holds the three
   views, then, in the editor only, File, History and, while a manifest is loaded, Tools. Live and
-  Diagnostics have the views alone.
+  Diagnostics have the views alone. On a service page File is Download alone, and a read-only
+  service has no History or Tools (#381).
 * The rail is `rr-app`'s and the tool state is the session's. The rail reads the tool, whether DPT
   resolves and the image on screen from the session, and a press calls `session.selectTool`.
 * Status text is a toast, `rr-app`'s own `sl-alert`. There is no unsaved mark and no source link.

@@ -3,6 +3,7 @@ import { R49Archive } from '@rails49/r49';
 import type { ManifestData } from '@rails49/r49';
 import {
   READ_ONLY_NOTICE,
+  downloadArchive,
   fileStem,
   supportsFileSystemAccess,
   timestampedName,
@@ -290,6 +291,24 @@ describe('writeArchive on a service binding', () => {
 
   afterEach(() => vi.unstubAllGlobals());
 
+  // Download on a service page (#381): the archive as a file, with nothing
+  // sent to the service.
+  it('downloads the archive as a timestamped .r49, and sends nothing', async () => {
+    const archive = await opened();
+    vi.spyOn(archive, 'export').mockResolvedValue(new Uint8Array([7, 7]));
+    const names: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      names.push(this.download);
+    });
+    stubService();
+
+    const filename = await downloadArchive(archive, 'Served');
+
+    expect(filename).toMatch(/^Served-\d{8}-\d{4}\.r49$/);
+    expect(names).toEqual([filename]);
+    expect(seen).toEqual([]);
+  });
+
   it('writes to the service, and hands back the new ETag in the binding', async () => {
     const archive = await opened();
     stubService(() => new Response(null, { status: 204, headers: { etag: '"v2"' } }));
@@ -322,14 +341,22 @@ describe('writeArchive on a service binding', () => {
 
   it('reports a refusal and leaves the binding on the service', async () => {
     const archive = await opened();
-    stubService(() => new Response(null, { status: 412 }));
+    stubService(() => new Response(null, { status: 422 }));
     const binding: FileBinding = { stem: '', service: { base: BASE, etag: '"v1"' } };
 
     const outcome = await writeArchive(archive, binding);
 
     expect(outcome.kind).toBe('refused');
     expect(outcome.kind === 'refused' && outcome.binding).toEqual(binding);
-    expect(outcome.kind === 'refused' && outcome.message).toMatch(/Save As/);
+  });
+
+  it('reports a 412 as stale', async () => {
+    const archive = await opened();
+    stubService(() => new Response(null, { status: 412 }));
+
+    const outcome = await writeArchive(archive, { stem: '', service: { base: BASE, etag: '"v1"' } });
+
+    expect(outcome).toEqual({ kind: 'stale' });
   });
 
   // A read-only copy: a `.r49` zip on the service, or a folder it cannot write.

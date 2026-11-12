@@ -36,12 +36,9 @@ export type ServiceWrite =
   /** Landed. `etag` is the version the manifest's answer gave, to save against next. */
   | { readonly kind: 'wrote'; readonly etag: string }
   /** The service said no, in words the caller shows as they are. */
-  | { readonly kind: 'refused'; readonly message: string };
-
-/** What a 412 means, in the words the toast uses. */
-const STALE_MESSAGE =
-  'The copy on the occupancy service changed since this page opened it. ' +
-  'Use Save As to keep this work.';
+  | { readonly kind: 'refused'; readonly message: string }
+  /** A 412: the archive on the service changed since this page read it (#381). */
+  | { readonly kind: 'stale' };
 
 /** The content type a file is written with, from its name. */
 function contentType(name: string): string {
@@ -65,9 +62,13 @@ function bodyOf(name: string, bytes: Uint8Array): Blob {
  * above sees it.
  */
 class ServiceRefusal extends Error {
-  constructor(message: string) {
+  /** Whether the answer was a 412. */
+  readonly stale: boolean;
+
+  constructor(message: string, stale = false) {
     super(message);
     this.name = 'ServiceRefusal';
+    this.stale = stale;
   }
 }
 
@@ -107,7 +108,9 @@ export class ServiceWriter implements ArchiveWriter {
    */
   async put(name: string, bytes: Uint8Array): Promise<void> {
     const answer = await putArchiveFile(this.base, name, this.etag, bodyOf(name, bytes));
-    if (!answer.ok) throw new ServiceRefusal(await refusalMessage(answer));
+    if (!answer.ok) {
+      throw new ServiceRefusal(await refusalMessage(answer), answer.status === SAVE_STALE);
+    }
     if (name !== MANIFEST_NAME) return;
     // `LIVE.md` has the answer carry the new version.
     this.etag = readEtag(answer) ?? this.etag;
@@ -149,8 +152,8 @@ export class ServiceWriter implements ArchiveWriter {
  * given, and for the same reason.
  *
  * @throws on a network failure, which the caller reports as a failed save. A
- *         refusal comes back as a value instead: it is the service answering,
- *         not the save breaking.
+ *         refusal, and a 412 as `stale`, come back as a value instead: it is
+ *         the service answering, not the save breaking.
  */
 export async function saveToService(
   archive: R49Archive,
@@ -161,7 +164,9 @@ export async function saveToService(
   try {
     await archive.writeChanges(writer);
   } catch (err) {
-    if (err instanceof ServiceRefusal) return { kind: 'refused', message: err.message };
+    if (err instanceof ServiceRefusal) {
+      return err.stale ? { kind: 'stale' } : { kind: 'refused', message: err.message };
+    }
     throw err;
   }
   return { kind: 'wrote', etag: writer.etag };
@@ -169,7 +174,6 @@ export async function saveToService(
 
 /** A refusal, in the words the toast shows. */
 async function refusalMessage(response: Response): Promise<string> {
-  if (response.status === SAVE_STALE) return STALE_MESSAGE;
   if (response.status === SAVE_REFUSED) {
     const rule = await saveRefusalRule(response);
     return rule === null

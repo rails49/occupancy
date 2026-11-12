@@ -178,6 +178,7 @@ rr-app                          ← shell: owns the editing session and the view
 > [#359]: https://github.com/rails49/occupancy/issues/359
 > [#362]: https://github.com/rails49/occupancy/issues/362
 > [#368]: https://github.com/rails49/occupancy/issues/368
+> [#381]: https://github.com/rails49/occupancy/issues/381
 
 ## State and data flow
 
@@ -249,11 +250,19 @@ reaching into the archive directly leaves an undo stack that is wrong rather tha
 Application shell. Owns the editing session and routes between the views.
 
 **Internal state** (no public properties): `_session`, `_viewMode`
-(`'editor' | 'live' | 'diagnostics'`), `_binding`, `_service`. Starts with no session and no
-binding; where this origin serves an occupancy service, both arrive from it ([#333]).
+(`'editor' | 'live' | 'diagnostics'`), `_binding`, `_service`, `_camera`, `_cameraReady`. Starts
+with no session and no binding; where this origin serves an occupancy service, both arrive from it
+([#333]) and the page is a service page ([#381]).
 
 **Handles:** `look-view` and `look-press` from its own band and rail, `rr-layout-change`,
-`rr-camera-height-change`, `rr-notify`, `rr-frame-add`.
+`rr-camera-height-change`, `rr-notify`, `rr-frame-add`, `rr-frame-capture`.
+
+**On a service page** ([#381]) File is `#file-download` alone, the editor's camera button adds the
+service's next frame (`serviceCamera.ts`), and edits save to the service by themselves: 10 s after
+the last one, at once on a view switch and on a hidden tab, quietly unless a save fails. A 412 says
+the archive was changed on another page and reloads, with no leave prompt. A service with no `ETag`
+is read-only: no History, no Tools, no settings edits, no Freeze, and `rr-editor-view` gets
+`readOnly`. `docs/UI.md` § The service page saves by itself.
 
 `rr-notify` is a child's transient message, toasted here because this is where toasts live. A toast
 shows its message as text, never as HTML. It is raised at `warning`, never `danger`: everything that
@@ -295,10 +304,11 @@ hijack Cmd+Z mid-typing. A press with a drag still live does nothing (see `histo
   "Saved" would hide which of the three things just happened.
 * **The history position is taken before the first request** and that position is marked, so an
   edit made while the save was in flight leaves the archive dirty. A Save pressed while one is
-  running does nothing, and a toast stays up while it runs ([#333]).
+  running does nothing, and a toast stays up while it runs ([#333]), except on a save to the
+  service, which says nothing unless it fails ([#381]).
 * **The outcome is applied only while the session that was saved is still the current one** — New
   and Open are not held shut while a save runs, so a save they answered leaves `_binding` and the
-  service alone, and still toasts, because the write did land ([#354]).
+  service alone ([#354]).
 * The **stem** is the binding's, falling back to `layout.name` for an archive that has never been
   saved — which an archive on a service always is. It does not follow a later rename: the file's
   identity is the file, and `layout.name` is metadata stored inside it.
@@ -309,18 +319,20 @@ hijack Cmd+Z mid-typing. A press with a drag still live does nothing (see `histo
 * **Freeze adds the frame the live view had on screen** ([#334]). `rr-frame-add` goes through
   `imageAdd.ts`'s `addPrepared` under a `captureFilename()` name, which is Capture from Camera's
   path exactly: the same orientation step, the same two refusals in the same words, one history
-  entry, and the new image selected. It is **one entry and no save** — Live has neither Save nor
-  undo, so the toast names the file and says to save it in the editor, and the archive is left
-  dirty. A refusal is the warning toast the editor's refusals get. **A second press on one frame id
+  entry, and the new image selected. It is **one entry**, which autosave writes ([#381]), and the
+  toast names the file. A refusal is the warning toast the editor's refusals get. **A second press on one frame id
   adds nothing**, and so does a press while an add is running: the first would store the same
   picture twice under a second name, and two adds at once would interleave over one history entry.
-  A press with no session — a service whose manifest would not load — says so rather than nothing.
+  A press with no session — a service whose manifest would not load — says so rather than nothing,
+  and so does a press on a read-only service. `rr-frame-capture` from the editor's camera button
+  takes the same path with the service's next frame ([#381]).
 * At page start, with nothing open, it looks for an occupancy service and **opens the archive it
   serves** ([#333]): the check's `ETag` first, then `R49Archive.load` on the service's `archive/`
   base URL. An archive the person
   opened or created first wins, before the check answers and before the load does. No service, or a
   service that is not one, is silent. A manifest that will not load gets the failed-load toast.
-  New, Open and a picker Save As leave the service behind for good.
+  New or Open before the check answers keep the page a cloud page; a service page offers neither
+  ([#381]).
 * `look-band`'s `ui` is "occupancy"; look draws the mark and the UI name (org
   [ADR-0019](https://github.com/rails49/.github/blob/main/docs/adr/0019-the-band-starts-with-the-mark-and-the-ui-name.md), [#206]).
 * `look-about` carries the layout's name and its **scale** as the detail ([#52]), read out of the
@@ -348,9 +360,9 @@ the editor adds three command groups:
 
 | Group | Commands | |
 |---|---|---|
-| File | `#file-new`, `#file-open`, `#file-save` (`Mod+S`) | A Shift-click on Save, or `Shift+Mod+S`, is Save As ([#48]) |
-| History | `#edit-undo` (`Mod+Z`), `#edit-redo` (`Shift+Mod+Z`) | Disabled when the stack is empty |
-| Tools | `#tool-calibration`, `#tool-track`, `#tool-sensor`, `#tool-car` | Only while a manifest is loaded, in the order they are used; the active tool is `pressed` |
+| File | `#file-new`, `#file-open`, `#file-save` (`Mod+S`) | A Shift-click on Save, or `Shift+Mod+S`, is Save As ([#48]). On a service page, `#file-download` alone ([#381]) |
+| History | `#edit-undo` (`Mod+Z`), `#edit-redo` (`Shift+Mod+Z`) | Disabled when the stack is empty. Absent on a read-only service |
+| Tools | `#tool-calibration`, `#tool-track`, `#tool-sensor`, `#tool-car` | Only while a manifest is loaded, in the order they are used; the active tool is `pressed`. Absent on a read-only service |
 
 Save As is a modifier rather than a button of its own: on a browser without the File System Access
 API it does exactly what Save does. The tooltip **names the modifier only where the browser can
@@ -466,6 +478,9 @@ completeness by landing a few pixels off. See `SPEC.md` § Labeling completeness
 | `images` | `string[]` | Image URLs (blob URLs) |
 | `complete` | `boolean[]` | `labeled_complete` per image, parallel to `images`; short reads as incomplete |
 | `selectedIndex` | `number` | Currently selected image; `-1` for none |
+| `files` | `boolean` | Whether to offer Add Images from Files; `false` on a service page ([#381]) |
+| `cameraDisabled` | `boolean` | Disables the camera button, with `aria-disabled`; a press sends nothing |
+| `readOnly` | `boolean` | No add, delete or reorder, for a service that does not accept changes |
 
 **Emits:** `rr-image-select` `{ index }`, `rr-image-delete` `{ index }`, `rr-image-add`
 `{ source: 'camera' | 'file' }`, `rr-image-reorder` `{ from, to }`. The `'file'` button opens one
@@ -1069,12 +1084,17 @@ undo, and blob URLs, and re-renders on every change the session reports.
 | Property | Type | Description |
 |---|---|---|
 | `session` | `EditSession \| null` | The archive being edited, created by `rr-app` on New and Open |
+| `service` | `boolean` | A service page ([#381]): the camera button sends `rr-frame-capture` and there is no file button |
+| `cameraReady` | `boolean` | Whether the service's answer carries a frame; the camera button is disabled without one |
+| `readOnly` | `boolean` | Editing off: no click, point drag, right-click, completeness toggle, add, delete or reorder, and a sentence saying the service does not accept changes. Zoom and pan stay |
 
 **Emits:** `rr-notify` (`{ message }`) when a click is refused, such as the **car tool** clicking
 inside a car already labelled ([#43]), or when an image add is refused ([#255], [#260]) — one event
 per pick, however many of its files were refused ([#262]). `rr-app` owns the toast. Each notice the
 session sends (`subscribeNotices`: a track refusal, or what to do instead of a track click that did
-nothing) goes up as `{ message, duration: 3000 }` ([#324]).
+nothing) goes up as `{ message, duration: 3000 }` ([#324]). `rr-frame-capture` (no detail) when
+the camera button is pressed on a service page, for `rr-app` to add the service's next frame
+([#381]).
 
 * Makes a blob URL for each image when it first appears in the image list and revokes it when the
   image goes. A new session revokes them all.
@@ -1513,7 +1533,8 @@ against it would be this page second-guessing the judgement it is only relaying.
   current answer carried no frame**: before the first one, on a `json`-only answer, and on a failed
   request. The last picture is still up in all three and it is out of date, so adding it would
   record a moment the service has just said it cannot see. Nothing here judges or records the add,
-  and the camera path has no Freeze — the editor's Capture from Camera is that path.
+  and the camera path has no Freeze — the editor's camera button is that path, and on a service
+  page it adds the service's next frame ([#381]).
 * **Details** ([#332]): in service mode a Details button stands where the recorder does in local
   mode. It is closed each time the view opens. While it is open, `rr-service-details` sits below the
   viewer with the last answer's `FrameResult.details`, the viewer draws the layout's tracks as

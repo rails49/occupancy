@@ -8,6 +8,9 @@ import type { EditHistory } from '../src/history.js';
 import type { FileBinding } from '../src/persistence.js';
 import type { FrameAddDetail } from '../src/rr-live-view.js';
 import { FRAME_BYTES, multipartAnswer, useNodeFileGlobals } from './liveFixture.js';
+import type { LookCommand } from '@rails49/look';
+import { press as pressCommand } from '@rails49/look/testing';
+import { AUTOSAVE_MS } from '../src/rr-app.js';
 import type SlIcon from '@shoelace-style/shoelace/dist/components/icon/icon.js';
 
 // Mock global fetch
@@ -613,7 +616,7 @@ describe('rr-app', () => {
     const binding = (el: RRApp) =>
       (el as unknown as { _binding: FileBinding | null })._binding;
     const session = (el: RRApp) =>
-      (el as unknown as { _session: { history: EditHistory; editLayout(l: unknown): Promise<void> } | null })._session;
+      (el as unknown as { _session: { history: EditHistory; archive: R49Archive; editLayout(l: unknown): Promise<void> } | null })._session;
     const save = (el: RRApp, rebind = false) =>
       (el as unknown as { _onFileSave(rebind?: boolean): Promise<void> })._onFileSave(rebind);
 
@@ -678,7 +681,7 @@ describe('rr-app', () => {
       serve(() => jsonManifest(etags.shift() ?? '"v3"'));
       const { el } = await mounted();
 
-      expect(seen).toEqual([
+      expect(seen.filter(call => call.includes('/archive/'))).toEqual([
         'GET /live/archive/manifest.json',
         'GET /live/archive/manifest.json',
       ]);
@@ -731,19 +734,203 @@ describe('rr-app', () => {
       expect((await liveSources(el))!.sources).to.not.be.null;
     });
 
-    it('leaves the service behind when an archive is created', async () => {
+    const command = (el: RRApp, id: string) =>
+      el.shadowRoot!.querySelector<LookCommand>(`#${id}`);
+    const groups = (el: RRApp) =>
+      [...el.shadowRoot!.querySelectorAll('look-rail look-group')].map(g => g.getAttribute('label'));
+    const editor = (el: RRApp) => el.shadowRoot!.querySelector('rr-editor-view')!;
+
+    // The service page holds only the service's archive (#381).
+    it('offers Download alone in File: no New, Open or Save', async () => {
       writable();
       const { el } = await mounted();
-      expect((await liveSources(el))!.sources).to.not.be.null;
 
-      (el as unknown as { _viewMode: string })._viewMode = 'editor';
-      await (el as unknown as { _onFileNew(): Promise<void> })._onFileNew();
-      await el.updateComplete;
+      for (const id of ['file-new', 'file-open', 'file-save']) {
+        expect(command(el, id), id).toBeNull();
+      }
+      expect(command(el, 'file-download')).not.toBeNull();
+      expect(groups(el)).toEqual(['File', 'History', 'Tools']);
+      expect(editor(el).service).toBe(true);
+      expect(editor(el).readOnly).toBe(false);
+    });
 
-      const view = (await liveSources(el))!;
-      expect(view.sources).to.be.null;
-      expect(view.archive).to.not.be.null;
-      expect(binding(el)).to.be.null;
+    it('keeps New, Open and Save, and the device camera, on the cloud page', async () => {
+      serve(() => new TypeError('Failed to fetch'));
+      const { el } = await mounted();
+
+      for (const id of ['file-new', 'file-open', 'file-save']) {
+        expect(command(el, id), id).not.toBeNull();
+      }
+      expect(command(el, 'file-download')).toBeNull();
+      expect(editor(el).service).toBe(false);
+    });
+
+    it('downloads the archive as a file, and sends nothing to the service', async () => {
+      writable();
+      const { el, notify } = await mounted();
+      vi.spyOn(session(el)!.archive, 'export').mockResolvedValue(new Uint8Array());
+      await session(el)!.editLayout({ name: 'Renamed', scale: 'N' });
+
+      pressCommand(command(el, 'file-download')!);
+      await vi.waitFor(() =>
+        expect(notify).toHaveBeenCalledWith(
+          expect.stringMatching(/^Downloaded Renamed-\d{8}-\d{4}\.r49$/),
+          'success',
+          'download'
+        )
+      );
+
+      expect(seen.filter(call => call.startsWith('PUT'))).toHaveLength(0);
+      // A download is not the save: the edit still goes to the service.
+      expect(session(el)!.history.isDirty).toBe(true);
+    });
+
+    // A service with no `ETag` serves the archive and takes no writes.
+    describe('read-only', () => {
+      it('turns editing off and leaves the views and Download', async () => {
+        serve(() => jsonManifest());
+        const { el } = await mounted();
+
+        expect(editor(el).readOnly).toBe(true);
+        expect(groups(el)).toEqual(['File']);
+        expect(command(el, 'file-download')).not.toBeNull();
+      });
+
+      it('takes no settings edit', async () => {
+        serve(() => jsonManifest());
+        const { el } = await mounted();
+
+        await (el as unknown as { _onLayoutChange(e: unknown): Promise<void> })._onLayoutChange(
+          new CustomEvent('rr-layout-change', { detail: { layout: { name: 'Renamed', scale: 'N' } } })
+        );
+
+        expect(session(el)!.archive.getManifest().layout.name).toBe('Served');
+        expect(session(el)!.history.isDirty).toBe(false);
+      });
+    });
+
+    // Autosave (#381): 10 s after the last edit, and at once on a switch
+    // between the editor and the live view or when the tab is hidden.
+    describe('autosave', () => {
+      const puts = () => seen.filter(call => call === 'PUT /live/archive/manifest.json');
+
+      afterEach(() => {
+        vi.useRealTimers();
+        Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+      });
+
+      it('saves 10 s after the last edit, quietly', async () => {
+        writable();
+        const { el, notify } = await mounted();
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+        await session(el)!.editLayout({ name: 'One', scale: 'N' });
+        await vi.advanceTimersByTimeAsync(AUTOSAVE_MS - 1000);
+        await session(el)!.editLayout({ name: 'Two', scale: 'N' });
+        await vi.advanceTimersByTimeAsync(AUTOSAVE_MS - 1);
+        expect(puts()).toHaveLength(0);
+
+        await vi.advanceTimersByTimeAsync(1);
+        await vi.waitFor(() => expect(session(el)!.history.isDirty).toBe(false));
+        expect(puts()).toHaveLength(1);
+        expect(notify).not.toHaveBeenCalledWith('Saved to the occupancy service', 'success', 'floppy');
+      });
+
+      it('saves what an undo restored', async () => {
+        writable();
+        const { el } = await mounted();
+        await session(el)!.editLayout({ name: 'One', scale: 'N' });
+        await save(el);
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+        await (session(el) as unknown as { undo(): Promise<void> }).undo();
+        await vi.advanceTimersByTimeAsync(AUTOSAVE_MS);
+
+        await vi.waitFor(() => expect(puts()).toHaveLength(2));
+      });
+
+      it('saves at once on a switch to the live view', async () => {
+        writable();
+        const { el } = await mounted();
+        await session(el)!.editLayout({ name: 'One', scale: 'N' });
+
+        el.shadowRoot!.querySelector('look-rail')!.dispatchEvent(
+          new CustomEvent('look-view', { detail: { name: 'live' } })
+        );
+
+        await vi.waitFor(() => expect(puts()).toHaveLength(1));
+      });
+
+      it('saves at once when the tab is hidden', async () => {
+        writable();
+        const { el } = await mounted();
+        await session(el)!.editLayout({ name: 'One', scale: 'N' });
+
+        Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+        document.dispatchEvent(new Event('visibilitychange'));
+
+        await vi.waitFor(() => expect(puts()).toHaveLength(1));
+      });
+
+      it('saves nothing on the cloud page', async () => {
+        serve(() => new TypeError('Failed to fetch'));
+        const { el } = await mounted();
+        (el as any)._open(archive);
+        vi.spyOn(archive, 'export').mockResolvedValue(new Uint8Array());
+        const click = vi.mocked(HTMLAnchorElement.prototype.click);
+        click.mockClear();
+        await session(el)!.editLayout({ name: 'One', scale: 'N' });
+
+        Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+        document.dispatchEvent(new Event('visibilitychange'));
+        await new Promise(resolve => setTimeout(resolve, 0));
+
+        expect(click).not.toHaveBeenCalled();
+        expect(session(el)!.history.isDirty).toBe(true);
+      });
+
+      it('still asks before the tab closes on an unsaved edit', async () => {
+        writable();
+        const { el } = await mounted();
+        await session(el)!.editLayout({ name: 'One', scale: 'N' });
+
+        const event = new Event('beforeunload', { cancelable: true });
+        window.dispatchEvent(event);
+
+        expect(event.defaultPrevented).toBe(true);
+      });
+    });
+
+    // A 412: the archive changed on another page (#381).
+    describe('a refused save', () => {
+      afterEach(() => vi.useRealTimers());
+
+      it('says the archive changed on another page, and reloads without asking', async () => {
+        serve(() => jsonManifest('"v1"'), () => new Response(null, { status: 412 }));
+        const { el, notify } = await mounted();
+        const reload = vi
+          .spyOn(el as unknown as { _reload(): void }, '_reload')
+          .mockImplementation(() => {});
+        await session(el)!.editLayout({ name: 'Renamed', scale: 'N' });
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+        await save(el);
+
+        expect(notify).toHaveBeenCalledWith(
+          expect.stringContaining('changed on another page'),
+          'danger',
+          'exclamation-diamond',
+          Infinity
+        );
+        expect(notify).not.toHaveBeenCalledWith(expect.stringMatching(/Save As/), expect.anything(), expect.anything(), expect.anything());
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(reload).toHaveBeenCalledTimes(1);
+
+        // The edits are lost on purpose, so the browser does not ask.
+        const event = new Event('beforeunload', { cancelable: true });
+        window.dispatchEvent(event);
+        expect(event.defaultPrevented).toBe(false);
+      });
     });
 
     it('ignores a service that answers after an archive has been created', async () => {
@@ -802,7 +989,8 @@ describe('rr-app', () => {
         expect(session(el)!.history.isDirty).toBe(false);
         // The new version, so the next save is not refused as stale.
         expect(binding(el)!.service!.etag).toBe('"v2"');
-        expect(notify).toHaveBeenCalledWith(
+        // Quiet: it runs every few seconds while the person edits (#381).
+        expect(notify).not.toHaveBeenCalledWith(
           'Saved to the occupancy service',
           'success',
           'floppy'
@@ -810,7 +998,6 @@ describe('rr-app', () => {
       });
 
       const refusals: [number, (key: string) => Response, RegExp][] = [
-        [412, () => new Response(null, { status: 412 }), /Save As/],
         [
           422,
           () =>
@@ -928,72 +1115,6 @@ describe('rr-app', () => {
         expect(session(el)!.history.isDirty).toBe(false);
         expect(binding(el)!.service!.etag).toBe('"v2"');
       });
-
-      it('moves the work to the file a Save As chose, and the live view with it', async () => {
-        writable();
-        const { el } = await mounted();
-        const written: unknown[] = [];
-        const chosen = {
-          name: 'west-yard.r49',
-          createWritable: vi.fn().mockResolvedValue({
-            write: vi.fn(async (data: unknown) => void written.push(data)),
-            close: vi.fn(async () => {}),
-            abort: vi.fn(),
-          }),
-        };
-        (window as any).showSaveFilePicker = vi.fn().mockResolvedValue(chosen);
-
-        await save(el, true);
-
-        expect(written).toHaveLength(1);
-        expect(binding(el)).toEqual({ stem: 'west-yard', handle: chosen });
-        expect(seen.filter(call => call.startsWith('PUT'))).toHaveLength(0);
-        // The archive is the person's file now, so the live view goes back to
-        // the camera and the model in this page.
-        const view = (await liveSources(el))!;
-        expect(view.sources).to.be.null;
-        expect(view.archive).to.not.be.null;
-
-        // And the next plain Save goes to that file, not to the service.
-        (el as unknown as { _viewMode: string })._viewMode = 'editor';
-        await save(el);
-        expect(written).toHaveLength(2);
-        expect(seen.filter(call => call.startsWith('PUT'))).toHaveLength(0);
-      });
-
-      it('names the layout in the picker, since an archive on a service has no filename here', async () => {
-        writable();
-        const { el } = await mounted();
-        const picker = vi.fn().mockRejectedValue(new DOMException('dismissed', 'AbortError'));
-        (window as any).showSaveFilePicker = picker;
-
-        await save(el, true);
-
-        expect(picker).toHaveBeenCalledWith(
-          expect.objectContaining({ suggestedName: 'Served.r49' })
-        );
-      });
-
-      it('says a read-only archive is read-only, and downloads instead', async () => {
-        serve(() => jsonManifest());
-        const { el, notify } = await mounted();
-
-        await save(el);
-
-        expect(seen.filter(call => call.startsWith('PUT'))).toHaveLength(0);
-        expect(notify).toHaveBeenCalledWith(
-          expect.stringContaining('read-only'),
-          'warning',
-          'exclamation-triangle'
-        );
-        expect(notify).toHaveBeenCalledWith(
-          expect.stringMatching(/^Downloaded Served-\d{8}-\d{4}\.r49$/),
-          'success',
-          'download'
-        );
-        // A download binds nothing: the archive is still the service's.
-        expect(binding(el)!.service).toEqual({ base: '/live', etag: null });
-      });
     });
 
     // A service save is several requests, and nothing holds New or Open shut
@@ -1026,12 +1147,6 @@ describe('rr-app', () => {
         // The empty archive is this page's, not the service's.
         expect(binding(el)).to.be.null;
         expect((await liveSources(el))!.sources).to.be.null;
-        // The write did land, so it still says where.
-        expect(notify).toHaveBeenCalledWith(
-          'Saved to the occupancy service',
-          'success',
-          'floppy'
-        );
 
         // Which is the harm: a second Save would otherwise put the empty
         // manifest on the service, and the service deletes every image the
@@ -1046,9 +1161,9 @@ describe('rr-app', () => {
         );
       });
 
-      it('leaves the binding Open set, and still says the write landed', async () => {
+      it('leaves the binding Open set', async () => {
         const release = heldService();
-        const { el, notify } = await mounted();
+        const { el } = await mounted();
         const handle = { getFile: async () => new File([], 'west-yard.r49') };
         (window as any).showOpenFilePicker = vi.fn().mockResolvedValue([handle]);
         onTestFinished(() => {
@@ -1064,11 +1179,6 @@ describe('rr-app', () => {
 
         // The opened file, not the service: the next Save overwrites that file.
         expect(binding(el)).toEqual({ stem: 'west-yard', handle });
-        expect(notify).toHaveBeenCalledWith(
-          'Saved to the occupancy service',
-          'success',
-          'floppy'
-        );
       });
     });
 
@@ -1097,7 +1207,7 @@ describe('rr-app', () => {
        * through it, because `serve` holds every `latest` open on purpose:
        * these tests are the ones that need the loop to be fed.
        */
-      function serveFrames({ readOnly = false } = {}) {
+      function serveFrames({ readOnly = false, frame = true } = {}) {
         frames = 0;
         serve(() => (readOnly ? jsonManifest() : jsonManifest('"v1"')));
         const manifests = global.fetch;
@@ -1107,6 +1217,9 @@ describe('rr-app', () => {
           }
           // Paced as `after` paces a service, so the loop does not spin.
           await new Promise(resolve => setTimeout(resolve, 5));
+          if (!frame) {
+            return multipartAnswer({ version: 1, frame_id: null, captured_at: null, l1: {} }, null);
+          }
           return multipartAnswer({
             version: 1,
             frame_id: `f-${++frames}`,
@@ -1160,7 +1273,7 @@ describe('rr-app', () => {
           interval: 5,
         });
 
-      it('stores the frame the service sent, under a capture_ name, and says to save it', async () => {
+      it('stores the frame the service sent, under a capture_ name, and says so', async () => {
         serveFrames();
         const { el, notify } = await mounted();
         const view = await live(el);
@@ -1174,14 +1287,9 @@ describe('rr-app', () => {
         // The `frame` part byte for byte: this JPEG carries no orientation tag,
         // so preparing it changes nothing.
         expect(await archiveOf(el).getImage(filename)).toEqual(FRAME_BYTES);
-        // One entry, and the archive is dirty: Live has no Save and no undo,
-        // so the toast says where both of them are.
+        // One entry, and the archive is dirty until autosave writes it (#381).
         expect(session(el)!.history.isDirty).toBe(true);
-        expect(notify).toHaveBeenCalledWith(
-          `Added ${filename} — save it in the editor`,
-          'success',
-          'file-earmark-plus'
-        );
+        expect(notify).toHaveBeenCalledWith(`Added ${filename}`, 'success', 'file-earmark-plus');
       });
 
       it('keeps the feed running, and the live view drawing the service', async () => {
@@ -1246,18 +1354,74 @@ describe('rr-app', () => {
         expect(images(el)).toHaveLength(1);
       });
 
-      it('is offered on a read-only service, which Save As then takes off', async () => {
+      // Editing is off on a read-only service (#381).
+      it('adds nothing on a read-only service, and says why', async () => {
         serveFrames({ readOnly: true });
-        const { el } = await mounted();
+        const { el, notify } = await mounted();
         expect(binding(el)).toEqual({ stem: '', service: { base: '/live', etag: null } });
         const view = await live(el);
 
-        expect(freeze(view)!.disabled).toBe(false);
         freeze(view)!.click();
         await idle(el);
 
-        expect(images(el)).toHaveLength(1);
-        expect(session(el)!.history.isDirty).toBe(true);
+        expect(images(el)).toHaveLength(0);
+        expect(notify).toHaveBeenCalledWith(
+          'This occupancy service does not accept changes.',
+          'warning',
+          'exclamation-triangle',
+          Infinity
+        );
+      });
+
+      // The editor's camera button on a service page (#381): the same add,
+      // from the service's next frame.
+      describe('the camera button', () => {
+        const capture = (el: RRApp) =>
+          editor(el).dispatchEvent(new CustomEvent('rr-frame-capture', { bubbles: true, composed: true }));
+
+        it('adds the service\'s next frame, once per press', async () => {
+          serveFrames();
+          const { el, notify } = await mounted();
+          await vi.waitFor(() => expect(editor(el).cameraReady).toBe(true));
+
+          capture(el);
+          await idle(el);
+          capture(el);
+          await idle(el);
+
+          expect(images(el)).toHaveLength(2);
+          const [first, second] = images(el).map(image => image.filename);
+          expect(first).to.match(/^capture_[^.]+\.jpg$/);
+          expect(second).not.toBe(first);
+          expect(await archiveOf(el).getImage(first)).toEqual(FRAME_BYTES);
+          expect(notify).toHaveBeenCalledWith(`Added ${first}`, 'success', 'file-earmark-plus');
+        });
+
+        it('is disabled while the service sends no frame', async () => {
+          serveFrames({ frame: false });
+          const { el } = await mounted();
+          // Long enough for the watch to have had its answer.
+          await new Promise(resolve => setTimeout(resolve, 50));
+          await el.updateComplete;
+
+          expect(editor(el).cameraReady).toBe(false);
+        });
+
+        it('says so when the service sends no frame for a press', async () => {
+          serveFrames({ frame: false });
+          const { el, notify } = await mounted();
+
+          capture(el);
+          await idle(el);
+
+          expect(images(el)).toHaveLength(0);
+          expect(notify).toHaveBeenCalledWith(
+            expect.stringContaining('No new picture'),
+            'warning',
+            'exclamation-triangle',
+            Infinity
+          );
+        });
       });
 
       it('says so rather than nothing when a service left nothing open', async () => {
