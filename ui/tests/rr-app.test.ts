@@ -1059,18 +1059,18 @@ describe('rr-app', () => {
         let release!: () => void;
         const held = new Promise<void>(resolve => (release = resolve));
         serveNone(
-          { error: 'archive/none', railroad: 'Gleis 49' },
+          { error: 'archive/none', railroad: 'Riverton' },
           { create: async () => (await held, new Response(null, { status: 204, headers: { etag: '"v1"' } })) }
         );
         return () => release();
       }
 
       it('opens a fresh archive named for the railroad, at the size of its frames, and asks for the camera height', async () => {
-        named('Gleis 49');
+        named('Riverton');
         const { el } = await opened();
 
         const manifest = manifestOf(el);
-        expect(manifest.layout.name).toBe('Gleis 49');
+        expect(manifest.layout.name).toBe('Riverton');
         expect(manifest.layout.scale).toBe('N');
         expect(manifest.camera.resolution).toEqual({ width: 1280, height: 720 });
         expect(manifest.images).toEqual([]);
@@ -1082,7 +1082,7 @@ describe('rr-app', () => {
       // The frame that sized the archive leaves the camera ready before the
       // watch starts, and the watch reports only a change.
       it('enables the camera button', async () => {
-        named('Gleis 49');
+        named('Riverton');
         const { el } = await opened();
         await vi.waitFor(() => expect(editor(el).cameraReady).toBe(true));
       });
@@ -1096,7 +1096,7 @@ describe('rr-app', () => {
       });
 
       it('creates it with one PUT archive.r49 when the settings dialog closes, then saves file by file', async () => {
-        named('Gleis 49');
+        named('Riverton');
         const { el } = await opened();
         const fresh = session(el);
 
@@ -1106,21 +1106,21 @@ describe('rr-app', () => {
 
         expect(writes()).toEqual(['PUT /live/archive.r49']);
         expect(creates[0]['If-None-Match']).toBe('*');
-        expect(created!.layout.name).toBe('Gleis 49');
+        expect(created!.layout.name).toBe('Riverton');
         expect(created!.layout.calibration.camera_height_mm).toBe(1150);
         expect(binding(el)!.service).toEqual({ base: '/live', etag: '"v1"' });
         // Reopened from the service, so the next save is #333's.
         expect(session(el)).not.toBe(fresh);
         expect(session(el)!.history.isDirty).toBe(false);
 
-        await session(el)!.editLayout({ name: 'Gleis 49 Nord', scale: 'N' });
+        await session(el)!.editLayout({ name: 'Riverton North', scale: 'N' });
         await save(el);
 
         expect(writes()).toEqual(['PUT /live/archive.r49', 'PUT /live/archive/manifest.json']);
       });
 
       it('saves nothing while the settings dialog still asks for the camera height', async () => {
-        named('Gleis 49');
+        named('Riverton');
         const { el } = await opened();
         await session(el)!.editLayout({ name: 'Renamed', scale: 'N' });
 
@@ -1134,7 +1134,7 @@ describe('rr-app', () => {
       });
 
       it('creates nothing while the dialog stays open, even after the autosave time', async () => {
-        named('Gleis 49');
+        named('Riverton');
         const { el } = await opened();
         await vi.waitFor(() => expect(settings(el).open).toBe(true));
         vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
@@ -1169,7 +1169,7 @@ describe('rr-app', () => {
         await closeDialog(el);
         await vi.waitFor(() => expect(writes()).toEqual(['PUT /live/archive.r49']));
 
-        await session(el)!.editLayout({ name: 'Gleis 49 Nord', scale: 'N' });
+        await session(el)!.editLayout({ name: 'Riverton North', scale: 'N' });
         release();
 
         await vi.waitFor(() =>
@@ -1178,7 +1178,7 @@ describe('rr-app', () => {
       });
 
       it('says another page created it first, and reloads, on a 412', async () => {
-        serveNone({ error: 'archive/none', railroad: 'Gleis 49' }, { create: () => new Response(null, { status: 412 }) });
+        serveNone({ error: 'archive/none', railroad: 'Riverton' }, { create: () => new Response(null, { status: 412 }) });
         const { el, notify } = await opened();
         const reload = vi
           .spyOn(el as unknown as { _reload(): void }, '_reload')
@@ -1200,7 +1200,7 @@ describe('rr-app', () => {
 
       it('quotes the rule of a 422, and stays fresh and dirty', async () => {
         serveNone(
-          { error: 'archive/none', railroad: 'Gleis 49' },
+          { error: 'archive/none', railroad: 'Riverton' },
           { create: () => new Response(JSON.stringify({ error: 'images/missing' }), { status: 422, headers: { 'content-type': 'application/json' } }) }
         );
         const { el, notify } = await opened();
@@ -1233,7 +1233,7 @@ describe('rr-app', () => {
       });
 
       it('says so, and opens no archive, when the camera sends no picture to size one from', async () => {
-        serveNone({ error: 'archive/none', railroad: 'Gleis 49' }, { frame: false });
+        serveNone({ error: 'archive/none', railroad: 'Riverton' }, { frame: false });
         const { el } = await mounted();
         await vi.waitFor(() =>
           expect(editor(el).shadowRoot!.querySelector('.placeholder')!.textContent!.trim()).toBe(

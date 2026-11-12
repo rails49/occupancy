@@ -181,8 +181,8 @@ describe('findService', () => {
   const noArchive = (body: unknown) => jsonAnswer(body, 404);
 
   it('finds a service with no archive, and the railroad it names', async () => {
-    stubFetch(noArchive({ error: 'archive/none', railroad: 'Gleis 49' }));
-    expect(await findService()).toEqual({ kind: 'no-archive', railroad: 'Gleis 49' });
+    stubFetch(noArchive({ error: 'archive/none', railroad: 'Riverton' }));
+    expect(await findService()).toEqual({ kind: 'no-archive', railroad: 'Riverton' });
   });
 
   it('finds a service with no archive whose path names no railroad', async () => {
@@ -208,7 +208,7 @@ describe('findService', () => {
   });
 
   it('finds none in a JSON 404 that is not archive/none', async () => {
-    stubFetch(noArchive({ error: 'something/else', railroad: 'Gleis 49' }));
+    stubFetch(noArchive({ error: 'something/else', railroad: 'Riverton' }));
     expect(await findService()).to.be.null;
   });
 
