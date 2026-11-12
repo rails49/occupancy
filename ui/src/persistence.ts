@@ -32,7 +32,7 @@ import { saveToService } from './serviceArchive.js';
  * `etag` is the version the manifest was read at, and it is what `If-Match`
  * holds: a save over a copy that moved on is refused rather than merged.
  * `null` is a service that serves the archive read-only — a `.r49` zip, or a
- * folder it cannot write — and Save then takes the picker or the download.
+ * folder it cannot write. The service page turns editing off for it (#381).
  */
 export interface ServiceBinding {
   /** Where the service answers, as `liveContract.ts`'s `LIVE_BASE`. */
@@ -78,6 +78,11 @@ export type SaveOutcome =
    * this page does not fall back to a file by itself and merges nothing.
    */
   | { kind: 'refused'; binding: FileBinding; message: string }
+  /**
+   * A 412: the archive on the service changed since this page read it, and
+   * nothing was written (#381). The caller reloads the page.
+   */
+  | { kind: 'stale' }
   /** The user dismissed the picker. Nothing was written, nothing rebound. */
   | { kind: 'cancelled' };
 
@@ -205,8 +210,8 @@ export async function openArchive(): Promise<OpenedArchive | null> {
  *    manifest and the deletes go to the service (`serviceArchive.ts`'s writer
  *    over `R49Archive.writeChanges`). No
  *    handle is involved, so this one route works on a phone as well as on
- *    Chromium desktop. A refusal comes back as `refused` and leaves the
- *    binding alone; a network failure throws, as every other route's write
+ *    Chromium desktop. A 412 comes back as `stale`, any other refusal as
+ *    `refused`, and both leave the binding alone; a network failure throws, as every other route's write
  *    failure does.
  * 1. A service binding with **no** `ETag` — the service serves the archive
  *    read-only. `options.notice` is told so, and the save takes route 2, 3 or
@@ -252,9 +257,14 @@ export async function writeArchive(
   if (service) {
     if (service.etag !== null) {
       const written = await saveToService(archive, service.base, service.etag);
-      return written.kind === 'wrote'
-        ? { kind: 'served', binding: { ...binding, service: { ...service, etag: written.etag } } }
-        : { kind: 'refused', binding, message: written.message };
+      switch (written.kind) {
+        case 'wrote':
+          return { kind: 'served', binding: { ...binding, service: { ...service, etag: written.etag } } };
+        case 'stale':
+          return written;
+        case 'refused':
+          return { kind: 'refused', binding, message: written.message };
+      }
     }
     options.notice?.(READ_ONLY_NOTICE);
   }
@@ -291,6 +301,18 @@ export async function writeArchive(
   const filename = timestampedName(binding.stem);
   download(bytes, filename);
   return { kind: 'downloaded', binding, filename };
+}
+
+/**
+ * Download on a service page (#381): the archive as a timestamped `.r49` in the
+ * browser's downloads, for a corpus submission or to open on the cloud page.
+ * Nothing is bound and nothing goes to the service. Resolves the filename.
+ */
+export async function downloadArchive(archive: R49Archive, stem: string): Promise<string> {
+  const bytes = await archive.export();
+  const filename = timestampedName(stem);
+  download(bytes, filename);
+  return filename;
 }
 
 /**

@@ -325,8 +325,15 @@ function unreadNotice(filenames: readonly string[]): string {
  * highlight after an undo, and blob URLs — and re-renders
  * whenever the session changes. See ADR 0017.
  *
- * Takes `session`. Emits `rr-notify` (`NotifyDetail`) when a click is refused,
- * and for `NOTICE_MS` with each notice the session sends (`subscribeNotices`).
+ * Takes `session`, `service`, `cameraReady` and `readOnly`. Emits `rr-notify`
+ * (`NotifyDetail`) when a click is refused, and for `NOTICE_MS` with each
+ * notice the session sends (`subscribeNotices`). Emits `rr-frame-capture` (no
+ * detail) when the camera button is pressed on a service page.
+ *
+ * On a service page (#381) the camera button asks `rr-app` for the service's
+ * next frame, and there is no file button. `readOnly` turns authoring off: a
+ * click, a drag of a point, a right-click, the completeness control and the
+ * thumbnail bar's add, delete and reorder. Zoom and pan stay.
  *
  * It owns the zoom (#44): a drag on empty image draws a rect to zoom to, or
  * pans once zoomed, a Shift-drag draws a rect wherever it begins, and the
@@ -338,10 +345,19 @@ function unreadNotice(filenames: readonly string[]): string {
  * and a DPT below the detector's `MIN_DPT` warns and blocks nothing. See `SPEC.md`
  * § Reference points.
  */
+/** What a page on a read-only occupancy service says (#381). `rr-app` toasts it too. */
+export const READ_ONLY_MESSAGE = 'This occupancy service does not accept changes.';
+
 @customElement('rr-editor-view')
 export class RREditorView extends LitElement {
   /** The archive being edited, with its rules and history. Created by `rr-app`. */
   @property({ attribute: false }) session: EditSession | null = null;
+  /** Whether the page is a service page: the camera is the service's and there are no files (#381). */
+  @property({ attribute: false }) service = false;
+  /** Whether the service's answer carries a frame. Read on a service page only. */
+  @property({ attribute: false }) cameraReady = false;
+  /** Whether editing is off, for a service that does not accept changes (#381). */
+  @property({ attribute: false }) readOnly = false;
   /**
    * Blob URLs for each image, by filename: the full-size image for the viewer,
    * and a small copy for the thumbnail strip (#252), `null` until it is made.
@@ -516,7 +532,8 @@ export class RREditorView extends LitElement {
       margin-left: 1.5rem;
     }
 
-    .track-hint {
+    .track-hint,
+    .read-only {
       flex-shrink: 0;
       padding: 0.5rem 1rem;
       font-size: var(--sl-font-size-small);
@@ -972,7 +989,9 @@ export class RREditorView extends LitElement {
     if (!session) return;
     const { source } = e.detail;
 
-    if (source === 'file') {
+    if (source === 'camera' && this.service) {
+      this.dispatchEvent(new CustomEvent('rr-frame-capture', { bubbles: true, composed: true }));
+    } else if (source === 'file') {
       const input = document.createElement('input');
       input.type = 'file';
       input.accept = 'image/jpeg,image/png';
@@ -1071,7 +1090,7 @@ export class RREditorView extends LitElement {
    * draws a zoom rect while fit and pans while zoomed.
    */
   private _beginDrag(gesture: LiveGesture) {
-    if (!gesture.shiftKey) {
+    if (!gesture.shiftKey && !this.readOnly) {
       gesture.drag = this.session?.beginDrag(gesture.origin, gesture.scale) ?? null;
       if (gesture.drag) return;
     }
@@ -1156,7 +1175,7 @@ export class RREditorView extends LitElement {
     }
     this._zoomPreview = null;
     await this._endGesture(gesture);
-    if (gesture.dragging || !this.session) return;
+    if (gesture.dragging || !this.session || this.readOnly) return;
     if (!isClick(gesture.origin, e.detail.point, this._slop(gesture))) return;
 
     const result = await this.session.click(gesture.origin, gesture.scale);
@@ -1227,7 +1246,7 @@ export class RREditorView extends LitElement {
    */
   private async _onViewerContextMenu(e: CustomEvent<ViewerContextMenuDetail>) {
     e.detail.originalEvent.preventDefault();
-    if (this._gesture || !this.session) return;
+    if (this._gesture || !this.session || this.readOnly) return;
 
     const subject = this.session.rightClick(e.detail.point, e.detail.imagePxPerScreenPx);
     this._menuSubject = null;
@@ -1247,6 +1266,7 @@ export class RREditorView extends LitElement {
    * chain goes on from, the gap to the next click is to be straight.
    */
   private _onViewerDoubleClick(e: CustomEvent<ViewerDoubleClickDetail>) {
+    if (this.readOnly) return;
     this.session?.doubleClick(e.detail.point, e.detail.imagePxPerScreenPx);
   }
 
@@ -1400,6 +1420,7 @@ export class RREditorView extends LitElement {
     return html`<div class="complete-bar">
       <sl-checkbox
         ?checked=${image.labeled_complete}
+        ?disabled=${this.readOnly}
         @sl-change=${this._onCompleteToggle}
       >
         Labeled complete
@@ -1499,6 +1520,10 @@ export class RREditorView extends LitElement {
         ${!this.session || !manifest
           ? html`<div class="placeholder">No archive loaded. Open an .r49 file from the rail.</div>`
           : html`
+            ${this.readOnly
+              ? html`<div class="read-only">${READ_ONLY_MESSAGE}</div>`
+              : ''}
+
             ${this._renderDpt(manifest)}
 
             ${this._renderFrameMismatch()}
@@ -1541,6 +1566,9 @@ export class RREditorView extends LitElement {
               .images=${manifest.images.map(img => this._imageUrls.get(img.filename)?.thumbnail || '')}
               .complete=${manifest.images.map(img => img.labeled_complete)}
               .selectedIndex=${this.session.imageIndex}
+              .files=${!this.service}
+              .cameraDisabled=${this.service && !this.cameraReady}
+              .readOnly=${this.readOnly}
               @rr-image-select=${this._onImageSelect}
               @rr-image-add=${this._onImageAdd}
               @rr-image-delete=${this._onImageDelete}

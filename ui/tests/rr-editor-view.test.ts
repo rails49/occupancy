@@ -1571,6 +1571,81 @@ describe('rr-editor-view', () => {
     });
   });
 
+  // The service page (#381): its pictures come from the service's camera, and
+  // a service that does not accept changes turns editing off.
+  describe('on a service page', () => {
+    const bar = (el: RREditorView) => el.shadowRoot!.querySelector('rr-thumbnail-bar')!;
+
+    async function mountOnService(props: { cameraReady?: boolean; readOnly?: boolean }) {
+      const el = await mount();
+      el.service = true;
+      el.cameraReady = props.cameraReady ?? true;
+      el.readOnly = props.readOnly ?? false;
+      await el.updateComplete;
+      return el;
+    }
+
+    it('asks for the service\'s frame rather than opening the device camera', async () => {
+      const el = await mountOnService({});
+      captureFromCamera.mockClear();
+      const asked: Event[] = [];
+      el.addEventListener('rr-frame-capture', e => asked.push(e));
+
+      bar(el).dispatchEvent(new CustomEvent('rr-image-add', { detail: { source: 'camera' } }));
+      await flush();
+
+      expect(asked).to.have.length(1);
+      expect(captureFromCamera).not.toHaveBeenCalled();
+      expect(archive.getManifest().images).to.have.length(1);
+    });
+
+    it('offers no file button, and disables the camera with no frame', async () => {
+      const el = await mountOnService({ cameraReady: false });
+
+      expect(bar(el).files).to.be.false;
+      expect(bar(el).cameraDisabled).to.be.true;
+    });
+
+    it('keeps the device camera and the files on the cloud page', async () => {
+      const el = await mount();
+
+      expect(bar(el).files).to.be.true;
+      expect(bar(el).cameraDisabled).to.be.false;
+    });
+
+    describe('read-only', () => {
+      it('says the service does not accept changes', async () => {
+        const el = await mountOnService({ readOnly: true });
+
+        expect(el.shadowRoot!.textContent).to.contain('This occupancy service does not accept changes.');
+        expect(bar(el).readOnly).to.be.true;
+      });
+
+      it('authors nothing on a click, a drag or a right-click', async () => {
+        calibrate();
+        const el = await mountOnService({ readOnly: true });
+        const shown = stubDialog(el);
+        const menu = vi.spyOn(el.shadowRoot!.querySelector<RRContextMenu>('rr-context-menu')!, 'show');
+
+        await clickAt(el, { x: 50, y: 50 });
+        await drag(el, [{ x: 0, y: 0 }, { x: 20, y: 20 }, { x: 40, y: 40 }]);
+        gesture(el, 'rr-pointer-contextmenu', { x: 100, y: 0 }, 1, { button: 2 });
+        await flush();
+
+        expect(shown).not.toHaveBeenCalled();
+        expect(menu).not.toHaveBeenCalled();
+        expect(points().map(p => p.px)).toEqual([{ x: 0, y: 0 }, { x: 100, y: 0 }]);
+        expect(el.session!.history.canUndo).to.be.false;
+      });
+
+      it('disables the completeness control', async () => {
+        const el = await mountOnService({ readOnly: true });
+
+        expect(el.shadowRoot!.querySelector('sl-checkbox')!.disabled).to.be.true;
+      });
+    });
+  });
+
   describe('images', () => {
     const bar = (el: RREditorView) => el.shadowRoot!.querySelector('rr-thumbnail-bar')!;
 

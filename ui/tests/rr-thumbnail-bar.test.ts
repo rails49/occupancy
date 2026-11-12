@@ -69,6 +69,50 @@ describe('rr-thumbnail-bar', () => {
     expect(ev2.detail.source).to.equal('file');
   });
 
+  // A service page adds pictures from the service's camera alone (#381).
+  describe('on a service page', () => {
+    const adds = (el: RRThumbnailBar) => {
+      const seen: string[] = [];
+      el.addEventListener('rr-image-add', e => seen.push((e as CustomEvent).detail.source));
+      return seen;
+    };
+
+    it('offers no file button without `files`', async () => {
+      const el = await fixture<RRThumbnailBar>(html`
+        <rr-thumbnail-bar .files=${false}></rr-thumbnail-bar>
+      `);
+      const buttons = el.shadowRoot!.querySelectorAll('.add-btn');
+      expect(buttons).to.have.length(1);
+
+      const seen = adds(el);
+      (buttons[0] as HTMLElement).click();
+      expect(seen).to.deep.equal(['camera']);
+    });
+
+    it('sends nothing from a disabled camera button, and says it is disabled', async () => {
+      const el = await fixture<RRThumbnailBar>(html`
+        <rr-thumbnail-bar .cameraDisabled=${true}></rr-thumbnail-bar>
+      `);
+      const camera = el.shadowRoot!.querySelector('.add-btn') as HTMLElement;
+      const seen = adds(el);
+
+      camera.click();
+
+      expect(seen).to.deep.equal([]);
+      expect(camera.getAttribute('aria-disabled')).to.equal('true');
+    });
+
+    it('offers no add, delete or reorder when read-only', async () => {
+      const el = await fixture<RRThumbnailBar>(html`
+        <rr-thumbnail-bar .images=${images} .readOnly=${true}></rr-thumbnail-bar>
+      `);
+
+      expect(el.shadowRoot!.querySelectorAll('.add-btn')).to.have.length(0);
+      expect(el.shadowRoot!.querySelectorAll('.delete-btn')).to.have.length(0);
+      expect(el.shadowRoot!.querySelector('.thumbnail-wrapper')!.getAttribute('draggable')).to.equal('false');
+    });
+  });
+
   // Scanning a set for which images are done is the workflow (`SPEC.md`
   // § Labeling completeness), so the flag has to read off the strip itself.
   describe('the completeness badge', () => {

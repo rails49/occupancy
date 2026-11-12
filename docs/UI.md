@@ -173,9 +173,11 @@ Since this file supports all three engines equally and the labeling device is a 
 is an enhancement layered over the download path, never a replacement for it.** Do not delete the
 fallback, and do not gate a feature on a handle existing.
 
-The third route is an **occupancy service**: an archive opened from one is written back to it a file
-at a time (#333). It needs no handle, so it is the one write-back route that works in every
-supported browser and on a phone — which is the device `SPEC.md` assumes is doing the labeling.
+The third route is an **occupancy service**: on a service page the archive is written back to the
+service a file at a time (#333). It needs no handle, so it is the one write-back route that works in
+every supported browser and on a phone — which is the device `SPEC.md` assumes is doing the labeling.
+A service page has no Save button: `rr-app` saves by itself (§ The service page saves by itself), and
+its File offers Download alone. The two file routes, New, Open and Save As are the cloud page's.
 
 **`writeArchive` takes the archive, not its bytes.** The service route writes the files that changed
 and never an archive, so exporting for it would fetch every image the page has not looked at for
@@ -203,32 +205,30 @@ person chose, truncating whatever was there.
   longer does.
 * **The `ETag` is the version, and `If-Match` is the whole concurrency story.** It is read from the
   check's answer *before* the manifest is loaded, so a save landing between the two leaves this page
-  holding the older version and **this page's** save refused — which is the right way round. A
-  refusal is reported and nothing else: the archive stays dirty and stays bound to the service, the
-  page never falls back to a file by itself, and it merges nothing. 412 says the copy changed and
-  names Save As, 422 quotes the rule in the answer's `error`, any other status is named, and a
-  network failure is the ordinary `Save failed` toast.
+  holding the older version and **this page's** save refused — which is the right way round. A 412
+  comes back as `stale`, and `rr-app` says the archive was changed on another page and reloads after
+  a few seconds, losing what it had not saved and raising no leave prompt (#381). Any other refusal
+  is reported and nothing else: the archive stays dirty and stays bound to the service, the page
+  never falls back to a file by itself, and it merges nothing. 422 quotes the rule in the answer's
+  `error`, any other status is named, and a network failure is the ordinary `Save failed` toast.
 * **No `ETag` means read-only** — a `.r49` zip on the service, or a folder it cannot write. The
-  person is told so and the save takes the picker or the download from there, with `layout.name` as
-  the suggested name. Said rather than silently rerouted: they opened the archive from the service
-  and have every reason to believe Save puts it back.
-* **A picker Save As moves the binding to the file**, and `rr-app` then leaves the service for good,
-  so the live view goes back to the camera and the model in this page. A *download* binds nothing,
-  here as everywhere, so the archive stays the service's. **The archive itself stays the one loaded
-  from the base URL**, because nothing can swap it out without taking the undo stack with it — so
-  every later save to the chosen file exports, and an export fetches each image the page is not
-  holding. That costs requests to a service the work has already left, and a save that fails outright
-  once the service is gone. Reloading the page and opening the file is the way out; closing it
-  properly means r49 taking an archive off its base, which is rails49/r49's.
+  service page turns editing off and says this service does not accept changes (#381), so nothing
+  is saved. `writeArchive` still has its route for such a binding, a notice and then the picker or
+  the download, and the service page never reaches it.
+* **Download writes the archive as a `.r49` file** (`downloadArchive`, #381), the download route's
+  timestamped name from `layout.name`. It binds nothing and marks nothing saved: an edit that has not
+  reached the service still goes there. It exports, so it fetches each image the page is not
+  holding.
 * **A save is no longer instant, and four things follow.** The history position is taken when the
   save starts and *that* position is what is marked, so an edit made while the requests were in
   flight leaves the archive dirty — it is not in what went. A Save pressed while one is running does
-  nothing. A toast stays up while it runs. And **the outcome is applied only while the session that
-  was saved is still the current one** (#354): New and Open are not held shut while a save runs, and
-  a stale save that re-pointed the binding would aim the next Save at what this one wrote with an
-  archive it never held — on a service, an empty manifest, whose missing names the service deletes.
-  The success toast is shown either way, because the write did land. It is the question
-  `rr-editor-view` asks after each of its awaits, in § An image is read when it is needed.
+  nothing. A toast stays up while it runs, except on a save to the service, which says nothing
+  unless it fails: it runs every few seconds while the person edits. And **the outcome is applied
+  only while the session that was saved is still the current one** (#354): New and Open are not held
+  shut while a save runs, and a stale save that re-pointed the binding would aim the next Save at
+  what this one wrote with an archive it never held. The success toast is shown either way, because
+  the write did land. It is the question `rr-editor-view` asks after each of its awaits, in § An
+  image is read when it is needed.
 * **The timestamp is the download path's, and only its.** A written-back file keeps its name across
   every overwrite, so a timestamp in the picker's suggestion would assert a save time the file no
   longer has. The format exists so a **lexical sort of the folder is a chronological one** — that,
@@ -252,7 +252,16 @@ person chose, truncating whatever was there.
 * **Cmd/Ctrl+S is Save and Cmd/Ctrl+Shift+S is Save As**, in the editor view with an archive open
   (#326). The key cancels the browser's Save Page even when a field has focus. It saves nothing on
   a key repeat. It saves nothing from inside an open dialog either, since a dialog's fields commit
-  on blur or Enter.
+  on blur or Enter. On a service page either key saves to the service at once.
+
+### The service page saves by itself (#381)
+
+`rr-app` saves a writable service page's archive `AUTOSAVE_MS` (10 s) after the last edit, and at
+once on a view switch and on `visibilitychange` to hidden. An edit is a change of the history's
+position, so an undo or a redo counts and a selection or a tool change does not. Each save is the
+service route above, with `If-Match`; a trigger while a save runs makes it run once more when it
+ends. The service reloads on each save, so an edit reaches the live view and MQTT within seconds, a
+half-finished one included. While an edit has not reached the service, `beforeunload` still asks.
 
 ## An image is read when it is needed, and a read can fail (#333)
 
@@ -276,9 +285,8 @@ package's (org ADR-0022).
   `history.record`'s `retain` reads them *before* the mutation, so the refusal lands before anything
   is removed — rather than leaving an undo that would restore a manifest entry naming bytes the
   archive no longer has, which is the hole this design refuses everywhere.
-* **A `Save As` exports, and exporting fetches what the page has not read**, so the `.r49` it writes
-  is complete. That is what a Save As on a service binding costs, and why the service route does not
-  export at all.
+* **Download exports, and exporting fetches what the page has not read**, so the `.r49` it writes
+  is complete. The service route does not export at all.
 * A 404 is **not** a failed read: it is the archive having a hole in it, which `imageMismatches()`
   is the question for, and it answers `null` exactly as an absent zip entry does. It gets no toast,
   but like a failed read it is not asked for again while the manifest names it.
@@ -848,11 +856,11 @@ may read pixels from it — with every sensor `unknown` / `no-frame`, no L0 and 
 video-file source still holds the loop on a `null` from `viewerVideo.decodedFrame`: a paused or
 seeking file has a picture that is simply not new, and the rate there is the loop's speed.
 
-**Service mode is sources handed in with no archive** (#331, `_judging`). In it the view runs no
+**Service mode is sources that declare themselves a service's** (#331, #333, `_judging`). In it the view runs no
 drift check and shows no drift banner, recorder, alignment readout, or model and DPT notices, and the
 stats bar never shows Inference: the service publishes states this page cannot withhold (drift in
-service mode is #336). The camera path, with or without an archive, is as it was. Opening or
-creating an archive leaves a service behind in `rr-app`. The source's `open()` error is still shown
+service mode is #336). The camera path, with or without an archive, is as it was, and is the
+cloud page's: a service page always hands in the service (#381). The source's `open()` error is still shown
 either way, in the words that fit who failed.
 
 **Cars is not one of those distinctions** (#362). The stats bar shows it only with an L0, on either
@@ -978,13 +986,12 @@ they are asked for, and § Saving is three routes has where a save goes. A manif
 load is a failed load like any other, with the same toast; the live view still watches the service,
 since finding one and loading its archive are different questions.
 
-**The service is left behind by New, by Open, and by a Save As that lands in a file, for good**
-(#333). The first two pass through `rr-app._open`, and `_leftService` also ignores a manifest answer
-— or a load — that arrives afterwards. Only a reload finds the service again.
+**A service page holds only the service's archive** (#381). It offers no New, no Open, no Add Images
+from Files, no video file and no device camera, so nothing leaves the service. A New or an Open
+pressed before the check answered keeps the page a cloud page: `_leftService` ignores a manifest
+answer — or a load — that arrives afterwards.
 
-**While the archive is bound to the service, the live view uses the service.** That replaces #331's
-rule that it did so until an archive was opened or created, which stopped being the question once
-the archive *is* the service's. `LiveSources.service` says what the sources are, because nothing
+**The live view on a service page always uses the service.** `LiveSources.service` says what the sources are, because nothing
 else can: the service's own archive is bound and the view must still show the service's judgement
 rather than measure drift against it.
 
@@ -1000,12 +1007,18 @@ through `imageAdd.ts` under a `capture_<id>.jpg` name, which is Capture from Cam
 Three things follow from that split, and all three are deliberate. The button is **disabled while
 the current answer carried no frame** — before the first, on a `json`-only answer, on a failed
 request — because the last picture stays on screen in all three and is out of date. The add is
-**one history entry and no save**: Live has neither Save nor undo, so the toast names the file and
-says to save it in the editor, and § Saving is three routes is where that save goes — including off
-a read-only service, where it is a download. And **what the live view draws does not change**: it
-draws the service's manifest, so the frame is in this page's archive until a save puts it on the
-service. A second press on one frame id adds nothing, and neither does a press while an add is
-running; `rr-app` holds both, because it is what knows an add is in flight.
+**one history entry**, which autosave writes, and the toast names the file. And **what the live view
+draws does not change** until that save: it draws the service's manifest. A second press on one
+frame id adds nothing, and neither does a press while an add is running; `rr-app` holds both,
+because it is what knows an add is in flight. A read-only service adds nothing and says why.
+
+**The editor's camera button adds the service's next frame** (#381). On a service page
+`rr-editor-view` sends `rr-frame-capture` for it instead of opening the device camera, and
+`rr-app` takes the frame from `serviceCamera.ts` and adds it the way it adds a Freeze.
+`serviceCamera.next()` asks `latest` with `after` set to the last `frame_id` it saw, and asks again
+on an answer repeating that id, so the frame is newer than any the page has seen. Its `watch` asks
+every `WATCH_INTERVAL_MS` whether the answer carries a frame, which is what disables the button; it
+runs only while the editor is shown on a writable service page. It decodes nothing.
 
 `bin/live-stub.mjs` is a stand-in service for checking this by hand on a device, and serves the built
 page from the same origin because `/live` has to be. It is not the service — rails49/occupancy-service

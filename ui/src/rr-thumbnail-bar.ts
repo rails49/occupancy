@@ -18,7 +18,13 @@ import { matteTokens } from './matte.js';
  * aimed at selecting an image assert completeness by landing a few pixels off,
  * and this is the one flag in the format nothing else may set.
  *
- * **Properties:** `images`, `complete`, `selectedIndex`.
+ * On a service page (#381) the camera button takes the service's camera, the
+ * file button is absent (`files`), and the camera button is disabled while the
+ * service sends no frame (`cameraDisabled`). `readOnly` drops the add, delete
+ * and reorder controls, for a service that does not accept changes.
+ *
+ * **Properties:** `images`, `complete`, `selectedIndex`, `files`,
+ * `cameraDisabled`, `readOnly`.
  *
  * @fires rr-image-select - When a thumbnail is clicked. Detail: { index: number }
  * @fires rr-image-delete - When the delete button on a thumbnail is clicked. Detail: { index: number }
@@ -38,6 +44,12 @@ export class RRThumbnailBar extends LitElement {
    */
   @property({ type: Array }) complete: boolean[] = [];
   @property({ type: Number }) selectedIndex = -1;
+  /** Whether to offer Add Images from Files. */
+  @property({ attribute: false }) files = true;
+  /** Whether the camera button is disabled. */
+  @property({ attribute: false }) cameraDisabled = false;
+  /** Whether to offer no add, delete or reorder. */
+  @property({ attribute: false }) readOnly = false;
 
   @state() private _draggedIndex: number | null = null;
   @state() private _dropIndex: number | null = null;
@@ -151,7 +163,12 @@ export class RRThumbnailBar extends LitElement {
       transition: all 0.2s;
     }
 
-    .add-btn:hover {
+    .add-btn[aria-disabled='true'] {
+      opacity: 0.5;
+      cursor: default;
+    }
+
+    .add-btn:not([aria-disabled='true']):hover {
       border-color: var(--sl-color-primary-500);
       color: var(--sl-color-primary-500);
       background: var(--sl-color-neutral-200);
@@ -187,6 +204,7 @@ export class RRThumbnailBar extends LitElement {
   }
 
   private _onAdd(source: 'camera' | 'file') {
+    if (source === 'camera' && this.cameraDisabled) return;
     this.dispatchEvent(new CustomEvent('rr-image-add', {
       detail: { source },
       bubbles: true,
@@ -239,7 +257,7 @@ export class RRThumbnailBar extends LitElement {
       ${this.images.map((url, index) => html`
         <div 
           class="thumbnail-wrapper ${this._draggedIndex === index ? 'dragging' : ''} ${this._dropIndex === index ? 'drop-target' : ''}"
-          draggable="true"
+          draggable=${this.readOnly ? 'false' : 'true'}
           @dragstart=${(e: DragEvent) => this._onDragStart(e, index)}
           @dragover=${(e: DragEvent) => this._onDragOver(e, index)}
           @dragleave=${this._onDragLeave}
@@ -254,9 +272,11 @@ export class RRThumbnailBar extends LitElement {
               alt="Thumbnail ${index + 1}"
             />
           </sl-tooltip>
-          <div class="delete-btn" @click=${(e: Event) => this._onDelete(e, index)}>
-            <sl-icon name="x-lg"></sl-icon>
-          </div>
+          ${this.readOnly
+            ? ''
+            : html`<div class="delete-btn" @click=${(e: Event) => this._onDelete(e, index)}>
+                <sl-icon name="x-lg"></sl-icon>
+              </div>`}
           ${this.complete[index]
             ? html`<!-- role="img", because an aria-label on a role-less div is
                         not reliably exposed. No title: the badge takes no
@@ -268,17 +288,29 @@ export class RRThumbnailBar extends LitElement {
         </div>
       `)}
 
+      ${this.readOnly ? '' : this._renderAdd()}
+    `;
+  }
+
+  private _renderAdd() {
+    return html`
       <sl-tooltip content="Capture from Camera">
-        <div class="add-btn" @click=${() => this._onAdd('camera')}>
+        <div
+          class="add-btn"
+          aria-disabled=${this.cameraDisabled ? 'true' : 'false'}
+          @click=${() => this._onAdd('camera')}
+        >
           <sl-icon name="camera"></sl-icon>
         </div>
       </sl-tooltip>
 
-      <sl-tooltip content="Add Images from Files">
-        <div class="add-btn" @click=${() => this._onAdd('file')}>
-          <sl-icon name="folder-plus"></sl-icon>
-        </div>
-      </sl-tooltip>
+      ${this.files
+        ? html`<sl-tooltip content="Add Images from Files">
+            <div class="add-btn" @click=${() => this._onAdd('file')}>
+              <sl-icon name="folder-plus"></sl-icon>
+            </div>
+          </sl-tooltip>`
+        : ''}
     `;
   }
 }
