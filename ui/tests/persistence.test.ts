@@ -325,6 +325,25 @@ describe('writeArchive on a service binding', () => {
     });
   });
 
+  // A service with no archive (#382): the first save creates it, and the
+  // binding then saves file by file.
+  it('creates the archive on a create binding, and hands back its ETag without create', async () => {
+    const archive = new R49Archive();
+    archive.setManifest(manifest());
+    stubService(() => new Response(null, { status: 204, headers: { etag: '"v1"' } }));
+
+    const outcome = await writeArchive(archive, {
+      stem: '',
+      service: { base: BASE, etag: null, create: true },
+    });
+
+    expect(seen).toEqual(['PUT /live/archive.r49']);
+    expect(outcome).toEqual({
+      kind: 'served',
+      binding: { stem: '', service: { base: BASE, etag: '"v1"' } },
+    });
+  });
+
   it('needs no handle, so it runs where there is no File System Access API', async () => {
     const archive = await opened();
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});

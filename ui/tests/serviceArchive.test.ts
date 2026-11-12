@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { R49Archive } from '@rails49/r49';
 import type { ManifestData } from '@rails49/r49';
-import { saveToService } from '../src/serviceArchive.js';
+import { createOnService, saveToService } from '../src/serviceArchive.js';
 import { archiveBase } from '../src/liveContract.js';
 import { jsonAnswer, errorAnswer, htmlAnswer } from './liveFixture.js';
 import { jpeg } from './jpegFixture.js';
@@ -502,5 +502,47 @@ describe('saveToService', () => {
 
     const body = (fetchMock.mock.calls[0][1] as RequestInit).body as Blob;
     expect(body.type).toBe('image/jpeg');
+  });
+});
+
+// A service with no archive: the first save creates it (#382).
+describe('createOnService', () => {
+  function fresh(): R49Archive {
+    const archive = new R49Archive();
+    archive.setManifest(manifest());
+    return archive;
+  }
+
+  it('puts the whole archive as one zip, with If-None-Match: *, and takes the ETag', async () => {
+    const fetchMock = stubFetch({ 'PUT /live/archive.r49': () => wrote('"v1"') });
+
+    const result = await createOnService(fresh(), BASE);
+
+    expect(result).toEqual({ kind: 'wrote', etag: '"v1"' });
+    expect(calls(fetchMock)).toEqual(['PUT /live/archive.r49']);
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect((init.headers as Record<string, string>)['If-None-Match']).toBe('*');
+    const body = init.body as Blob;
+    expect(body.type).toBe('application/zip');
+    const sent = await R49Archive.load(body);
+    expect(sent.getManifest().layout.name).toBe('west-yard');
+  });
+
+  it('reports a 412 as stale: another page created it first', async () => {
+    stubFetch({ 'PUT /live/archive.r49': () => new Response(null, { status: 412 }) });
+    expect(await createOnService(fresh(), BASE)).toEqual({ kind: 'stale' });
+  });
+
+  it('quotes the rule on a 422', async () => {
+    stubFetch({ 'PUT /live/archive.r49': () => jsonAnswer({ error: 'images/missing' }, 422) });
+    const result = await createOnService(fresh(), BASE);
+    expect(result.kind === 'refused' && result.message).toBe(
+      'The occupancy service refused the save: images/missing'
+    );
+  });
+
+  it('rejects on a network failure', async () => {
+    stubFetch({});
+    await expect(createOnService(fresh(), BASE)).rejects.toThrow();
   });
 });

@@ -179,6 +179,7 @@ rr-app                          ← shell: owns the editing session and the view
 > [#362]: https://github.com/rails49/occupancy/issues/362
 > [#368]: https://github.com/rails49/occupancy/issues/368
 > [#381]: https://github.com/rails49/occupancy/issues/381
+> [#382]: https://github.com/rails49/occupancy/issues/382
 
 ## State and data flow
 
@@ -255,14 +256,22 @@ with no session and no binding; where this origin serves an occupancy service, b
 ([#333]) and the page is a service page ([#381]).
 
 **Handles:** `look-view` and `look-press` from its own band and rail, `rr-layout-change`,
-`rr-camera-height-change`, `rr-notify`, `rr-frame-add`, `rr-frame-capture`.
+`rr-camera-height-change`, `rr-settings-close`, `rr-notify`, `rr-frame-add`, `rr-frame-capture`.
 
 **On a service page** ([#381]) File is `#file-download` alone, the editor's camera button adds the
 service's next frame (`serviceCamera.ts`), and edits save to the service by themselves: 10 s after
-the last one, at once on a view switch and on a hidden tab, quietly unless a save fails. A 412 says
+the last one, at once on a view switch, on a hidden tab and when the settings dialog closes,
+quietly unless a save fails. A 412 says
 the archive was changed on another page and reloads, with no leave prompt. A service with no `ETag`
 is read-only: no History, no Tools, no settings edits, no Freeze, and `rr-editor-view` gets
 `readOnly`. `docs/UI.md` § The service page saves by itself.
+
+**A service with no archive** ([#382]) gets a fresh archive named for the loaded railroad, at the
+size of the service's frames, bound with `create`. The settings dialog asks for the camera height,
+and its close saves: the first save creates the archive with `PUT /live/archive.r49`, and the page
+then reopens it from the service. A frame added meanwhile waits for the create; another edit made
+meanwhile is lost, with a warning. With no railroad loaded, `rr-editor-view` gets
+`emptyMessage` and nothing opens. `docs/UI.md` § A service with no archive gets a fresh one.
 
 `rr-notify` is a child's transient message, toasted here because this is where toasts live. A toast
 shows its message as text, never as HTML. It is raised at `warning`, never `danger`: everything that
@@ -400,10 +409,11 @@ of the AGPL-3.0 model and runtime the site serves ([#274]).
 | `layout` | `{ name?, scale, description?, contact?, calibration? }` | Current layout; defaults to scale `N`. `calibration` is read, never spread back |
 | `requiredMissing` | `readonly MissingRequirement[]` | What the layout still owes, from `requiredMetadata.ts`. Non-empty ⇒ the dialog opens itself and refuses to close |
 
-**Methods:** `show()`, `hide()`.
+**Methods:** `show()`, `hide()`; `open` reads whether it is open.
 
 **Emits:** `rr-layout-change` with `{ layout: Partial<Layout> }` — one changed field per event —
-and `rr-camera-height-change` with `{ camera_height_mm: number | undefined }`.
+`rr-camera-height-change` with `{ camera_height_mm: number | undefined }`, and `rr-settings-close`
+(no detail) once the dialog has closed ([#382]).
 
 **The gate opens itself and will not be dismissed while `requiredMissing` is non-empty**: every exit
 (`close-button`, `keyboard`, `overlay`) arrives as `sl-request-close` and is cancelled there, and the
@@ -1087,6 +1097,7 @@ undo, and blob URLs, and re-renders on every change the session reports.
 | `service` | `boolean` | A service page ([#381]): the camera button sends `rr-frame-capture` and there is no file button |
 | `cameraReady` | `boolean` | Whether the service's answer carries a frame; the camera button is disabled without one |
 | `readOnly` | `boolean` | Editing off: no click, point drag, right-click, completeness toggle, add, delete or reorder, and a sentence saying the service does not accept changes. Zoom and pan stay |
+| `emptyMessage` | `string \| null` | What to say with no session, in place of the cloud page's sentence ([#382]) |
 
 **Emits:** `rr-notify` (`{ message }`) when a click is refused, such as the **car tool** clicking
 inside a car already labelled ([#43]), or when an image add is refused ([#255], [#260]) — one event

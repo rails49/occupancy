@@ -19,6 +19,8 @@ import {
 import { isInsideOpenDialog, isTypingTarget } from './keyboard.js';
 import { GATE_REASON, TOOLS } from './tools.js';
 import { addPrepared, captureFilename } from './imageAdd.js';
+import { imageSize } from './imageSize.js';
+import type { Size } from './geometry.js';
 import { LIVE_BASE, archiveBase, findService, readEtag } from './liveContract.js';
 import { occupancyService } from './occupancyService.js';
 import type { LiveSources } from './liveSources.js';
@@ -62,6 +64,44 @@ const RELOAD_MS = 3000;
 const STALE_MESSAGE =
   'The archive was changed on another page. This page reloads, and the edits it had not saved are lost.';
 
+/** What a 412 on the create says before the reload (#382). */
+const CREATED_ELSEWHERE_MESSAGE =
+  "Another page created this railroad's archive first. This page reloads, and the edits it had not saved are lost.";
+
+/** What a service page with no railroad loaded says (#382). */
+export const NO_RAILROAD_MESSAGE =
+  'No railroad is loaded on this occupancy service. Load one in control, then reload this page.';
+
+/** What a service page says when an edit made while the create ran is not in the archive it reopens (#382). */
+export const LOST_EDIT_MESSAGE =
+  'An edit made while the archive was being created on the occupancy service was not kept. Make it again.';
+
+/** What a service page with no archive says when the camera sends no picture to size one from (#382). */
+export const NO_FRAME_MESSAGE =
+  "The occupancy service's camera sends no picture, so no archive can be started. Reload this page once it does.";
+
+/**
+ * A new archive with nothing in it: scale N, no calibration, no sensors and no
+ * images, at `resolution`. New makes one, and so does a service page with no
+ * archive (#382).
+ */
+function freshArchive(name: string, resolution: Size): R49Archive {
+  const archive = new R49Archive();
+  archive.setManifest({
+    version: MANIFEST_VERSION,
+    layout: {
+      name,
+      scale: 'N',
+      // Uncalibrated is a real state, expressed as an empty point list.
+      calibration: { points: [] },
+      sensors: []
+    },
+    camera: { resolution },
+    images: []
+  });
+  return archive;
+}
+
 /**
  * Save As is advertised only where it does something Save does not. Without
  * the File System Access API every save is a fresh download, so naming the
@@ -79,8 +119,10 @@ function saveLabel(): string {
  * Where `/live` answers as an occupancy service, this is a **service page**
  * (#381): it holds only the service's archive, its camera is the service's,
  * File offers Download alone, and edits save to the service by themselves
- * ({@link AUTOSAVE_MS} after the last one, and at once on a view switch or a
- * hidden tab). A service that sends no `ETag` is read-only and editing is off.
+ * ({@link AUTOSAVE_MS} after the last one, and at once on a view switch, a
+ * hidden tab or a settings dialog that closes). A service that sends no `ETag` is read-only and editing is off.
+ * A service with no archive gets a fresh one, which the first save creates
+ * there (#382); with no railroad loaded the page says so and offers nothing.
  * Anywhere else this is the **cloud page**, with New, Open, Save and Save As.
  */
 @customElement('rr-app')
@@ -167,6 +209,10 @@ export class RRApp extends LitElement {
   private _saveAgain = false;
   /** Whether the page is about to reload after a 412, which nothing may hold up (#381). */
   private _reloading = false;
+  /** The create running on the service, which a frame add waits for, or `null` (#382). */
+  private _created: Promise<void> | null = null;
+  /** What the editor says with no archive on a service page, or `null` for its own sentence (#382). */
+  @state() private _emptyMessage: string | null = null;
 
   static styles = [
     lookTheme,
@@ -243,11 +289,13 @@ export class RRApp extends LitElement {
 
   /**
    * Ask whether this origin serves an occupancy service and, where it does,
-   * watch it and open the archive it serves (#331, #333).
+   * watch it and open the archive it serves (#331, #333). Where it has none,
+   * start a fresh one, or say that no railroad is loaded (#382).
    *
-   * No toast where there is none: only a 2xx with a JSON content type is a
-   * service, and any other answer — the cloud copy's own HTML, a 404, a
-   * network failure — leaves the page exactly as it has always been.
+   * No toast where there is none: only a 2xx with a JSON content type, or a
+   * JSON 404 saying `archive/none`, is a service, and any other answer — the
+   * cloud copy's own HTML, another 404, a network failure — leaves the page
+   * exactly as it has always been.
    *
    * The manifest's **`ETag` is read before the archive loads**, from the answer
    * the check already has, and `R49Archive.load` reads the manifest again. A
@@ -263,25 +311,58 @@ export class RRApp extends LitElement {
   private async _lookForService() {
     const found = await findService();
     if (found === null || this._taken()) return;
-    const etag = readEtag(found);
     const service = occupancyService();
     this._service = { frames: service, results: service, service: true };
     this._camera = serviceCamera();
 
-    let archive: R49Archive;
-    try {
-      // The base URL, not bytes: the manifest comes now and each image when
-      // something asks for it.
-      archive = await R49Archive.load(archiveBase(LIVE_BASE));
-    } catch (err) {
-      console.error('Failed to load the archive on the occupancy service', err);
-      this._notify(`Load failed: ${String(err)}`, 'danger', 'exclamation-octagon');
+    if (found.kind === 'no-archive') {
+      await this._startFresh(found.railroad ?? '');
       return;
     }
-    if (this._taken()) return;
+    if (found.kind === 'no-railroad') {
+      this._emptyMessage = NO_RAILROAD_MESSAGE;
+      return;
+    }
+    const etag = readEtag(found.manifest);
+    const archive = await this._loadServiceArchive();
+    if (archive === null || this._taken()) return;
     this._open(archive, { keepService: true });
     this._binding = { stem: '', service: { base: LIVE_BASE, etag } };
     this._notify('Opened the archive on the occupancy service', 'success', 'file-earmark-check');
+  }
+
+  /**
+   * The service's archive, from its base URL: the manifest now and each image
+   * when something asks for it. `null`, with a toast, where it will not load.
+   */
+  private async _loadServiceArchive(): Promise<R49Archive | null> {
+    try {
+      return await R49Archive.load(archiveBase(LIVE_BASE));
+    } catch (err) {
+      console.error('Failed to load the archive on the occupancy service', err);
+      this._notify(`Load failed: ${String(err)}`, 'danger', 'exclamation-octagon');
+      return null;
+    }
+  }
+
+  /**
+   * A service with no archive (#382): a fresh archive bound to the service,
+   * named `name`, at the size of the service's frames. The settings dialog
+   * opens by itself, since it has no camera height, and the first save creates
+   * the archive on the service.
+   */
+  private async _startFresh(name: string) {
+    const frame = await this._camera!.next();
+    // The watch reports only a change, and this read already set `ready`.
+    this._cameraReady = this._camera!.ready;
+    const size = frame && (await imageSize(new Uint8Array(await frame.bytes.arrayBuffer())));
+    if (this._taken()) return;
+    if (!size) {
+      this._emptyMessage = NO_FRAME_MESSAGE;
+      return;
+    }
+    this._open(freshArchive(name, size), { keepService: true });
+    this._binding = { stem: '', service: { base: LIVE_BASE, etag: null, create: true } };
   }
 
   /** Whether an archive of the person's own has already taken this page over. */
@@ -315,14 +396,19 @@ export class RRApp extends LitElement {
     return this._service !== null;
   }
 
-  /** Whether the archive is a service's that takes writes: its binding carries an `ETag`. */
+  /**
+   * Whether the archive is a service's that takes writes: its binding carries
+   * an `ETag`, or the first save creates it (#382).
+   */
   private get _writable(): boolean {
-    return Boolean(this._binding?.service?.etag);
+    const service = this._binding?.service;
+    return Boolean(service?.etag || service?.create);
   }
 
   /** Whether editing is off: the archive is a service's that sent no `ETag` (#381). */
   private get _readOnly(): boolean {
-    return this._binding?.service?.etag === null;
+    const service = this._binding?.service;
+    return service !== undefined && service.etag === null && !service.create;
   }
 
   /**
@@ -358,11 +444,20 @@ export class RRApp extends LitElement {
 
   /**
    * Save to the service now, where there is something to save (#381). A call
-   * while a save runs makes that save run once more when it ends.
+   * while a save runs makes that save run once more when it ends. A fresh
+   * archive is not saved while the settings dialog is open or still asks for
+   * something (#382).
    */
   private async _saveNow() {
     this._clearAutosave();
     if (!this._writable || this._reloading || !this._session?.history.isDirty) return;
+    if (
+      this._binding?.service?.create &&
+      (this._settingsDialog.open ||
+        missingLayoutMetadata(this._session.archive.getManifest()).length > 0)
+    ) {
+      return;
+    }
     if (this._saving) {
       this._saveAgain = true;
       return;
@@ -493,22 +588,7 @@ export class RRApp extends LitElement {
 
   private async _onFileNew() {
     if (!(await this._confirmDiscard())) return;
-    const archive = new R49Archive();
-    archive.setManifest({
-      version: MANIFEST_VERSION,
-      layout: {
-        name: 'New Layout',
-        scale: 'N',
-        // Uncalibrated is a real state, expressed as an empty point list.
-        calibration: { points: [] },
-        sensors: []
-      },
-      camera: {
-        resolution: { width: 1920, height: 1080 }
-      },
-      images: []
-    });
-    this._open(archive);
+    this._open(freshArchive('New Layout', { width: 1920, height: 1080 }));
     this._binding = null;
     this._viewMode = 'editor';
   }
@@ -574,6 +654,12 @@ export class RRApp extends LitElement {
    * service — and says what the service said. This page does not fall back to a
    * file by itself, and it merges nothing. A 412 reloads the page (#381).
    *
+   * The save that creates a fresh archive on the service (#382) reopens it from
+   * the service afterwards, as page start opens it, so later saves go file by
+   * file. Its history starts again there. A frame added while the create runs
+   * waits for it and goes into the reopened archive; any other edit made
+   * meanwhile is not in it, and the page says so.
+   *
    * The stem is the binding's, falling back to `layout.name` for an archive
    * that has never been saved, which is every archive on a service. It does not
    * follow a later rename: the file's identity is the file, and `layout.name`
@@ -584,6 +670,9 @@ export class RRApp extends LitElement {
     if (!session || this._saving) return;
     this._saving = true;
     const position = session.history.position;
+    const creating = Boolean(this._binding?.service?.create) && !rebind;
+    let created = () => {};
+    if (creating) this._created = new Promise(resolve => (created = resolve));
     // A save to the service shows no toast unless it fails (#381).
     const quiet = this._writable && !rebind;
     const done = quiet ? () => {} : this._progress('Saving…');
@@ -596,7 +685,7 @@ export class RRApp extends LitElement {
       );
       if (outcome.kind === 'cancelled') return;
       if (outcome.kind === 'stale') {
-        this._stale();
+        this._stale(creating ? CREATED_ELSEWHERE_MESSAGE : STALE_MESSAGE);
         return;
       }
       if (outcome.kind === 'refused') {
@@ -619,6 +708,9 @@ export class RRApp extends LitElement {
       // written is unaffected by anything undone afterwards, so undoing past a
       // save stays legitimate. The marker is what `isDirty` is measured from.
       session.history.markSaved(position);
+      if (creating && outcome.kind === 'served' && this._session === session) {
+        await this._reopen(outcome.binding, session, position);
+      }
       // The verb is half the message: overwriting `west-yard.r49` and dropping
       // a new `west-yard-20260802-1432.r49` into Downloads are different enough
       // that "Saved" would hide which one just happened. A save to the service
@@ -634,18 +726,41 @@ export class RRApp extends LitElement {
       this._notify(`Save failed: ${String(err)}`, 'danger', 'exclamation-diamond');
     } finally {
       this._saving = false;
+      if (creating) this._created = null;
+      created();
       done();
     }
   }
 
   /**
-   * A 412: the archive on the service changed since this page read it (#381).
-   * Say so, then reload, losing what was not saved. Nothing saves meanwhile.
+   * After the create (#382): the archive again, from the service, bound to the
+   * version the create answered with. One that will not load reloads the page,
+   * whose start opens it. An edit `saved` took after `position` is not in it,
+   * and the page says so.
    */
-  private _stale() {
+  private async _reopen(binding: FileBinding, saved: EditSession, position: number) {
+    const archive = await this._loadServiceArchive();
+    if (archive === null) {
+      this._reloading = true;
+      this._reload();
+      return;
+    }
+    this._open(archive, { keepService: true });
+    this._binding = binding;
+    if (saved.history.position !== position) {
+      this._notify(LOST_EDIT_MESSAGE, 'warning', 'exclamation-triangle', Infinity);
+    }
+  }
+
+  /**
+   * A 412: the archive on the service changed since this page read it (#381),
+   * or another page created it first (#382). Say so in `message`, then reload,
+   * losing what was not saved. Nothing saves meanwhile.
+   */
+  private _stale(message: string) {
     this._reloading = true;
     this._clearAutosave();
-    this._notify(STALE_MESSAGE, 'danger', 'exclamation-diamond', Infinity);
+    this._notify(message, 'danger', 'exclamation-diamond', Infinity);
     setTimeout(() => this._reload(), RELOAD_MS);
   }
 
@@ -714,8 +829,14 @@ export class RRApp extends LitElement {
 
   /** One frame from the service into the archive. See {@link _onFrameAdd}. */
   private async _addFrame(bytes: Blob, frameId: string) {
-    const session = this._session;
     if (this._freezing || frameId === this._frozenId) return;
+    if (this._created) {
+      // A frame added while the create runs goes into the archive it reopens.
+      this._freezing = true;
+      await this._created;
+      this._freezing = false;
+    }
+    const session = this._session;
     if (!session) {
       // A service whose manifest would not load leaves the live view watching
       // it with nothing open to add to. Silence would read as a dead button.
@@ -812,7 +933,7 @@ export class RRApp extends LitElement {
       ${layout
         ? html`<look-about name=${layout.name ?? ''} detail=${layout.scale}></look-about>`
         : nothing}
-      ${this._binding?.service?.etag
+      ${this._writable
         ? html`<look-reading>occupancy service</look-reading>`
         : this._binding?.handle
           ? html`<look-reading>${this._binding.stem}.r49</look-reading>`
@@ -959,6 +1080,7 @@ export class RRApp extends LitElement {
                   .service=${this._servicePage}
                   .cameraReady=${this._cameraReady}
                   .readOnly=${this._readOnly}
+                  .emptyMessage=${this._emptyMessage}
                   @rr-notify=${this._onNotify}
                   @rr-frame-capture=${this._onFrameCapture}
                 ></rr-editor-view>`
@@ -987,6 +1109,7 @@ export class RRApp extends LitElement {
         .requiredMissing=${missingLayoutMetadata(manifest)}
         @rr-layout-change=${this._onLayoutChange}
         @rr-camera-height-change=${this._onCameraHeightChange}
+        @rr-settings-close=${() => void this._saveNow()}
       ></rr-settings-dialog>
     `;
   }

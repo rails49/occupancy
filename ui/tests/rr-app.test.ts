@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from 
 import { fixture, fixtureCleanup, html } from '@open-wc/testing';
 import '../src/rr-app.js';
 import { RRApp } from '../src/rr-app.js';
-import { R49Archive, getDPT } from '@rails49/r49';
+import { R49Archive, getDPT, type ManifestData } from '@rails49/r49';
 import type { NotifyDetail } from '../src/rr-editor-view.js';
 import type { EditHistory } from '../src/history.js';
 import type { FileBinding } from '../src/persistence.js';
@@ -10,7 +10,8 @@ import type { FrameAddDetail } from '../src/rr-live-view.js';
 import { FRAME_BYTES, multipartAnswer, useNodeFileGlobals } from './liveFixture.js';
 import type { LookCommand } from '@rails49/look';
 import { press as pressCommand } from '@rails49/look/testing';
-import { AUTOSAVE_MS } from '../src/rr-app.js';
+import { AUTOSAVE_MS, LOST_EDIT_MESSAGE, NO_FRAME_MESSAGE, NO_RAILROAD_MESSAGE } from '../src/rr-app.js';
+import type { RRSettingsDialog } from '../src/rr-settings-dialog.js';
 import type SlIcon from '@shoelace-style/shoelace/dist/components/icon/icon.js';
 
 // Mock global fetch
@@ -867,6 +868,18 @@ describe('rr-app', () => {
         await vi.waitFor(() => expect(puts()).toHaveLength(1));
       });
 
+      it('saves at once when the settings dialog closes', async () => {
+        writable();
+        const { el } = await mounted();
+        await session(el)!.editLayout({ name: 'One', scale: 'N' });
+
+        el.shadowRoot!.querySelector('rr-settings-dialog')!.dispatchEvent(
+          new CustomEvent('rr-settings-close', { bubbles: true, composed: true })
+        );
+
+        await vi.waitFor(() => expect(puts()).toHaveLength(1));
+      });
+
       it('saves at once when the tab is hidden', async () => {
         writable();
         const { el } = await mounted();
@@ -936,6 +949,298 @@ describe('rr-app', () => {
         const event = new Event('beforeunload', { cancelable: true });
         window.dispatchEvent(event);
         expect(event.defaultPrevented).toBe(false);
+      });
+    });
+
+    // A service with no archive (#382): the page makes a fresh one from the
+    // service's camera, and the first save creates it there.
+    describe('no archive', () => {
+      const fileGlobals = useNodeFileGlobals();
+      beforeEach(() => {
+        fileGlobals.install();
+        // jsdom has no decoder; this stands for the size of the service's frames.
+        vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 1280, height: 720, close() {} })));
+      });
+      afterEach(() => {
+        fileGlobals.restore();
+        vi.useRealTimers();
+        Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+      });
+
+      /** The manifest the create sent, once one landed. The service serves it after. */
+      let created: ManifestData | null;
+      /** The headers of each create. */
+      let creates: Record<string, string>[];
+
+      /**
+       * A service with no archive, answering the manifest with `body` until a
+       * create lands, and each `latest` with a frame unless `frame` is false.
+       * The create answers `create`; every other write 204 with `"v2"`.
+       */
+      function serveNone(
+        body: Record<string, unknown>,
+        { create = () => new Response(null, { status: 204, headers: { etag: '"v1"' } }), frame = true }:
+          { create?: () => Response | Promise<Response>; frame?: boolean } = {}
+      ) {
+        created = null;
+        creates = [];
+        seen = [];
+        let frameIds = 0;
+        global.fetch = vi.fn(async (url: string, init?: RequestInit) => {
+          const key = `${init?.method ?? 'GET'} ${new URL(String(url), window.location.href).pathname}`;
+          seen.push(key);
+          if (key === 'PUT /live/archive.r49') {
+            creates.push(init!.headers as Record<string, string>);
+            const answer = await create();
+            if (answer.ok) {
+              const bytes = new Uint8Array(await (init!.body as Blob).arrayBuffer());
+              created = (await R49Archive.load(bytes)).getManifest();
+            }
+            return answer;
+          }
+          if (init?.method !== undefined) {
+            return new Response(null, { status: 204, headers: { etag: '"v2"' } });
+          }
+          if (String(url).includes('manifest.json')) {
+            return created
+              ? new Response(JSON.stringify(created), {
+                  headers: { 'content-type': 'application/json', etag: '"v1"' },
+                })
+              : new Response(JSON.stringify(body), {
+                  status: 404,
+                  headers: { 'content-type': 'application/json' },
+                });
+          }
+          if (String(url).includes('/latest')) {
+            await new Promise(resolve => setTimeout(resolve, 5));
+            return frame
+              ? multipartAnswer({ version: 1, frame_id: `f-${++frameIds}`, captured_at: '2026-11-12T10:00:00Z', l1: {} })
+              : multipartAnswer({ version: 1, frame_id: null, captured_at: null, l1: {} }, null);
+          }
+          return new Promise<Response>(() => {});
+        }) as unknown as typeof fetch;
+      }
+
+      const named = (railroad?: string | null) =>
+        serveNone({ error: 'archive/none', ...(railroad === undefined ? {} : { railroad }) });
+
+      const settings = (el: RRApp) => el.shadowRoot!.querySelector('rr-settings-dialog') as RRSettingsDialog;
+      const manifestOf = (el: RRApp) => session(el)!.archive.getManifest();
+      const writes = () => seen.filter(call => !call.startsWith('GET '));
+
+      /** Mounted, with the fresh archive open. */
+      async function opened() {
+        const mount = await mounted();
+        await vi.waitFor(() => expect(session(mount.el)).to.not.be.null);
+        await mount.el.updateComplete;
+        return mount;
+      }
+
+      /** The settings dialog's camera height, as the person types it. */
+      async function enterHeight(el: RRApp, mm = 1150) {
+        settings(el).dispatchEvent(
+          new CustomEvent('rr-camera-height-change', { detail: { camera_height_mm: mm } })
+        );
+        await vi.waitFor(() => expect(manifestOf(el).layout.calibration.camera_height_mm).toBe(mm));
+      }
+
+      const closeSettings = (el: RRApp) =>
+        settings(el).dispatchEvent(new CustomEvent('rr-settings-close', { bubbles: true, composed: true }));
+
+      /** The settings dialog closed as the person closes it, which fires `rr-settings-close`. */
+      async function closeDialog(el: RRApp) {
+        await vi.waitFor(() => expect(settings(el).open).toBe(true));
+        settings(el).hide();
+        await vi.waitFor(() => expect(settings(el).open).toBe(false));
+      }
+
+      /** A create that answers 204 with `"v1"` once `release` is called. */
+      function heldCreate() {
+        let release!: () => void;
+        const held = new Promise<void>(resolve => (release = resolve));
+        serveNone(
+          { error: 'archive/none', railroad: 'Gleis 49' },
+          { create: async () => (await held, new Response(null, { status: 204, headers: { etag: '"v1"' } })) }
+        );
+        return () => release();
+      }
+
+      it('opens a fresh archive named for the railroad, at the size of its frames, and asks for the camera height', async () => {
+        named('Gleis 49');
+        const { el } = await opened();
+
+        const manifest = manifestOf(el);
+        expect(manifest.layout.name).toBe('Gleis 49');
+        expect(manifest.layout.scale).toBe('N');
+        expect(manifest.camera.resolution).toEqual({ width: 1280, height: 720 });
+        expect(manifest.images).toEqual([]);
+        expect(binding(el)).toEqual({ stem: '', service: { base: '/live', etag: null, create: true } });
+        expect(settings(el).requiredMissing.map(r => r.field)).toEqual(['camera_height_mm']);
+        expect(writes()).toEqual([]);
+      });
+
+      // The frame that sized the archive leaves the camera ready before the
+      // watch starts, and the watch reports only a change.
+      it('enables the camera button', async () => {
+        named('Gleis 49');
+        const { el } = await opened();
+        await vi.waitFor(() => expect(editor(el).cameraReady).toBe(true));
+      });
+
+      it('fills in no name where the archive path names no railroad', async () => {
+        named();
+        const { el } = await opened();
+
+        expect(manifestOf(el).layout.name).toBe('');
+        expect(settings(el).requiredMissing.map(r => r.field)).toEqual(['name', 'camera_height_mm']);
+      });
+
+      it('creates it with one PUT archive.r49 when the settings dialog closes, then saves file by file', async () => {
+        named('Gleis 49');
+        const { el } = await opened();
+        const fresh = session(el);
+
+        await enterHeight(el);
+        await closeDialog(el);
+        await vi.waitFor(() => expect(binding(el)!.service!.etag).toBe('"v1"'));
+
+        expect(writes()).toEqual(['PUT /live/archive.r49']);
+        expect(creates[0]['If-None-Match']).toBe('*');
+        expect(created!.layout.name).toBe('Gleis 49');
+        expect(created!.layout.calibration.camera_height_mm).toBe(1150);
+        expect(binding(el)!.service).toEqual({ base: '/live', etag: '"v1"' });
+        // Reopened from the service, so the next save is #333's.
+        expect(session(el)).not.toBe(fresh);
+        expect(session(el)!.history.isDirty).toBe(false);
+
+        await session(el)!.editLayout({ name: 'Gleis 49 Nord', scale: 'N' });
+        await save(el);
+
+        expect(writes()).toEqual(['PUT /live/archive.r49', 'PUT /live/archive/manifest.json']);
+      });
+
+      it('saves nothing while the settings dialog still asks for the camera height', async () => {
+        named('Gleis 49');
+        const { el } = await opened();
+        await session(el)!.editLayout({ name: 'Renamed', scale: 'N' });
+
+        closeSettings(el);
+        Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+        document.dispatchEvent(new Event('visibilitychange'));
+        await new Promise(resolve => setTimeout(resolve, 20));
+
+        expect(writes()).toEqual([]);
+        expect(binding(el)!.service!.create).toBe(true);
+      });
+
+      it('creates nothing while the dialog stays open, even after the autosave time', async () => {
+        named('Gleis 49');
+        const { el } = await opened();
+        await vi.waitFor(() => expect(settings(el).open).toBe(true));
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+        await enterHeight(el);
+        await vi.advanceTimersByTimeAsync(AUTOSAVE_MS + 1000);
+
+        expect(writes()).toEqual([]);
+      });
+
+      it('adds a frame captured while the create runs to the archive it reopens', async () => {
+        const release = heldCreate();
+        const { el, notify } = await opened();
+        await vi.waitFor(() => expect(editor(el).cameraReady).toBe(true));
+        await enterHeight(el);
+        await closeDialog(el);
+        await vi.waitFor(() => expect(writes()).toEqual(['PUT /live/archive.r49']));
+
+        editor(el).dispatchEvent(new CustomEvent('rr-frame-capture', { bubbles: true, composed: true }));
+        await new Promise(resolve => setTimeout(resolve, 20));
+        release();
+
+        await vi.waitFor(() => expect(manifestOf(el).images).toHaveLength(1));
+        expect(binding(el)!.service!.etag).toBe('"v1"');
+        expect(notify).not.toHaveBeenCalledWith(LOST_EDIT_MESSAGE, expect.anything(), expect.anything(), expect.anything());
+      });
+
+      it('says so when an edit made while the create ran is not in the reopened archive', async () => {
+        const release = heldCreate();
+        const { el, notify } = await opened();
+        await enterHeight(el);
+        await closeDialog(el);
+        await vi.waitFor(() => expect(writes()).toEqual(['PUT /live/archive.r49']));
+
+        await session(el)!.editLayout({ name: 'Gleis 49 Nord', scale: 'N' });
+        release();
+
+        await vi.waitFor(() =>
+          expect(notify).toHaveBeenCalledWith(LOST_EDIT_MESSAGE, 'warning', 'exclamation-triangle', Infinity)
+        );
+      });
+
+      it('says another page created it first, and reloads, on a 412', async () => {
+        serveNone({ error: 'archive/none', railroad: 'Gleis 49' }, { create: () => new Response(null, { status: 412 }) });
+        const { el, notify } = await opened();
+        const reload = vi
+          .spyOn(el as unknown as { _reload(): void }, '_reload')
+          .mockImplementation(() => {});
+        await enterHeight(el);
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+        await save(el);
+
+        expect(notify).toHaveBeenCalledWith(
+          "Another page created this railroad's archive first. This page reloads, and the edits it had not saved are lost.",
+          'danger',
+          'exclamation-diamond',
+          Infinity
+        );
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(reload).toHaveBeenCalledTimes(1);
+      });
+
+      it('quotes the rule of a 422, and stays fresh and dirty', async () => {
+        serveNone(
+          { error: 'archive/none', railroad: 'Gleis 49' },
+          { create: () => new Response(JSON.stringify({ error: 'images/missing' }), { status: 422, headers: { 'content-type': 'application/json' } }) }
+        );
+        const { el, notify } = await opened();
+        await enterHeight(el);
+
+        await save(el);
+
+        expect(notify).toHaveBeenCalledWith(
+          'The occupancy service refused the save: images/missing',
+          'danger',
+          'exclamation-diamond',
+          Infinity
+        );
+        expect(binding(el)!.service!.create).toBe(true);
+        expect(session(el)!.history.isDirty).toBe(true);
+      });
+
+      it('says no railroad is loaded, and opens no archive', async () => {
+        named(null);
+        const { el } = await mounted();
+        await new Promise(resolve => setTimeout(resolve, 20));
+        await el.updateComplete;
+
+        expect(session(el)).to.be.null;
+        expect(binding(el)).to.be.null;
+        expect(editor(el).shadowRoot!.querySelector('.placeholder')!.textContent!.trim()).toBe(
+          NO_RAILROAD_MESSAGE
+        );
+        expect(writes()).toEqual([]);
+      });
+
+      it('says so, and opens no archive, when the camera sends no picture to size one from', async () => {
+        serveNone({ error: 'archive/none', railroad: 'Gleis 49' }, { frame: false });
+        const { el } = await mounted();
+        await vi.waitFor(() =>
+          expect(editor(el).shadowRoot!.querySelector('.placeholder')!.textContent!.trim()).toBe(
+            NO_FRAME_MESSAGE
+          )
+        );
+        expect(session(el)).to.be.null;
       });
     });
 
