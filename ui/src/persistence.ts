@@ -24,7 +24,7 @@
  */
 
 import type { R49Archive } from '@rails49/r49';
-import { saveToService } from './serviceArchive.js';
+import { createOnService, saveToService } from './serviceArchive.js';
 
 /**
  * The archive on an occupancy service this session writes back to (#333).
@@ -33,12 +33,18 @@ import { saveToService } from './serviceArchive.js';
  * holds: a save over a copy that moved on is refused rather than merged.
  * `null` is a service that serves the archive read-only — a `.r49` zip, or a
  * folder it cannot write. The service page turns editing off for it (#381).
+ *
+ * `create` is a service with no archive yet: the page made a fresh one, and
+ * the first save creates it on the service, after which the binding carries
+ * the `ETag` the create answered with (#382).
  */
 export interface ServiceBinding {
   /** Where the service answers, as `liveContract.ts`'s `LIVE_BASE`. */
   readonly base: string;
-  /** The manifest's `ETag` as last seen, or `null` for a read-only copy. */
+  /** The manifest's `ETag` as last seen, or `null` for a read-only copy or one not yet created. */
   readonly etag: string | null;
+  /** Whether the service has no archive yet, so the next save creates it (#382). */
+  readonly create?: boolean;
 }
 
 /**
@@ -208,7 +214,9 @@ export async function openArchive(): Promise<OpenedArchive | null> {
  *
  * 0. A service binding with an `ETag`, `rebind` false — the changed files, the
  *    manifest and the deletes go to the service (`serviceArchive.ts`'s writer
- *    over `R49Archive.writeChanges`). No
+ *    over `R49Archive.writeChanges`). A binding with `create` sends the whole
+ *    archive as one zip instead, and the binding returned carries its `ETag`
+ *    and no `create` (#382). No
  *    handle is involved, so this one route works on a phone as well as on
  *    Chromium desktop. A 412 comes back as `stale`, any other refusal as
  *    `refused`, and both leave the binding alone; a network failure throws, as every other route's write
@@ -255,11 +263,13 @@ export async function writeArchive(
 ): Promise<SaveOutcome> {
   const service = options.rebind ? undefined : binding.service;
   if (service) {
-    if (service.etag !== null) {
-      const written = await saveToService(archive, service.base, service.etag);
+    if (service.create || service.etag !== null) {
+      const written = service.create
+        ? await createOnService(archive, service.base)
+        : await saveToService(archive, service.base, service.etag!);
       switch (written.kind) {
         case 'wrote':
-          return { kind: 'served', binding: { ...binding, service: { ...service, etag: written.etag } } };
+          return { kind: 'served', binding: { ...binding, service: { base: service.base, etag: written.etag } } };
         case 'stale':
           return written;
         case 'refused':

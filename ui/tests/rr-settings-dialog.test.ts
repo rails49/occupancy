@@ -171,6 +171,20 @@ describe('rr-settings-dialog', () => {
     });
   });
 
+  // A service page saves when the dialog closes (#382).
+  it('says when it has closed, and not when a select inside it closes', async () => {
+    const el = await open([]);
+    const seen: string[] = [];
+    el.addEventListener('rr-settings-close', () => seen.push('closed'));
+    const hidden = () => new CustomEvent('sl-hide', { bubbles: true, composed: true });
+
+    el.shadowRoot!.querySelector('sl-select')!.dispatchEvent(hidden());
+    expect(seen).toEqual([]);
+
+    el.shadowRoot!.querySelector('look-dialog')!.dispatchEvent(hidden());
+    expect(seen).toEqual(['closed']);
+  });
+
   it('links to the source of the AGPL detector', async () => {
     const el = await open([]);
     const link = el.shadowRoot!.querySelector<HTMLAnchorElement>('a[href="https://github.com/rails49/detector"]');

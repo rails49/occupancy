@@ -325,7 +325,8 @@ function unreadNotice(filenames: readonly string[]): string {
  * highlight after an undo, and blob URLs — and re-renders
  * whenever the session changes. See ADR 0017.
  *
- * Takes `session`, `service`, `cameraReady` and `readOnly`. Emits `rr-notify`
+ * Takes `session`, `service`, `cameraReady`, `readOnly` and `emptyMessage`, the
+ * sentence shown with no archive in place of its own (#382). Emits `rr-notify`
  * (`NotifyDetail`) when a click is refused, and for `NOTICE_MS` with each
  * notice the session sends (`subscribeNotices`). Emits `rr-frame-capture` (no
  * detail) when the camera button is pressed on a service page.
@@ -358,6 +359,8 @@ export class RREditorView extends LitElement {
   @property({ attribute: false }) cameraReady = false;
   /** Whether editing is off, for a service that does not accept changes (#381). */
   @property({ attribute: false }) readOnly = false;
+  /** What to say with no archive, in place of the cloud page's sentence, or `null` (#382). */
+  @property({ attribute: false }) emptyMessage: string | null = null;
   /**
    * Blob URLs for each image, by filename: the full-size image for the viewer,
    * and a small copy for the thumbnail strip (#252), `null` until it is made.
@@ -1518,7 +1521,9 @@ export class RREditorView extends LitElement {
     return html`
       <div class="main-content">
         ${!this.session || !manifest
-          ? html`<div class="placeholder">No archive loaded. Open an .r49 file from the rail.</div>`
+          ? html`<div class="placeholder">
+              ${this.emptyMessage ?? 'No archive loaded. Open an .r49 file from the rail.'}
+            </div>`
           : html`
             ${this.readOnly
               ? html`<div class="read-only">${READ_ONLY_MESSAGE}</div>`

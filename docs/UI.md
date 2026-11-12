@@ -257,7 +257,7 @@ person chose, truncating whatever was there.
 ### The service page saves by itself (#381)
 
 `rr-app` saves a writable service page's archive `AUTOSAVE_MS` (10 s) after the last edit, and at
-once on a view switch and on `visibilitychange` to hidden. An edit is a change of the history's
+once on a view switch, on `visibilitychange` to hidden, and when the settings dialog closes. An edit is a change of the history's
 position, so an undo or a redo counts and a selection or a tool change does not. Each save is the
 service route above, with `If-Match`; a trigger while a save runs makes it run once more when it
 ends. The service reloads on each save, so an edit reaches the live view and MQTT within seconds, a
@@ -919,10 +919,11 @@ path is driven there with a stand-in `<video>` and measured by hand in Chromium.
 
 The page asks `/live/archive/manifest.json` once, when `rr-app` connects. **Only a JSON content type
 counts as a service**: the deployed copy answers every unknown path with 200 `text/html`, so
-`response.ok` alone would find one on a static host. Any other answer, and any network failure, is no
-service and the page is what it has always been, with no toast. `liveContract.ts`'s `findService`
-returns the **`Response`**, not a boolean, so the version in its `ETag` is read before anything is
-loaded.
+`response.ok` alone would find one on a static host. A JSON 404 whose `error` is `archive/none` is a
+service with no archive (#382). Any other answer, and any network failure, is no service and the page
+is what it has always been, with no toast. `liveContract.ts`'s `findService` returns a `FoundService`,
+not a boolean; for an archive it carries the **`Response`**, so the version in its `ETag` is read
+before anything is loaded.
 
 `/live` is one constant and not a setting. A cross-origin service is out of scope, everything the app
 fetches comes from origin anyway (ADR 0006), and a base somebody could type would be a second way for
@@ -985,6 +986,23 @@ and a save landing between them is exactly what `If-Match` is for. Images follow
 they are asked for, and § Saving is three routes has where a save goes. A manifest that will not
 load is a failed load like any other, with the same toast; the live view still watches the service,
 since finding one and loading its archive are different questions.
+
+**A service with no archive gets a fresh one** (#382). `findService` reads the manifest's 404,
+`{"error": "archive/none"}`, as `FoundService`: `railroad` a name, absent where the archive's path
+does not depend on the railroad, or `null` with none loaded. With none loaded, `rr-app` hands the
+editor `NO_RAILROAD_MESSAGE` and opens nothing. Otherwise it reads one frame through
+`serviceCamera.next()`, sizes it with `imageSize`, and opens a fresh archive named for the railroad
+(empty without one) at that size, bound with `create`; with no frame it says so instead. The
+required-metadata gate opens the settings dialog, and `rr-settings-close`, sent on the dialog's
+`sl-hide`, saves at once. A fresh archive is not saved while the dialog is open or the gate still
+asks for something. Its first save is `createOnService`:
+the archive exported whole, `PUT /live/archive.r49` with `If-None-Match: *`. `R49Archive.writeChanges`
+writes only an archive loaded from a base URL, so after the create `rr-app` loads the archive again
+from the service and binds it to the `ETag` the create answered with, and later saves are the
+service route above. The history starts again there. A frame added while the create runs waits
+for it (`_created`) and goes into the reopened archive; any other edit made meanwhile is not in it,
+and `rr-app` says so with `LOST_EDIT_MESSAGE`. A 412 on the create says another page created it
+first and reloads; a 422 quotes its rule.
 
 **A service page holds only the service's archive** (#381). It offers no New, no Open, no Add Images
 from Files, no video file and no device camera, so nothing leaves the service. A New or an Open

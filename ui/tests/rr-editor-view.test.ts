@@ -131,6 +131,15 @@ describe('rr-editor-view', () => {
     expect(el.shadowRoot!.textContent).to.contain('No archive loaded');
   });
 
+  it('says the sentence it is given in place of its own, with no session (#382)', async () => {
+    const el = await fixture<RREditorView>(
+      html`<rr-editor-view .emptyMessage=${'No railroad is loaded.'}></rr-editor-view>`
+    );
+    expect(el.shadowRoot!.querySelector('.placeholder')!.textContent!.trim()).toBe(
+      'No railroad is loaded.'
+    );
+  });
+
   it('renders components when a session is provided', async () => {
     const el = await render();
 

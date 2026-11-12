@@ -148,23 +148,51 @@ function mimeType(response: Response): string {
   return (response.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
 }
 
+/** The `error` of a service's 404 for the manifest when it has no archive (#382). */
+export const NO_ARCHIVE = 'archive/none';
+
+/** What the manifest's answer says of a service on this origin. */
+export type FoundService =
+  /** An archive. `manifest` is the answer, whose `ETag` #333 reads before it opens it. */
+  | { readonly kind: 'archive'; readonly manifest: Response }
+  /**
+   * No archive (#382). `railroad` is the loaded railroad's name, absent where
+   * the archive's path does not depend on the railroad.
+   */
+  | { readonly kind: 'no-archive'; readonly railroad?: string }
+  /** No archive, and the archive's path depends on a railroad, but none is loaded (#382). */
+  | { readonly kind: 'no-railroad' };
+
 /**
- * The manifest `Response` where this origin serves an occupancy service, else
- * `null`. #333 reads its `ETag` and opens it.
+ * What this origin's occupancy service has, or `null` where there is none.
  *
- * Only a 2xx with a JSON content type counts: the cloud copy of this page
- * answers every unknown path with 200 `text/html`. Any other answer, and any
- * network failure, is no service, with no toast.
+ * A 2xx with a JSON content type is an archive: the cloud copy of this page
+ * answers every unknown path with 200 `text/html`. A 404 with a JSON body whose
+ * `error` is {@link NO_ARCHIVE} is a service with no archive, and its
+ * `railroad` says which kind (`LIVE.md` § No archive): a name, `null` for none
+ * loaded, or absent. Any other answer, and any network failure, is no service,
+ * with no toast.
  */
-export async function findService(base: string = LIVE_BASE): Promise<Response | null> {
+export async function findService(base: string = LIVE_BASE): Promise<FoundService | null> {
   let response: Response;
   try {
     response = await fetch(manifestUrl(base));
   } catch {
     return null;
   }
-  if (!response.ok) return null;
-  return isJson(response) ? response : null;
+  if (response.ok) return isJson(response) ? { kind: 'archive', manifest: response } : null;
+  if (response.status !== 404 || !isJson(response)) return null;
+  let data: unknown;
+  try {
+    data = await response.json();
+  } catch {
+    return null;
+  }
+  if (!isRecord(data) || data.error !== NO_ARCHIVE) return null;
+  if (data.railroad === null) return { kind: 'no-railroad' };
+  return typeof data.railroad === 'string' && data.railroad !== ''
+    ? { kind: 'no-archive', railroad: data.railroad }
+    : { kind: 'no-archive' };
 }
 
 /** The name the manifest is stored under inside an archive. */
@@ -233,6 +261,20 @@ export function putArchiveFile(
   return fetch(archiveFileUrl(base, name), {
     method: 'PUT',
     headers: { 'If-Match': etag, 'Content-Type': body.type },
+    body,
+  });
+}
+
+/**
+ * `PUT <base>/archive.r49`, with `If-None-Match: *`: the archive as a `.r49`
+ * zip, created where the service has none (#382). The body is a `Blob`, so the
+ * request carries a `Content-Length`. The answer's `ETag` is the version to
+ * save against next.
+ */
+export function createArchive(base: string, body: Blob): Promise<Response> {
+  return fetch(`${base}/archive.r49`, {
+    method: 'PUT',
+    headers: { 'If-None-Match': '*', 'Content-Type': body.type },
     body,
   });
 }

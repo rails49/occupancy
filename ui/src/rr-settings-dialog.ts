@@ -50,6 +50,7 @@ type LayoutFields = Pick<Layout, 'name' | 'scale' | 'description' | 'contact'> &
  *
  * @fires rr-layout-change - When a layout field (name, scale, description, contact) changes. Detail: { layout: Partial<Layout> }
  * @fires rr-camera-height-change - When the camera height changes. Detail: { camera_height_mm: number | undefined }
+ * @fires rr-settings-close - When the dialog has closed (#382).
  */
 @customElement('rr-settings-dialog')
 export class RRSettingsDialog extends LitElement {
@@ -166,6 +167,11 @@ export class RRSettingsDialog extends LitElement {
     this._dialog.show();
   }
 
+  /** Whether the dialog is open. */
+  get open(): boolean {
+    return this._dialog?.open ?? false;
+  }
+
   public hide() {
     this._dialog.hide();
   }
@@ -216,6 +222,11 @@ export class RRSettingsDialog extends LitElement {
           // Every route out — the close button, Escape, a click on the overlay
           // — goes through here, so one guard covers all three.
           if (this._blocking) e.preventDefault();
+        }}
+        @sl-hide=${(e: Event) => {
+          // The dialog's own, not a select's inside it.
+          if (e.target !== e.currentTarget) return;
+          this.dispatchEvent(new CustomEvent('rr-settings-close', { bubbles: true, composed: true }));
         }}
       >
         ${this._blocking

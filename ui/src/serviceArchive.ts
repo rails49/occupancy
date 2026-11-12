@@ -9,7 +9,8 @@
  * second implementation of the format (org ADR-0022).
  *
  * What is left is the one thing the format cannot state: how *this* page
- * reaches a service. `writeChanges` asks for an {@link ArchiveWriter} with a
+ * reaches a service. {@link createOnService} makes the archive where the
+ * service has none (#382). `writeChanges` asks for an {@link ArchiveWriter} with a
  * `put` and a `remove`, and {@link ServiceWriter} is that pair over
  * `liveContract.ts`'s requests — `If-Match` on each, the new `ETag` carried out
  * of the manifest's answer, and a failed `DELETE` that leaves an orphan rather
@@ -25,6 +26,7 @@ import {
   MANIFEST_NAME,
   SAVE_REFUSED,
   SAVE_STALE,
+  createArchive,
   deleteArchiveFile,
   putArchiveFile,
   readEtag,
@@ -170,6 +172,30 @@ export async function saveToService(
     throw err;
   }
   return { kind: 'wrote', etag: writer.etag };
+}
+
+/**
+ * Creates the archive on the service at `base`, which has none (#382): the
+ * whole archive, exported as a `.r49` zip, in one `PUT <base>/archive.r49`
+ * with `If-None-Match: *`.
+ *
+ * A 412 is `stale`: another page created it first. Any other refusal is
+ * `refused`, a 422 quoting its rule, as a save's is.
+ *
+ * @throws on a network failure, and on a 2xx with no `ETag`, which `LIVE.md`
+ *         has the answer carry.
+ */
+export async function createOnService(archive: R49Archive, base: string): Promise<ServiceWrite> {
+  const bytes = await archive.export();
+  const answer = await createArchive(
+    base,
+    new Blob([bytes as unknown as BlobPart], { type: 'application/zip' })
+  );
+  if (answer.status === SAVE_STALE) return { kind: 'stale' };
+  if (!answer.ok) return { kind: 'refused', message: await refusalMessage(answer) };
+  const etag = readEtag(answer);
+  if (etag === null) throw new Error('the occupancy service created the archive and sent no ETag');
+  return { kind: 'wrote', etag };
 }
 
 /** A refusal, in the words the toast shows. */

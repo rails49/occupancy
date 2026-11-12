@@ -170,11 +170,29 @@ describe('findService', () => {
     // older one, and its own save is refused.
     const fetchMock = stubFetch(jsonAnswer({ version: 4 }));
 
-    const response = await findService();
+    const found = await findService();
 
     expect(fetchMock).toHaveBeenCalledWith('/live/archive/manifest.json');
-    expect(response).to.not.be.null;
-    expect(await response!.json()).toEqual({ version: 4 });
+    expect(found!.kind).toBe('archive');
+    expect(await (found as { manifest: Response }).manifest.json()).toEqual({ version: 4 });
+  });
+
+  // `LIVE.md` § No archive (#382).
+  const noArchive = (body: unknown) => jsonAnswer(body, 404);
+
+  it('finds a service with no archive, and the railroad it names', async () => {
+    stubFetch(noArchive({ error: 'archive/none', railroad: 'Gleis 49' }));
+    expect(await findService()).toEqual({ kind: 'no-archive', railroad: 'Gleis 49' });
+  });
+
+  it('finds a service with no archive whose path names no railroad', async () => {
+    stubFetch(noArchive({ error: 'archive/none' }));
+    expect(await findService()).toEqual({ kind: 'no-archive' });
+  });
+
+  it('finds a service with no archive and no railroad loaded', async () => {
+    stubFetch(noArchive({ error: 'archive/none', railroad: null }));
+    expect(await findService()).toEqual({ kind: 'no-railroad' });
   });
 
   it('finds none in a 200 text/html answer', async () => {
@@ -186,6 +204,11 @@ describe('findService', () => {
 
   it('finds none in a 404', async () => {
     stubFetch(new Response('nope', { status: 404, headers: { 'content-type': 'application/json' } }));
+    expect(await findService()).to.be.null;
+  });
+
+  it('finds none in a JSON 404 that is not archive/none', async () => {
+    stubFetch(noArchive({ error: 'something/else', railroad: 'Gleis 49' }));
     expect(await findService()).to.be.null;
   });
 
