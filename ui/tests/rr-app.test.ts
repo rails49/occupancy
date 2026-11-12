@@ -796,9 +796,9 @@ describe('rr-app', () => {
         expect(command(el, 'file-download')).not.toBeNull();
       });
 
-      it('takes no settings edit', async () => {
+      it('takes no settings edit, and says why', async () => {
         serve(() => jsonManifest());
-        const { el } = await mounted();
+        const { el, notify } = await mounted();
 
         await (el as unknown as { _onLayoutChange(e: unknown): Promise<void> })._onLayoutChange(
           new CustomEvent('rr-layout-change', { detail: { layout: { name: 'Renamed', scale: 'N' } } })
@@ -806,6 +806,12 @@ describe('rr-app', () => {
 
         expect(session(el)!.archive.getManifest().layout.name).toBe('Served');
         expect(session(el)!.history.isDirty).toBe(false);
+        expect(notify).toHaveBeenCalledWith(
+          'This occupancy service does not accept changes.',
+          'warning',
+          'exclamation-triangle',
+          Infinity
+        );
       });
     });
 

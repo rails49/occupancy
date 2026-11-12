@@ -345,6 +345,9 @@ function unreadNotice(filenames: readonly string[]): string {
  * and a DPT below the detector's `MIN_DPT` warns and blocks nothing. See `SPEC.md`
  * § Reference points.
  */
+/** What a page on a read-only occupancy service says (#381). `rr-app` toasts it too. */
+export const READ_ONLY_MESSAGE = 'This occupancy service does not accept changes.';
+
 @customElement('rr-editor-view')
 export class RREditorView extends LitElement {
   /** The archive being edited, with its rules and history. Created by `rr-app`. */
@@ -1518,7 +1521,7 @@ export class RREditorView extends LitElement {
           ? html`<div class="placeholder">No archive loaded. Open an .r49 file from the rail.</div>`
           : html`
             ${this.readOnly
-              ? html`<div class="read-only">This occupancy service does not accept changes.</div>`
+              ? html`<div class="read-only">${READ_ONLY_MESSAGE}</div>`
               : ''}
 
             ${this._renderDpt(manifest)}

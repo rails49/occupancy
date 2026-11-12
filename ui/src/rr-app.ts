@@ -24,7 +24,7 @@ import { occupancyService } from './occupancyService.js';
 import type { LiveSources } from './liveSources.js';
 import { serviceCamera, type ServiceCamera } from './serviceCamera.js';
 import './rr-editor-view.js';
-import type { NotifyDetail } from './rr-editor-view.js';
+import { READ_ONLY_MESSAGE, type NotifyDetail } from './rr-editor-view.js';
 import './rr-live-view.js';
 import type { FrameAddDetail } from './rr-live-view.js';
 import './rr-diagnostics-view.js';
@@ -61,9 +61,6 @@ const RELOAD_MS = 3000;
 /** What a 412 on a service page says before the reload (#381). */
 const STALE_MESSAGE =
   'The archive was changed on another page. This page reloads, and the edits it had not saved are lost.';
-
-/** Why a read-only service page adds nothing (#381). `rr-editor-view` says the same. */
-const READ_ONLY_MESSAGE = 'This occupancy service does not accept changes.';
 
 /**
  * Save As is advertised only where it does something Save does not. Without
@@ -376,12 +373,12 @@ export class RRApp extends LitElement {
     await this._saveNow();
   }
 
-  /** A hidden tab may never be shown again, so its edits go now (#381). */
+  /** Saves at once when the tab is hidden (#381). */
   private _onVisibilityChange = () => {
     if (document.visibilityState === 'hidden') void this._saveNow();
   };
 
-  /** Reloads the page. A method so the tests can stand in for it. */
+  /** Reloads the page. */
   private _reload() {
     location.reload();
   }
@@ -587,8 +584,7 @@ export class RRApp extends LitElement {
     if (!session || this._saving) return;
     this._saving = true;
     const position = session.history.position;
-    // A save to the service runs every few seconds while the person edits
-    // (#381), so it says nothing unless it fails.
+    // A save to the service shows no toast unless it fails (#381).
     const quiet = this._writable && !rebind;
     const done = quiet ? () => {} : this._progress('Saving…');
     try {
@@ -696,10 +692,6 @@ export class RRApp extends LitElement {
   private async _onFrameCapture() {
     const camera = this._camera;
     if (!camera || this._freezing) return;
-    if (this._readOnly) {
-      this._notify(READ_ONLY_MESSAGE, 'warning', 'exclamation-triangle', Infinity);
-      return;
-    }
     this._freezing = true;
     let frame;
     try {
@@ -735,10 +727,7 @@ export class RRApp extends LitElement {
       );
       return;
     }
-    if (this._readOnly) {
-      this._notify(READ_ONLY_MESSAGE, 'warning', 'exclamation-triangle', Infinity);
-      return;
-    }
+    if (this._refuseReadOnly()) return;
     this._freezing = true;
     this._frozenId = frameId;
     try {
@@ -768,15 +757,22 @@ export class RRApp extends LitElement {
     void this._saveNow();
   }
 
-  /** The settings dialog's edits. None on a read-only service (#381). */
+  /** The settings dialog's edits. A read-only service takes none and says so (#381). */
   private async _onLayoutChange(e: CustomEvent<{ layout: LayoutSettings }>) {
-    if (this._readOnly) return;
+    if (this._refuseReadOnly()) return;
     await this._session?.editLayout(e.detail.layout);
   }
 
   private async _onCameraHeightChange(e: CustomEvent<{ camera_height_mm: number | undefined }>) {
-    if (this._readOnly) return;
+    if (this._refuseReadOnly()) return;
     await this._session?.setCameraHeight(e.detail.camera_height_mm);
+  }
+
+  /** On a read-only service: says it takes no changes, and answers true. */
+  private _refuseReadOnly(): boolean {
+    if (!this._readOnly) return false;
+    this._notify(READ_ONLY_MESSAGE, 'warning', 'exclamation-triangle', Infinity);
+    return true;
   }
 
   /**
