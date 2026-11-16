@@ -47,22 +47,19 @@ describe('sensorIdRefusal', () => {
   });
 
   it('refuses each character a controller message cannot carry, saying why', () => {
-    expect(REFUSED_SENSOR_ID_CHARACTERS).toHaveLength(6);
+    expect(REFUSED_SENSOR_ID_CHARACTERS).toHaveLength(3);
 
     for (const character of REFUSED_SENSOR_ID_CHARACTERS) {
       const refusal = sensorIdRefusal(`c3${character}a`, alone);
       expect(refusal, character).not.toBeNull();
-      expect(refusal, character).toMatch(/MQTT|XML/);
+      expect(refusal, character).toMatch(/MQTT/);
     }
   });
 
-  it('names MQTT for + and # and the Rocrail profile for the XML three', () => {
-    expect(sensorIdRefusal('c3+a', alone)).toMatch(/MQTT/);
-    expect(sensorIdRefusal('c3#a', alone)).toMatch(/MQTT/);
-    expect(sensorIdRefusal('c3/a', alone)).toMatch(/MQTT/);
-    expect(sensorIdRefusal('c3"a', alone)).toMatch(/XML/);
-    expect(sensorIdRefusal('c3<a', alone)).toMatch(/XML/);
-    expect(sensorIdRefusal('c3&a', alone)).toMatch(/XML/);
+  it('accepts a double quote, < and &', () => {
+    expect(sensorIdRefusal('c3"a', alone)).toBeNull();
+    expect(sensorIdRefusal('c3<a', alone)).toBeNull();
+    expect(sensorIdRefusal('c3&a', alone)).toBeNull();
   });
 
   it('never refuses the id the sensor already holds', () => {

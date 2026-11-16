@@ -47,18 +47,14 @@ export interface SensorIdContext {
  *
  * Only these, and every other character is allowed — inner spaces included —
  * because the id has to be able to *be* the name a controller already uses. The
- * six are the ones a message carrying the id cannot survive:
- * `+` and `#` are MQTT's wildcards and are illegal in a topic, `/` is its level
- * separator and would split one id into two levels, and `"`, `<` and `&` are
- * markup in the Rocrail profile's XML.
+ * three are the ones a topic carrying the id cannot survive:
+ * `+` and `#` are MQTT's wildcards and are illegal in a topic, and `/` is its
+ * level separator and would split one id into two levels.
  */
 const REFUSALS: ReadonlyMap<string, string> = new Map([
   ['+', 'An id cannot contain “+” — an MQTT topic cannot carry it.'],
   ['#', 'An id cannot contain “#” — an MQTT topic cannot carry it.'],
   ['/', 'An id cannot contain “/” — it adds a level to an MQTT topic.'],
-  ['"', 'An id cannot contain a double quote — it breaks the Rocrail profile’s XML.'],
-  ['<', 'An id cannot contain “<” — it breaks the Rocrail profile’s XML.'],
-  ['&', 'An id cannot contain “&” — it breaks the Rocrail profile’s XML.'],
 ]);
 
 /** The characters an id may not contain, for a test or a document to enumerate. */
