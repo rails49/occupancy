@@ -942,10 +942,9 @@ the archive refuses are the same rule rather than two that can drift.
 | `SensorFields` | `{ id: string, name: string \| null }` — a sensor's editable fields, which the dialog commits and the session writes |
 | `SensorIdContext` | `{ current: string \| null, taken: readonly string[] }` |
 
-Refused: a **blank** id, one another sensor in the layout **holds**, and any of `/ + # " < &` —
-`+` and `#` are MQTT's wildcards and are illegal in a topic, `/` is its level separator and would
-split one id into two levels, and `"`, `<` and `&` are markup in the Rocrail profile's XML. Every
-other character is allowed. Matching is **case-sensitive**, because a controller tells `c3.a` and
+Refused: a **blank** id, one another sensor in the layout **holds**, and any of `/ + #` —
+`+` and `#` are MQTT's wildcards and are illegal in a topic, and `/` is its level separator and
+would split one id into two levels. Every other character is allowed. Matching is **case-sensitive**, because a controller tells `c3.a` and
 `C3.A` apart.
 
 **The sensor's own `current` id is never refused**, whatever it holds. This is the *editor's*

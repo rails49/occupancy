@@ -612,7 +612,7 @@ describe('EditSession', () => {
       await s.editSensor(second, { id: 'c3.a', name: null });
       const size = s.history.size;
 
-      for (const id of ['', '   ', 'c3.a', 'c3/a', 'c3+a', 'c3#a', 'c3"a', 'c3<a', 'c3&a']) {
+      for (const id of ['', '   ', 'c3.a', 'c3/a', 'c3+a', 'c3#a']) {
         await s.editSensor(first, { id, name: 'Yard throat' });
         expect(sensors(s)[0], id).toEqual({ id: first, x: 320, y: 200 });
         expect(s.history.size, id).toBe(size);

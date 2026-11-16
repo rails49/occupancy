@@ -163,7 +163,7 @@ describe('rr-sensor-dialog', () => {
     it('refuses each character a controller message cannot carry', async () => {
       for (const character of REFUSED_SENSOR_ID_CHARACTERS) {
         await open();
-        await expectRefused(`c3${character}a`, /MQTT|XML/);
+        await expectRefused(`c3${character}a`, /MQTT/);
       }
     });
 
