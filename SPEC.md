@@ -365,7 +365,7 @@ Provenance is per label, so it cannot express a car that was never labeled. A pr
 
 ### Testing and Demo
 
-The UI authors and edits `.r49` archives, and it checks detection and classification visually and collects their statistics. **It publishes no occupancy to a controller.** Live occupancy is [rails49/occupancy-service](https://github.com/rails49/occupancy-service)'s: it publishes to rails49/control, and through its profiles to JMRI and Rocrail. Where this page watches a service ([Features](#features)) it shows what that service decided, and publishes nothing of its own.
+The UI authors and edits `.r49` archives, and it checks detection and classification visually and collects their statistics. **It publishes no occupancy to a controller.** Live occupancy is [rails49/occupancy-service](https://github.com/rails49/occupancy-service)'s: it publishes to rails49/control, and in its own vocabulary for [any other program](https://github.com/rails49/occupancy-service#other-programs). Where this page watches a service ([Features](#features)) it shows what that service decided, and publishes nothing of its own.
 
 The UI also runs the detector:
 
