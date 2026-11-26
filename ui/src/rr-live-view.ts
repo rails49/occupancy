@@ -1,5 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { lookTheme } from '@rails49/look';
+import type { LookGapMoveDetail } from '@rails49/look';
 import { customElement, property, state, query } from 'lit/decorators.js';
 import type { R49Archive } from '@rails49/r49';
 import { getDPT } from '@rails49/r49';
@@ -29,6 +30,7 @@ import {
 import type { DriftSession } from './driftSession.js';
 import { downloadDriftCsv, driftCsvName, driftRow } from './driftRecording.js';
 import type { DriftRow } from './driftRecording.js';
+import { LEAST, REST, heightAt, keep, kept } from './detailsHeight.js';
 import './rr-viewer.js';
 import './rr-stats-bar.js';
 import './rr-service-details.js';
@@ -127,6 +129,9 @@ export interface FrameAddDetail {
  * asked for patches (#332). **Freeze** stands beside it: one press sends the
  * frame on screen up as `rr-frame-add` for `rr-app` to add to the archive
  * (#334), and the feed goes on running.
+ *
+ * A divider between the viewer and the panel sets the panel's height when
+ * dragged, and the browser keeps it (#398, `detailsHeight.ts`).
  *
  * **Properties:** `archive`, `sources`. **Emits:** `rr-frame-add`
  * ({@link FrameAddDetail}).
@@ -262,6 +267,8 @@ export class RRLiveView extends LitElement {
   @state() private _recording: { started: Date; rows: readonly DriftRow[] } | null = null;
   /** Whether the Details panel is open (#332). Closed each time the view opens. */
   @state() private _detailsOpen = false;
+  /** The height the divider was dragged to, or `null` until it is dragged (#398). */
+  @state() private _detailsHeight: number | null = kept();
   /**
    * The frame on screen, or `null` where the current answer carried none
    * (#334) — which is what disables Freeze.
@@ -346,6 +353,20 @@ export class RRLiveView extends LitElement {
       flex: 0 1 auto;
       max-height: 40%;
       contain: inline-size;
+    }
+
+    /* Once the divider is dragged the panel has the dragged height, held to
+       the limits a drag is held to (detailsHeight.ts). */
+    rr-service-details.dragged {
+      flex: none;
+      box-sizing: border-box;
+      height: clamp(${LEAST}px, var(--details-height), 100% - ${REST}px);
+      max-height: none;
+    }
+
+    /* The divider's grey at rest. */
+    .divider {
+      background: var(--sl-color-neutral-200);
     }
 
     .notice button,
@@ -772,6 +793,12 @@ export class RRLiveView extends LitElement {
     this._results?.setPatches?.(this._detailsOpen);
   }
 
+  /** The divider dragged to a client point: the panel's height there, kept in the browser (#398). */
+  private _onDividerMove(e: CustomEvent<LookGapMoveDetail>) {
+    this._detailsHeight = heightAt(this.getBoundingClientRect(), e.detail);
+    keep(this._detailsHeight);
+  }
+
   /**
    * Send the frame on screen up to be added to the archive (#334).
    *
@@ -1061,6 +1088,7 @@ export class RRLiveView extends LitElement {
     const sensors = layout?.sensors ?? manifest?.layout.sensors ?? [];
     const resolution = layout?.resolution ?? manifest?.camera.resolution ?? DEFAULT_RESOLUTION;
     const showDetails = this._detailsOpen && !this._judging;
+    const height = this._detailsHeight;
 
     return html`
       <rr-stats-bar
@@ -1107,12 +1135,17 @@ export class RRLiveView extends LitElement {
       ></rr-viewer>
 
       ${showDetails
-        ? html`<rr-service-details
-            .details=${this._details}
-            .sensors=${sensors}
-            .states=${this._sensorStates}
-            .rate=${this._fps}
-          ></rr-service-details>`
+        ? html`<div class="divider">
+              <look-gap axis="y" @look-gap-move=${this._onDividerMove}></look-gap>
+            </div>
+            <rr-service-details
+              class="${height === null ? '' : 'dragged'}"
+              style="${height === null ? '' : `--details-height: ${height}px`}"
+              .details=${this._details}
+              .sensors=${sensors}
+              .states=${this._sensorStates}
+              .rate=${this._fps}
+            ></rr-service-details>`
         : ''}
     `;
   }
