@@ -19,7 +19,10 @@ const KEY = 'occupancy.details';
  * `LEAST` and to what leaves the view `REST`. In a view too small for both,
  * `LEAST` holds.
  */
-export function heightAt(view: DOMRect, at: { readonly y: number }): number {
+export function heightAt(
+  view: { readonly bottom: number; readonly height: number },
+  at: { readonly y: number }
+): number {
   return Math.round(Math.max(LEAST, Math.min(view.bottom - at.y, view.height - REST)));
 }
 
