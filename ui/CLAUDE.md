@@ -56,6 +56,9 @@ you are touching:
 | `occupancy.ts`, `SensorState` | L1 lives in `occupancy.ts` |
 | `driftSession.ts`, drift readouts | Camera drift lives in `driftSession.ts` |
 | `diagnostics.ts`, `rr-diagnostics-view` | Diagnostics reads the model against the labels |
+| a pane's colours, `matte.ts`, `tests/theme.test.ts` | The panes follow the theme |
+| the band, the rail, a `look-dialog`, `lookTheme` | The chrome is `@rails49/look`'s |
+| a test, a jsdom stub, `tests/setup.ts` | Tests run in jsdom |
 
 ## Shoelace
 
@@ -65,69 +68,23 @@ never the package barrel; the barrel pulls the whole library into the bundle. Ty
 both themes and `prefers-color-scheme` decides**; there is no toggle. Components inherit `--sl-*`
 tokens, so use those rather than hardcoding new colors.
 
-**The work panes follow the theme** (#151). Every surface and ink in `rr-app`, the three
-`rr-diagnostics-*` elements, `rr-thumbnail-bar`, `rr-stats-bar`, `rr-video-bar`, `rr-live-view` and
-`rr-editor-view`'s `.main-content` is an `--sl-*` neutral, which inverts when the operating system's
-preference changes. The vocabulary is the one `rr-editor-view` and `index.html` already used, and
-new code takes it rather than picking a fresh step: `neutral-0` a pane, `neutral-50` a raised card,
-`neutral-100` a bar, `neutral-200` a hairline, `neutral-500`/`600`/`700` graded ink, `neutral-900`
-the primary ink.
-
-**Warning and fault are Shoelace's too.** The notice bars, the incomplete flags and the alignment
-row past tolerance are `--sl-color-warning-100`/`-800`, and a refusal `--sl-color-danger-100`/`-800`
-— the pair `rr-editor-view`'s readout bars already used. They invert like the neutrals, so neither
-needs a second amber written for one theme; and both ends of those scales sit clear of the marker
-inks, which are saturated mid-tones stroked onto the photograph rather than a filled bar in a pane.
-
-**A finding's colour is text in three places** — the report's scorecard number and crop caption, and
-the queue card's heading — and `diagnostics.ts`'s `KIND_COLOR` is one vocabulary shared with the
-boxes drawn on the photograph, where a saturated mid-tone is right against any image. As small text
-on a white pane it is not: amber is 1.9:1 there. Those three mix it 65% toward
-`--sl-color-neutral-1000`, which is black under one preference and white under the other, so one
-declaration darkens it in light and lightens it in dark. A swatch, a bar segment and a border take
-it **undiluted** — a filled shape carries at any lightness, and diluting it would put two greens on
-one screen.
-
-**What the panes still state outright is three things, and all three sit off the pane.**
-`src/matte.ts`'s `--photo-matte` is the black a photograph or a video frame is matted against —
-`rr-viewer`'s viewport, a thumbnail, and the report's row image and crop card take it, and nothing
-else may. `rgba()` scrims and drop shadows stay: a shadow is an alpha over whatever is under it, and
-the fit control's scrim sits on the photograph. And `color: white` stays on a badge whose background
-is `--sl-color-danger-600` or `--sl-color-success-600` — a saturated fill that does not move with
-the theme, so neither may its ink.
-
-`tests/theme.test.ts` is the guard, and its scope is exactly **no hex literal in a pane module**,
-template included — the report set a tile's tint from an inline `style` attribute. It does not see
-`rgba()` or `white`, which is why those three are argued above rather than asserted. It runs inside
-the required gate: a literal creeping back is this repository's own regression. jsdom does not paint (#109), so the result was
-judged by hand in both OS settings and no browser runner was added for it.
+The panes' surfaces and inks are `--sl-*` neutrals, in the vocabulary already in use: `neutral-0` a
+pane, `neutral-50` a raised card, `neutral-100` a bar, `neutral-200` a hairline,
+`neutral-500`/`600`/`700` graded ink, `neutral-900` the primary ink. Warning is
+`--sl-color-warning-100`/`-800` and a refusal `--sl-color-danger-100`/`-800`. `tests/theme.test.ts`
+fails on a hex literal in a pane module, template included. The reasons, and the three colours a
+pane still states outright: [`../docs/UI.md`](../docs/UI.md) § The panes follow the theme.
 
 ## The chrome is `@rails49/look`'s (#161)
 
-The band, the rail, the dialog shell and the Shoelace theme layer come from
-[`@rails49/look`](https://github.com/rails49/look), a git dependency pinned to a tag. A tag there
-opens a bump pull request here
-([rails49/look#10](https://github.com/rails49/look/issues/10)).
+What `rr-app` declares on look's elements, and how a look release reaches this repository:
+[`../docs/UI.md`](../docs/UI.md) § The chrome is `@rails49/look`'s.
 
-* `rr-app` declares the chrome on look's elements. `look-band` names the UI, "occupancy", and holds
-  `look-about` (the layout's name and scale, absent with nothing loaded), a `look-reading` naming
-  the bound file once Save would overwrite it, and `look-gear` for the settings dialog. `look-rail` holds the three
-  views, then, in the editor only, File, History and, while a manifest is loaded, Tools. Live and
-  Diagnostics have the views alone. On a service page File is Download alone, and a read-only
-  service has no History or Tools (#381).
-* The rail is `rr-app`'s and the tool state is the session's. The rail reads the tool, whether DPT
-  resolves and the image on screen from the session, and a press calls `session.selectTool`.
-* Status text is a toast, `rr-app`'s own `sl-alert`. There is no unsaved mark and no source link.
-* The settings, calibration and sensor dialogs are `look-dialog`s (`medium`, `small`, `small`),
-  still opened with `show()`. The unsaved-changes dialog before New and Open is a `small`
-  `look-dialog` too, opened with `ask()`.
 * Every component puts `lookTheme` first in its `static styles`: a `::part()` rule reaches only the
   widgets in its own shadow root.
 * `look-check` in `bin/test.sh` fails on a selector naming a `look-` element, on setting a look
   token or an `--sl-*` property, and on `sl-*::part()` in app code. `.fit-control::part(base)`
   names a class, not a widget, and passes.
-* The editor's readout bars give back their padding at look's `TURN_HEIGHT_PX`, where the rail lies
-  down as a strip. `tests/layout.test.ts` holds them to that number.
 
 ## Coding standards
 
@@ -152,65 +109,16 @@ Vitest in **jsdom**, `@open-wc/testing` fixtures, `tests/<module>.test.ts` mirro
 `matchMedia`, `URL.createObjectURL`), and stubs `sl-alert`'s `toast()` so a toast stays in its
 fixture, unopened (#376).
 
-**jsdom is the whole automated story, and no browser runner is coming** (#109). `@web/test-runner`
-sat in `devDependencies` for months with no config file and no script, running nothing while
-implying browser coverage existed; it is removed. Visual behaviour — that a box lands on the pixel
-it names, that a real pointer capture holds through a drag — is verified **by hand**, and the
-project accepts that. Do not add a second runner without reopening #109.
-
-That decision is not a claim jsdom is sufficient; it is a reading of where the defects actually
-were. Reviewing #106 turned up six, and four were plainly jsdom-testable and had simply never been
-written — the diagnostics components shipped with **zero** test files. A browser runner would have
-caught none of the six. Two more things follow, and both are load-bearing:
-
-* **A component with no test file is the failure mode**, not a component whose test file cannot
-  reach the paint. `rr-diagnostics-view` owned the sweep loop, the detector session's lifetime and
-  every blob URL on screen with nothing exercising any of it, which is why #108's leak could live
-  there — and why writing its tests surfaced a second defect of the same family (an abandoned sweep
-  republishing its dead handles over a live sweep's map).
-* **jsdom's gaps are stubbable more often than they look.** It implements neither
-  `HTMLImageElement.decode` nor `URL.createObjectURL`; both are a few lines in a `beforeEach`, and
-  the second must be stubbed *per test* when a test needs to tell handles apart — the global in
-  `setup.ts` returns `undefined` for every call, which is enough to pass a handle along and useless
-  for asserting one came back. Reach for a stub before concluding a module is untestable.
-
-* **jsdom's `File` is not the one Node's multipart parser accepts.** `Response.formData()` in these
-  tests is Node's — jsdom implements no fetch — and its parser builds each part with the global
-  `File` and then brand-checks it. So the two suites that read a real multipart body
-  (`tests/liveContract.test.ts`, `tests/occupancyService.test.ts`) swap Node's `File` and `Blob` in
-  for their duration, through `tests/liveFixture.ts`'s `useNodeFileGlobals`. Nothing under test is
-  replaced: the bodies are real multipart bytes built from the format, and the parser is the one a
-  browser would run. It is scoped to those two files rather than put in `setup.ts` because every
-  other test file wants jsdom's two.
-
-* **jsdom has no File System Access API**, which is the honest baseline — it is the fallback path,
-  and it is what Safari and every phone run. `tests/persistence.test.ts` covers the write-back
-  routes by installing fakes on `window`, so it proves the module *routes* correctly and **not**
-  that Chromium's API behaves as documented, which nothing in jsdom could show. The service route
-  (#333) needs no handle, so it is the one write-back route jsdom runs end to end, against a
-  stubbed `fetch` — `tests/serviceArchive.test.ts` asserts the requests, in order, with their
-  headers.
-
-* **jsdom does not lay out or paint.** `getBoundingClientRect()` is all zeros and SVG geometry
-  (`createSVGPoint`, `getScreenCTM`) is absent, so `tests/rr-viewer.test.ts` stubs both per test —
-  a scale plus an offset, standing in for a letterboxed viewport — and polyfills `PointerEvent` as
-  a `MouseEvent` carrying a `pointerId`. The stub proves the viewer converts through the transform
-  it is given, not that the transform is right — which is why the arithmetic lives in
-  `geometry.ts`. Assert DOM structure, attributes, computed values, and emitted events; never claim
-  a test verifies visual appearance.
+* jsdom is the only runner, and visual behaviour is verified by hand. Do not add a second runner
+  without reopening #109.
+* Every component has a test file.
+* Reach for a stub before concluding a module is untestable: most of jsdom's gaps are a few lines
+  in a `beforeEach`.
+* Assert DOM structure, attributes, computed values, and emitted events; never claim a test verifies
+  visual appearance.
 * Camera (`getUserMedia`) and ONNX sessions are mocked per test file.
-* The drag tests dispatch `rr-pointer-*` events shaped the way `rr-viewer` emits them, so they
-  cover the editor's half of a gesture — the click threshold, the sticky drag flag, and closing a
-  drag whose end never arrives — and **not** pointer capture, which is the browser's and the
-  viewer's. One entry per drag and no-op suppression are session tests. A drag leaving the viewer is
-  exercised as coordinates outside the image, which is what the editor actually sees.
-* The detector session is pinned from **two sides**, and they are different checks:
-  `tests/ortAssets.test.ts` reads `detectorSession.ts` as source text — that the `wasmPaths`
-  assignment exists, names `/ort/`, and appears in no view — because the link it guards runs
-  between a build-time copy target and a run-time fetch, which neither the typechecker nor the build
-  can see. `tests/detectorSession.test.ts` runs the module instead, and asserts the setup actually
-  fires, fires once per page, and reaches `loadDetector` with the assets module's URL. An assignment
-  behind a condition that never fires would pass the first and fail the second.
+* What each of jsdom's gaps means for a test, and how the suites here handle it:
+  [`../docs/UI.md`](../docs/UI.md) § Tests run in jsdom.
 
 Run `pnpm test` from the repo root after changes here: it covers `lib/*` too. `ui` consumes
 `lib/drift` as TypeScript source, so a change there breaks the UI at typecheck. `@rails49/detector`

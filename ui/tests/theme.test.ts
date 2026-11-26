@@ -13,7 +13,7 @@ import { RrViewer } from '../src/rr-viewer.js';
 // inverts with the operating system and a pane painted with a hex does not.
 //
 // jsdom does not paint, so nothing here proves the result is *legible* — that
-// was judged by hand in both OS settings, and `ui/CLAUDE.md` § Testing (#109)
+// was judged by hand in both OS settings, and `docs/UI.md` § Tests run in jsdom (#109)
 // says why no browser runner is added for it. What this does guard is the one
 // thing a reader cannot see: whether a literal has crept back in. A single
 // hardcoded surface is what made the seam in the first place, and it is
