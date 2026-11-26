@@ -1936,7 +1936,7 @@ frame**, and black is what a photograph is matted against under either preferenc
 
 `rr-viewer` is the one component that test does not scan, for the same reason: the matte behind the
 photograph and the zoom band over it are the whole of what it draws, so it has no pane surface, and
-its two colours are judged the way a marker ink is. See `ui/CLAUDE.md` § Shoelace for the rest.
+its two colours are judged the way a marker ink is. See `docs/UI.md` § The panes follow the theme for the rest.
 
 ---
 
