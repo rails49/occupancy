@@ -5,7 +5,7 @@ import { heightAt, keep, kept } from '../src/detailsHeight.js';
 // sets (#398).
 
 /** The live view's box: 700 px tall, with its bottom edge at 740. */
-const VIEW = { top: 40, bottom: 740, height: 700 } as DOMRect;
+const VIEW = { bottom: 740, height: 700 };
 
 describe('detailsHeight', () => {
   afterEach(() => {
@@ -26,7 +26,7 @@ describe('detailsHeight', () => {
   });
 
   it('holds the least in a view too small for both', () => {
-    expect(heightAt({ top: 0, bottom: 200, height: 200 } as DOMRect, { y: 100 })).toBe(96);
+    expect(heightAt({ bottom: 200, height: 200 }, { y: 100 })).toBe(96);
   });
 
   it('keeps no height until one is kept', () => {

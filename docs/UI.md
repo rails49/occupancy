@@ -980,10 +980,10 @@ shape, has no line or column. An answer with no frame carries no patches and kee
 such as `camera`; a failed answer carries no details at all.
 
 **A divider sets the Details panel's height** (#398). While the panel shows, look's `look-gap` sits
-between the picture and the panel, 6px tall, on `--sl-color-neutral-200`. A drag sets the panel's
-height, measured from the view's bottom edge. It is held to a least of 96px and to what leaves the
-rest of the view 192px (`detailsHeight.ts`), and the same limits hold when the window changes size.
-Until the divider is first dragged the panel is as tall as its content, up to 40% of the view. Once
+between the picture and the panel, on `--sl-color-neutral-200`. A drag sets the panel's height,
+measured from the view's bottom edge. It is held to a least of 96px and to what leaves the rest of
+the view 192px (`detailsHeight.ts`), and the same limits hold when the window changes size. Until
+the divider is first dragged the panel is as tall as its content, up to 40% of the view. Once
 dragged, its content scrolls in it. The height is kept in the browser's `localStorage` under
 `occupancy.details`, and a reload brings it back. A browser that refuses the store opens the panel
 at its undragged size. `rr-live-view` hands the height to its stylesheet as `--details-height`.
