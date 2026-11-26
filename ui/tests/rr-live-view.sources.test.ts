@@ -884,6 +884,99 @@ describe('rr-live-view with sources of its own', () => {
         expect(source.patches.at(-1)).toBe(false);
       });
     });
+
+    describe('the divider above the Details panel (#398)', () => {
+      /** The view's box: 700 px tall, with its bottom edge at 740. */
+      const BOX = { top: 40, bottom: 740, height: 700 } as DOMRect;
+
+      const panel = (el: RRLiveView) => el.shadowRoot!.querySelector('rr-service-details');
+      const divider = (el: RRLiveView) => el.shadowRoot!.querySelector('look-gap');
+      const height = (el: RRLiveView) => panel(el)!.style.getPropertyValue('--details-height');
+
+      async function pressDetails(el: RRLiveView) {
+        [...el.shadowRoot!.querySelectorAll('button')]
+          .find(b => b.textContent!.trim() === 'Details')!
+          .click();
+        await el.updateComplete;
+      }
+
+      /** The view in service mode with the panel showing. */
+      async function open() {
+        const source = fakeService([{ src: 'blob:one' }]);
+        const el = await mount(source);
+        await waitFor(el, () => source.asked > 0);
+        el.getBoundingClientRect = () => BOX;
+        await pressDetails(el);
+        return el;
+      }
+
+      /**
+       * A drag of the divider to a client height. jsdom has no `PointerEvent`:
+       * a `MouseEvent` carries what `look-gap` reads.
+       */
+      async function drag(el: RRLiveView, y: number) {
+        for (const type of ['pointerdown', 'pointermove', 'pointerup']) {
+          divider(el)!.dispatchEvent(new MouseEvent(type, { button: 0, clientX: 300, clientY: y }));
+        }
+        await el.updateComplete;
+      }
+
+      afterEach(() => localStorage.clear());
+
+      it('sits between the picture and the panel while the panel shows', async () => {
+        const el = await open();
+
+        expect(divider(el)!.getAttribute('axis')).toBe('y');
+        const strip = divider(el)!.parentElement!;
+        expect(strip.previousElementSibling).toBe(el.shadowRoot!.querySelector('rr-viewer'));
+        expect(strip.nextElementSibling).toBe(panel(el));
+
+        await pressDetails(el);
+        expect(divider(el)).toBeNull();
+      });
+
+      it("sets the panel's height from the view's bottom edge when dragged", async () => {
+        const el = await open();
+        expect(height(el)).toBe('');
+        expect(panel(el)!.classList.contains('dragged')).toBe(false);
+
+        await drag(el, 440);
+
+        expect(height(el)).toBe('300px');
+        expect(panel(el)!.classList.contains('dragged')).toBe(true);
+      });
+
+      it('holds the height to a least of 96 px and leaves the rest of the view 192 px', async () => {
+        const el = await open();
+
+        await drag(el, 735);
+        expect(height(el)).toBe('96px');
+
+        await drag(el, 45);
+        expect(height(el)).toBe('508px');
+      });
+
+      it('keeps the dragged height while the panel is hidden', async () => {
+        const el = await open();
+        await drag(el, 440);
+
+        await pressDetails(el);
+        await pressDetails(el);
+
+        expect(height(el)).toBe('300px');
+      });
+
+      it('opens the panel at the dragged height after a reload', async () => {
+        const first = await open();
+        await drag(first, 440);
+        expect(localStorage.getItem('occupancy.details')).toBe('300');
+        first.remove();
+
+        const second = await open();
+
+        expect(height(second)).toBe('300px');
+      });
+    });
   });
 
   describe('Details over a service\'s multipart answers (#332)', () => {

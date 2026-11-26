@@ -66,6 +66,7 @@ rr-app                          ← shell: owns the editing session and the view
 │   │   ├── sensorMarker.ts     ← the diamond, coloured by occupied / clear / unknown
 │   │   ├── carMarker.ts        ← renderDetection: the dashed L0 box
 │   │   └── trackMarker.ts      ← centerlines, while Details is open in service mode
+│   ├── detailsHeight.ts        ← module: the Details panel's height, set by the divider above it
 │   └── rr-service-details      ← service mode's Details panel: a service's fields and patches
 └── rr-diagnostics-view         ← diagnostics mode; sweeps the archive, owns the results
     ├── rr-diagnostics-report   ← scorecard, sortable per-image table, crop strip
@@ -1551,6 +1552,11 @@ against it would be this page second-guessing the judgement it is only relaying.
   viewer with the last answer's `FrameResult.details`, the viewer draws the layout's tracks as
   centerlines, and the result source is told `setPatches(true)`; closing it sends
   `setPatches(false)`.
+* **A divider sets the panel's height** ([#398]): while the panel shows, a `look-gap` sits between
+  the viewer and the panel. A drag sets the panel's height through `detailsHeight.ts`, which holds
+  it to its limits and keeps it in the browser. The view hands it to its stylesheet as
+  `--details-height`. Until the first drag the panel is as tall as its content, up to 40% of the
+  view.
 * **This is the occupancy contract, not a demo.** The detector runs **once per frame** — not once per
   sensor — and every sensor is derived from its output by pure geometry, which is `../SPEC.md`
   § Occupancy Output: L1 is a function of L0 and never calls a second model, so it cannot contradict

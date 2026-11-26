@@ -51,7 +51,6 @@ export class RRServiceDetails extends LitElement {
         background: var(--sl-color-neutral-0);
         color: var(--sl-color-neutral-900);
         font-size: 0.85rem;
-        border-top: 1px solid var(--sl-color-neutral-200);
       }
 
       .lines {
