@@ -182,6 +182,7 @@ rr-app                          ← shell: owns the editing session and the view
 > [#381]: https://github.com/rails49/occupancy/issues/381
 > [#382]: https://github.com/rails49/occupancy/issues/382
 > [#398]: https://github.com/rails49/occupancy/issues/398
+> [#400]: https://github.com/rails49/occupancy/issues/400
 
 ## State and data flow
 
@@ -1783,13 +1784,13 @@ What an occupancy service sent beyond L1, below the live view's viewer while Det
 ### `detailsHeight.ts`
 
 The height of the live view's Details panel, which a person sets by dragging the divider above it
-([#398]).
+([#398]). The arithmetic and the store are `@rails49/look`'s divider functions ([#400]).
 
 | Export | Description |
 |---|---|
 | `LEAST`, `REST` | 96 and 192, in CSS pixels: the panel's least height, and what it leaves the rest of the view |
-| `heightAt(view, at)` | The panel's height with the divider at a client point, measured from the view's bottom edge and held to the two limits. In a view too small for both, `LEAST` holds |
-| `kept()`, `keep(height)` | The height in the browser's `localStorage`, under `occupancy.details`. `kept()` is `null` with none kept and in a browser that refuses the store |
+| `heightAt(view, at)` | The panel's height with the divider at a client point, measured from the view's bottom edge and held to the two limits, by look's `dividerSizeAt` |
+| `kept()`, `keep(height)` | The height in the browser's `localStorage`, under `occupancy.details`, by look's `keptDivider` and `keepDivider` |
 
 ---
 
