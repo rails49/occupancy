@@ -2,9 +2,11 @@
  * The height of the live view's Details panel, which a person sets by dragging
  * the divider above it (#398).
  *
- * The height is measured from the view's bottom edge. It is kept in the
- * browser's `localStorage`. A browser that refuses the store keeps none.
+ * The height is measured from the view's bottom edge. The arithmetic and the
+ * store in `localStorage` are `@rails49/look`'s divider functions (#400).
  */
+
+import { dividerSizeAt, keepDivider, keptDivider } from '@rails49/look';
 
 /** The least height of the panel, in CSS pixels. */
 export const LEAST = 96;
@@ -14,32 +16,19 @@ export const REST = 192;
 
 const KEY = 'occupancy.details';
 
-/**
- * The panel's height in CSS pixels with the divider at a client point, held to
- * `LEAST` and to what leaves the view `REST`. In a view too small for both,
- * `LEAST` holds.
- */
+/** The panel's height in CSS pixels with the divider at a client point, held to `LEAST` and `REST`. */
 export function heightAt(
-  view: { readonly bottom: number; readonly height: number },
-  at: { readonly y: number }
+  view: Parameters<typeof dividerSizeAt>[0],
+  at: Parameters<typeof dividerSizeAt>[1]
 ): number {
-  return Math.round(Math.max(LEAST, Math.min(view.bottom - at.y, view.height - REST)));
+  return dividerSizeAt(view, at, 'bottom', { least: LEAST, leaves: REST });
 }
 
 /** The height this browser keeps, or `null` for none. */
 export function kept(): number | null {
-  try {
-    const height = localStorage.getItem(KEY);
-    return height === null ? null : Number(height);
-  } catch {
-    return null;
-  }
+  return keptDivider(KEY);
 }
 
 export function keep(height: number): void {
-  try {
-    localStorage.setItem(KEY, String(height));
-  } catch {
-    // The browser refuses the store.
-  }
+  keepDivider(KEY, height);
 }
